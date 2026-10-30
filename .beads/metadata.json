@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "oferty_pracy",
+  "project_id": "2b8201ef-2d9e-4c47-9380-ad82c5d8a5c4"
+}
