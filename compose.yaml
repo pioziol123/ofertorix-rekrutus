@@ -1,0 +1,115 @@
+name: oferty-pracy
+
+x-app: &app
+  build:
+    context: .
+    target: development
+  environment:
+    DATABASE_URL: postgresql://oferty:${POSTGRES_PASSWORD:?Run node scripts/setup-env.mjs first}@db:5432/oferty
+    NUXT_TELEMETRY_DISABLED: '1'
+    SOURCE_SYNC_TIME: ${SOURCE_SYNC_TIME:-08:00}
+    DOCUMENTS_DIR: /data/documents
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    AI_PROFILE_PRICING_JSON: ${AI_PROFILE_PRICING_JSON:-}
+    AI_MATCHING_PRICING_JSON: ${AI_MATCHING_PRICING_JSON:-}
+    AI_RESEARCH_PRICING_JSON: ${AI_RESEARCH_PRICING_JSON:-}
+    POLISH_SOURCES: ${POLISH_SOURCES-bulldogjob,theprotocol,justjoinit,nofluffjobs}
+    JOBSPY_ENABLED: ${JOBSPY_ENABLED:-false}
+    JOBSPY_SOURCES: ${JOBSPY_SOURCES:-}
+    JOBSPY_LINKEDIN_ACCESS_CONFIRMED: ${JOBSPY_LINKEDIN_ACCESS_CONFIRMED:-false}
+  volumes:
+    - .:/app
+    - dependencies:/app/node_modules
+    - documents:/data/documents
+  init: true
+
+services:
+  db:
+    image: postgres:18.6-bookworm
+    environment:
+      POSTGRES_DB: oferty
+      POSTGRES_USER: oferty
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run node scripts/setup-env.mjs first}
+    volumes:
+      - database:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U oferty -d oferty']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    command: pnpm migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: 'no'
+
+  web:
+    <<: *app
+    command: sh -c 'pnpm prepare && pnpm dev'
+    ports:
+      - '127.0.0.1:${WEB_PORT:-3100}:3000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 12
+    restart: unless-stopped
+
+  worker:
+    <<: *app
+    build:
+      context: .
+      target: worker
+    environment:
+      DATABASE_URL: postgresql://oferty:${POSTGRES_PASSWORD:?Run node scripts/setup-env.mjs first}@db:5432/oferty
+      NUXT_TELEMETRY_DISABLED: '1'
+      SOURCE_SYNC_TIME: ${SOURCE_SYNC_TIME:-08:00}
+      DOCUMENTS_DIR: /data/documents
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_PROFILE_PRICING_JSON: ${AI_PROFILE_PRICING_JSON:-}
+      AI_MATCHING_PRICING_JSON: ${AI_MATCHING_PRICING_JSON:-}
+      AI_RESEARCH_PRICING_JSON: ${AI_RESEARCH_PRICING_JSON:-}
+      POLISH_SOURCES: ${POLISH_SOURCES-bulldogjob,theprotocol,justjoinit,nofluffjobs}
+      JOBSPY_ENABLED: ${JOBSPY_ENABLED:-false}
+      JOBSPY_SOURCES: ${JOBSPY_SOURCES:-}
+      JOBSPY_LINKEDIN_ACCESS_CONFIRMED: ${JOBSPY_LINKEDIN_ACCESS_CONFIRMED:-false}
+      JOBSPY_PYTHON: /opt/jobspy/bin/python
+      JOBSPY_RUNNER_PATH: /app/scripts/jobspy-runner.py
+    command: pnpm worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, pnpm, health:worker]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 6
+    restart: unless-stopped
+
+  tools:
+    <<: *app
+    profiles: [tools]
+    command: pnpm check
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  database:
+  dependencies:
+  documents:

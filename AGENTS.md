@@ -1,5 +1,18 @@
 # Agent Instructions
 
+## Agent skills
+
+### Issue tracker
+Use Beads (`bd`) for specifications, tasks and dependencies.
+Read `docs/agents/issue-tracker.md` before tracker operations.
+
+### Triage labels
+Read `docs/agents/triage-labels.md` when classifying project issues.
+
+### Domain docs
+Single-context project. Read `docs/agents/domain.md` before
+exploration, specification or design work.
+
 This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
 
 > **Architecture in one line:** Issues live in a local Dolt database

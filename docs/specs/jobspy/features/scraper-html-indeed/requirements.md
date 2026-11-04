@@ -1,0 +1,15 @@
+# Scraper HTML Indeed Polska — wymagania
+
+Status: historyczny zakres adaptera HTML, 2026-11-02. Wybór HTML w runnerze został zastąpiony przez [import GraphQL](../indeed-graphql/requirements.md). Zadanie: `oferty-pracy-y81.8`. [PRD](../../PRD.md), [SD](solution-design.md).
+
+Zgoda właściciela na scraping została potwierdzona w rozmowie. Limit obejmuje wszystkie żądania, łącznie LinkedIn i Indeed: maksymalnie jedno/s. Pierwszy zakres: Senior PHP, Polska. Fraza wyszukiwania nie potwierdza kwalifikacji.
+
+- **R-I01:** osobny adapter HTML pobiera publiczne listy i szczegóły, bez GraphQL/API z kluczem biblioteki. Dotychczasowa funkcja GraphQL pozostaje dostępna w forku dla zgodności, ale runner aplikacji używa wyłącznie HTML. Test sprawdza adresy wszystkich żądań.
+- **R-I02:** parser rozpoznaje karty, osadzone JobPosting JSON-LD, paginację i jawny pusty wynik. Zachowuje stabilne ID, URL, tytuł, firmę, opis, lokalizację i dostępne daty. Nieznany format, zgoda lub blokada nie jest pustym sukcesem. Brak firmy/opisu jest niewiadomą; niepoprawny rekord jest policzony i pominięty.
+- **R-I03:** wynagrodzenie zachowuje kwoty, walutę, okres i dowód. estimatedSalary oznacza szacunek; baseSalary bez jednoznacznego dowodu autorstwa pozostaje unknown. Brak danych nie oznacza B2B/UoP, netto/brutto, stacjonarności ani potwierdzenia seniority. Nie parsujemy dowolnych widełek z tekstu.
+- **R-I04:** deduplikacja i wykrywanie paginacji bez postępu kończą zapętlenie. Błąd kolejnej strony lub szczegółów zachowuje poprawne karty, a wynik jest częściowy. Jawne limity czasu, żądań i wyników oraz Retry-After obowiązują również dla szczegółów i ponowień. Nieobecność nie oznacza wygaśnięcia.
+- **R-I05:** wynik zachowuje kontrakt RunResult v1 oraz pola structured_job. Rozróżnia exhausted, result_limit, no_progress, page_error (w tym parser), blocked, rate_limited, request_limit, deadline i transport_error; warnings rozróżniają parser_error, consent_required, detail_error i salary_parse_error. Błąd bez ofert to failed; z ofertami partial. Zakończone zapytanie nie oznacza kompletności rynku.
+- **R-I06:** wszystkie wywołania idą przez istniejący kontroler HTTP i wspólną blokadę runnera; nie podążamy automatycznie za przekierowaniami ani za obcymi URL. Nie obsługujemy logowania, CAPTCHA, proxy ani obchodzenia blokad. Wspieramy Polskę; pozostałe zakresy kończą się unsupported_scope.
+- **R-I07:** przed aktywacją wykonujemy ograniczony pilot. HTTP 403 blokuje aktywację, nie implementację offline. Wydanie ma nowy numer i hash; aplikacja identyfikuje adapter HTML w fingerprint. Testy obejmują listę/szczegóły, daty i płace, błędne rekordy, puste/zmienione strony, duplikaty, paginację, limity oraz 403/429 i zgody.
+
+Obserwacja 2026-11-02: jedno żądanie curl do publicznej listy Senior PHP w Polsce zwróciło HTTP 403, tytuł „Blocked - Indeed.com”. Nie jest to dowód działania parsera na aktualnym poprawnym HTML. Testy syntetyczne nie zastąpią późniejszego udanego pilota. Import domyślnie pozostaje wyłączony.

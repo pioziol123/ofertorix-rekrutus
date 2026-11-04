@@ -1,0 +1,22 @@
+import withNuxt from './.nuxt/eslint.config.mjs'
+
+export default withNuxt({
+  rules: {
+    'vue/html-self-closing': [
+      'warn',
+      {
+        html: { void: 'any', normal: 'always', component: 'always' },
+        svg: 'always',
+        math: 'always',
+      },
+    ],
+  },
+  ignores: [
+    'docs/**',
+    '.agents/**',
+    '.beads/**',
+    '.claude/**',
+    '.codex/**',
+    '.cursor/**',
+  ],
+})

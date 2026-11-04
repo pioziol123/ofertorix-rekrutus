@@ -5,3 +5,22 @@
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# Application and local environment
+node_modules/
+.nuxt/
+.output/
+.env
+.env.*
+!.env.example
+coverage/
+*.log
+__pycache__/
+*.py[cod]
+.pnpm-store/
+.mypy_cache/
+.ruff_cache/
+docs/research/profil-import-spike/node_modules/
+
+# Independent JobSpy fork checkout; see docs/specs/jobspy/local-development.md
+/.local/

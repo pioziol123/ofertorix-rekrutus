@@ -1,0 +1,66 @@
+import type { AiConfiguration } from '../lib/profile/ai.ts'
+import {
+  researchTopics,
+  type ResearchDraft,
+} from '../lib/companies/research-model.ts'
+export const pricing: AiConfiguration = {
+  model: 'gpt-4.1-mini',
+  version: 'test',
+  inputUsdPerMillion: '1',
+  outputUsdPerMillion: '1',
+  usdPln: '4',
+  fxVersion: 'test',
+  maxInputTokens: 100000,
+  maxOutputTokens: 4000,
+}
+export const draft = (): ResearchDraft => ({
+  identity: 'Tożsamość wymaga dalszego potwierdzenia.',
+  claims: researchTopics.map((topic) => ({
+    topic,
+    kind: 'fact',
+    scope: 'project',
+    text: 'Firma deklaruje realizację projektu PHP.',
+    evidence: [{ id: 0, quote: 'Project uses PHP.' }],
+  })),
+})
+export const searchResponse = () => ({
+  id: 'search-id',
+  status: 'completed',
+  usage: { input_tokens: 100, output_tokens: 50 },
+  output: [
+    {
+      type: 'web_search_call',
+      status: 'completed',
+      action: { type: 'search' },
+    },
+    {
+      type: 'message',
+      content: [
+        {
+          type: 'output_text',
+          text: 'Project uses PHP.',
+          annotations: [
+            {
+              type: 'url_citation',
+              url: 'https://company.example/project',
+              title: 'Project',
+              start_index: 0,
+              end_index: 17,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+})
+export const synthesisResponse = () => ({
+  id: 'synthesis-id',
+  status: 'completed',
+  usage: { input_tokens: 200, output_tokens: 70 },
+  output: [
+    {
+      type: 'message',
+      content: [{ type: 'output_text', text: JSON.stringify(draft()) }],
+    },
+  ],
+})

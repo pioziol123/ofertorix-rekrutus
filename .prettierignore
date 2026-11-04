@@ -1,0 +1,14 @@
+node_modules
+.nuxt
+.output
+.beads
+.agents
+.claude
+.codex
+.cursor
+.git
+pnpm-lock.yaml
+docs
+AGENTS.md
+CLAUDE.md
+GLOSSARY.md

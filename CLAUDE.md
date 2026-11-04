@@ -2,6 +2,19 @@
 
 This file provides instructions and context for AI coding agents working on this project.
 
+## Agent skills
+
+### Issue tracker
+Use Beads (`bd`) for specifications, tasks and dependencies.
+Read `docs/agents/issue-tracker.md` before tracker operations.
+
+### Triage labels
+Read `docs/agents/triage-labels.md` when classifying project issues.
+
+### Domain docs
+Single-context project. Read `docs/agents/domain.md` before
+exploration, specification or design work.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:1105d646 -->
 ## Beads Issue Tracker
 

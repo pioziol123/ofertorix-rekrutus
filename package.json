@@ -1,0 +1,62 @@
+{
+  "name": "oferty-pracy",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.9",
+  "engines": {
+    "node": ">=24.15.0 <25"
+  },
+  "scripts": {
+    "dev": "nuxt dev --host 0.0.0.0",
+    "build": "nuxt build",
+    "prepare": "nuxt prepare",
+    "worker": "tsx worker/index.ts",
+    "migrate": "node-pg-migrate up --migrations-dir migrations && tsx scripts/init-queue.ts",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "nuxt typecheck && tsc --project tsconfig.tools.json --noEmit",
+    "test": "vitest run",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "smoke": "tsx scripts/smoke.ts",
+    "health:worker": "tsx scripts/worker-health.ts",
+    "source:sync": "tsx scripts/source-sync.ts",
+    "source:status": "tsx scripts/source-status.ts",
+    "jobspy:sync": "tsx scripts/jobspy-sync.ts",
+    "jobspy:status": "tsx scripts/jobspy-status.ts",
+    "himalayas:sync": "tsx scripts/himalayas-sync.ts",
+    "polish:sync": "tsx scripts/polish-sync.ts",
+    "polish:status": "tsx scripts/polish-status.ts"
+  },
+  "dependencies": {
+    "@nuxt/ui": "4.12.0",
+    "mammoth": "1.13.0",
+    "node-pg-migrate": "9.0.0",
+    "nuxt": "4.6.3",
+    "pdfjs-dist": "6.4.299",
+    "pg": "^8.16.0",
+    "pg-boss": "12.38.0",
+    "tailwindcss": "4.3.3",
+    "tsx": "^4.20.0",
+    "vue": "^3.5.0",
+    "vue-router": "^5.4.0",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.0.0",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.0",
+    "eslint": "^10.4.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0",
+    "vue-tsc": "^3.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "unrs-resolver",
+      "vue-demi"
+    ]
+  }
+}

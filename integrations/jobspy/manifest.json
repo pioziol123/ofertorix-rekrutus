@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/pioziol123/JobSpy",
+  "upstreamRevision": "68b88d6909a2342ad75fbb945c4204a3a7ed6665",
+  "version": "1.4.1+oferty.4",
+  "forkRevision": "oferty-contract-2",
+  "wheel": "python_jobspy-1.4.1+oferty.4-py3-none-any.whl",
+  "sha256": "c0404831881dd8888e47647fd43f393e827a74bd4211eacfb4ecb4f1fcb6f5d7",
+  "requirementsSha256": "a459b432e5c06a2c1cc4ba3edaf16d772f516c54fcef967c7082e9fab80e277f",
+  "contractVersions": [1, 2],
+  "localChanges": true,
+  "baseRevision": "0f2540e0919f4506bec15fe9ae5a17b1246565d6"
+}
