@@ -83,6 +83,12 @@ export type ResearchReport = {
     sources: ResearchSource[]
   })[]
 }
+export class NoResearchFindings extends Error {}
+export const hasSourcedFindings = (report: ResearchReport) =>
+  report.claims.some(
+    (claim) =>
+      ['fact', 'opinion'].includes(claim.kind) && claim.sources.length > 0,
+  )
 export const safeResearchUrl = (value: string) => {
   try {
     const url = new URL(value)
@@ -106,7 +112,7 @@ export function validateResearch(
     researchTopics.some((topic) => !draft.claims.some((c) => c.topic === topic))
   )
     throw new Error('Missing topic')
-  return {
+  const report: ResearchReport = {
     identity: draft.identity,
     claims: draft.claims.map((claim) => {
       if (['fact', 'opinion'].includes(claim.kind) && !claim.evidence.length)
@@ -131,4 +137,7 @@ export function validateResearch(
       }
     }),
   }
+  if (!hasSourcedFindings(report))
+    throw new NoResearchFindings('No sourced findings')
+  return report
 }

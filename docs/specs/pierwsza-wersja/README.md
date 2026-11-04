@@ -32,6 +32,7 @@ Podział służy osobnemu przeglądowi, doprecyzowaniu i późniejszemu planowan
 ## Dokumenty wspólne
 
 - [Architektura i kontrakty wspólne](architecture.md) — wybrane technologie, granice modułów i wspólne konwencje. Nie zastępuje SD funkcjonalności.
+- [Plan refaktoru AI, Ollamy i lokalnego agenta](../lokalne-ai/README.md) — propozycja rozszerzenia wykonania AI z 2026-11-04; etapowe wymagania, granice i kolejność wdrożenia, bez rozpoczętej implementacji.
 - [Otwarte decyzje](open-decisions.md) — O-01–O-07, ich konsekwencje i sposób zamknięcia. Poszczególne pary wskazują dotyczące ich kwestie.
 - [Odbiór](features/odbior/requirements.md) — kryterium R-30 oraz [plan integracyjny](features/odbior/solution-design.md) dla całego przepływu.
 

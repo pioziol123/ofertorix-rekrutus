@@ -26,18 +26,19 @@ export const terminal = (batch: Batch) =>
   ['failed', 'completed', 'expired', 'cancelled'].includes(batch.status)
 export class BatchError extends Error {
   constructor(
-    public readonly code: 'network' | 'http' | 'format' | 'limit',
+    public readonly code: 'network' | 'http' | 'format' | 'limit' | 'archive',
     public readonly status: number | null = null,
   ) {
     super(`Batch ${code}${status ? ` (${status})` : ''}`)
   }
 }
 // Only fixed codes and validated HTTP statuses may cross the storage/UI boundary.
-// Never persist error.message, provider response bodies or request contents.
+// Never put error.message or provider/request contents into error messages.
+// Full bodies belong only in the owner's separate local archive.
 export function batchFailure(message: string, error: unknown): string {
   const code =
     error instanceof BatchError &&
-    ['network', 'http', 'format', 'limit'].includes(error.code)
+    ['network', 'http', 'format', 'limit', 'archive'].includes(error.code)
       ? error.code
       : error instanceof z.ZodError
         ? 'format'
@@ -87,12 +88,29 @@ export function batchRequest(
     throw new BatchError('limit')
   return { custom_id: id, method: 'POST', url: '/v1/responses', body }
 }
+export type BatchArchive = (
+  kind: 'input' | 'output' | 'error' | 'metadata',
+  key: string,
+  content: string,
+) => Promise<void>
 export class BatchClient {
   constructor(
     private readonly key: string,
     private readonly fetcher: typeof fetch = fetch,
+    private readonly archive?: BatchArchive,
   ) {
     if (!key) throw new BatchError('format')
+  }
+  private async keep(
+    kind: Parameters<BatchArchive>[0],
+    key: string,
+    content: string,
+  ) {
+    try {
+      await this.archive?.(kind, key, content)
+    } catch {
+      throw new BatchError('archive')
+    }
   }
   private async request(
     path: string,
@@ -136,6 +154,9 @@ export class BatchClient {
   }
   private async json(path: string, init?: RequestInit): Promise<unknown> {
     const text = await this.request(path, init)
+    return this.parse(text)
+  }
+  private parse(text: string): unknown {
     try {
       return JSON.parse(text)
     } catch {
@@ -153,6 +174,7 @@ export class BatchClient {
     const jsonl = lines.map((l) => JSON.stringify(l)).join('\n') + '\n'
     if (Buffer.byteLength(jsonl) > 2 * 1024 * 1024)
       throw new BatchError('limit')
+    await this.keep('input', 'request', jsonl)
     const form = new FormData()
     form.set('purpose', 'batch')
     form.set('expires_after[anchor]', 'created_at')
@@ -168,23 +190,25 @@ export class BatchClient {
   async create(file: string, operation: string): Promise<Batch> {
     identifier.parse(file)
     identifier.parse(operation)
-    return batchSchema.parse(
-      await this.json('/batches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input_file_id: file,
-          endpoint: '/v1/responses',
-          completion_window: '24h',
-          output_expires_after: { anchor: 'created_at', seconds: 604800 },
-          metadata: { operation_id: operation },
-        }),
+    const raw = await this.request('/batches', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input_file_id: file,
+        endpoint: '/v1/responses',
+        completion_window: '24h',
+        output_expires_after: { anchor: 'created_at', seconds: 604800 },
+        metadata: { operation_id: operation },
       }),
-    )
+    })
+    await this.keep('metadata', operation, raw)
+    return batchSchema.parse(this.parse(raw))
   }
   async retrieve(id: string): Promise<Batch> {
     identifier.parse(id)
-    const batch = batchSchema.parse(await this.json(`/batches/${id}`))
+    const raw = await this.request(`/batches/${id}`)
+    await this.keep('metadata', id, raw)
+    const batch = batchSchema.parse(this.parse(raw))
     if (batch.id !== id) throw new BatchError('format')
     return batch
   }
@@ -195,13 +219,37 @@ export class BatchClient {
     if (!terminal(batch)) throw new BatchError('format')
     const results = new Map<string, BatchLine>()
     const allowed = new Set(expected)
+    const contents: string[] = []
     for (const file of new Set(
       [batch.output_file_id, batch.error_file_id].filter(
         (f): f is string => !!f,
       ),
     )) {
       identifier.parse(file)
-      const content = await this.request(`/files/${file}/content`)
+      let content: string
+      try {
+        content = await this.request(`/files/${file}/content`)
+      } catch (error) {
+        // A file exceeding the download limit is not safely archived. Keep
+        // its remote copy rather than treating it as disposable bad content.
+        if (
+          this.archive &&
+          error instanceof BatchError &&
+          error.code === 'limit'
+        )
+          throw new BatchError('archive')
+        throw error
+      }
+      await this.keep(
+        file === batch.error_file_id ? 'error' : 'output',
+        file,
+        content,
+      )
+      contents.push(content)
+    }
+    // Archive every file before parsing: malformed output must not prevent
+    // preservation of a companion error file before terminal cleanup.
+    for (const content of contents) {
       for (const line of content.split('\n')) {
         if (!line.trim()) continue
         let item: BatchLine
@@ -267,6 +315,16 @@ export function readBatchResponse(line: BatchLine) {
     .flatMap((o) => o.content ?? [])
   const texts = content.filter((c) => c.type === 'output_text')
   let assessment: unknown = null
+  let diagnostic:
+    | 'response_incomplete'
+    | 'response_refusal'
+    | 'response_text_count'
+    | 'response_json'
+    | null = null
+  if (result.status !== 'completed') diagnostic = 'response_incomplete'
+  else if (content.some((c) => c.type === 'refusal'))
+    diagnostic = 'response_refusal'
+  else if (texts.length !== 1) diagnostic = 'response_text_count'
   if (
     result.status === 'completed' &&
     !content.some((c) => c.type === 'refusal') &&
@@ -275,8 +333,9 @@ export function readBatchResponse(line: BatchLine) {
     try {
       assessment = JSON.parse(texts[0]!.text ?? '')
     } catch {
+      diagnostic = 'response_json'
       /* usage can still be settled */
     }
   }
-  return { id: result.id, usage: result.usage, assessment }
+  return { id: result.id, usage: result.usage, assessment, diagnostic }
 }

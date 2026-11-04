@@ -79,3 +79,11 @@ Wyszukiwanie zwraca treść z adnotacjami cytowań. Synteza otrzymuje wyłączni
 GET/POST `/api/companies/:id/research`; POST `{commandId,refresh:boolean}`. GET tylko odczyt, konfiguracja i limit kosztu; POST kontrola Origin i istniejący limit treści. Błędny UUID 404, input422, konflikt komendy409, brak konfiguracji422. UI w profilu: stan, uruchom/odśwież, aktualny raport, poprzednie wersje i błędy.
 
 Źródła kontraktu adaptera: [OpenAI Web search](https://developers.openai.com/api/docs/guides/tools-web-search), [cennik](https://developers.openai.com/api/docs/pricing), sprawdzone 2026-11-04. Weryfikacja planowana: parser dowodów i fałszywych URL, idempotencja/równoczesność, wspólny budżet, przerwanie i brak automatycznego retry, wersje i zachowanie starego raportu, API Origin, UI i pełne sprawdzenie projektu.
+
+### Weryfikacja F2 — wykonana 2026-11-04
+
+Migracja11 zastosowana lokalnie, kolejka utworzona. Tester:11 jednostkowych i8 PG/API PASS (mock provider); regresja wspólnego budżetu/profilu/ocen/firm71 PG/API PASS. `pnpm check`:357 PASS, typy i lint bez błędów (dwa wcześniejsze ostrzeżenia). Build PASS. Wizualnie sprawdzono raport i źródła na osobnym schemacie; podgląd i dane usunięto.
+
+Próby API na publicznych danych OpenAI, bez CV: mini odrzucił jeden raport z błędem dowodów, następny ukończył; Luna ukończyła dwa przebiegi HTTP200. Łączny konserwatywny koszt ukończonych prób0.262205 PLN. Jeden proces diagnostyczny przerwano exit137 bez telemetrii; pozostaje unknown z rezerwacją0.415 PLN, zapisane w zadaniu wyjaśniania kosztów. Nie wykonano prób jakości na konkretnych pracodawcach właściciela ani nie utworzono fikcyjnych profili w publicznej części lokalnej bazy. Brak źródeł pozostaje dopuszczalnym wynikiem „niewiadoma”; próba połączenia nie dowodzi kompletności researchu.
+
+F2 oznacza gotowy ręczny research podstawowy; automatyzacja po progach (`oferty-pracy-363`) i przygotowanie pogłębione (`oferty-pracy-a9b`) pozostają oddzielne.

@@ -15,6 +15,7 @@ import { emptyProfile } from '../lib/profile/model.ts'
 import { budgetMonth, resumeAi } from '../lib/profile/ai.ts'
 import {
   BatchClient,
+  BatchError,
   type batchRequest,
   type Batch,
   type BatchLine,
@@ -71,6 +72,7 @@ integration(
         '1770000000007_matching_payload',
         '1770000000008_matching_groups',
         '1770000000009_rating_revisions',
+        '1770000000012_matching_batch_archives',
       ]) {
         createRequire(import.meta.url)(`../migrations/${name}.cjs`).up({
           sql: (s: string) => statements.push(s),
@@ -323,6 +325,37 @@ integration(
       await executeMatchingGroup(pool, boss, group.groupId, provider)
       expect(fetcher).toHaveBeenCalledOnce()
       expect(fetcher.mock.calls[0]![0]).toBe('https://api.openai.com/v1/files')
+    })
+    it('keeps results retryable and remote files intact when local archiving fails', async () => {
+      const group = await enqueue([ad, await anotherAd()]),
+        provider = new Provider()
+      const original = provider.results.bind(provider)
+      provider.results = vi.fn(async () => {
+        throw new BatchError('archive')
+      })
+      await executeMatchingGroup(pool, boss, group.groupId, provider)
+      expect(await groupRow(group.groupId)).toMatchObject({
+        state: 'submitted',
+        cleaned: false,
+      })
+      expect((await groupRow(group.groupId)).error).toContain(
+        '[Batch: archive]',
+      )
+      expect(provider.removed).toEqual([])
+      for (const member of group.items) {
+        expect((await row(member.id)).state).toBe('submitted')
+        expect((await attempt(member.id)).actual_pln).toBeNull()
+      }
+      await recoverMatchingGroups(pool, boss)
+      provider.results = original
+      await executeMatchingGroup(pool, boss, group.groupId, provider)
+      expect(await groupRow(group.groupId)).toMatchObject({
+        state: 'completed',
+        cleaned: true,
+      })
+      expect(provider.uploads).toBe(1)
+      expect(provider.creates).toBe(1)
+      expect(provider.removed).toEqual(['file_input', 'file_output'])
     })
     it('deduplicates concurrent command ID even reordered offers and rejects changed selection', async () => {
       const other = await anotherAd(),

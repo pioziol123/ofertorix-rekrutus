@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  hasSourcedFindings,
+  NoResearchFindings,
   safeResearchUrl,
   validateResearch,
+  type ResearchDraft,
   type ResearchEvidence,
+  type ResearchReport,
 } from '../lib/companies/research-model.ts'
 import {
   citedEvidence,
@@ -19,7 +23,58 @@ import {
 } from './company-research.fixtures.ts'
 
 afterEach(() => vi.unstubAllEnvs())
+const unknownDraft = (): ResearchDraft => ({
+  ...draft(),
+  claims: draft().claims.map((claim) => ({
+    ...claim,
+    kind: 'unknown',
+    text: 'Brak potwierdzonych informacji.',
+    evidence: [],
+  })),
+})
 describe('company research evidence boundary', () => {
+  it('rejects a complete five-topic report containing only unknowns', () => {
+    expect(() => validateResearch(unknownDraft(), [])).toThrow(
+      NoResearchFindings,
+    )
+  })
+  it.each(['hypothesis', 'recommendation'] as const)(
+    'does not treat sourced %s claims as research findings',
+    (kind) => {
+      const value = draft()
+      value.claims = value.claims.map((claim) => ({ ...claim, kind }))
+      expect(() =>
+        validateResearch(value, citedEvidence(searchResponse())),
+      ).toThrow(NoResearchFindings)
+    },
+  )
+  it.each(['fact', 'opinion'] as const)(
+    'accepts one sourced %s while preserving unknown topics',
+    (kind) => {
+      const value = unknownDraft()
+      value.claims[0] = { ...draft().claims[0]!, kind }
+      const report = validateResearch(value, citedEvidence(searchResponse()))
+      expect(hasSourcedFindings(report)).toBe(true)
+      expect(report.claims).toHaveLength(5)
+      expect(
+        report.claims.slice(1).every((claim) => claim.kind === 'unknown'),
+      ).toBe(true)
+    },
+  )
+  it('identifies historical empty reports without accepting uncited facts', () => {
+    const historical: ResearchReport = {
+      identity: unknownDraft().identity,
+      claims: unknownDraft().claims.map(
+        ({ evidence: _evidence, ...claim }) => ({
+          ...claim,
+          sources: [],
+        }),
+      ),
+    }
+    expect(hasSourcedFindings(historical)).toBe(false)
+    historical.claims[0]!.kind = 'fact'
+    expect(hasSourcedFindings(historical)).toBe(false)
+  })
   it('only accepts safe HTTP URLs without credentials', () => {
     for (const url of [
       'javascript:alert(1)',
@@ -139,6 +194,47 @@ describe('company research evidence boundary', () => {
   })
 })
 describe('mocked research provider and accounting', () => {
+  it('stops after an uncited search and settles only the completed search', async () => {
+    const searched = searchResponse()
+    searched.output[1]!.content![0]!.annotations = []
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(searched))
+    const result = await runResearch(
+      { name: 'Test', kind: 'brand', website: null, description: '' },
+      pricing,
+      fetcher,
+    )
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({
+      report: null,
+      responseIds: ['search-id'],
+      usage: { input_tokens: 8100, output_tokens: 50, search_calls: 1 },
+      cost: '0.072600',
+    })
+    expect(result.error).toContain('Nie przygotowano raportu')
+  })
+  it('rejects an all-unknown synthesis while settling both completed calls', async () => {
+    const synthesized = synthesisResponse()
+    synthesized.output[0]!.content[0]!.text = JSON.stringify(unknownDraft())
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(searchResponse()))
+      .mockResolvedValueOnce(Response.json(synthesized))
+    const result = await runResearch(
+      { name: 'Test', kind: 'brand', website: null, description: '' },
+      pricing,
+      fetcher,
+    )
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(result).toMatchObject({
+      report: null,
+      responseIds: ['search-id', 'synthesis-id'],
+      usage: { input_tokens: 8300, output_tokens: 120, search_calls: 1 },
+      cost: '0.073680',
+    })
+    expect(result.error).toContain('Nie uznano go za gotowy research')
+  })
   it('uses separate search and constrained synthesis calls and accounts for both plus search blocks', async () => {
     const fetcher = vi
       .fn<typeof fetch>()

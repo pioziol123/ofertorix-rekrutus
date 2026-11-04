@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { batchArchive } from './archive.ts'
 import type { Pool, PoolClient } from 'pg'
 import type { PgBoss } from 'pg-boss'
 import { z } from 'zod'
@@ -262,7 +263,13 @@ export async function executeMatchingGroup(
         return
       }
       if (group.state === 'unknown' || group.cleaned) return
-      const api = provider ?? new BatchClient(process.env.OPENAI_API_KEY ?? '')
+      const api =
+        provider ??
+        new BatchClient(
+          process.env.OPENAI_API_KEY ?? '',
+          fetch,
+          batchArchive(pool, id),
+        )
       if (group.state === 'queued') {
         const rows = (
           await client.query(

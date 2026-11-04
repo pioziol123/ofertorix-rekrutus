@@ -21,6 +21,7 @@ import {
   requestResearch,
 } from '../lib/companies/research.ts'
 import {
+  draft,
   pricing,
   searchResponse,
   synthesisResponse,
@@ -211,6 +212,58 @@ integration('company research transactions in isolated PostgreSQL', () => {
       reused: true,
     })
   })
+  it.each(['uncited search', 'all-unknown synthesis'])(
+    'settles a failed %s refresh and preserves the previous report without retrying',
+    async (failure) => {
+      const original = await requestResearch(pool, boss, companyId, command())
+      await executeCompanyResearch(pool, boss, original.id, mockedProvider())
+      const refreshed = await requestResearch(
+        pool,
+        boss,
+        companyId,
+        command(true),
+      )
+      const searched = searchResponse()
+      const synthesized = synthesisResponse()
+      if (failure === 'uncited search')
+        searched.output[1]!.content![0]!.annotations = []
+      else
+        synthesized.output[0]!.content[0]!.text = JSON.stringify({
+          ...draft(),
+          claims: draft().claims.map((claim) => ({
+            ...claim,
+            kind: 'unknown',
+            evidence: [],
+          })),
+        })
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json(searched))
+        .mockResolvedValueOnce(Response.json(synthesized))
+      await executeCompanyResearch(pool, boss, refreshed.id, fetcher)
+      await executeCompanyResearch(pool, boss, refreshed.id, fetcher)
+      const calls = failure === 'uncited search' ? 1 : 2
+      const cost = failure === 'uncited search' ? '0.072600' : '0.073680'
+      expect(fetcher).toHaveBeenCalledTimes(calls)
+      const operations = (await readCompanyResearch(pool, companyId)).operations
+      expect(operations.find((op) => op.id === refreshed.id)).toMatchObject({
+        state: 'failed',
+        report: null,
+        costState: 'settled',
+        cost,
+        error: expect.any(String),
+      })
+      expect(operations.find((op) => op.id === original.id)).toMatchObject({
+        state: 'completed',
+        report: { claims: expect.any(Array) },
+      })
+      expect(await requestResearch(pool, boss, companyId, command())).toEqual({
+        id: original.id,
+        reused: true,
+      })
+      expect(send).toHaveBeenCalledTimes(2)
+    },
+  )
   it('shares the budget with profile attempts and includes search fees before funding waiting operations', async () => {
     const month = budgetMonth()
     await pool.query(

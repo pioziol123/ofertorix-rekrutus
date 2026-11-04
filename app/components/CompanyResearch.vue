@@ -4,6 +4,7 @@ import {
   researchKindLabels,
   researchScopeLabels,
   researchTopics,
+  hasSourcedFindings,
 } from '../../lib/companies/research-model'
 const props = defineProps<{ companyId: string }>()
 const { data, error, refresh } = await useFetch(
@@ -126,6 +127,12 @@ onBeforeUnmount(() => clearInterval(timer))
       <UButton variant="ghost" @click="refresh()">Sprawdź stan</UButton>
     </div>
     <template v-if="shown?.report">
+      <p v-if="!hasSourcedFindings(shown.report)" role="alert" class="notice">
+        Research nie dostarczył żadnych ustaleń popartych źródłami. Ten
+        historyczny wynik zawiera wyłącznie niewiadome lub przypuszczenia i nie
+        stanowi gotowego researchu firmy. Ponowienie przyciskiem „Odśwież
+        research” wiąże się z nowym kosztem.
+      </p>
       <label v-if="completed.length > 1" class="profile-label"
         >Wersja raportu
         <select v-model="selected" class="profile-input">
@@ -143,7 +150,12 @@ onBeforeUnmount(() => clearInterval(timer))
       </label>
       <p class="small-label">
         {{ date(shown.finishedAt!) }} ·
-        {{ shown.id === current?.id ? 'Aktualny raport' : 'Wersja historyczna'
+        {{
+          !hasSourcedFindings(shown.report)
+            ? 'Brak ustaleń ze źródłami'
+            : shown.id === current?.id
+              ? 'Aktualny raport'
+              : 'Wersja historyczna'
         }}<template v-if="shown.cost">
           · Konserwatywne rozliczenie: {{ money(shown.cost) }}</template
         >

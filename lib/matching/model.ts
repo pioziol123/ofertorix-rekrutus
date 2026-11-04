@@ -47,41 +47,68 @@ export const assessmentSchema = z
   })
   .strict()
 export type Assessment = z.infer<typeof assessmentSchema>
+export class AssessmentError extends Error {
+  constructor(
+    public readonly code:
+      | 'schema'
+      | 'criterion_mismatch'
+      | 'missing_criterion'
+      | 'unknown_score'
+      | 'unsupported_assessment'
+      | 'unknown_criterion_rated'
+      | 'rated_score_missing'
+      | 'rated_evidence_missing'
+      | 'profile_evidence_missing'
+      | 'offer_evidence_missing',
+  ) {
+    super(code)
+  }
+}
 const normalize = (s: string) => s.replace(/\s+/gu, ' ').trim()
 export function validateAssessment(
   value: unknown,
   input: MatchingInput,
   authority: 'ai' | 'owner' = 'ai',
 ): Assessment {
-  const result = assessmentSchema.parse(value)
+  const parsed = assessmentSchema.safeParse(value)
+  if (!parsed.success) throw new AssessmentError('schema')
+  const result = parsed.data
   const byId = new Map(result.criteria.map((c) => [c.id, c]))
   if (
     byId.size !== result.criteria.length ||
     byId.size !== input.criteria.length
   )
-    throw new Error('Criterion mismatch')
+    throw new AssessmentError('criterion_mismatch')
   for (const criterion of input.criteria) {
     const item = byId.get(criterion.id)
-    if (!item) throw new Error('Missing criterion')
+    if (!item) throw new AssessmentError('missing_criterion')
     if (item.state === 'unknown') {
-      if (item.score !== null) throw new Error('Unknown criterion has score')
-    } else if (
-      item.score === null ||
-      !item.reason.trim() ||
-      (authority === 'ai' &&
-        (criterion.unknown || !item.profileEvidence || !item.offerEvidence))
-    )
-      throw new Error('Unsupported assessment')
-    for (const [evidence, source] of [
-      [item.profileEvidence, input.profile],
-      [item.offerEvidence, input.offer],
+      if (item.score !== null) throw new AssessmentError('unknown_score')
+    } else {
+      if (item.score === null) throw new AssessmentError('rated_score_missing')
+      if (!item.reason.trim())
+        throw new AssessmentError('unsupported_assessment')
+      if (authority === 'ai') {
+        if (criterion.unknown)
+          throw new AssessmentError('unknown_criterion_rated')
+        if (!item.profileEvidence || !item.offerEvidence)
+          throw new AssessmentError('rated_evidence_missing')
+      }
+    }
+    for (const [evidence, source, side] of [
+      [item.profileEvidence, input.profile, 'profile'],
+      [item.offerEvidence, input.offer, 'offer'],
     ] as const)
       if (
         evidence &&
         (!normalize(evidence) ||
           !normalize(source).includes(normalize(evidence)))
       )
-        throw new Error('Evidence missing')
+        throw new AssessmentError(
+          side === 'profile'
+            ? 'profile_evidence_missing'
+            : 'offer_evidence_missing',
+        )
   }
   result.strengths = result.criteria
     .filter((c) => c.state === 'match' && c.score !== null)

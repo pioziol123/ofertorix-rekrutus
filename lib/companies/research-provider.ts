@@ -8,12 +8,20 @@ import {
   researchDraft,
   validateResearch,
   safeResearchUrl,
+  NoResearchFindings,
   type ResearchEvidence,
 } from './research-model.ts'
 export const researchConfiguration = (): AiConfiguration | null => {
   const c = aiConfiguration('AI_RESEARCH_PRICING_JSON')
-  const minimum = c?.model === 'gpt-6-luna' ? 500000 : c?.model === 'gpt-4.1-mini' ? 100000 : Infinity
-  return c && c.maxInputTokens >= minimum && c.maxOutputTokens >= 4000 ? c : null
+  const minimum =
+    c?.model === 'gpt-6-luna'
+      ? 500000
+      : c?.model === 'gpt-4.1-mini'
+        ? 100000
+        : Infinity
+  return c && c.maxInputTokens >= minimum && c.maxOutputTokens >= 4000
+    ? c
+    : null
 }
 const micros = (value: string) => {
   const [a, b = ''] = value.split('.')
@@ -157,7 +165,7 @@ export async function runResearch(
       body: JSON.stringify({
         model: c.model,
         store: false,
-        ...(c.model === 'gpt-6-luna' ? {reasoning:{effort:'low'}} : {}),
+        ...(c.model === 'gpt-6-luna' ? { reasoning: { effort: 'low' } } : {}),
         service_tier: 'default',
         max_output_tokens: Math.floor(c.maxOutputTokens / 2),
         ...body,
@@ -194,6 +202,10 @@ export async function runResearch(
     })
     stage = 'evidence'
     const evidence = citedEvidence(searched)
+    if (!evidence.length)
+      throw new ResearchProviderError(
+        'Wyszukiwanie nie dostarczyło materiałów z poprawnymi cytowaniami. Nie przygotowano raportu ani nie uruchomiono syntezy. Ponowienie wymaga nowego żądania i kosztu.',
+      )
     const schema = z.toJSONSchema(researchDraft, {
       target: 'draft-7',
     }) as Record<string, unknown>
@@ -224,9 +236,11 @@ export async function runResearch(
     report = validateResearch(JSON.parse(texts[0]), evidence)
   } catch (e) {
     error =
-      e instanceof ResearchProviderError
-        ? e.message
-        : `Nie udało się uzyskać kompletnego raportu z dowodami (${stage}). Poprzedni raport pozostaje dostępny.`
+      e instanceof NoResearchFindings
+        ? 'Raport nie zawiera żadnych ustaleń popartych źródłami. Nie uznano go za gotowy research. Poprzedni raport pozostaje dostępny. Ponowienie wymaga nowego żądania i kosztu.'
+        : e instanceof ResearchProviderError
+          ? e.message
+          : `Nie udało się uzyskać kompletnego raportu z dowodami (${stage}). Poprzedni raport pozostaje dostępny.`
   }
   // Legacy mini uses a fixed search block. Luna reports search context in token usage.
   if (c.model === 'gpt-4.1-mini') input += calls * 8000

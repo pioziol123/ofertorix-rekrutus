@@ -1,4 +1,5 @@
 import { publishAiRating, readRatings } from './ratings.ts'
+import { batchArchive } from './archive.ts'
 import { randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import type { PgBoss } from 'pg-boss'
@@ -14,6 +15,7 @@ import { projectOffer } from '../offers.ts'
 import { requireQueued } from '../queue.ts'
 import {
   matchingInput,
+  AssessmentError,
   validateAssessment,
   calculate,
   type MatchingInput,
@@ -217,6 +219,7 @@ export async function applyMatchingLine(
       noCharge ? '0' : null,
     )
   } else {
+    let diagnostic = 'response_format'
     let cost: string | null = null
     let usage: unknown = null
     let responseId: string | null = null
@@ -236,12 +239,18 @@ export async function applyMatchingLine(
           response.usage.input_tokens,
           response.usage.output_tokens,
         )
+      if (response.diagnostic) {
+        diagnostic = response.diagnostic
+        throw new Error('Rejected response')
+      }
+      diagnostic = 'assessment_unknown'
       result = validateAssessment(
         response.assessment,
         row.input as MatchingInput,
       )
       calculation = calculate(result, row.input)
-    } catch {
+    } catch (error) {
+      if (error instanceof AssessmentError) diagnostic = error.code
       /* Keep usage settlement even if content failed validation. */
     }
     await tx(client, async () => {
@@ -257,7 +266,7 @@ export async function applyMatchingLine(
           calculation,
           result
             ? null
-            : 'Nie udało się potwierdzić wiarygodnej oceny. Poprzednie wyniki pozostały bez zmian.',
+            : `Nie udało się potwierdzić wiarygodnej oceny. Poprzednie wyniki pozostały bez zmian. [Ocena: ${diagnostic}]`,
         ],
       )
     })
@@ -302,7 +311,13 @@ export async function executeMatching(
         )
         return
       }
-      const api = provider ?? new BatchClient(process.env.OPENAI_API_KEY ?? '')
+      const api =
+        provider ??
+        new BatchClient(
+          process.env.OPENAI_API_KEY ?? '',
+          fetch,
+          batchArchive(pool, id),
+        )
       if (row.state === 'queued') {
         const request = {
           custom_id: id,

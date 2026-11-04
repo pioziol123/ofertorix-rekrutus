@@ -9,6 +9,7 @@ import {
   terminal,
   type Batch,
   type BatchLine,
+  type BatchArchive,
 } from '../lib/matching/batch.ts'
 import type { AiConfiguration } from '../lib/profile/ai.ts'
 import type { MatchingInput } from '../lib/matching/model.ts'
@@ -323,7 +324,7 @@ describe('terminal and partial result processing', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
   it('retains usage for refusal, incomplete or invalid JSON without publishing assessment', () => {
-    for (const kind of ['refusal', 'incomplete', 'json']) {
+    for (const kind of ['refusal', 'incomplete', 'json', 'text_count']) {
       const value = line()
       const body = value.response!.body as {
         status: string
@@ -331,16 +332,23 @@ describe('terminal and partial result processing', () => {
       }
       if (kind === 'refusal') body.output[0]!.content[0]!.type = 'refusal'
       if (kind === 'incomplete') body.status = 'incomplete'
-      if (kind === 'json') body.output[0]!.content[0]!.text = 'invalid'
+      if (kind === 'json')
+        body.output[0]!.content[0]!.text = 'private-provider-body-not-json'
+      if (kind === 'text_count')
+        body.output[0]!.content.push({ ...body.output[0]!.content[0]! })
       expect(readBatchResponse(value)).toEqual({
         id: 'resp_test',
         usage: { input_tokens: 100, output_tokens: 20 },
         assessment: null,
+        diagnostic: `response_${kind}`,
       })
     }
   })
   it('parses completed assessment and rejects failed responses or invalid usage', () => {
-    expect(readBatchResponse(line()).assessment).toEqual({ summary: 'Ocena' })
+    expect(readBatchResponse(line())).toMatchObject({
+      assessment: { summary: 'Ocena' },
+      diagnostic: null,
+    })
     expect(() =>
       readBatchResponse({ custom_id: 'offer', error: { code: 'failed' } }),
     ).toThrow()
@@ -365,5 +373,123 @@ describe('terminal and partial result processing', () => {
     await expect(failed.remove('file_deleted')).rejects.toMatchObject({
       status: 500,
     })
+  })
+})
+
+describe('complete local batch archive', () => {
+  it('archives exact input JSONL before upload, without transport credentials', async () => {
+    const events: string[] = []
+    const kept: unknown[][] = []
+    const archive: BatchArchive = async (...args) => {
+      kept.push(args)
+      events.push('archive')
+    }
+    const fetcher = vi.fn(async () => {
+      events.push('network')
+      return json({ id: 'file_input' })
+    })
+    const client = new BatchClient('secret-test-key', fetcher, archive)
+    const request = batchRequest('offer_1', input, config)
+    await client.upload([request])
+    expect(kept).toEqual([['input', 'request', JSON.stringify(request) + '\n']])
+    expect(events).toEqual(['archive', 'network'])
+    expect(JSON.stringify(kept)).not.toMatch(
+      /secret-test-key|Authorization|Bearer/,
+    )
+  })
+  it('does not upload when the durable archive cannot save the input', async () => {
+    const fetcher = vi.fn(async () => json({ id: 'file_input' }))
+    const client = new BatchClient('secret-test-key', fetcher, async () => {
+      throw new Error('private database details')
+    })
+    await expect(
+      client.upload([batchRequest('offer_1', input, config)]),
+    ).rejects.toMatchObject({ code: 'archive' })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+  it.each(['create', 'retrieve'] as const)(
+    'preserves malformed raw %s metadata before parsing',
+    async (method) => {
+      const raw = ' { malformed provider metadata \n'
+      const kept: unknown[][] = []
+      const client = new BatchClient(
+        'secret-test-key',
+        async () => new Response(raw),
+        async (...args) => {
+          kept.push(args)
+        },
+      )
+      await expect(
+        method === 'create'
+          ? client.create('file_input', 'operation_1')
+          : client.retrieve('batch_test'),
+      ).rejects.toMatchObject({ code: 'format' })
+      expect(kept).toEqual([
+        ['metadata', method === 'create' ? 'operation_1' : 'batch_test', raw],
+      ])
+    },
+  )
+  it('preserves both raw output and error files before parsing malformed output', async () => {
+    const output = '  invalid-json \n'
+    const error = '{"custom_id":"offer_1","error":{"code":"batch_expired"}}\n'
+    const kept: unknown[][] = []
+    const fetcher = vi.fn(
+      async (url: RequestInfo | URL) =>
+        new Response(String(url).includes('file_error') ? error : output),
+    )
+    const client = new BatchClient(
+      'secret-test-key',
+      fetcher,
+      async (...args) => {
+        kept.push(args)
+      },
+    )
+    await expect(
+      client.results({ ...batch, error_file_id: 'file_error' }, ['offer_1']),
+    ).rejects.toMatchObject({ code: 'format' })
+    expect(kept).toEqual([
+      ['output', 'file_output', output],
+      ['error', 'file_error', error],
+    ])
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(kept)).not.toMatch(
+      /secret-test-key|Authorization|Bearer/,
+    )
+  })
+  it('keeps an unarchived oversized result retryable instead of allowing terminal cleanup', async () => {
+    const archive = vi.fn(async () => {})
+    const cancel = vi.fn()
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(8 * 1024 * 1024 + 1))
+      },
+      cancel,
+    })
+    const client = new BatchClient(
+      'secret-test-key',
+      async () => new Response(stream),
+      archive,
+    )
+    await expect(client.results(batch, ['offer_1'])).rejects.toMatchObject({
+      code: 'archive',
+    })
+    expect(archive).not.toHaveBeenCalled()
+    expect(cancel).toHaveBeenCalledOnce()
+  })
+  it('reports archive failure as retryable rather than returning results', async () => {
+    const archive = vi.fn(async () => {
+      throw new Error('private DB failure')
+    })
+    const client = new BatchClient(
+      'secret-test-key',
+      async () => new Response(JSON.stringify(line()) + '\n'),
+      archive,
+    )
+    await expect(client.results(batch, ['offer_1'])).rejects.toMatchObject({
+      code: 'archive',
+    })
+    expect(batchFailure('Read failed.', new BatchError('archive'))).toBe(
+      'Read failed. [Batch: archive]',
+    )
   })
 })

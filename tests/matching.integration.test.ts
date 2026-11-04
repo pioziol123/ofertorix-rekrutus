@@ -366,6 +366,141 @@ integration(
         actual_pln: '0.000120',
       })
     })
+    it.each([
+      'schema',
+      'criterion_mismatch',
+      'missing_criterion',
+      'unknown_score',
+      'unknown_criterion_rated',
+      'rated_score_missing',
+      'rated_evidence_missing',
+      'unsupported_assessment',
+      'profile_evidence_missing',
+      'offer_evidence_missing',
+      'response_incomplete',
+      'response_refusal',
+      'response_text_count',
+      'response_json',
+      'response_format',
+      'accepted',
+    ])(
+      'retains safe %s diagnostic after files are cleaned and settles known usage',
+      async (code) => {
+        const request = await enqueueMatching(pool, boss, ad)
+        await pool.query('UPDATE matching_requests SET input=$2 WHERE id=$1', [
+          request.id,
+          {
+            profile: 'PHP private profile source',
+            offer: 'PHP private offer source',
+            criteria: [
+              {
+                id: 'php',
+                group: 'technologies',
+                label: 'PHP',
+                unknown: code === 'unknown_criterion_rated',
+              },
+            ],
+            checks: [],
+          },
+        ])
+        class DiagnosticProvider extends Provider {
+          override async results(batch: Batch, expected: string[]) {
+            const lines = await super.results(batch, expected)
+            const line = lines.get(expected[0]!)!
+            const value = {
+              summary: 'Potwierdzone PHP',
+              strengths: [],
+              gaps: [],
+              criteria: [
+                {
+                  id: 'php',
+                  state: 'match',
+                  score: 100 as number | null,
+                  profileEvidence: 'PHP' as string | null,
+                  offerEvidence: 'PHP' as string | null,
+                  reason: 'PHP obecne w obu źródłach',
+                },
+              ],
+            }
+            const criterion = value.criteria[0]!
+            if (code === 'schema')
+              Object.assign(value, {
+                secretProviderField: 'provider private source secret',
+              })
+            if (code === 'criterion_mismatch') value.criteria = []
+            if (code === 'missing_criterion')
+              criterion.id = 'private forged identifier'
+            if (code === 'unknown_score') criterion.state = 'unknown'
+            if (code === 'rated_score_missing') criterion.score = null
+            if (code === 'rated_evidence_missing')
+              criterion.offerEvidence = null
+            if (code === 'unsupported_assessment') criterion.reason = '   '
+            if (code === 'profile_evidence_missing')
+              criterion.profileEvidence = 'private invented profile secret'
+            if (code === 'offer_evidence_missing')
+              criterion.offerEvidence = 'private invented offer secret'
+            const body = line.response!.body as {
+              status: string
+              usage: { input_tokens: number; output_tokens: number }
+              output: {
+                type: string
+                content: { type: string; text: string }[]
+              }[]
+            }
+            body.output[0]!.content[0]!.text = JSON.stringify(value)
+            if (code === 'response_incomplete') body.status = 'incomplete'
+            if (code === 'response_refusal')
+              body.output[0]!.content[0]!.type = 'refusal'
+            if (code === 'response_text_count')
+              body.output[0]!.content.push({ ...body.output[0]!.content[0]! })
+            if (code === 'response_json')
+              body.output[0]!.content[0]!.text =
+                'private provider invalid JSON secret'
+            if (code === 'response_format') body.usage.input_tokens = -1
+            return lines
+          }
+        }
+        const provider = new DiagnosticProvider()
+        await executeMatching(pool, boss, request.id, provider)
+        const saved = await row(request.id)
+        expect(saved).toMatchObject(
+          code === 'accepted'
+            ? {
+                state: 'completed',
+                error: null,
+                result: { criteria: [{ id: 'php', score: 100 }] },
+                calculation: { rating: 100, completeness: 40 },
+              }
+            : {
+                state: 'failed',
+                result: null,
+                calculation: null,
+                error: `Nie udało się potwierdzić wiarygodnej oceny. Poprzednie wyniki pozostały bez zmian. [Ocena: ${code}]`,
+              },
+        )
+        expect(saved.error ?? '').not.toMatch(
+          /private|secret|provider|forged|Zod/,
+        )
+        expect(await attempt(request.id)).toMatchObject(
+          code === 'response_format'
+            ? {
+                state: 'unknown',
+                actual_pln: null,
+                usage: null,
+              }
+            : {
+                state: 'settled',
+                actual_pln: '0.000120',
+                usage: { input_tokens: 100, output_tokens: 20 },
+                response_id: 'resp_test',
+              },
+        )
+        expect(provider.removed).toEqual(['file_input', 'file_output'])
+        expect((await readMatching(pool, ad)).history[0]!.error).toBe(
+          saved.error,
+        )
+      },
+    )
     it('retains unknown cost if completed batch has no result rather than charging zero', async () => {
       const request = await enqueueMatching(pool, boss, ad),
         provider = new Provider()

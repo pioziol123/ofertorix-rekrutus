@@ -244,6 +244,14 @@ onUnmounted(() => clearInterval(timer))
           {{ row.calculation.completeness }}%
         </p>
         <p v-if="row.result">{{ row.result.summary }}</p>
+        <p>
+          <a
+            :href="`/api/matching/${encodeURIComponent(row.id)}/archive`"
+            download
+          >
+            Pobierz archiwum całej partii (JSON)
+          </a>
+        </p>
         <details v-if="row.result">
           <summary>Pełna ocena historyczna</summary>
           <pre style="white-space: pre-wrap">{{

@@ -1,6 +1,6 @@
 # Oferty pracy
 
-Prywatne narzędzie do ofert pracy. Działa lokalny setup Nuxt/TypeScript/Nuxt UI, PostgreSQL i osobny worker pg-boss oraz import ofert PHP Senior z SOLID.Jobs. Dostępna jest lista i szczegóły pobranych ofert z filtrowaniem. Oceny, research i dalsze moduły powstaną w kolejnych etapach.
+Prywatne narzędzie do ofert pracy. Działa lokalny setup Nuxt/TypeScript/Nuxt UI, PostgreSQL i osobny worker pg-boss oraz import ofert PHP Senior z SOLID.Jobs. Dostępna jest lista i szczegóły pobranych ofert z filtrowaniem. Dostępne są również profil zawodowy, oceny ofert, profile firm i ręczny research podstawowy.
 
 ## Uruchomienie
 
@@ -42,7 +42,7 @@ Importer wykrywa zmiany liczników i duplikaty między stronami, ale API nie gwa
 
 [Lista ofert](http://127.0.0.1:3100/offers) otwiera się bez logowania. Tabela, panel aktualnych szczegółów i daty historii zmian korzystają z PostgreSQL. Filtry i wybór oferty zapisują się w URL; nie zmieniają zakresu importu ani profilu zawodowego. Dostępne są wyszukiwanie, technologie any/all/excluded i wymagane/opcjonalne, lokalizacja/tryb, kontrakt, wymiar pracy, seniority, dostępność i płaca. Sortowanie obejmuje datę wykrycia/publikacji, tytuł i firmę; strona ma 20 pozycji.
 
-Filtr minimum płacy wymaga waluty i okresu; sprawdza górną granicę zgodnego wariantu i oznacza częściowe pokrycie. Nie przelicza walut, brutto/netto ani okresów. Oferty z nieznanymi widełkami domyślnie zostają w wynikach; można je ukryć. Inne jawne filtry wybierają znane pasujące wartości. Opis źródłowy prezentujemy jako tekst. Firmy są na razie nazwami ze źródła, bez osobnych profili, ocen i researchu.
+Filtr minimum płacy wymaga waluty i okresu; sprawdza górną granicę zgodnego wariantu i oznacza częściowe pokrycie. Nie przelicza walut, brutto/netto ani okresów. Oferty z nieznanymi widełkami domyślnie zostają w wynikach; można je ukryć. Inne jawne filtry wybierają znane pasujące wartości. Opis źródłowy prezentujemy jako tekst. Nazwy firm ze źródeł pozostają odrębne od profili firm: przypisanie publikującego, pracodawcy lub klienta wymaga jawnego potwierdzenia przy ofercie.
 
 ## Polecenia developerskie
 
@@ -162,9 +162,22 @@ Niepewny stan utworzenia partii ma status „Wysyłka lub koszt wymagają sprawd
 
 Wymagania konieczne bez jednoznacznych danych są do sprawdzenia. Kontrola lokalna porównuje znany tryb pracy i pełne warianty płac (waluta/okres/umowa/podstawa). Tekstowe wykluczenia i pozostałe wymagania nie otrzymują zgadywanego potwierdzenia. Sama ocena AI nie zastępuje ich weryfikacji.
 
+Na żądanie właściciela pełną treść partii zachowujemy lokalnie w PostgreSQL (`matching_batch_artifacts`, migracja12): dokładny wysłany JSONL, surowe pliki wyników i błędów, kolejne metadane Batch oraz sumy SHA-256. Wejście zapisujemy przed uploadem, wszystkie dostępne pliki wynikowe przed parsowaniem i sprzątaniem zdalnym. Błąd zapisu archiwum podczas odbioru pozostawia pliki do ponownego odczytu, bez ponownego płatnego zlecenia. Archiwum zawiera zawodowe dane profilu i pełną odpowiedź modelu; nie zawiera klucza API ani nagłówków autoryzacji. Nie trafia do logów ani repozytorium i nie ma automatycznego terminu usunięcia.
+
+W szczegółach oferty → „Historia zleceń AI” → „Pobierz archiwum całej partii (JSON)” pobierzesz lokalne artefakty; w grupie jest to pełna partia wszystkich objętych nią ofert. Pobranie nie odpytuje OpenAI. Dla starych lub jeszcze niewysłanych zleceń pole `reconstructedInput` może zawierać wejście odtworzone z zapisanych żądań; nie udaje ono oryginalnego pliku. Usuniętych wcześniej wyników nie odtwarzamy. W trakcie pracy archiwum zawiera tylko dotychczas otrzymane artefakty.
 
 Na liście kolumna „Dopasowanie” pokazuje rating, kompletność, składowe i aktualność oraz stan ostatniego zlecenia. W „Więcej filtrów” można ustawić minimalny rating, kompletność i cztery składowe, a także stan oceny. Sortowanie „Najlepsze dopasowanie” pokazuje aktualne znane oceny przed nieaktualnymi i bez ratingu. Progi nie traktują niewiadomych jak zera; nieaktualne wyniki przechodzą je tylko po jawnym wybraniu stanu „Nieaktualna ocena”.
 
 Zaznaczenie nagłówka dotyczy bieżącej strony. Można zachować wybór przy przejściu na następną stronę; zmiana filtrów czyści zaznaczenie. Limit100ofert i2MiBplikuJSONL. „Oceń zaznaczone” pokazuje łączną maksymalną rezerwację. Oferty już oczekujące są wykorzystywane ponownie, wykluczone lokalnie nie generują kosztu. Przy niewystarczającym budżecie cała nowa grupa czeka bez częściowej rezerwacji. Identyfikator komendy chroni przed ponownym zleceniem po utracie odpowiedziHTTP; ponowne kliknięcie z niezmienionym wyborem odczytuje istniejące zlecenie.
 
 Migracja8 tworzy `matching_groups` oraz kolejkę `offer-matching-group`; po migracji uruchom ponownie worker. Testy korzystają z podstawionego transportu, bez płatnych analiz.
+
+## Firmy i research podstawowy
+
+W zakładce `/companies` można tworzyć profile organizacji, marek i firm o nieustalonej tożsamości. W szczegółach ogłoszenia wybierz „Przypisz lub utwórz profil firmy”, a następnie rolę i uzasadnienie. Zgodna nazwa/domena nie scala profili. Technologie z ofert są pokazane oddzielnie od ustaleń researchu.
+
+Na profilu firmy przycisk „Uruchom research podstawowy” zleca zebranie źródeł i syntezę. Raport obejmuje działalność, projekty, metody pracy, technologie i ryzyka. Ustalenia mają typ, zakres oraz klikalne źródła i daty. Wyszukiwane deklaracje nie stanowią automatycznego potwierdzenia stanu faktycznego. Bez źródeł model powinien wskazać niewiadomą. Raport jest własną syntezą; nie zapisujemy pełnych stron ani cytatów wydawców.
+
+`AI_RESEARCH_PRICING_JSON` ma format konfiguracji profilu, ale używa cen **standardowych**, nie Batch. Startowo `gpt-6-luna`, maksymalne wejście co najmniej 500000 i wyjście 4000–6000 tokenów, `reasoning:low`; model porównawczy `gpt-4.1-mini` wymaga co najmniej 100000 wejścia. Rezerwacja wspólnego miesięcznego budżetu obejmuje dwa przebiegi i trzy wyszukiwania po 0.01 USD. UI pokazuje limit przed zleceniem. Konfigurację i klucz czyta tylko serwer; zmiana `.env` wymaga odtworzenia web/worker. Przykład w `.env.example` jest migawką cen, wymagającą aktualizacji wraz z cennikiem.
+
+Gotowy raport jest używany ponownie bez TTL. „Odśwież research — nowy koszt” tworzy nową wersję, poprzednie pozostają do wglądu. Równoczesne zlecenia nie dublują kosztu. Brak budżetu daje stan oczekiwania. Niepewne przerwanie zachowuje rezerwację i wymaga uwagi; płatna próba nie jest ponawiana automatycznie. Błąd nie usuwa poprzedniego raportu. Progi automatycznego uruchamiania oraz research pogłębiony pozostają kolejnymi etapami.

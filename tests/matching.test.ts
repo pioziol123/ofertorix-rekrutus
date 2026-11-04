@@ -138,6 +138,76 @@ describe('matching arithmetic and evidence', () => {
     if (kind === 'blank-evidence') value.criteria[0]!.profileEvidence = '   '
     expect(() => validateAssessment(value, source)).toThrow()
   })
+  it.each([
+    [
+      'schema',
+      (v: Assessment) =>
+        Object.assign(v, { summary: { private: 'secret source' } }),
+    ],
+    ['criterion_mismatch', (v: Assessment) => v.criteria.pop()],
+    [
+      'missing_criterion',
+      (v: Assessment) => {
+        v.criteria[0]!.id = 'untrusted criterion secret'
+      },
+    ],
+    [
+      'unknown_score',
+      (v: Assessment) => {
+        v.criteria[0]!.state = 'unknown'
+      },
+    ],
+    [
+      'rated_score_missing',
+      (v: Assessment) => {
+        v.criteria[0]!.score = null
+      },
+    ],
+    [
+      'rated_evidence_missing',
+      (v: Assessment) => {
+        v.criteria[0]!.profileEvidence = null
+      },
+    ],
+    [
+      'unsupported_assessment',
+      (v: Assessment) => {
+        v.criteria[0]!.reason = '   '
+      },
+    ],
+    [
+      'profile_evidence_missing',
+      (v: Assessment) => {
+        v.criteria[0]!.profileEvidence = 'private profile fabricated secret'
+      },
+    ],
+    [
+      'offer_evidence_missing',
+      (v: Assessment) => {
+        v.criteria[0]!.offerEvidence = 'private offer fabricated secret'
+      },
+    ],
+  ] as const)(
+    'classifies %s without including input or provider content',
+    (code, mutate) => {
+      const value = assessment()
+      mutate(value)
+      try {
+        validateAssessment(value, input)
+        expect.fail('Expected validation rejection')
+      } catch (error) {
+        expect(error).toMatchObject({ code, message: code })
+        expect(String(error)).not.toMatch(/secret|private|untrusted/)
+      }
+    },
+  )
+  it('distinguishes rating an unknown criterion from absent evidence', () => {
+    const source = structuredClone(input)
+    source.criteria[0]!.unknown = true
+    expect(() => validateAssessment(assessment(), source)).toThrow(
+      'unknown_criterion_rated',
+    )
+  })
   it('accepts explicit unknown with no evidence', () => {
     const value = assessment()
     value.criteria[0] = {
