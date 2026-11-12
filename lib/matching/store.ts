@@ -3,12 +3,8 @@ import { batchArchive } from './archive.ts'
 import { randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import type { PgBoss } from 'pg-boss'
-import {
-  aiConfiguration,
-  chargeCeiling,
-  reserve,
-  type AiConfiguration,
-} from '../profile/ai.ts'
+import { aiConfiguration, type AiConfiguration } from '../ai/configuration.ts'
+import { chargeCeiling, reserve } from '../ai/budget.ts'
 import { tx } from '../profile/store.ts'
 import { profileSchema } from '../profile/model.ts'
 import { projectOffer } from '../offers.ts'

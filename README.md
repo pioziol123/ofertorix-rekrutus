@@ -80,6 +80,8 @@ Nie zapisuj sekretów w kodzie, obrazach, dokumentacji i publicznej konfiguracji
 
 ## Dokumentacja projektu
 
+[Architektura w modelu C4](docs/architecture/README.md) obejmuje kontekst systemu, kontenery, komponenty i kod przygotowania propozycji profilu.
+
 [PRD i szkice funkcjonalności](docs/specs/pierwsza-wersja/README.md). Requirements i solution-design dopracowujemy przed konkretną funkcjonalnością. Dla bieżącego setupu właściciel wybrał krótki zakres w Beads zamiast dodatkowej pary dokumentów. Kolejność: setup → pobieranie → lista → kolejne funkcjonalności.
 
 ## Profil zawodowy
@@ -89,6 +91,10 @@ Nie zapisuj sekretów w kodzie, obrazach, dokumentacji i publicznej konfiguracji
 PDF z tekstem lub DOCX do 10 MiB odczytuje lokalny worker (PDF do 30 stron). Można też wkleić tekst. Oryginały pozostają w nazwanym wolumenie `documents`, poza publicznym katalogiem; zewnętrzny backup powinien obejmować ten wolumen i bazę. Nie ma OCR. Import nie zmienia samoczynnie profilu ani preferencji.
 
 AI jest domyślnie nieaktywne. `OPENAI_API_KEY` i `AI_PROFILE_PRICING_JSON` są wyłącznie serwerowe; sam klucz nie wystarcza. Konfiguracja JSON wymaga model, version, inputUsdPerMillion, outputUsdPerMillion, usdPln, fxVersion, maxInputTokens oraz maxOutputTokens. Kwoty podaje się jako teksty dziesiętne; limity tokenów jako liczby. Stawki muszą obejmować najdroższy dopuszczony wariant, a maxInputTokens pełen kontekst rzeczywiście używanego modelu. Nie dodawaj przykładowych niskich stawek do realnej konfiguracji.
+
+Lokalny profil ma osobną konfigurację `AI_PROFILE_EXECUTION_JSON` i rejestr adresów `AI_ENDPOINTS_JSON`. Przykład dla `gpt-oss:20b` jest zakomentowany w [.env.example](.env.example). Wybierz okno kontekstu dla swojej instancji i zachowaj starsze wersje adresów, dopóki korzystają z nich oczekujące zlecenia. Połączenie z kontenera i model sprawdź przez listę modeli przed włączeniem lokalnej ścieżki. Pusta lub wadliwa konfiguracja daje błąd, a brak zmiennej zachowuje obsługę OpenAI. [API listy modeli Ollamy](https://docs.ollama.com/api/tags)
+
+Utrata połączenia podczas lokalnej generacji pozostawia slot zajęty, dopóki koniec pracy nie zostanie potwierdzony. Obsługa tego stanu przez operatora i polecenia panelu są częścią odbioru całego epiku. [Kontrakty runtime](docs/specs/lokalne-ai/kontrakty-runtime.md)
 
 Kontrolowana próba prawdziwego API z fikcyjnym CV przeszła 2026-11-01: GPT-6 Luna, poprawny schemat i dowody z tekstu, rozliczenie usage. AI uruchomiono lokalnie po weryfikacji konfiguracji. Testy automatyczne nadal używają odpowiedzi kontrolnych, bez płatnych wywołań. Wspólny limit to 100 PLN miesięcznie w Europe/Warsaw; nieznany koszt pozostaje zarezerwowany i jest uwzględniony w budżecie widocznym w profilu. Rozliczenie z usage jest konserwatywnym szacunkiem księgowym. Ręczne wyjaśnianie nieznanych kosztów odłożono decyzją właściciela do osobnego zadania `oferty-pracy-qld`; nie blokuje korzystania z AI.
 

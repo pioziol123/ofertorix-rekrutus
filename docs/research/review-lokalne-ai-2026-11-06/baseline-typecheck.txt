@@ -1,0 +1,5 @@
+
+> oferty-pracy@ typecheck /baseline
+> nuxt typecheck && tsc --project tsconfig.tools.json --noEmit
+
+ℹ Nuxt Icon server bundle mode is set to local

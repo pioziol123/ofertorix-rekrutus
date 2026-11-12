@@ -8,12 +8,10 @@ import {
   profileSchema,
   ProposalEvidenceError,
 } from '../lib/profile/model.ts'
-import {
-  budgetMonth,
-  chargeCeiling,
-  readAiProposal,
-  type AiConfiguration,
-} from '../lib/profile/ai.ts'
+import { budgetMonth, chargeCeiling } from '../lib/ai/budget.ts'
+import type { AiConfiguration } from '../lib/ai/configuration.ts'
+import type { ModelResult } from '../lib/ai/models/model.ts'
+import { readAiProposal } from '../lib/profile/ai-result.ts'
 import { scrubContacts, validateDocument } from '../lib/profile/imports.ts'
 
 const config: AiConfiguration = {
@@ -232,55 +230,42 @@ describe('professional profile validation and selective proposals', () => {
   })
 })
 describe('safe AI response diagnostics', () => {
-  const marker = 'PRIVATE_CV_SENTINEL',
-    output = (text: string) => ({
-      type: 'message',
-      content: [{ type: 'output_text', text }],
-    }),
-    valid = { summary: null, skills: [], experience: [] }
+  const marker = 'PRIVATE_CV_SENTINEL'
+  const valid = { summary: null, skills: [], experience: [] }
+  const result = (
+    outcome: ModelResult['outcome'],
+    text: string | null,
+  ): ModelResult => ({
+    outcome,
+    text,
+    usage: { inputTokens: null, outputTokens: null },
+    responseId: null,
+  })
   it.each([
-    [{ status: 'incomplete', output: [output(marker)] }, 'nie ukończyło'],
+    [result('incomplete', marker), 'nie ukończyło'],
+    [result('refused', marker), 'odmówiło'],
+    [result('completed', null), 'jednej kompletnej'],
+    [result('completed', marker), 'format danych'],
     [
-      {
-        status: 'completed',
-        output: [
-          { type: 'message', content: [{ type: 'refusal', text: marker }] },
-        ],
-      },
-      'odmówiło',
-    ],
-    [
-      { status: 'completed', output: [output(marker), output(marker)] },
-      'jednej kompletnej',
-    ],
-    [{ status: 'completed', output: [output(marker)] }, 'format danych'],
-    [
-      {
-        status: 'completed',
-        output: [output(JSON.stringify({ ...valid, unexpected: marker }))],
-      },
+      result('completed', JSON.stringify({ ...valid, unexpected: marker })),
       'format danych',
     ],
     [
-      {
-        status: 'completed',
-        output: [
-          output(
-            JSON.stringify({
-              ...valid,
-              skills: [{ name: marker, description: marker, evidence: marker }],
-            }),
-          ),
-        ],
-      },
+      result(
+        'completed',
+        JSON.stringify({
+          ...valid,
+          skills: [{ name: marker, description: marker, evidence: marker }],
+        }),
+      ),
       'potwierdzić cytatów',
     ],
-  ])(
+  ] as const)(
     'reports the failure category without leaking model or CV content',
-    (result, message) => {
+    (value, message) => {
       let caught: unknown
       try {
-        readAiProposal(result, 'Different reviewed professional text')
+        readAiProposal(value, 'Different reviewed professional text')
       } catch (error) {
         caught = error
       }

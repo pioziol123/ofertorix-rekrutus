@@ -1,0 +1,10 @@
+{
+  "lib/profile/ai.ts": "bd3720c83f05d4fce8473ab243696470268ea6509864befeb43e46fa4de6e87b",
+  "lib/ai/configuration.ts": "841f3586666325bf2d9891d22f31672719ef8696b18a6356c1f4e4825b154042",
+  "lib/ai/models/model.ts": "a835ed80e09c2effcafeea470279fc65e68e7110c8dcfffd6fc08a96a2803955",
+  "lib/ai/models/ollama.ts": "f08708d145fb625835b678b6d95d021ea797fe76900747a2b45b5744c6b9c841",
+  "lib/ai/models/openai.ts": "325c954adc0a865eb73ff22c7979409c22927412b77dabb416482d555cbed506",
+  "test/ollama-adapter.test.ts": "1f6c6db00adb0a74e4962c699a16b8c2b11a68d862cfbdba44be8573951a74a9",
+  ".env.example": "10362bc1b8269a014f53a2d13783236f03c8cd6636d8da4f59871e472ea19f0d",
+  "pnpm-lock.yaml": "eec4214caa0f69e082fa4f339eb0744f6a19a962ef3560f8487770dad77f6e11"
+}

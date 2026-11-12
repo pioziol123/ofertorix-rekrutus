@@ -1,0 +1,8 @@
+for (let n = 0; n < 100; n++) {
+  try {
+    const response = await fetch(process.env.WEB_BASE_URL + '/api/health/ready')
+    if (response.ok) process.exit(0)
+  } catch {}
+  await new Promise(resolve => setTimeout(resolve, 100))
+}
+throw new Error('Test web server did not become ready')

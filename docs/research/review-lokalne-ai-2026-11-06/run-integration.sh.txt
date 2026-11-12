@@ -1,0 +1,39 @@
+#!/bin/sh
+set -u
+tar -C /review --exclude=.git --exclude=.beads --exclude=.env --exclude=.local --exclude=node_modules --exclude=.nuxt --exclude=.output -cf - . | tar -C /app -xf -
+cd /app
+pnpm install --frozen-lockfile > /results/integration-install.log 2>&1 || exit 1
+mkdir /baseline
+tar -C /baseline -xf /results/baseline.tar
+ln -s /app/node_modules /baseline/node_modules
+cd /baseline
+pnpm prepare > /results/baseline-prepare.log 2>&1
+pnpm lint > /results/baseline-lint.log 2>&1
+printf 'baseline lint=%s\n' "$?"
+pnpm typecheck > /results/baseline-typecheck.log 2>&1
+printf 'baseline typecheck=%s\n' "$?"
+pnpm build > /results/baseline-build.log 2>&1
+printf 'baseline build=%s\n' "$?"
+pnpm migrate > /results/test-migrate.log 2>&1 || exit 1
+export NITRO_HOST=127.0.0.1 NITRO_PORT=3000 WEB_BASE_URL=http://127.0.0.1:3000
+node .output/server/index.mjs > /results/baseline-server.log 2>&1 &
+server_pid=$!
+node /results/wait-web.mjs || exit 1
+pnpm exec vitest run --exclude tests/setup.integration.test.ts --exclude tests/polish-python.test.ts > /results/baseline-integration.log 2>&1
+printf 'baseline tests=%s\n' "$?"
+kill "$server_pid"
+wait "$server_pid" || true
+cd /app
+pnpm prepare > /results/current-prepare.log 2>&1
+pnpm build > /results/current-integration-build.log 2>&1
+printf 'current build=%s\n' "$?"
+node .output/server/index.mjs > /results/current-server.log 2>&1 &
+server_pid=$!
+node /results/wait-web.mjs || exit 1
+pnpm exec vitest run --exclude tests/setup.integration.test.ts --exclude tests/polish-python.test.ts > /results/current-integration.log 2>&1
+printf 'current tests=%s\n' "$?"
+kill "$server_pid"
+wait "$server_pid" || true
+cp -f /results/review-probes.test.ts /app/tests/review-probes.test.ts
+pnpm exec vitest run tests/review-probes.test.ts > /results/probes.log 2>&1
+printf 'review probes=%s\n' "$?"

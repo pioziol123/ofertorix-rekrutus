@@ -1,0 +1,13 @@
+
+> oferty-pracy@ lint /baseline
+> eslint .
+
+
+/baseline/app/components/MatchingWeights.vue
+  70:35  warning  Attribute "v-if" should go before "class"  vue/attributes-order
+
+/baseline/app/components/OfferManualRating.vue
+  86:35  warning  Attribute "v-if" should go before "class"  vue/attributes-order
+
+✖ 2 problems (0 errors, 2 warnings)
+  0 errors and 2 warnings potentially fixable with the `--fix` option.

@@ -1,6 +1,6 @@
 import type { Pool } from 'pg'
 import type { OfferView } from '../offers.ts'
-import { chargeCeiling } from '../profile/ai.ts'
+import { chargeCeiling } from '../ai/budget.ts'
 import { matchingConfiguration } from './store.ts'
 import {
   matchingGroupLabels,

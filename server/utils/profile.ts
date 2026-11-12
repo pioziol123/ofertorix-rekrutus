@@ -9,6 +9,7 @@ import type { H3Event } from 'h3'
 import { ZodError } from 'zod'
 import { createBoss } from '../../lib/queue'
 import { ProfileConflict } from '../../lib/profile/store'
+import { ModelError } from '../../lib/ai/models/model'
 let bossPromise: Promise<ReturnType<typeof createBoss>> | undefined
 export function profileBoss() {
   bossPromise ??= (async () => {
@@ -68,6 +69,12 @@ export function profileHandler<T>(run: (event: H3Event) => Promise<T>) {
     try {
       return await run(event)
     } catch (error) {
+      if (error instanceof ModelError)
+        throw createError({
+          statusCode: error.code === 'configuration' ? 422 : 503,
+          statusMessage: 'AI unavailable; check server configuration and model',
+          data: { code: error.code },
+        })
       if (error instanceof ProfileConflict)
         throw createError({
           statusCode: 409,

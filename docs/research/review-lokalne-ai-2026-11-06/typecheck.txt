@@ -1,0 +1,51 @@
+
+> oferty-pracy@ typecheck /app
+> nuxt typecheck && tsc --project tsconfig.tools.json --noEmit
+
+ℹ Nuxt Icon server bundle mode is set to local
+lib/ai/configuration.ts(11,24): error TS2554: Expected 2-3 arguments, but got 1.
+lib/ai/models/ollama.ts(1,10): error TS1484: 'StructuredModel' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+lib/ai/models/ollama.ts(27,35): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(schema: $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, params?: ToJSONSchemaParams | undefined): ZodStandardJSONSchemaPayload<$ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>', gave the following error.
+    Argument of type 'Record<string, unknown>' is not assignable to parameter of type '$ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>'.
+      Type 'Record<string, unknown>' is missing the following properties from type '$ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>': _zod, "~standard"
+  Overload 2 of 2, '(registry: $ZodRegistry<{ id?: string | undefined; }, $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>, params?: RegistryToJSONSchemaParams | undefined): { ...; }', gave the following error.
+    Argument of type 'Record<string, unknown>' is not assignable to parameter of type '$ZodRegistry<{ id?: string | undefined; }, $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>'.
+      Type 'Record<string, unknown>' is missing the following properties from type '$ZodRegistry<{ id?: string | undefined; }, $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>': _meta, _schema, _map, _idmap, and 5 more.
+lib/ai/models/openai.ts(1,10): error TS1484: 'StructuredModel' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+lib/ai/models/openai.ts(22,35): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(schema: $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, params?: ToJSONSchemaParams | undefined): ZodStandardJSONSchemaPayload<$ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>', gave the following error.
+    Argument of type 'Record<string, unknown>' is not assignable to parameter of type '$ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>'.
+      Type 'Record<string, unknown>' is missing the following properties from type '$ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>': _zod, "~standard"
+  Overload 2 of 2, '(registry: $ZodRegistry<{ id?: string | undefined; }, $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>, params?: RegistryToJSONSchemaParams | undefined): { ...; }', gave the following error.
+    Argument of type 'Record<string, unknown>' is not assignable to parameter of type '$ZodRegistry<{ id?: string | undefined; }, $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>'.
+      Type 'Record<string, unknown>' is missing the following properties from type '$ZodRegistry<{ id?: string | undefined; }, $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>': _meta, _schema, _map, _idmap, and 5 more.
+lib/profile/ai.ts(10,10): error TS1484: 'StructuredModel' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+lib/profile/ai.ts(381,11): error TS2322: Type 'ZodObject<{ summary: ZodNullable<ZodString>; skills: ZodArray<ZodObject<{ name: ZodString; description: ZodString; evidence: ZodString; }, $strict>>; experience: ZodArray<...>; }, $strict>' is not assignable to type 'Record<string, unknown>'.
+  Index signature for type 'string' is missing in type 'ZodObject<{ summary: ZodNullable<ZodString>; skills: ZodArray<ZodObject<{ name: ZodString; description: ZodString; evidence: ZodString; }, $strict>>; experience: ZodArray<...>; }, $strict>'.
+lib/profile/ai.ts(395,15): error TS2322: Type 'number | null' is not assignable to type 'number'.
+  Type 'null' is not assignable to type 'number'.
+lib/profile/ai.ts(396,15): error TS2322: Type 'number | null' is not assignable to type 'number'.
+  Type 'null' is not assignable to type 'number'.
+lib/ai/configuration.ts(11,24): error TS2554: Expected 2-3 arguments, but got 1.
+lib/ai/models/ollama.ts(27,35): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(schema: $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, params?: ToJSONSchemaParams | undefined): ZodStandardJSONSchemaPayload<$ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>', gave the following error.
+    Argument of type 'Record<string, unknown>' is not assignable to parameter of type '$ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>'.
+      Type 'Record<string, unknown>' is missing the following properties from type '$ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>': _zod, "~standard"
+  Overload 2 of 2, '(registry: $ZodRegistry<{ id?: string | undefined; }, $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>, params?: RegistryToJSONSchemaParams | undefined): { ...; }', gave the following error.
+    Argument of type 'Record<string, unknown>' is not assignable to parameter of type '$ZodRegistry<{ id?: string | undefined; }, $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>'.
+      Type 'Record<string, unknown>' is missing the following properties from type '$ZodRegistry<{ id?: string | undefined; }, $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>': _meta, _schema, _map, _idmap, and 5 more.
+lib/ai/models/openai.ts(22,35): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(schema: $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, params?: ToJSONSchemaParams | undefined): ZodStandardJSONSchemaPayload<$ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>', gave the following error.
+    Argument of type 'Record<string, unknown>' is not assignable to parameter of type '$ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>'.
+      Type 'Record<string, unknown>' is missing the following properties from type '$ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>': _zod, "~standard"
+  Overload 2 of 2, '(registry: $ZodRegistry<{ id?: string | undefined; }, $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>, params?: RegistryToJSONSchemaParams | undefined): { ...; }', gave the following error.
+    Argument of type 'Record<string, unknown>' is not assignable to parameter of type '$ZodRegistry<{ id?: string | undefined; }, $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>'.
+      Type 'Record<string, unknown>' is missing the following properties from type '$ZodRegistry<{ id?: string | undefined; }, $ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>': _meta, _schema, _map, _idmap, and 5 more.
+lib/profile/ai.ts(381,11): error TS2322: Type 'ZodObject<{ summary: ZodNullable<ZodString>; skills: ZodArray<ZodObject<{ name: ZodString; description: ZodString; evidence: ZodString; }, $strict>>; experience: ZodArray<...>; }, $strict>' is not assignable to type 'Record<string, unknown>'.
+  Index signature for type 'string' is missing in type 'ZodObject<{ summary: ZodNullable<ZodString>; skills: ZodArray<ZodObject<{ name: ZodString; description: ZodString; evidence: ZodString; }, $strict>>; experience: ZodArray<...>; }, $strict>'.
+lib/profile/ai.ts(395,15): error TS2322: Type 'number | null' is not assignable to type 'number'.
+  Type 'null' is not assignable to type 'number'.
+lib/profile/ai.ts(396,15): error TS2322: Type 'number | null' is not assignable to type 'number'.
+  Type 'null' is not assignable to type 'number'.
+ ELIFECYCLE  Command failed with exit code 2.

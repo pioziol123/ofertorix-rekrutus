@@ -1,8 +1,8 @@
 # Etap 4: Research niezależny od wykonawcy OpenAI — Requirements
 
-Status: **projekt do przeglądu**, 2026-11-04. Etap 4 z dziewięciu; dokumentacja nie oznacza akceptacji ani rozpoczęcia implementacji. Beads: `oferty-pracy-334.5`.
+Status: **przegląd wykonany, specyfikacja gotowa do implementacji**, 2026-11-05. Etap 4 z dziewięciu; przegląd w ramach `oferty-pracy-334.20`, bez implementacji i testów aplikacji. Beads: `oferty-pracy-334.5`.
 
-Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md), [plan](../../README.md). Potwierdzone: lokalnie `gpt-oss:20b`, OpenCode dla agenta i brak kwot Ollamy. Pozostałe decyzje SD są propozycjami.
+Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md), [plan](../../README.md). Potwierdzone: lokalnie `gpt-oss:20b`, OpenCode dla agenta i brak kwot Ollamy. Kontrakty SD są decyzjami technicznymi do realizacji w zatwierdzonym zakresie; weryfikacja działania pozostaje częścią implementacji.
 
 ## Cel i granice
 
@@ -27,6 +27,6 @@ Identyfikatory w wierszu łączą wymaganie z jego obserwowalnym kryterium. Oba 
 
 ## Zależności i gotowość
 
-Przed implementacją uzgodnić finalny kształt przenoszenia accounting z błędem. Nie wymaga decyzji o wyszukiwarce OpenCode (O-L2).
+Kontrakt accounting przy sukcesie i błędzie doprecyzowano w SD. Nie wymaga nowej decyzji produktowej ani wyboru wyszukiwarki OpenCode (O-L2).
 
 Rozwiązanie i mapowanie weryfikacji: [SD](solution-design.md). Reguły LA zachowują jedno miejsce utrzymania w wymaganiach przekrojowych; ta para określa ich zakres dla etapu. Nie zmienia reguł domenowych poza jawnym zakresem.

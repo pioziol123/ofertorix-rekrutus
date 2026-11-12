@@ -1,0 +1,56 @@
+import { afterEach, expect, it, vi } from 'vitest'
+import { z } from 'zod'
+import { OllamaAdapter } from '../lib/ai/models/ollama.ts'
+import { OpenAiAdapter } from '../lib/ai/models/openai.ts'
+import { parseAiExecutionConfig } from '../lib/ai/configuration.ts'
+import { factSchema } from '../lib/profile/model.ts'
+import { readAiProposal } from '../lib/profile/ai.ts'
+
+afterEach(() => vi.unstubAllEnvs())
+const facts = { summary: null, skills: [], experience: [] }
+const schema = z.toJSONSchema(factSchema, { target: 'draft-7' })
+delete schema.$schema
+const request = { model: 'gpt-oss:20b', input: 'PHP experience', instructions: 'Extract facts', schema }
+const cfg = { version: 1, provider: 'ollama', execution: 'direct', model: 'gpt-oss:20b', endpointRef: 'ollama', endpointVersion: 1, runtimeParameters: { numCtx: 128000 } }
+function mockOllama(doneReason = 'stop') {
+  const fetcher = vi.fn(async (url: string | URL | Request) => Response.json(
+    String(url).endsWith('/api/tags')
+      ? { models: [{ name: 'gpt-oss:20b' }] }
+      : { model: 'gpt-oss:20b', done: true, done_reason: doneReason, message: { role: 'assistant', content: JSON.stringify(facts) }, prompt_eval_count: 20, eval_count: 10 }
+  ))
+  return { fetcher, adapter: new OllamaAdapter(fetcher as typeof fetch, 'http://ollama.invalid') }
+}
+it('accepts the exact configuration advertised by .env.example', () => {
+  expect(parseAiExecutionConfig(JSON.stringify(cfg))).toEqual(cfg)
+})
+it('rejects invalid explicit configuration instead of returning legacy fallback sentinel', () => {
+  expect(() => parseAiExecutionConfig('{broken')).toThrow()
+})
+it('Ollama accepts the JSON Schema required by StructuredModel', async () => {
+  const { adapter } = mockOllama()
+  await expect(adapter.generate(request)).resolves.toMatchObject({ outcome: 'completed' })
+})
+it('OpenAI accepts the JSON Schema required by StructuredModel', async () => {
+  vi.stubEnv('OPENAI_API_KEY', 'synthetic-never-sent')
+  const fetcher = vi.fn(async () => Response.json({ status: 'completed', output: [] }))
+  const adapter = new OpenAiAdapter(fetcher as typeof fetch)
+  await expect(adapter.generate(request)).resolves.toMatchObject({ outcome: 'completed' })
+})
+// Use the same Zod value the actual profile caller passes, despite its type mismatch,
+// to test later stages independently from the schema-contract failure.
+const actualCallerRequest = { ...request, schema: factSchema as unknown as Record<string, unknown> }
+it('a valid Ollama response survives the exact profile parsing path', async () => {
+  const { adapter } = mockOllama()
+  const result = await adapter.generate(actualCallerRequest)
+  expect(() => readAiProposal(JSON.parse(result.text!), request.input)).not.toThrow()
+})
+it('sends the actual JSON Schema in Ollama format', async () => {
+  const { adapter, fetcher } = mockOllama()
+  await adapter.generate(actualCallerRequest)
+  const call = fetcher.mock.calls[1] as unknown as [string, RequestInit]
+  expect(JSON.parse(call[1].body as string).format).toEqual(schema)
+})
+it('does not claim truncated Ollama output is complete', async () => {
+  const { adapter } = mockOllama('length')
+  expect((await adapter.generate(actualCallerRequest)).outcome).toBe('incomplete')
+})

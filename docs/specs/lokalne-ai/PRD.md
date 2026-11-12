@@ -1,18 +1,18 @@
 # Lokalne AI i research przez OpenCode — PRD
 
-Status: **projekt do przeglądu**, 2026-11-04. Dokument przygotowany na zlecenie właściciela. Potwierdzone wybory zapisano poniżej; pozostały zakres jest propozycją. Przygotowanie PRD nie oznacza akceptacji całej specyfikacji ani rozpoczęcia implementacji.
+Status: **zakres i decyzje produktowe zatwierdzone po grill-me**, 2026-11-05. Jeden wspólny zakres wydania obejmuje cały epik wraz z panelem. Etapy porządkują implementację i weryfikację. Dokumentacja nie jest dowodem gotowego wdrożenia.
 
 ## Kontekst i źródła
 
 Właściciel chce wykorzystywać lokalne modele Ollamy w istniejącej aplikacji oraz lokalnego agenta do researchu pracodawcy. Inicjatywa rozszerza sposoby wykonania AI opisane w [PRD pierwszej wersji](../pierwsza-wersja/PRD.md). Zachowuje pojęcia i reguły profilu zawodowego, dopasowania oferty oraz researchu pracodawcy.
 
-Źródłem decyzji produktowych jest rozmowa z właścicielem z 2026-11-04. [Plan wdrożenia](README.md) i [SD](solution-design.md) zapisują wcześniejsze rozpoznanie oraz proponowane granice techniczne. [Wymagania LA-01–LA-10](requirements.md) zawierają szczegółowe zachowanie i kryteria akceptacji. Status prac i zależności utrzymuje Beads: `bd show oferty-pracy-334`.
+Źródłem decyzji produktowych jest rozmowa z właścicielem z 2026-11-04. [Plan wdrożenia](README.md) i [SD](solution-design.md) zapisują wcześniejsze rozpoznanie oraz proponowane granice techniczne. [Wymagania LA-01–LA-21](requirements.md) zawierają szczegółowe zachowanie i kryteria akceptacji. Status prac i zależności utrzymuje Beads: `bd show oferty-pracy-334`.
 
 ### Potwierdzone decyzje
 
 - Lokalny model: **`gpt-oss:20b` w Ollamie**, bez wariantu chmurowego.
 - Agent researchu: **OpenCode**. Pętlę pracy agenta prowadzi OpenCode; aplikacja zleca pracę, sprawdza wynik i zapisuje go w domenie.
-- **Bez aplikacyjnych limitów korzystania z Ollamy**: budżetu, kwot tokenów, liczby wywołań i rund oraz stałego terminu przerwania całej lokalnej pracy. Nie wprowadzamy też sztucznego ograniczenia do jednego równoległego wywołania.
+- **Bez aplikacyjnych limitów korzystania z Ollamy**: budżetu, kwot tokenów, liczby wywołań i rund oraz stałego terminu przerwania całej lokalnej pracy. Ze względu na zasoby komputera wszystkie lokalne prace AI — profil, pojedyncze oceny i research — korzystają ze wspólnej kolejki z jednym aktywnym wykonaniem.
 - Prace pozostają na etapie dokumentacji i uzgodnienia architektury.
 
 Parametry fizycznego kontekstu modelu, walidacja danych, anulowanie i obsługa awarii pozostają potrzebne. Nie są kwotami korzystania z lokalnego modelu.
@@ -35,7 +35,7 @@ Zmiana ma umożliwić wykonanie tych samych czynności z lokalnym modelem przy z
 | Rozpoznaje wykonawcę, stan i koszt operacji. | Historia wskazuje dostawcę i model, a błąd lub przerwanie nie wygląda jak ukończony wynik. Lokalny koszt API wynosi zero; ewentualne koszty narzędzi są odrębne. |
 | Może włączać lokalne wykonanie bez utraty dotychczasowej pracy. | Stare wyniki i aktywne operacje OpenAI pozostają obsługiwane, a zmiana konfiguracji dotyczy nowych zleceń. |
 
-Pilot powinien zapisać czas wykonania, poprawność wyników, odrzucone odpowiedzi i przyczyny błędów na ustalonym małym zestawie przykładów. Przegląd właściciela oceni przydatność uzasadnień i raportów. Nie ustalono liczbowych progów jakości, czasu ani oszczędności; nie są obietnicą tego PRD. Poprawny format odpowiedzi sam nie dowodzi jej użyteczności.
+Nie wymagamy osobnego pilota ani benchmarku jakości odpowiedzi. Właściciel ocenia przydatność podczas normalnego używania, np. po uruchomieniu propozycji profilu. Obowiązują testy techniczne, kontrola formatu, dowodów i stanów operacji; dostępność modelu sprawdzamy przez GET /api/tags.
 
 ## Proponowany zakres
 
@@ -55,7 +55,7 @@ Istniejący raport może być wykorzystany ponownie zgodnie z dotychczasowymi za
 
 ### Wybór wykonania i ciągłość pracy
 
-Proponujemy niezależny wybór wykonania dla profilu, ocen i researchu. Możliwa jest instalacja mieszana, np. lokalny profil i oceny oraz research przez OpenAI. Pierwsze wydanie może korzystać z konfiguracji serwerowej; nowy ekran ustawień nie jest wymagany.
+Właściciel potwierdził 2026-11-05 niezależny wybór modelu i sposobu wykonania dla profilu, ocen i researchu; zakres decyzji zapisują [wymagania przekrojowe](requirements.md#doprecyzowanie-potwierdzone-2026-11-05). Możliwa jest instalacja mieszana, np. lokalny profil i oceny oraz research przez OpenAI. Pierwsze wydanie korzysta z potwierdzonej konfiguracji serwerowej w `.env`; nowy ekran ustawień nie jest wymagany.
 
 Zlecenie zachowuje wybór wykonawcy i modelu z chwili utworzenia. Niedostępność lokalnego modelu nie powoduje automatycznego wysłania danych do chmury. Właściciel widzi przyczynę niepowodzenia i może anulować lokalną pracę. Restart nie może uruchomić drugiego agenta dla nadal aktywnego researchu ani ponownie opublikować ukończonych wyników.
 
@@ -77,8 +77,8 @@ Zlecenie zachowuje wybór wykonawcy i modelu z chwili utworzenia. Niedostępnoś
 - Brak kwot Ollamy nie znosi uzgodnionej kontroli kosztów płatnego wyszukiwania ani technicznej ochrony odczytu stron. Nie wolno zastąpić nim limitu rund lub czasu całego lokalnego zadania.
 - Research korzysta z internetu. Zapytania trafiają do wybranego źródła wyszukiwania, a odczyt odwiedza strony publiczne. Wyszukiwarka nie otrzymuje CV ani pełnego profilu zawodowego.
 - Agent ma dostęp wyłącznie do uzgodnionych narzędzi researchu. Nie otrzymuje powłoki, plików projektu, prywatnej sieci ani możliwości zapisu danych domenowych. Treść strony nie rozszerza jego uprawnień.
-- Sesje i konfiguracja dedykowanego OpenCode wymagają izolacji od prywatnej konfiguracji właściciela. Zakres przechowywanych danych i ich retencja muszą być ustalone przed uruchomieniem researchu.
-- Dostępność modelu, pamięć i faktyczny kontekst na sprzęcie właściciela wymagają pilota. Zbyt duże wejście ma dać jawny błąd, bez cichego ucięcia danych.
+- Sesje i konfiguracja dedykowanego OpenCode wymagają izolacji od prywatnej konfiguracji właściciela. Potwierdzono bezterminowe zachowanie zebranych materiałów tej integracji. Profil Chrome z cookies/cache jest wyjątkiem: usuwalny stan roboczy po potwierdzonym zakończeniu i archiwizacji materiałów.
+- Obecność modelu sprawdzamy przez GET /api/tags; nie wymagamy pilota jakości odpowiedzi. Zbyt duże wejście ma dać jawny błąd, bez cichego ucięcia danych.
 
 ## Poza zakresem
 
@@ -86,29 +86,55 @@ Nie zmieniamy zasad ratingu, decyzji właściciela, importowania ofert, zarządz
 
 Pierwsze wydanie nie obejmuje automatycznego doboru lub pobierania modeli, fallbacku do chmury, dowolnych narzędzi agenta ani ogólnej platformy agentowej. Nie usuwa obsługi OpenAI i Batch. Nie uruchamia masowej ponownej oceny zapisanych ofert.
 
-## Proponowane etapy produktowe
+## Etapy implementacji jednego wydania
 
 | Etap | Użyteczny wynik | Powiązanie z planem technicznym |
 | --- | --- | --- |
 | Przygotowanie | Dotychczasowe AI zachowuje działanie po oddzieleniu odpowiedzialności. | Etapy 1–4. |
-| Pierwsze lokalne wydanie | Profil przez `gpt-oss:20b` bez OpenAI, po pilocie wybranego zestawu. | Etap 5; nie wymaga gotowej wyszukiwarki. |
+| Adapter i lokalny profil | Profil przez `gpt-oss:20b` bez OpenAI, ze sprawdzeniem dostępności przez API. | Etap 5; nie wymaga gotowej wyszukiwarki. |
 | Lokalne oceny | Oceny pojedyncze i grupowe z historią oraz poprawną obsługą częściowych błędów. | Etap 6. |
 | Lokalny agent researchu | Ręczny research podstawowy przez OpenCode z uzgodnionym wyszukiwaniem i walidacją źródeł. | Etapy 7–8. |
-| Odbiór i stopniowe włączenie | Zweryfikowane warianty mieszane, ciągłość starych operacji i możliwość zmiany wykonania nowych zleceń. | Etap 9. |
+| Odbiór i wspólne wdrożenie | Zweryfikowane warianty mieszane, ciągłość starych operacji i możliwość zmiany wykonania nowych zleceń. | Etap 9. |
 
-Nie określamy terminów kalendarzowych przed pilotem. Szczegółowe requirements i SD dopracowujemy dla wybranego etapu przed implementacją, zgodnie z [cyklem projektu](../pierwsza-wersja/README.md#cykl-pracy-nad-funkcjonalnością).
+Właściciel zatwierdził wspólne wdrożenie całego epiku, bez osobnego wydania samego profilu lub ocen. Nie określamy terminów kalendarzowych przed technicznym sprawdzeniem integracji. Szczegółowe requirements i SD dopracowujemy dla wybranego etapu przed implementacją, zgodnie z [cyklem projektu](../pierwsza-wersja/README.md#cykl-pracy-nad-funkcjonalnością).
 
 ## Niewiadome i gotowość
 
 | Kwestia | Konsekwencja i następny krok |
 | --- | --- |
-| Działanie wybranego modelu i runtime na hoście | O-L1: sprawdzić pamięć, kontekst, poprawność wyników i czas. Model i OpenCode są już wybrane; pilot nie jest ponownym wyborem technologii. |
-| Źródło wyszukiwania, dostęp i koszt | O-L2: rozstrzygnąć przed uruchomieniem researchu; nie blokuje lokalnego profilu i ocen. |
-| Sesje, anulowanie, restart i retencja OpenCode | O-L3: potwierdzić kontrakt przed integracją agenta; brak kwot lokalnego modelu jest ustalony. |
-| Akceptacja dokumentów wykonawczych | O-L4: przejrzeć i uzgodnić requirements/SD podejmowanego etapu. Sam PRD nie nadaje zadaniom gotowości do implementacji. |
+| Działanie wybranego modelu i runtime na hoście | O-L1: sprawdzić dostęp do API i obecność skonfigurowanego modelu; bez benchmarku jakości. Model i OpenCode są już wybrane. |
+| Źródło wyszukiwania, dostęp i koszt | O-L2: Google przez Chrome DevTools MCP wybrane; przed live wymagane T03–T05, bez blokowania profilu/ocen. |
+| Sesje, anulowanie, restart i retencja OpenCode | O-L3: kontrakt HTTP/sesji/kolejki opisany; przed live wymagane T01/T02. Retencja zamknięta: zebrane materiały bezterminowo, roboczy profil Chrome usuwalny po końcu; brak kwot jest ustalony. |
+| Akceptacja dokumentów wykonawczych | O-L4: przegląd wykonawczy par zakończony w334.19/20; przed kodem odświeżyć zastane zmiany. Beads wskazuje gotowość i niezakończone zależności. |
 
-Rejestr O-L1–O-L4 i szczegółowe kryteria pozostają w [wymaganiach](requirements.md#decyzje-otwarte). Ten PRD określa proponowany cel i granice inicjatywy; [plan](README.md) określa kolejność, a [SD](solution-design.md) podejście techniczne. Nie potwierdzono jeszcze działania wybranego zestawu w pilocie.
+Rejestr O-L1–O-L4 i szczegółowe kryteria pozostają w [wymaganiach](requirements.md#rozstrzygnięcia-i-warunki-techniczne). Ten PRD określa zatwierdzony cel i granice inicjatywy; [plan](README.md) określa kolejność, a [SD](solution-design.md) podejście techniczne. Nie potwierdzono jeszcze działania wybranego zestawu w pilocie.
 
 ## Dokumentacja etapów — aktualizacja 2026-11-04
 
-Na kolejne zlecenie właściciela przygotowano [Requirements i SD wszystkich dziewięciu etapów](README.md#requirements-i-sd-każdego-etapu). Rozszerza to zakres dokumentacji względem wcześniejszego planu dopracowywania pojedynczej pary. Pary pozostają projektami do przeglądu; przed realizacją aktualizujemy je na podstawie bieżącego kodu i wyników pilotów. Nie oznacza to akceptacji technicznych propozycji ani rozpoczęcia wdrożenia.
+Na kolejne zlecenie właściciela przygotowano [Requirements i SD wszystkich dziewięciu etapów](README.md#requirements-i-sd-każdego-etapu). Rozszerza to zakres dokumentacji względem wcześniejszego planu dopracowywania pojedynczej pary. Przegląd wykonawczy przeprowadzono 2026-11-05 w334.19/20; kontrakty doprecyzowano i zadania mają gotową specyfikację. Przed realizacją odświeżyć stan kodu i wyniki poprzedników. Nie oznacza to wykonania testów ani rozpoczęcia wdrożenia.
+
+Aktualizacja decyzji 2026-11-05: konfiguracja `.env`, bezterminowe zachowanie zebranych materiałów z wyjątkiem roboczego profilu Chrome, sprawdzanie modelu przez API bez pilota jakości oraz porcjowanie lokalnych ocen do 20 opisane są w [wymaganiach przekrojowych](requirements.md#doprecyzowanie-potwierdzone-2026-11-05). Próby techniczne API/sesji nie są testem jakości modelu.
+
+## Panel operacji i wyszukiwanie — rozszerzenie 2026-11-05
+
+Właściciel zlecił panel zarządzania zadaniami z możliwością ręcznego sprawdzenia, zatrzymania i pominięcia. Szczegóły i rozstrzygnięcia opisuje [osobna para Requirements/SD](features/panel-zadan/requirements.md). Reguły pomijania, ponawiania i wznowienia zostały następnie potwierdzone w wymaganiach panelu. Wyszukiwanie ma korzystać z Google przez przeglądarkę. Wybrano Chrome DevTools MCP i interwencję użytkownika; realizację określają kontrakty runtime i ich bramki techniczne.
+
+## Potwierdzenie panelu — 2026-11-05
+
+Pierwszy zakres to zadania AI. Akcje obejmują pojedynczą pozycję albo grupę do 20, nie całe zlecenie nadrzędne. Pomiń próbuje zatrzymać i blokuje publikację, pozwalając kontynuować grupę. Jawne ponowienie jest dozwolone także przy running/unknown: poprzednie wykonanie traci prawo publikacji i otrzymuje próbę zatrzymania; jego późną odpowiedź zachowujemy do wglądu. Automatyczne recovery nadal nie uruchamia duplikatu. Pozostałe potwierdzone reguły: [panel zadań](features/panel-zadan/requirements.md). Flow Google przez dedykowaną przeglądarkę z interwencją użytkownika przy blokadzie został zaakceptowany.
+
+Potwierdzona decyzja 2026-11-05: OpenCode steruje dedykowanym Google Chrome przez **Chrome DevTools MCP** (`chrome-devtools-mcp`). Playwright MCP nie wchodzi do wybranej integracji. Szczegóły: [SD etapu 7](etapy/07-narzedzia-www/solution-design.md). Wybór nie oznacza uruchomienia implementacji ani instalacji usług.
+
+## Potwierdzenie organizacji lokalnej pracy — 2026-11-05
+
+Ze względu na zasoby komputera zadania agentów OpenCode czekają w kolejce i wykonują się pojedynczo w całej instalacji. Nie wprowadza to kwot tokenów, rund ani czasu pracy Ollamy; wspólna kolejka obejmuje również profil i pojedyncze oceny. Potwierdzono czysty stan przeglądarki dla nowego wykonania, publiczne strony bez logowania, cookies zachowane podczas wznowienia tego samego wykonania, zakres archiwum dowodów, osobne lokalne usługi i ręczne „Wznów”. Kanoniczne reguły i kryteria: [LA-11–LA-15](requirements.md#kolejka-agentów-przeglądarka-i-wznowienie--potwierdzone-2026-11-05).
+
+## Rozstrzygnięcia końcowe grill-me — 2026-11-05
+
+Jedno wspólne wdrożenie, jedna lokalna praca AI naraz, ręczne ponawianie z niezmienną migawką i ręczna obsługa awarii usług. Google służy tylko do znalezienia źródeł; ustalenia wymagają odczytanych publicznych stron. Zapytania nie zawierają danych profilu właściciela. Agent próbuje pozostałych znalezionych publicznych źródeł i może zakończyć kategorie jawnymi niewiadomymi. Nie musi znaleźć wszystkich odpowiedzi. Stan roboczy Chrome można usunąć po zakończeniu, ale raporty, materiały i historia pozostają. Kryteria normatywne: LA-11/13 i LA-16–LA-21 w [Requirements](requirements.md).
+
+Logowanie i odkładanie sesji tak, aby wykonywać następne zadania, pozostają poza wydaniem w backlogu `oferty-pracy-281`. Obecnie oczekiwanie na interwencję w publicznym dostępie blokuje wspólną lokalną kolejkę. Żadne z tych ustaleń nie dodaje benchmarku jakości odpowiedzi.
+
+## Doprecyzowanie środowiska przeglądarki — 2026-11-05
+
+Na sugestię właściciela projekt techniczny przewiduje headless Chrome w dedykowanym kontenerze, dostępny przez Chrome DevTools MCP. Zachowujemy możliwość podglądu i ręcznej obsługi publicznej blokady w tej samej sesji przez DevTools oraz Wznów w panelu. Nie wymaga to osobistego Chrome ani jego profilu do pracy agenta. Kwalifikacja musi potwierdzić izolację i możliwość interwencji; sam tryb headless nie jest ich dowodem.

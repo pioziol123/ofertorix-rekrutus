@@ -1,0 +1,193 @@
+
+ RUN  v4.1.12 /app
+
+stderr | tests/review-probes.test.ts > accepts the exact configuration advertised by .env.example
+Failed to parse AI execution configuration: TypeError: Cannot read properties of undefined (reading '_zod')
+    at inst._zod.parse (file:///app/node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/core/schemas.js:1398:46)
+    at eval (eval at compile (file:///app/node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/core/doc.js:33:16), <anonymous>:107:49)
+    at file:///app/node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/core/schemas.js:897:34
+    at inst._zod.parse (file:///app/node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/core/schemas.js:922:23)
+    at Module.<anonymous> (file:///app/node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/core/parse.js:6:32)
+    at inst.parse (file:///app/node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/classic/schemas.js:39:42)
+    at parseAiExecutionConfig (/app/lib/ai/configuration.ts:34:36)
+    at /app/tests/review-probes.test.ts:24:10
+    at file:///app/node_modules/.pnpm/@vitest+runner@4.1.12/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///app/node_modules/.pnpm/@vitest+runner@4.1.12/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+
+stderr | tests/review-probes.test.ts > rejects invalid explicit configuration instead of returning legacy fallback sentinel
+Failed to parse AI execution configuration: SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+    at JSON.parse (<anonymous>)
+    at parseAiExecutionConfig (/app/lib/ai/configuration.ts:33:25)
+    at /app/tests/review-probes.test.ts:27:16
+    at Proxy.assertThrows (file:///app/node_modules/.pnpm/chai@6.3.0/node_modules/chai/index.js:2877:5)
+    at Proxy.methodWrapper (file:///app/node_modules/.pnpm/chai@6.3.0/node_modules/chai/index.js:1737:25)
+    at Proxy.<anonymous> (file:///app/node_modules/.pnpm/@vitest+expect@4.1.12/node_modules/@vitest/expect/dist/index.js:1216:12)
+    at Proxy.overwritingMethodWrapper (file:///app/node_modules/.pnpm/chai@6.3.0/node_modules/chai/index.js:1796:33)
+    at Proxy.<anonymous> (file:///app/node_modules/.pnpm/@vitest+expect@4.1.12/node_modules/@vitest/expect/dist/index.js:1552:16)
+    at Proxy.<anonymous> (file:///app/node_modules/.pnpm/@vitest+expect@4.1.12/node_modules/@vitest/expect/dist/index.js:1156:15)
+    at Proxy.methodWrapper (file:///app/node_modules/.pnpm/chai@6.3.0/node_modules/chai/index.js:1737:25)
+
+ ❯ tests/review-probes.test.ts (7 tests | 7 failed) 19ms
+   × accepts the exact configuration advertised by .env.example 4ms
+   × rejects invalid explicit configuration instead of returning legacy fallback sentinel 1ms
+   × Ollama accepts the JSON Schema required by StructuredModel 9ms
+   × OpenAI accepts the JSON Schema required by StructuredModel 1ms
+   × a valid Ollama response survives the exact profile parsing path 1ms
+   × sends the actual JSON Schema in Ollama format 2ms
+   × does not claim truncated Ollama output is complete 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/review-probes.test.ts > accepts the exact configuration advertised by .env.example
+AssertionError: expected null to deeply equal { Object (version, provider, ...) }
+
+- Expected:
+{
+  "endpointRef": "ollama",
+  "endpointVersion": 1,
+  "execution": "direct",
+  "model": "gpt-oss:20b",
+  "provider": "ollama",
+  "runtimeParameters": {
+    "numCtx": 128000,
+  },
+  "version": 1,
+}
+
++ Received:
+null
+
+ ❯ tests/review-probes.test.ts:24:55
+     22| }
+     23| it('accepts the exact configuration advertised by .env.example', () =>…
+     24|   expect(parseAiExecutionConfig(JSON.stringify(cfg))).toEqual(cfg)
+       |                                                       ^
+     25| })
+     26| it('rejects invalid explicit configuration instead of returning legacy…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  tests/review-probes.test.ts > rejects invalid explicit configuration instead of returning legacy fallback sentinel
+AssertionError: expected [Function] to throw an error
+ ❯ tests/review-probes.test.ts:27:51
+     25| })
+     26| it('rejects invalid explicit configuration instead of returning legacy…
+     27|   expect(() => parseAiExecutionConfig('{broken')).toThrow()
+       |                                                   ^
+     28| })
+     29| it('Ollama accepts the JSON Schema required by StructuredModel', async…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  tests/review-probes.test.ts > Ollama accepts the JSON Schema required by StructuredModel
+AssertionError: promise rejected "TypeError: Cannot read properties of unde…" instead of resolving
+ ❯ tests/review-probes.test.ts:31:42
+     29| it('Ollama accepts the JSON Schema required by StructuredModel', async…
+     30|   const { adapter } = mockOllama()
+     31|   await expect(adapter.generate(request)).resolves.toMatchObject({ out…
+       |                                          ^
+     32| })
+     33| it('OpenAI accepts the JSON Schema required by StructuredModel', async…
+
+Caused by: TypeError: Cannot read properties of undefined (reading 'def')
+ ❯ process node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/core/to-json-schema.js:33:29
+ ❯ Module.toJSONSchema node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/core/json-schema-processors.js:602:5
+ ❯ OllamaAdapter.generate lib/ai/models/ollama.ts:27:22
+ ❯ tests/review-probes.test.ts:31:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  tests/review-probes.test.ts > OpenAI accepts the JSON Schema required by StructuredModel
+AssertionError: promise rejected "TypeError: Cannot read properties of unde…" instead of resolving
+ ❯ tests/review-probes.test.ts:37:42
+     35|   const fetcher = vi.fn(async () => Response.json({ status: 'completed…
+     36|   const adapter = new OpenAiAdapter(fetcher as typeof fetch)
+     37|   await expect(adapter.generate(request)).resolves.toMatchObject({ out…
+       |                                          ^
+     38| })
+     39| // Use the same Zod value the actual profile caller passes, despite it…
+
+Caused by: TypeError: Cannot read properties of undefined (reading 'def')
+ ❯ process node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/core/to-json-schema.js:33:29
+ ❯ Module.toJSONSchema node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/core/json-schema-processors.js:602:5
+ ❯ OpenAiAdapter.generate lib/ai/models/openai.ts:22:22
+ ❯ tests/review-probes.test.ts:37:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  tests/review-probes.test.ts > a valid Ollama response survives the exact profile parsing path
+AssertionError: expected [Function] to not throw an error but 'Error: AI nie ukończyło odpowiedzi. S…' was thrown
+
+- Expected:
+undefined
+
++ Received:
+"Error: AI nie ukończyło odpowiedzi. Spróbuj przygotować propozycję z krótszego tekstu. Profil pozostaje bez zmian."
+
+ ❯ tests/review-probes.test.ts:45:77
+     43|   const { adapter } = mockOllama()
+     44|   const result = await adapter.generate(actualCallerRequest)
+     45|   expect(() => readAiProposal(JSON.parse(result.text!), request.input)…
+       |                                                                             ^
+     46| })
+     47| it('sends the actual JSON Schema in Ollama format', async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  tests/review-probes.test.ts > sends the actual JSON Schema in Ollama format
+AssertionError: expected { type: 'json_schema', …(3) } to deeply equal { type: 'object', …(4) }
+
+- Expected
++ Received
+
+@@ -1,6 +1,8 @@
+  {
++   "name": "profile_proposal",
++   "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "experience": {
+          "items": {
+            "additionalProperties": false,
+@@ -117,6 +119,9 @@
+        "summary",
+        "skills",
+        "experience",
+      ],
+      "type": "object",
++   },
++   "strict": true,
++   "type": "json_schema",
+  }
+
+ ❯ tests/review-probes.test.ts:51:53
+     49|   await adapter.generate(actualCallerRequest)
+     50|   const call = fetcher.mock.calls[1] as unknown as [string, RequestIni…
+     51|   expect(JSON.parse(call[1].body as string).format).toEqual(schema)
+       |                                                     ^
+     52| })
+     53| it('does not claim truncated Ollama output is complete', async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+ FAIL  tests/review-probes.test.ts > does not claim truncated Ollama output is complete
+AssertionError: expected 'completed' to be 'incomplete' // Object.is equality
+
+Expected: "incomplete"
+Received: "completed"
+
+ ❯ tests/review-probes.test.ts:55:65
+     53| it('does not claim truncated Ollama output is complete', async () => {
+     54|   const { adapter } = mockOllama('length')
+     55|   expect((await adapter.generate(actualCallerRequest)).outcome).toBe('…
+       |                                                                 ^
+     56| })
+     57|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  7 failed (7)
+   Start at  15:14:22
+   Duration  166ms (transform 42ms, setup 0ms, import 94ms, tests 19ms, environment 0ms)

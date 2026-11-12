@@ -1,9 +1,6 @@
 import { z } from 'zod'
-import {
-  aiConfiguration,
-  chargeCeiling,
-  type AiConfiguration,
-} from '../profile/ai.ts'
+import { aiConfiguration, type AiConfiguration } from '../ai/configuration.ts'
+import { chargeCeiling } from '../ai/budget.ts'
 import {
   researchDraft,
   validateResearch,

@@ -1,5 +1,5 @@
 import { readProfile } from '../../../lib/profile/store'
-import { aiConfiguration } from '../../../lib/profile/ai'
+import { profileAiConfigured } from '../../../lib/profile/ai-configuration'
 import { database } from '../../utils/database'
 import { profileHandler } from '../../utils/profile'
 export default profileHandler(async () => {
@@ -13,7 +13,7 @@ export default profileHandler(async () => {
   return {
     ...profile,
     imports: imports.rows,
-    aiConfigured: aiConfiguration() !== null,
+    aiConfigured: profileAiConfigured(),
     budget: budget.rows,
   }
 })

@@ -1,53 +1,60 @@
 # Etap 2: Profil niezależny od protokołu OpenAI — Solution design
 
-Status: **projekt do przeglądu**, 2026-11-04. Etap 2 z dziewięciu; dokumentacja nie oznacza akceptacji ani rozpoczęcia implementacji. Beads: `oferty-pracy-334.3`.
+Status: **przegląd wykonany, specyfikacja gotowa do implementacji**, 2026-11-05. Beads: `oferty-pracy-334.3`, przygotowanie `334.20`. To projekt docelowy, nie wynik testów. Podstawa: [Requirements](requirements.md), [LA-02/03](../../requirements.md), [plan](../../README.md). Etap wymaga ukończenia etapu 1.
 
-Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md), [plan](../../README.md). Potwierdzone: lokalnie `gpt-oss:20b`, OpenCode dla agenta i brak kwot Ollamy. Pozostałe decyzje SD są propozycjami.
+## Stan bazowy i granice
 
-Zakres normatywny zachowania: [Requirements](requirements.md), E02-R01–E02-R04. Stan bazowy: lokalny katalog z 2026-11-04, łącznie z zastanymi zmianami; nie jest to wyłącznie HEAD. Pliki projektowane poniżej nie są deklaracją istniejącej implementacji.
+Przejrzano robocze [profile/ai.ts](../../../../../lib/profile/ai.ts), [model.ts](../../../../../lib/ai/models/model.ts), [openai.ts](../../../../../lib/ai/models/openai.ts) oraz wersję profilu z HEAD. Zastany adapter zwraca cały Responses jako tekst, zawsze deklaruje completed, gubi semantykę retry i ponownie konwertuje schemat Zod mimo typu JSON Schema. Profil tworzy konkretny adapter, ustawia requestStarted dopiero po odpowiedzi i uzależnia responseId od usage. To częściowa implementacja do poprawienia w tym zadaniu; nie usuwać innych zmian.
 
-## Podejście i granice
+Profil posiada instrukcje, factSchema, JSON.parse i checkProposal. Adapter posiada HTTP, normalizację Responses i politykę transportu OpenAI. Zapis próby, retry i propozycji pozostaje w profilu. Narzędzia, Batch i sesje nie należą do StructuredModel.
 
-Profil posiada przygotowanie instrukcji, factSchema i checkProposal. Nowy lib/ai/models/openai.ts posiada HTTP Responses i normalizację wyniku. Mały kontrakt pojedynczej odpowiedzi znajduje się w lib/ai/models/model.ts. Nie obejmuje Batch, narzędzi, sesji ani publikowania profilu. lib/profile/ai.ts pozostaje koordynatorem zapisu próby i propozycji.
+## E02-D01 — Kontrakt pojedynczego modelu
 
-## Decyzja E02-D01 — Mały kontrakt strukturalnego wyniku
+Docelowy interfejs w `lib/ai/models/model.ts`:
 
-**Propozycja:** Przekazanie surowego Responses do domeny zachowałoby sprzężenie; ogólny framework narzędzi i agentów rozszerzałby interfejs poza potrzeby profilu.
+```ts
+type ModelRequest = {
+  model: string
+  instructions: string
+  input: string
+  output: { name: string; schema: Record<string, unknown> }
+}
+type ModelResult = {
+  outcome: 'completed' | 'refused' | 'incomplete'
+  text: string | null
+  usage: { inputTokens: number | null; outputTokens: number | null }
+  responseId: string | null
+}
+type StructuredModel = {
+  generate(request: ModelRequest, signal?: AbortSignal): Promise<ModelResult>
+}
+```
 
-Punkty integracji w obecnym katalogu: [lib/profile/ai.ts](../../../../../lib/profile/ai.ts), [lib/profile/model.ts](../../../../../lib/profile/model.ts), [lib/profile/imports.ts](../../../../../lib/profile/imports.ts). Wskazują miejsca zmiany, nie obowiązek przeniesienia wszystkich ich odpowiedzialności.
+Wszystkie pola request wymagane; input/instructions/name niepuste. Domena konwertuje Zod do draft-7 JSON Schema i usuwa `$schema` raz. Adapter otrzymuje gotowy JSON Schema, nigdy Zod. completed ma dokładnie jedną niepustą końcową treść assistant; reasoning nie jest treścią. Odmowa daje refused, status inny niż completed daje incomplete; oba text=null. Zero/wiele treści przy status completed to błąd format. Każdy licznik usage niezależnie: bezpieczny nieujemny integer albo null. responseId zachowujemy także bez usage. Walidacja cytatów i JSON należy do profilu.
 
-## Proponowane kontrakty i niezmienniki
+`OpenAiAdapter` otrzymuje przez konstruktor fetcher, resolver klucza i zapisane opcje płatnego wywołania. `maxOutputTokens`, reasoning, store, tools, serviceTier nie są parametrami neutralnego interfejsu. Fabryka adaptera w `lib/ai/models/` dobiera implementację z zapisanej konfiguracji. Punkt wejścia workera składa zależności; wewnętrzna funkcja wykonania profilu przyjmuje StructuredModel. Zachować publiczny punkt `executeAi(pool,boss,id,fetcher)` jako fasadę aktualnych konsumentów/testów; nie wymagać HTTP w testach domeny.
 
-Proponowany kontrakt StructuredModel.generate(request, signal): Promise<ModelResult>. request zawiera model:string, instructions:string, input:string, schema: obiekt JSON Schema oraz parametry istniejącego wykonania OpenAI. Wszystkie pola wymagane; pusty input jest odrzucany przed HTTP. signal służy przerwaniu, nie określa nowego deadline.
+Payload OpenAI identyczny z bazowym profilem: `/v1/responses`, model, store=false, tools=[], service_tier=default, max_output_tokens z migawki, reasoning low, istniejące instrukcje/input_text i strict json_schema `profile_proposal`. Płatny timeout 90 s pozostaje opcją tego adaptera; zewnętrzny signal łączy się z nim. Nie przenosić tego deadline do Ollamy.
 
-ModelResult rozróżnia outcome: completed | refused | incomplete. Tylko completed zawiera text:string z jedną treścią końcową; pozostałe mają text:null. usage ma inputTokens/outputTokens jako nieujemne bezpieczne liczby całkowite lub null (każde osobno); responseId:string|null. Nieobecna telemetria jest normalizowana do null. Błędy transportu mają kody network | http | format, bez surowego body w komunikacie domenowym. Adapter nie interpretuje cytatów.
+## E02-D02 — Błędy i zgodność retry
 
-readAiProposal rozdzielić na normalizację Responses w adapterze i odczyt JSON + checkProposal w profilu. Przed usunięciem starego wejścia sprawdzić konsumentów/testy. Zachować obecny payload OpenAI (w tym parametry limitów tej płatnej ścieżki), rezerwację i przejścia ai_attempts. Brak telemetrii jest przekazywany do istniejącego rozliczenia nieznanego kosztu, nie wyliczany z długości tekstu.
+Typowany błąd adaptera ma `code: configuration|network|http|format|aborted`, `requestSent:boolean`, `responseReceived:boolean`, `httpStatus:number|null`, `retryAfterMs:number|null`, `responseId:string|null` i znormalizowane usage. Bez surowego body/CV/klucza w message. `requestSent=true` ustawić przed wywołaniem fetch; oznacza możliwość wysłania, nie dowód przyjęcia. Nie wnioskować o HTTP z tekstu wyjątku. Błąd parsowania body po odpowiedzi HTTP nie staje się błędem sieciowym przed odpowiedzią. Zachować dostępne metadane także przy błędzie formatu.
 
-## Migracja i uruchomienie
+Koordynator zachowuje politykę HEAD płatnego profilu: maksymalnie dwie próby w generation; retry dla HTTP 429/5xx oraz niepewnego requestSent bez responseReceived. Domyślne opóźnienie 1000 ms. Retry-After: liczba sekund lub data HTTP; niepoprawna wartość albo >60000 ms wyłącza retry, pozostałe minimum 1000 ms. Błędny JSON, odmowa, incomplete i walidacja cytatów nie uruchamiają automatycznej poprawki. Zastana regresja wrappera nie jest nową polityką produktu.
 
-Bez migracji i zmian env. Dotychczasowe migawki konfiguracji i queued próby korzystają z adaptera OpenAI. Nie zmieniamy historycznych wyników. Nową neutralną konfigurację wprowadzi etap 5.
+Nieznany koszt zachowuje rezerwację. Rozliczenie wymaga obu liczników mieszczących się w limitach płatnej migawki. Nie wyliczać tokenów z tekstu i nie zerować kosztu przy błędzie walidatora. Zapis próby i enqueue płatnego retry pozostają atomowe. Lokalna polityka ręcznego retry powstaje dopiero w etapie 5.
 
-## Weryfikacja
+## Zmiana i zgodność
 
-Wszystkie poniższe próby są planem, nie wykonanym wynikiem. Testy automatyczne z atrapami nie dowodzą sprawności usług live.
+Bez migracji i zmian env. Stare queued konfiguracje nadal OpenAI. `readAiProposal` rozdzielić na prywatną normalizację dostawcy i publiczną walidację tekstu propozycji; przełączyć testy zamiast pozostawić domenę zależną od Responses. Bez eksportowania parsera OpenAI z profilu jako drugiego kontraktu. Historia i zatwierdzanie propozycji bez zmian.
 
-1. Kontrakt HTTP OpenAI: porównać wysyłany payload z dotychczasowym; atrapa fetch.
-2. Macierz odmowa/niepełny/wiele treści/JSON/cytaty/network oraz brak usage.
-3. Integracja przygotowanie → wykonanie → propozycja → zatwierdzenie i konflikt rewizji.
-4. Ponowne dostarczenie ukończonej próby nie zmienia profilu ani kosztu drugi raz.
+## Weryfikacja i zakończenie
 
-| Kryterium | Co musi wykazać weryfikacja |
+| Kryterium | Dowód wymagany w implementacji |
 | --- | --- |
-| E02-AC01 | Próby 1 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
-| E02-AC02 | Próby 2–3 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
-| E02-AC03 | Próby 2 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
-| E02-AC04 | Próby 4 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
+| E02-AC01 | Kontrakt HTTP na atrapie porównuje pełny payload z HEAD; test domeny wstrzykuje StructuredModel, bez sieci. |
+| E02-AC02 | Obecne przypadki cytatów w `tests/profile.test.ts` oraz propozycja/akceptacja/konflikt rewizji w `tests/profile.integration.test.ts`. |
+| E02-AC03 | Macierz completed/refused/incomplete, 0/2 treści, zły JSON, błąd parsowania HTTP i sieci, osobno brak każdego usage i zachowane ID; komunikaty bez sekretów. |
+| E02-AC04 | 429/500/401, Retry-After sekundy/data/złe/>60 s, utrata odpowiedzi przed/po nagłówkach, podwójna dostawa, brak podwójnej propozycji/kosztu; regresje recovery w testach profilu. |
 
-Przy implementacji zmieniającej zachowanie zastosować projektowy workflow `implement-with-tester`. Stan, dowody i ewentualne odchylenia aktualizować w Beads i tej parze; nie dopisywać niesprawdzonych sukcesów.
-
-## Decyzje wymagające zamknięcia
-
-Nazwy typów są propozycją do przeglądu. Kontrakt ma obsługiwać wyłącznie potrzebę strukturalnej odpowiedzi; rozszerzenie Ollamy w etapie 5 nie uzasadnia narzędzi ani sesji w tym interfejsie.
-
-Przed kodem ponownie sprawdzić kontrakty i wymagane zależności. Zlecenie przygotowania wszystkich par rozszerza dokumentację późniejszych etapów; nie usuwa przeglądu przed ich realizacją.
+Test adaptera może powstać w `tests/ai-models.test.ts`. Zachować istniejące przypadki, przenieść je na właściwy interfejs zamiast duplikować parser. `pnpm check`, build i integracje z RUN_INTEGRATION=1 według [przekazania](../../przekazanie-lokalnemu-modelowi.md). Workflow implement-with-tester. Nie ma otwartej decyzji produktowej tego etapu; aktualizacja zastanego kodu jest obowiązkiem wykonawcy.

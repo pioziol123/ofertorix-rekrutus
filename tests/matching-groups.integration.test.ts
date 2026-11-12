@@ -12,7 +12,8 @@ import {
   vi,
 } from 'vitest'
 import { emptyProfile } from '../lib/profile/model.ts'
-import { budgetMonth, resumeAi } from '../lib/profile/ai.ts'
+import { budgetMonth } from '../lib/ai/budget.ts'
+import { resumeAi } from '../lib/profile/ai.ts'
 import {
   BatchClient,
   BatchError,

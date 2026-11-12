@@ -1,8 +1,8 @@
 # Etap 2: Profil niezależny od protokołu OpenAI — Requirements
 
-Status: **projekt do przeglądu**, 2026-11-04. Etap 2 z dziewięciu; dokumentacja nie oznacza akceptacji ani rozpoczęcia implementacji. Beads: `oferty-pracy-334.3`.
+Status: **przegląd wykonany, specyfikacja gotowa do implementacji**, 2026-11-05. Etap 2 z dziewięciu; przegląd w ramach `oferty-pracy-334.20`, bez implementacji i testów aplikacji. Beads: `oferty-pracy-334.3`.
 
-Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md), [plan](../../README.md). Potwierdzone: lokalnie `gpt-oss:20b`, OpenCode dla agenta i brak kwot Ollamy. Pozostałe decyzje SD są propozycjami.
+Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md), [plan](../../README.md). Potwierdzone: lokalnie `gpt-oss:20b`, OpenCode dla agenta i brak kwot Ollamy. Kontrakty SD są decyzjami technicznymi do realizacji w zatwierdzonym zakresie; weryfikacja działania pozostaje częścią implementacji.
 
 ## Cel i granice
 
@@ -27,6 +27,6 @@ Identyfikatory w wierszu łączą wymaganie z jego obserwowalnym kryterium. Oba 
 
 ## Zależności i gotowość
 
-Nazwy typów są propozycją do przeglądu. Kontrakt ma obsługiwać wyłącznie potrzebę strukturalnej odpowiedzi; rozszerzenie Ollamy w etapie 5 nie uzasadnia narzędzi ani sesji w tym interfejsie.
+Kontrakt StructuredModel, normalizacja i typowane błędy zostały rozstrzygnięte w SD po przeglądzie kodu. Wymagana implementacja etapu 1; brak otwartej decyzji produktowej.
 
 Rozwiązanie i mapowanie weryfikacji: [SD](solution-design.md). Reguły LA zachowują jedno miejsce utrzymania w wymaganiach przekrojowych; ta para określa ich zakres dla etapu. Nie zmienia reguł domenowych poza jawnym zakresem.

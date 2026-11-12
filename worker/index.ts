@@ -26,6 +26,7 @@ import {
   recoverImports,
 } from '../lib/profile/imports.ts'
 import { executeAi, resumeAi } from '../lib/profile/ai.ts'
+import { recoverLocalProfiles } from '../lib/profile/local-ai.ts'
 import {
   matchingQueue,
   executeMatching,
@@ -77,6 +78,7 @@ await boss.work<{ runId: string }>(importQueue, async (jobs) => {
 })
 await recoverImports(pool, boss)
 await resumeAi(pool, boss)
+await recoverLocalProfiles(pool, boss)
 await boss.work<{ importId: string }>(parseQueue, async (jobs) => {
   for (const job of jobs) await extractImport(pool, job.data.importId)
 })
@@ -108,6 +110,7 @@ async function schedule() {
     await enqueueSync(pool, boss, 'scheduled')
     await recoverImports(pool, boss)
     await resumeAi(pool, boss)
+    await recoverLocalProfiles(pool, boss)
     await recoverMatching(pool, boss)
     await recoverMatchingGroups(pool, boss)
     await recoverCompanyResearch(pool, boss)

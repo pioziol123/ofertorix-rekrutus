@@ -1,0 +1,174 @@
+
+ RUN  v4.1.12 /app
+
+ ❯ tests/profile.integration.test.ts (27 tests | 11 failed) 1406ms
+     ✓ separates draft from active version, detects stale saves and confirms idempotently 11ms
+     ✓ allows only one concurrent draft writer and validates import references 5ms
+     ✓ validates every provenance against immutable reviewed text and listed imports 5ms
+     ✓ rejects command reuse with different confirmation arguments 4ms
+     ✓ stores repeated originals independently, checks hashes, and rolls back failed enqueue 9ms
+     ✓ marks file import failed when parser queue returns no job 4ms
+     ✓ extracts synthetic text.pdf locally and retains original  495ms
+     ✓ extracts synthetic text.docx locally and retains original 90ms
+     ✓ falls back to manual text for scan.pdf without losing original  534ms
+     ✓ falls back to manual text for corrupt.docx without losing original 82ms
+     ✓ does not enqueue paid requests without configuration and keeps reviewed text revisions 5ms
+     ✓ reserves the monthly 100 PLN cap atomically for concurrent imports 14ms
+     × settles known usage, rejects unsupported evidence, and never activates profile automatically 18ms
+     × accepts flattened PDF citations, settles usage, and saves selected facts with exact source provenance 6ms
+     × settles valid usage even when the proposal is rejected with a safe explanation 5ms
+     × settles valid usage even when the proposal is rejected with a safe explanation 5ms
+     × settles valid usage even when the proposal is rejected with a safe explanation 5ms
+     × settles valid usage even when the proposal is rejected with a safe explanation 5ms
+     × settles valid usage even when the proposal is rejected with a safe explanation 4ms
+     × keeps an unknown charge reserved and caps transient retries at two attempts 5ms
+     ✓ rolls back paid reservation and reviewed text when queue submission fails 4ms
+     ✓ does not reserve or accept a paid operation if queue submission returns null 3ms
+     ✓ prevents recovery and duplicate delivery from interrupting an active AI request 5ms
+     × keeps missing or out-of-bounds usage reserved: null 5ms
+     × keeps missing or out-of-bounds usage reserved: { input_tokens: -1, output_tokens: 3 } 6ms
+     × keeps missing or out-of-bounds usage reserved: { input_tokens: 1001, output_tokens: 1 } 5ms
+     ✓ ignores stale proposal results and recovery retains interrupted cost reservations 7ms
+ ✓ tests/profile.http.integration.test.ts (5 tests) 873ms
+     ✓ uploads a binary original, preserves bytes on download and exposes local extraction  549ms
+ ✓ tests/matching.integration.test.ts (30 tests) 349ms
+ ✓ tests/matching-groups.integration.test.ts (13 tests) 309ms
+ ✓ tests/jobspy.test.ts (37 tests) 227ms
+ ✓ tests/polish.test.ts (21 tests) 217ms
+ ✓ tests/companies.integration.test.ts (10 tests) 178ms
+ ✓ tests/polish-sync.integration.test.ts (11 tests) 169ms
+ ✓ tests/jobspy.integration.test.ts (13 tests) 168ms
+ ✓ tests/matching-ratings.integration.test.ts (15 tests) 160ms
+ ✓ tests/company-research.integration.test.ts (10 tests) 146ms
+ ✓ tests/sources.integration.test.ts (11 tests) 145ms
+ ✓ tests/himalayas-sync.integration.test.ts (13 tests) 83ms
+ ✓ tests/matching-list.integration.test.ts (7 tests) 80ms
+ ✓ tests/setup-env.test.ts (2 tests) 58ms
+ ✓ tests/offers.integration.test.ts (4 tests) 53ms
+ ✓ tests/matching-batch.test.ts (38 tests) 35ms
+ ✓ tests/profile.test.ts (50 tests) 21ms
+ ✓ tests/himalayas.test.ts (18 tests) 21ms
+ ✓ tests/company-research.test.ts (19 tests) 20ms
+ ✓ tests/solid.test.ts (11 tests) 20ms
+ ✓ tests/matching-archive.integration.test.ts (3 tests) 18ms
+ ✓ tests/jobspy-catalog.test.ts (32 tests) 14ms
+ ✓ tests/offers.test.ts (47 tests) 11ms
+ ✓ tests/matching.test.ts (49 tests) 10ms
+ ✓ tests/polish-json.test.ts (22 tests) 9ms
+ ✓ tests/remote-eligibility.test.ts (26 tests) 7ms
+ ✓ tests/companies.test.ts (10 tests) 4ms
+stdout | test/ollama-adapter.test.ts
+Testing OllamaAdapter import...
+✓ OllamaAdapter instantiated successfully
+✓ OllamaAdapter has generate method
+OllamaAdapter test completed successfully
+
+ ❯ test/ollama-adapter.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/ollama-adapter.test.ts [ test/ollama-adapter.test.ts ]
+Error: No test suite found in file /app/test/ollama-adapter.test.ts
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/12]⎯
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 11 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/profile.integration.test.ts > profiles in isolated PostgreSQL and private document storage > settles known usage, rejects unsupported evidence, and never activates profile automatically
+AssertionError: expected +0 to be 0.00015 // Object.is equality
+
+- Expected
++ Received
+
+- 0.00015
++ 0
+
+ ❯ tests/profile.integration.test.ts:348:38
+    346|       ).rows[0]
+    347|       expect(row.state).toBe('settled')
+    348|       expect(Number(row.actual_pln)).toBe(0.00015)
+       |                                      ^
+    349|       expect(
+    350|         (
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/12]⎯
+
+ FAIL  tests/profile.integration.test.ts > profiles in isolated PostgreSQL and private document storage > accepts flattened PDF citations, settles usage, and saves selected facts with exact source provenance
+AssertionError: expected +0 to be 0.00015 // Object.is equality
+
+- Expected
++ Received
+
+- 0.00015
++ 0
+
+ ❯ tests/profile.integration.test.ts:419:42
+    417|         ).rows[0]
+    418|       expect(attempt.state).toBe('settled')
+    419|       expect(Number(attempt.actual_pln)).toBe(0.00015)
+       |                                          ^
+    420|       expect(imported.status).toBe('proposal')
+    421|       expect(imported.proposal.skills[0].evidence).toBe('PHP\n\tbacken…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/12]⎯
+
+ FAIL  tests/profile.integration.test.ts > profiles in isolated PostgreSQL and private document storage > settles valid usage even when the proposal is rejected with a safe explanation
+ FAIL  tests/profile.integration.test.ts > profiles in isolated PostgreSQL and private document storage > settles valid usage even when the proposal is rejected with a safe explanation
+ FAIL  tests/profile.integration.test.ts > profiles in isolated PostgreSQL and private document storage > settles valid usage even when the proposal is rejected with a safe explanation
+ FAIL  tests/profile.integration.test.ts > profiles in isolated PostgreSQL and private document storage > settles valid usage even when the proposal is rejected with a safe explanation
+ FAIL  tests/profile.integration.test.ts > profiles in isolated PostgreSQL and private document storage > settles valid usage even when the proposal is rejected with a safe explanation
+AssertionError: expected +0 to be 0.00015 // Object.is equality
+
+- Expected
++ Received
+
+- 0.00015
++ 0
+
+ ❯ tests/profile.integration.test.ts:522:44
+    520|           ).rows[0]
+    521|         expect(attempt.state).toBe('settled')
+    522|         expect(Number(attempt.actual_pln)).toBe(0.00015)
+       |                                            ^
+    523|         expect(attempt.error).toContain(message)
+    524|         expect(attempt.error).not.toContain('PRIVATE_SENTINEL')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/12]⎯
+
+ FAIL  tests/profile.integration.test.ts > profiles in isolated PostgreSQL and private document storage > keeps an unknown charge reserved and caps transient retries at two attempts
+Error: retryable
+ ❯ OpenAiAdapter.generate lib/ai/models/openai.ts:90:17
+     88|         if (error.message.includes('429') || error.message.includes('5…
+     89|           // Retryable errors - throw with specific message for retry …
+     90|           throw new Error('retryable')
+       |                 ^
+     91|         }
+     92|         // Non-retryable errors
+ ❯ executeAi lib/profile/ai.ts:376:29
+ ❯ tests/profile.integration.test.ts:538:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/12]⎯
+
+ FAIL  tests/profile.integration.test.ts > profiles in isolated PostgreSQL and private document storage > keeps missing or out-of-bounds usage reserved: null
+ FAIL  tests/profile.integration.test.ts > profiles in isolated PostgreSQL and private document storage > keeps missing or out-of-bounds usage reserved: { input_tokens: -1, output_tokens: 3 }
+ FAIL  tests/profile.integration.test.ts > profiles in isolated PostgreSQL and private document storage > keeps missing or out-of-bounds usage reserved: { input_tokens: 1001, output_tokens: 1 }
+AssertionError: expected 'settled' to be 'unknown' // Object.is equality
+
+Expected: "unknown"
+Received: "settled"
+
+ ❯ tests/profile.integration.test.ts:658:25
+    656|         )
+    657|       ).rows[0]
+    658|       expect(row.state).toBe('unknown')
+       |                         ^
+    659|       expect(row.actual_pln).toBeNull()
+    660|       expect(Number(row.reserved_pln)).toBeGreaterThan(0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/12]⎯
+
+
+ Test Files  2 failed | 27 passed (29)
+      Tests  11 failed | 543 passed (554)
+   Start at  15:14:14
+   Duration  7.48s (transform 257ms, setup 0ms, import 1.27s, tests 4.81s, environment 1ms)
