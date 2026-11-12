@@ -1,6 +1,26 @@
 # Oferty pracy
 
-Prywatne narzędzie do ofert pracy. Działa lokalny setup Nuxt/TypeScript/Nuxt UI, PostgreSQL i osobny worker pg-boss oraz import ofert PHP Senior z SOLID.Jobs. Dostępna jest lista i szczegóły pobranych ofert z filtrowaniem. Dostępne są również profil zawodowy, oceny ofert, profile firm i ręczny research podstawowy.
+Prywatne, lokalne narzędzie do pobierania i przeglądania ofert pracy, oceniania ich względem profilu zawodowego oraz prowadzenia researchu firm.
+
+## Technologie
+
+| Obszar | Technologie i zastosowanie |
+| --- | --- |
+| Aplikacja | Nuxt i TypeScript dla interfejsu oraz API. Widoki korzystają z Vue i Nuxt UI. Dane wejściowe walidujemy za pomocą Zod. |
+| Dane | PostgreSQL. Do zapytań używamy `pg` i parametryzowanego SQL, a schemat bazy zmieniamy przez `node-pg-migrate`. |
+| Zadania w tle | Osobny worker TypeScript wykonuje zadania z kolejki pg-boss działającej na PostgreSQL. |
+| Integracje źródeł | Wybrane kolektory ogłoszeń korzystają z Pythona. |
+| Integracje AI | Modele zewnętrzne wywołujemy przez OpenAI Responses API, bezpośrednio lub asynchronicznie przez Batch API. Lokalne wykonanie korzysta z Ollamy. Płatne wywołania korzystają ze wspólnego budżetu. |
+| Środowisko lokalne | Docker Compose uruchamia bazę, migracje, aplikację i workera. Zależności JavaScript instalujemy przez pnpm według `pnpm-lock.yaml`. |
+| Sprawdzanie kodu | ESLint sprawdza kod, Prettier formatuje, a Vitest uruchamia testy. Polecenie `pnpm check` łączy lint, kontrolę typów i testy. |
+
+Wersje i konfigurację środowiska określają [package.json](package.json), [Dockerfile](Dockerfile) i [compose.yaml](compose.yaml). Zobacz też [zależności i migracje](#zależności-i-migracje).
+
+## Jak rozwijamy projekt
+
+1. Wymagania produktu i decyzje projektowe opisujemy w dokumentacji. [Specyfikacje funkcjonalności](docs/specs/pierwsza-wersja/README.md)
+2. Zmianę wprowadzamy w module odpowiedzialnym za daną funkcjonalność. Korzystamy z istniejących narzędzi i zależności. [Mapa modułów](docs/architecture/moduly.md) · [Zasady architektury i pisania kodu](docs/architecture/moduly-i-zasady-kodu.md)
+3. Zmianę sprawdzamy w lokalnym środowisku Compose. Uruchamiamy `pnpm check` i kontrolę formatowania, a przy zmianach w bazie lub kolejce korzystamy również z testów integracyjnych. Szczegóły są w sekcjach [Uruchomienie](#uruchomienie) i [Polecenia developerskie](#polecenia-developerskie).
 
 ## Uruchomienie
 
@@ -82,7 +102,7 @@ Nie zapisuj sekretów w kodzie, obrazach, dokumentacji i publicznej konfiguracji
 
 [Architektura w modelu C4](docs/architecture/README.md) obejmuje kontekst systemu, kontenery, komponenty i kod przygotowania propozycji profilu.
 
-[PRD i szkice funkcjonalności](docs/specs/pierwsza-wersja/README.md). Requirements i solution-design dopracowujemy przed konkretną funkcjonalnością. Dla bieżącego setupu właściciel wybrał krótki zakres w Beads zamiast dodatkowej pary dokumentów. Kolejność: setup → pobieranie → lista → kolejne funkcjonalności.
+[PRD i szkice funkcjonalności](docs/specs/pierwsza-wersja/README.md). Requirements i solution-design dopracowujemy przed konkretną funkcjonalnością. Kolejność: setup → pobieranie → lista → kolejne funkcjonalności.
 
 ## Profil zawodowy
 

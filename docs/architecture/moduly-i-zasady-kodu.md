@@ -1,38 +1,102 @@
-# Moduły i zasady pisania kodu
-
-Moduły wyznaczamy według odpowiedzialności i operacji udostępnianych innym częściom aplikacji. Każdy moduł ma własny podkatalog w `modules/`. Tabela wskazuje docelowe ścieżki.
-
-## Mapa modułów
-
-| Moduł | Za co odpowiada | Co udostępnia innym | Katalog |
-| --- | --- | --- | --- |
-| Źródła ofert | Katalog źródeł, zakres pobierania, synchronizacja, dostępność oraz treść i rewizje ogłoszeń źródłowych | Zlecenie przebiegu, jego status, odczyt ogłoszenia z identyfikatorem rewizji | `modules/sources/` |
-| Oferty | Listę i szczegóły zapisanych ogłoszeń, filtry widoku, sortowanie i prezentację wynagrodzeń | Zapytania listy i szczegółów. Widok może dołączać podsumowania ocen | `modules/offers/` |
-| Profil zawodowy | Import CV, wydobyty tekst, szkic, zatwierdzone wersje, propozycję AI i jej zastosowanie | Zapis szkicu, zatwierdzenie, przygotowanie propozycji, odczyt zatwierdzonej wersji | `modules/profile/` |
-| Dopasowanie | Zlecenia ocen, reguły walidacji, rating i kompletność, wagi, historię oraz aktualność względem wejścia | Zlecenie oceny pojedynczej lub grupowej, zapis oceny ręcznej i odczyt wyników | `modules/matching/` |
-| Firmy | Profile firm, powiązania firm z ofertą i ich role, wersje researchu oraz dowody | Zapis profilu i powiązań, zlecenie researchu i odczyt raportów | `modules/companies/` |
-| AI | Konfigurację wykonawców, rezerwację i rozliczenie budżetu oraz stan wykonania | Operacje na budżecie i stanie wykonania oraz wynik modelu dla modułu zlecającego | `modules/ai/` |
+# Zasady architektury i pisania kodu
 
 Punkty wejścia aplikacji przekazują polecenia i zapytania do modułów przez ich publiczne operacje.
 
 ## Reguły zależności
 
-1. **Jeden właściciel reguł i zapisów.** Każdy moduł publikuje własne wyniki i pilnuje swoich reguł. Dopasowanie pobiera zatwierdzoną wersję profilu i rewizję ogłoszenia. Zapis oceny i jej historii należy do Dopasowania.
-2. **Odczyty można składać.** Oferty mogą dołączyć oceny do listy ogłoszeń. Regułę aktualności oceny definiuje Dopasowanie, które pobiera wejście do oceny ze Źródeł ofert i Profilu zawodowego.
-3. **Interfejs modułu opisuje przypadek użycia.** Wywołujący przekazuje identyfikator i dane polecenia, otrzymuje wynik albo znany stan błędu. Moduł odpowiada za kolejność walidacji, zapisu i zlecenia pracy.
-4. **Dostawca wykonania jest wymienny.** Adapter tłumaczy żądanie i wynik dostawcy. Dopasowanie odpowiada za dowody, historię i warunki publikacji, a AI za wspólny budżet. Stan wykonania, koszt i ważność treści są rozpatrywane osobno. Koszt można rozliczyć również po odrzuceniu treści oceny.
-5. **Wspólne mechanizmy mają neutralnego właściciela.** Mechanizm transakcji jest dostępny dla wszystkich modułów. Moduł wykonujący operację decyduje, które zapisy obejmuje transakcja.
+1. **Tylko moduł będący właścicielem danych wykonuje operacje na tych danych.** Inne moduły, API, CLI i worker przekazują zapytanie lub polecenie przez publiczny interfejs właściciela. Właściciel odczytuje dane, sprawdza reguły, wykonuje operację i zwraca wynik albo zdefiniowany błąd. Zapytania do tabel, w tym złączenia, repozytoria, adaptery i schemat zapisu są wewnętrzne. W TypeScripcie publiczne operacje i ich kontrakty eksportujemy jawnie z `modules/<moduł>/index.ts`.
+
+   - **Operacje są domyślnie wewnętrzne.** Przed dodaniem publicznej operacji wskazujemy konkretnego klienta spoza modułu i przypadek użycia, którego istniejący kontrakt nie obsługuje. Operacja wyraża cel klienta i udostępnia tylko potrzebne dane. Dopasowanie może odczytać aktywną zatwierdzoną wersję profilu wraz z jej identyfikatorem przez publiczny serwis Profilu. [Kontrakt Profilu zawodowego](../../modules/profile/README.md#publiczne-operacje)
+   - **Każda publiczna operacja chroni niezmienniki modułu.** Moduł sprawdza dopuszczalność polecenia w aktualnym stanie i zabezpiecza sprawdzenie oraz zapis przed równoległą zmianą. Gdy polecenie opiera się na stanie odczytanym wcześniej przez klienta, podaje oczekiwaną rewizję. Jeśli warunki przestały być spełnione, moduł zwraca konflikt bez częściowego zapisu. Przy zatwierdzeniu profilu Profil sprawdza rewizję szkicu, tworzy zatwierdzoną wersję i ustawia ją jako aktywną w jednej transakcji.
+
+2. **Widoki składają dane przez publiczne operacje odczytu.** Każdy moduł udostępnia dane potrzebne do konkretnego widoku i sam wylicza wartości wynikające z jego reguł. Widok łączy odpowiedzi po identyfikatorach oraz odpowiada za prezentację, filtrowanie i sortowanie. Lista Ofert przekazuje identyfikatory ogłoszeń do zbiorczego odczytu Dopasowania. Dopasowanie zwraca rating, kompletność i aktualność oceny, a Oferty korzystają z ratingu przed sortowaniem i paginacją.
+
+3. **Przypadek użycia wyznacza granicę transakcji.** Operacja realizująca przypadek użycia określa, które zmiany muszą zostać zatwierdzone albo wycofane razem, i koordynuje transakcję. Jeśli uczestniczy w niej kilka modułów, każdy zapisuje własne dane przez publiczną operację w tym samym kontekście transakcji. Mechanizm transakcji należy do wspólnej infrastruktury. [Martin Fowler, Service Layer](https://martinfowler.com/eaaCatalog/serviceLayer.html) · [Unit of Work](https://martinfowler.com/eaaCatalog/unitOfWork.html)
+
+## Reguły struktury kodu
+
+### Katalog modułu
+
+Najmniejszy moduł ma opis odpowiedzialności, publiczne wejście i plik z implementacją operacji. Nazwa pliku mówi, co można zrobić, np. `read-active-profile.ts`.
+
+```text
+modules/<moduł>/
+├── README.md
+├── index.ts
+└── <nazwa-operacji>.ts
+```
+
+- **`README.md`** opisuje główny cel modułu i dane, za które odpowiada. Istotne warunki użycia publicznych operacji opisujemy przy ich kontraktach.
+- **`index.ts`** jawnie eksportuje operacje i typy potrzebne klientom modułu. Klienci importują stąd, a kod wewnętrzny korzysta bezpośrednio z plików implementacji. Typy wejścia i wyniku trzymamy przy operacji lub w osobnym pliku, jeśli korzysta z nich kilka operacji.
+- **Plik operacji** prowadzi przypadek użycia od przyjęcia polecenia lub zapytania do wyniku. Określa też, które zmiany muszą zostać zapisane razem. Powiązane operacje mogą współdzielić plik nazwany według ich odpowiedzialności.
+
+Podkatalog dodajemy, gdy jest co w nim zebrać i można jasno nazwać jego odpowiedzialność.
+
+| Katalog | Kiedy pomaga | Przykład |
+| --- | --- | --- |
+| `operations/` | Moduł ma kilka przypadków użycia i warto zebrać ich punkty wejścia w jednym miejscu. | `confirm-profile.ts`, `apply-cv-proposal.ts` |
+| `domain/` | Moduł ma reguły, które można wyrazić na podstawie przekazanych danych, bez odczytu bazy lub wywołania usługi. | Obliczenie ratingu z ocen i wag, sprawdzenie poprawności widełek wynagrodzenia |
+
+`infrastructure/` zawiera kod, który łączy operacje modułu z bazą danych, usługami zewnętrznymi i mechanizmami uruchamiania. Dodajemy podkatalogi odpowiadające temu, czego moduł używa.
+
+```text
+infrastructure/
+├── persistence/   # zapytania, zapis i mapowanie danych z bazy
+├── adapters/      # integracje i implementacje portów
+├── http/          # kontrolery HTTP
+├── worker/        # obsługa zadań z kolejki
+└── cli/           # polecenia CLI
+```
+
+Operacja łączy odczyt, reguły domeny i zapis. Reguły domeny pracują na przekazanych danych. Kod w `persistence/` zna schemat danych własnego modułu. Adapter tłumaczy dane na kontrakt zdefiniowany przy operacji, która z niego korzysta.
+
+Kontroler, handler workera lub polecenie CLI przekazuje dane do publicznej operacji modułu i obsługuje jej wynik. Gdy kilka modułów zapisuje dane w jednej transakcji, operacja koordynująca przekazuje wspólny kontekst ich publicznym operacjom. Każdy moduł wykonuje własny zapis.
+
+### Operacja modułu prowadzi cały przypadek użycia
+
+Publiczna operacja odpowiada za pełny przebieg konkretnego polecenia. Odczytuje potrzebne dane, sprawdza warunki, wykonuje zmianę i zwraca wynik. Punkt wejścia aplikacji tłumaczy żądanie na polecenie i wynik na odpowiedź.
+
+Przy zastosowaniu propozycji z CV trasa przekazuje wybór pozycji i oczekiwaną rewizję szkicu. Profil odczytuje propozycję, sprawdza rewizje i zapisuje szkic w ramach jednej operacji. Dzięki temu każdy punkt wejścia stosuje te same reguły. [Service Layer](https://martinfowler.com/eaaCatalog/serviceLayer.html)
+
+### Wymienni wykonawcy korzystają ze wspólnego kontraktu
+
+Port opisuje, czego potrzebuje przypadek użycia. Adapter realizuje ten kontrakt przy pomocy konkretnej technologii. Implementację adaptera wybieramy w miejscu, które składa zależności. Kod przypadku użycia korzysta z kontraktu portu.
+
+W Źródłach port konektora przyjmuje zakres i dostarcza ogłoszenia oraz informację o kompletności pobrania. Adapter obsługuje szczegóły portalu, a operacja wykonania przebiegu używa tego samego portu do pobrania danych i ustalenia końcowego stanu. [Ports and Adapters](https://alistair.cockburn.us/hexagonal-architecture) · [The Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
+
+### Dane zewnętrzne tłumaczymy przy integracji
+
+Warstwa antykorupcyjna zamienia model zewnętrznego systemu na pojęcia używane w aplikacji. Przy integracji portalu tłumaczenie należy do konektora. Kontrakt Źródeł określa znaczenie pól, a odbiorcy korzystają z tych znaczeń przy stosowaniu własnych reguł.
+
+Jeśli portal odróżnia widełki pracodawcy od własnego szacunku, konektor przekazuje kwotę wraz z pochodzeniem. Dopasowanie stosuje jedną regułę porównania wynagrodzenia na podstawie pochodzenia kwoty. Zmiana pola w odpowiedzi portalu dotyczy wtedy kodu tłumaczenia w konektorze. [Eric Evans, Domain-Driven Design Reference, s. 34](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
+
+### Obiekt wartości grupuje dane, które mają wspólne znaczenie
+
+Obiekt wartości reprezentuje pojęcie przez jego dane i reguły. Dwie takie wartości są równe, jeśli mają te same istotne cechy. Poprawność sprawdzamy przy tworzeniu wartości, a zmiana tworzy nową wartość.
+
+Widełki wynagrodzenia obejmują granice kwoty, walutę, okres, podstawę i rodzaj kontraktu. Reguła tworzenia widełek sprawdza między innymi kolejność granic, jeśli podano obie. Kod porównujący wynagrodzenia otrzymuje całe widełki, dzięki czemu może sprawdzić ich porównywalność. [Eric Evans, Domain-Driven Design Reference, s. 12](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
+
+### Agregat chroni stan, który musi zmieniać się razem
+
+Agregat grupuje dane, dla których określone warunki muszą być spełnione po każdej zmianie. Zmiany przechodzą przez główny obiekt agregatu, który pilnuje tych warunków. Zakres agregatu wyznacza stan potrzebny do sprawdzenia reguł i wykonania zmiany. Pełną historię można pobierać osobno.
+
+Przy zatwierdzaniu profilu nowa wersja i wskazanie jej jako aktywnej są częścią jednej zmiany. Operacja zatwierdzenia sprawdza oczekiwaną rewizję szkicu i zapisuje oba elementy atomowo. [Eric Evans, Domain-Driven Design Reference, s. 16](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
+
+### Reguły obliczeniowe oddzielamy od odczytu i zapisu
+
+Funkcja obliczeniowa otrzymuje dane potrzebne do podjęcia decyzji i zwraca wynik. Kod realizujący przypadek użycia pobiera wejście, wywołuje tę funkcję i decyduje o zapisie. To podział znany jako funkcyjny rdzeń i imperatywna otoczka.
+
+Funkcja licząca rating przyjmuje oceny kryteriów i wagi. Zwraca rating i kompletność, które można sprawdzić na przekazanych danych. Operacja zapisująca ocenę odpowiada za odczyt wag i utrwalenie wyniku. [Functional Core, Imperative Shell](https://www.destroyallsoftware.com/screencasts/catalog/functional-core-imperative-shell)
+
+### Funkcja opisuje kroki na jednym poziomie szczegółowości
+
+W funkcji prowadzącej przypadek użycia widać kolejność działań istotnych dla jego wyniku. Szczegół wydzielamy, gdy nazwana operacja pozwala zrozumieć krok bez czytania jej implementacji.
+
+Zatwierdzenie profilu można opisać jako sprawdzenie rewizji, zapis zatwierdzonej wersji i jej aktywację. Instrukcje SQL i mapowanie wierszy należą do kodu wykonującego te kroki. [Clean Code, rozdział Functions](https://www.informit.com/store/clean-code-a-handbook-of-agile-software-craftsmanship-9780132639408)
 
 ## Zasady pisania kodu
 
 - **Nazwy opisują operację i przedmiot.** `enqueueMatching`, `publishAiRating` i `readRatings` wskazują, które wywołanie zleca pracę, zapisuje wynik lub czyta historię. Nazwy typów i statusów opieramy na pojęciach ze [słownika domeny](../../GLOSSARY.md).
 - **Dane wejściowe walidujemy przy wejściu.** Trasa sprawdza kształt żądania HTTP, adapter sprawdza odpowiedź zewnętrzną, moduł pilnuje reguł domeny. Po walidacji przekazujemy typowany wynik. Na przykład poprawny JSON oceny nadal wymaga sprawdzenia dowodów względem zapisanej wersji profilu i rewizji ogłoszenia.
-- **Reguły obliczeniowe zwracają wynik.** Walidację oceny, wyliczanie ratingu czy dopasowanie wynagrodzenia da się wywołać na danych wejściowych. Zapis, połączenie z dostawcą i publikacja wyniku mają własne, widoczne miejsce w przepływie.
-- **Operacja zapisu jest właścicielem transakcji.** Określ, które zmiany muszą zostać zapisane razem. Zadanie workera może zostać dostarczone ponownie. Przed publikacją sprawdź tożsamość operacji oraz wersję wejścia, a przed ponowieniem płatnego żądania uwzględnij stan poprzedniej próby.
-- **Stany wymagające innej reakcji rozróżniamy jawnie.** Brak budżetu, błąd walidacji i niepewny wynik wysyłki prowadzą do różnych reakcji. Zapisujemy potrzebne identyfikatory i stan. Komunikaty oraz logi pomijają dane kontaktowe z CV i sekrety.
-- **Używamy istniejących narzędzi i zależności.** TypeScript, walidacja Zod przy wejściach, SQL z parametrami, ESLint i Prettier. Nową warstwę uzasadnia reguła, którą może ukryć, albo rzeczywista różnica między wykonawcami.
-- **Sprawdzamy zachowanie przez operację używaną przez klienta modułu.** Dla zmiany w Dopasowaniu istotne są ponowne dostarczenie, wynik dla starszej rewizji, częściowa porażka grupy oraz rozliczenie przy odrzuconej treści. Istniejące testy pojedynczej i grupowej oceny stanowią punkt wyjścia. [Ocena pojedyncza](../../tests/matching.integration.test.ts) · [Ocena grupowa](../../tests/matching-groups.integration.test.ts)
-
-## Pierwsza zmiana w kodzie
-
-Zacząć od oddzielenia wykonania Batch od walidacji i publikacji oceny. Dziś `prepareMatching` od razu buduje żądanie OpenAI, a `applyMatchingLine` łączy obsługę odpowiedzi Batch, koszt i publikację. Ścieżki pojedyncza i grupowa już współdzielą `applyMatchingLine`. Istniejące zadanie „Oddzielić oceny i grupy zleceń od OpenAI Batch” obejmuje ten krok. Można je otworzyć lokalnie poleceniem `bd show oferty-pracy-334.4`. [Przygotowanie zlecenia](../../lib/matching/store.ts#L76) · [Odbiór wyniku](../../lib/matching/store.ts#L196) · [Wspólne wywołanie z grupy](../../lib/matching/groups.ts#L444)
+- **Diagnostyka zawiera tylko dane potrzebne do ustalenia, co się stało.** Zapisujemy stan, przyczynę i identyfikatory pozwalające powiązać zdarzenia. Komunikaty diagnostyczne i logi pomijają dane wrażliwe i sekrety. [OWASP, Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html#data-to-exclude)
+- **Nowa warstwa ma określoną odpowiedzialność.** Wydzielamy ją, jeśli ukrywa regułę lub szczegóły wykonania, które mogą się różnić między wykonawcami.
