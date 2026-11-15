@@ -49,6 +49,8 @@ interface Issue {
   issue_type?: string
   labels?: string[]
   metadata?: Record<string, string>
+  parent?: string | null
+  status?: string
 }
 
 interface AgentResult {
@@ -142,6 +144,41 @@ function candidates(): Issue[] {
       !issue.labels?.includes('ready-for-human') &&
       !issue.labels?.includes('needs-info'),
   )
+}
+
+/** The nearest epic above an issue, or null for a standalone task. */
+function epicOf(issue: Issue): Issue | null {
+  let parentId = issue.parent ?? null
+  while (parentId) {
+    const parent = bdShow(parentId)
+    if (parent.issue_type === 'epic') return parent
+    parentId = parent.parent ?? null
+  }
+  return null
+}
+
+/**
+ * Epic-level hand-off: a task in an epic starts only when the epic carries
+ * ready-for-agent and none of its open children is still in preparation.
+ * Returns why the task has to wait, or null when it may start.
+ */
+function epicBlocker(issue: Issue): string | null {
+  const epic = epicOf(issue)
+  if (!epic) return null
+  if (!epic.labels?.includes('ready-for-agent')) return `epic ${epic.id} has not been handed off (no ready-for-agent)`
+  const children = JSON.parse(bd(['list', '--parent', epic.id, '--all', '--json', '--limit', '0'])) as Issue[]
+  const unprepared = children.filter(
+    (child) =>
+      child.issue_type !== 'epic' &&
+      child.status !== 'closed' &&
+      child.status !== 'deferred' &&
+      !child.labels?.includes('ready-for-human') &&
+      (!child.labels?.includes('ready-for-agent') || child.labels.includes('needs-info')),
+  )
+  if (unprepared.length) {
+    return `epic ${epic.id} still has tasks in preparation: ${unprepared.map((c) => c.id).join(', ')}`
+  }
+  return null
 }
 
 /** Deterministic part of the readiness checklist. Returns the problems found. */
@@ -399,6 +436,11 @@ function dryRun(): void {
   console.log(`Candidates: ${list.length}`)
   for (const summary of list) {
     const issue = bdShow(summary.id)
+    const waiting = epicBlocker(issue)
+    if (waiting) {
+      console.log(`- ${issue.id} ${issue.title}\n  waits: ${waiting}`)
+      continue
+    }
     const problems = readinessProblems(issue)
     console.log(`- ${issue.id} ${issue.title}\n  ${problems.length ? `would return as needs-info: ${problems.join('; ')}` : 'would implement'}`)
   }
@@ -418,6 +460,11 @@ async function main(): Promise<void> {
       ensureImage()
       for (const summary of candidates()) {
         const issue = bdShow(summary.id)
+        const waiting = epicBlocker(issue)
+        if (waiting) {
+          log(`${issue.id}: waits: ${waiting}`)
+          continue
+        }
         const problems = readinessProblems(issue)
         if (problems.length === 0) {
           picked = issue

@@ -40,6 +40,12 @@ One bd task (type `task`, `bug` or `feature`) per slice, a child of its epic. Th
 
 A task leaves preparation with `ready-for-agent` only. Mark a task `ready-for-human` when its work needs the owner during implementation, for example a manual product check or access only the owner has.
 
+## Epic hand-off
+
+An epic is handed off as a whole. Apply `ready-for-agent` to the epic only when every open child task carries `ready-for-agent` or `ready-for-human`; closed and deferred children do not count. Until then the runner takes none of the epic's tasks, even those already marked ready, so `master` never holds part of an epic whose remaining work may still change its decisions.
+
+The runner checks this before each task: the nearest epic above the task carries `ready-for-agent`, and none of the epic's open children is unlabelled or `needs-info`. A task the runner returns as `needs-info` therefore pauses the rest of its epic until preparation resolves it. A `ready-for-human` task does not hold the epic back; its dependants wait in bd until the owner closes it. Tasks outside any epic are handed off one by one.
+
 ## Readiness checklist
 
 Before applying `ready-for-agent`:
@@ -58,7 +64,7 @@ Every agent runs in a Sandcastle `docker()` sandbox built from `.sandcastle/Dock
 
 For each task, in order:
 
-1. Pick the first task from `bd ready` with `ready-for-agent` and neither `ready-for-human` nor `needs-info`; claim it. Rebuild the sandbox image first when `pnpm-lock.yaml` or `.sandcastle/Dockerfile` changed on `master`.
+1. Pick the first task from `bd ready` with `ready-for-agent`, neither `ready-for-human` nor `needs-info`, and an epic that passes the epic hand-off check; claim it. Rebuild the sandbox image first when `pnpm-lock.yaml` or `.sandcastle/Dockerfile` changed on `master`.
 2. Create a sandbox on branch `agent/<task-id>` from `master`.
 3. Run the implementing agent (`claude-opus-5-5`, effort `medium` by default) with the task and its documents. The agent writes a result file and commits on its branch; bd, merging and `master` belong to the runner.
 4. Check that `master` did not move during the run (the sandbox can write the shared git data); restore it and stop if it did. Check the result file, a clean worktree and at least one commit, then rebase the branch on `master`.
