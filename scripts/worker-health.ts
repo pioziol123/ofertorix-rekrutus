@@ -1,5 +1,5 @@
-import { createPool } from '../lib/db.ts'
-const pool = createPool()
+import { closePool, getPool } from '../lib/db.ts'
+const pool = getPool()
 try {
   const { rowCount } = await pool.query(`SELECT service FROM service_heartbeats
     WHERE service = 'worker' AND last_seen > now() - interval '30 seconds'`)
@@ -7,5 +7,5 @@ try {
 } catch {
   process.exitCode = 1
 } finally {
-  await pool.end()
+  await closePool()
 }

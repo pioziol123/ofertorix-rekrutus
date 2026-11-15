@@ -1,10 +1,8 @@
-import { createPool } from '../../../lib/db'
-
-const pool = createPool()
+import { db } from '../../../lib/db'
 
 export default defineEventHandler(async () => {
   try {
-    await pool.query('SELECT 1 FROM system_checks LIMIT 1')
+    await db().query('SELECT 1 FROM system_checks LIMIT 1')
     return { status: 'ready' }
   } catch {
     throw createError({ statusCode: 503, statusMessage: 'Service not ready' })

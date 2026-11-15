@@ -1,23 +1,28 @@
 import withNuxt from './.nuxt/eslint.config.mjs'
 
-export default withNuxt({
-  rules: {
-    'vue/html-self-closing': [
-      'warn',
-      {
-        html: { void: 'any', normal: 'always', component: 'always' },
-        svg: 'always',
-        math: 'always',
-      },
+export default withNuxt(
+  {
+    rules: {
+      'vue/html-self-closing': [
+        'warn',
+        {
+          html: { void: 'any', normal: 'always', component: 'always' },
+          svg: 'always',
+          math: 'always',
+        },
+      ],
+    },
+  },
+  {
+    // A config object holding only `ignores` applies them globally.
+    ignores: [
+      'docs/**',
+      '.agents/**',
+      '.beads/**',
+      '.claude/**',
+      '.codex/**',
+      '.cursor/**',
+      '.sandcastle/**',
     ],
   },
-  ignores: [
-    'docs/**',
-    '.agents/**',
-    '.beads/**',
-    '.claude/**',
-    '.codex/**',
-    '.cursor/**',
-    '.sandcastle/**',
-  ],
-})
+)

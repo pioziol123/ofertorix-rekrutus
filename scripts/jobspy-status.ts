@@ -1,10 +1,10 @@
-import { createPool } from '../lib/db.ts'
+import { closePool, getPool } from '../lib/db.ts'
 import { parseJobspySource } from '../lib/sources/jobspy-catalog.ts'
 import {
   jobspyCatalogStatus,
   jobspyStatus,
 } from '../lib/sources/jobspy-sync.ts'
-const pool = createPool()
+const pool = getPool()
 try {
   if (process.argv.length > 4) throw new Error('Invalid arguments')
   console.info(
@@ -24,5 +24,5 @@ try {
   console.error('Could not read JobSpy status')
   process.exitCode = 1
 } finally {
-  await pool.end()
+  await closePool()
 }

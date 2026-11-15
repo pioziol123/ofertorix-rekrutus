@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout } from 'node:timers/promises'
-import { createPool } from '../lib/db.ts'
+import { closePool, getPool } from '../lib/db.ts'
 import { createBoss, smokeQueue } from '../lib/queue.ts'
 
-const pool = createPool()
+const pool = getPool()
 const boss = createBoss()
 const checkId = randomUUID()
 try {
@@ -27,5 +27,5 @@ try {
   console.info(`Smoke job completed: ${checkId}`)
 } finally {
   await boss.stop()
-  await pool.end()
+  await closePool()
 }

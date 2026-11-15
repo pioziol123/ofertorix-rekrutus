@@ -1,11 +1,11 @@
 import { setTimeout as delay } from 'node:timers/promises'
-import { createPool } from '../lib/db.ts'
+import { closePool, getPool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
 import { enqueueJobspy, jobspyStatus } from '../lib/sources/jobspy-sync.ts'
 import { parseJobspySource } from '../lib/sources/jobspy-catalog.ts'
 import { jobspyEnabled } from '../lib/sources/jobspy.ts'
 
-const pool = createPool()
+const pool = getPool()
 const boss = createBoss()
 boss.on('error', () => {
   console.error('JobSpy queue error')
@@ -55,5 +55,5 @@ try {
   process.exitCode = 1
 } finally {
   await boss.stop()
-  await pool.end()
+  await closePool()
 }

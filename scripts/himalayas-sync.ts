@@ -1,7 +1,7 @@
-import { createPool } from '../lib/db.ts'
+import { closePool, getPool } from '../lib/db.ts'
 import { syncHimalayas } from '../lib/sources/himalayas-sync.ts'
 
-const pool = createPool()
+const pool = getPool()
 try {
   if (process.argv.length > 2) throw new Error('Unexpected arguments')
   const result = await syncHimalayas(pool)
@@ -11,5 +11,5 @@ try {
   console.error('Himalayas pilot failed; inspect source run status')
   process.exitCode = 1
 } finally {
-  await pool.end()
+  await closePool()
 }

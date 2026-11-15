@@ -1,9 +1,9 @@
 import { setTimeout as delay } from 'node:timers/promises'
-import { createPool } from '../lib/db.ts'
+import { closePool, getPool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
 import { enqueueSync, syncStatus } from '../lib/sources/sync.ts'
 
-const pool = createPool()
+const pool = getPool()
 const boss = createBoss()
 boss.on('error', () => {
   console.error('Queue connection error')
@@ -41,5 +41,5 @@ try {
   process.exitCode = 1
 } finally {
   await boss.stop()
-  await pool.end()
+  await closePool()
 }

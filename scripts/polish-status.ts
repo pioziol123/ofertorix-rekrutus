@@ -1,10 +1,10 @@
-import { createPool } from '../lib/db.ts'
+import { closePool, getPool } from '../lib/db.ts'
 import { sourceSchema } from '../lib/sources/polish.ts'
 import {
   polishCatalogStatus,
   polishStatus,
 } from '../lib/sources/polish-sync.ts'
-const pool = createPool()
+const pool = getPool()
 try {
   if (process.argv.length > 4) throw new Error('Invalid arguments')
   console.info(
@@ -24,5 +24,5 @@ try {
   console.error('Could not read source status')
   process.exitCode = 1
 } finally {
-  await pool.end()
+  await closePool()
 }

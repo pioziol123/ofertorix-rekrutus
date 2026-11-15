@@ -58,7 +58,7 @@ infrastructure/
 
 Operacja łączy odczyt, reguły domeny i zapis. Reguły domeny pracują na przekazanych danych. Kod w `persistence/` zna schemat danych własnego modułu. Adapter tłumaczy dane na kontrakt zdefiniowany przy operacji, która z niego korzysta.
 
-Kontroler, handler workera lub polecenie CLI przekazuje dane do publicznej operacji modułu i obsługuje jej wynik. Gdy kilka modułów zapisuje dane w jednej transakcji, operacja koordynująca przekazuje wspólny kontekst ich publicznym operacjom. Każdy moduł wykonuje własny zapis.
+Kontroler, handler workera lub polecenie CLI przekazuje dane do publicznej operacji modułu i obsługuje jej wynik. Gdy kilka modułów zapisuje dane w jednej transakcji, operacja koordynująca wywołuje ich publiczne operacje wewnątrz wspólnej operacji transakcyjnej. Kontekst transakcji przechodzi niejawnie, a każdy moduł wykonuje własny zapis. [Dostęp do bazy danych](#dostęp-do-bazy-danych)
 
 ### Operacja modułu prowadzi cały przypadek użycia
 
@@ -101,6 +101,23 @@ Funkcja licząca rating przyjmuje oceny kryteriów i wagi. Zwraca rating i kompl
 W funkcji prowadzącej przypadek użycia widać kolejność działań istotnych dla jego wyniku. Szczegół wydzielamy, gdy nazwana operacja pozwala zrozumieć krok bez czytania jej implementacji.
 
 Zatwierdzenie profilu można opisać jako sprawdzenie rewizji, zapis zatwierdzonej wersji i jej aktywację. Instrukcje SQL i mapowanie wierszy należą do kodu wykonującego te kroki. [Clean Code, rozdział Functions](https://www.informit.com/store/clean-code-a-handbook-of-agile-software-craftsmanship-9780132639408)
+
+## Dostęp do bazy danych
+
+Zasady obowiązują cały kod. Kod tworzony lub przenoszony po ich wprowadzeniu stosuje je od razu. Starsze zapytania, pomocnicze transakcje modułów i blokady sesyjne zostają do czasu zmiany danego kodu; przenosi je zadanie, które ten kod zmienia. Mechanizm należy do wspólnej infrastruktury poza modułami: [dostęp do bazy](../../lib/db.ts).
+
+1. **Pula.** Połączeniami zarządza pula `pg`, jedna na proces: w aplikacji webowej, w workerze i w każdym skrypcie CLI. Zapytanie poza transakcją pobiera połączenie na czas zapytania, transakcja na czas swojego trwania. Pula ma limit 5 połączeń i powstaje leniwie z `DATABASE_URL`. Test może ją podmienić przed pierwszym użyciem, np. na pulę izolowanego schematu; podmiana w trakcie transakcji zgłasza wyjątek. Zasada zastępuje wcześniejszą jedną sesję na proces.
+2. **Akcesor.** Kod modułu wykonuje zapytania przez akcesor wykonawcy zapytań (`db()`). W transakcji akcesor zwraca połączenie tej transakcji, a poza nią pulę. Kontekst transakcji przechodzi przez `AsyncLocalStorage`, więc sygnatury operacji domenowych nie zawierają typu połączenia, a punkt wejścia niczego nie przygotowuje. Kod modułu nie zależy od tego, czy działa w ramach większej operacji.
+3. **Operacja transakcyjna.** Granicę transakcji wyznacza wspólna operacja transakcyjna (`transaction(fn)`), która zwraca wynik funkcji. Poza transakcją pobiera połączenie, wysyła `BEGIN`, wykonuje funkcję w kontekście tego połączenia i wysyła `COMMIT`. Przy błędzie wysyła `ROLLBACK` i zgłasza pierwotny błąd; błąd samego `ROLLBACK` go nie zastępuje. Połączenie zawsze wraca do puli, a połączenie uszkodzone jest zwalniane z błędem, żeby pula je odrzuciła. W trwającej transakcji operacja wykonuje funkcję bez `BEGIN` i `COMMIT`, więc operacja modułu wywołana samodzielnie sama zatwierdza zmiany, a wywołana w trakcie innej staje się jej częścią. Równoległe operacje spoza transakcji mają osobne połączenia i są od siebie niezależne. Kod modułów nie pobiera połączeń z puli samodzielnie, nie trzyma ich między operacjami i nie wysyła ręcznie `BEGIN`, `COMMIT` ani `ROLLBACK`.
+4. **Błąd wycofuje całość.** Operacja przypadku użycia zapisuje się w całości albo wcale: błąd w dowolnym kroku wycofuje zapisy wszystkich modułów, także kroków zakończonych pomyślnie. Pracy nie kontynuuje się po błędzie SQL w tej samej transakcji. SAVEPOINT nie jest stosowany.
+5. **Repozytoria.** Dostęp do danych modułu realizują repozytoria w `infrastructure/persistence/` modułu, korzystające z akcesora. Repozytorium nie otwiera połączeń ani transakcji i nie jest częścią publicznego wejścia modułu. Przypada jedno na agregat, z metodami wynikającymi z przypadków użycia, bez ogólnych operacji CRUD dla każdej tabeli. Odczyty listowe z filtrowaniem i paginacją mogą mieć dedykowane zapytania.
+6. **Bez blokad wierszy dla wywołującego.** Publiczne operacje odczytu nie zakładają blokad wierszy na rzecz wywołującego, więc odczyt danych innego modułu nie blokuje ich zmiany. Przy publikacji oceny dopasowania akceptujemy, że profil lub ogłoszenie może zmienić się między sprawdzeniem aktualności oceny a jej zapisem: okno jest bardzo krótkie, a właściciel może ponownie zlecić ocenę (decyzja właściciela). Blokady wierszy innego modułu wymagają osobnej decyzji.
+7. **Kolejka w transakcji.** Zlecenie pracy w tle jest częścią operacji, która je zleca. Wspólna infrastruktura udostępnia adapter wykonawcy zapytań dla opcji `db` pg-boss (`queueDatabase`). Każde jego wywołanie przechodzi przez akcesor, więc zadanie wysłane w transakcji należy do niej: wycofanie operacji wycofuje zlecenie.
+8. **Bez blokad sesyjnych.** Blokady sesyjne PostgreSQL (`pg_advisory_lock`, `pg_try_advisory_lock`, `pg_advisory_unlock`) wymagają stałego połączenia, więc kod przenoszony na wspólny mechanizm z nich rezygnuje. Blokady transakcyjne (`pg_advisory_xact_lock`) są dopuszczalne. Ochrona przed podwójnym podjęciem tej samej pracy pozostaje jako warunkowa zmiana stanu w bazie. Rezygnujemy z mechanizmu, który wykrywał przerwanie pracy procesu w tle (decyzja właściciela); synchronizacja źródeł odzyskuje tę ochronę przez kolejkę, pozostałe zadania w tle w osobnym zadaniu.
+9. **Niezależność od biblioteki.** Implementacja korzysta z `pg`, a akcesor ma metodę `query` zgodną z `pg`, którą spełniają pula i połączenie. Późniejsza migracja na typowany konstruktor zapytań (rekomendacja: Kysely) nie zmienia sygnatur operacji ani repozytoriów.
+10. **Błędy nie wyczerpują zasobów.** Po dowolnej liczbie nieudanych operacji połączenia wracają do puli albo są odrzucane, a system obsługuje kolejne operacje.
+
+Testy na bazie działają na izolowanym schemacie PostgreSQL i pg-boss, a wspólną pulę ustawiają na pulę izolowanego schematu przed pierwszym użyciem. [Test mechanizmu](../../tests/db.integration.test.ts)
 
 ## Zasady pisania kodu
 

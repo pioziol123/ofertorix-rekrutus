@@ -1,10 +1,10 @@
 import { parseArgs } from 'node:util'
 import { setTimeout as delay } from 'node:timers/promises'
-import { createPool } from '../lib/db.ts'
+import { closePool, getPool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
 import { polishQuery } from '../lib/sources/polish.ts'
 import { enqueuePolish, polishStatus } from '../lib/sources/polish-sync.ts'
-const pool = createPool(),
+const pool = getPool(),
   boss = createBoss()
 boss.on('error', () => console.error('Source queue unavailable'))
 try {
@@ -59,5 +59,5 @@ try {
   process.exitCode = 1
 } finally {
   await boss.stop()
-  await pool.end()
+  await closePool()
 }

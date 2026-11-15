@@ -8,7 +8,7 @@ import {
   executeMatchingGroup,
   recoverMatchingGroups,
 } from '../lib/matching/groups.ts'
-import { createPool } from '../lib/db.ts'
+import { closePool, getPool } from '../lib/db.ts'
 import { createBoss, smokeQueue } from '../lib/queue.ts'
 
 import { importQueue, scheduleDay } from '../lib/sources/solid.ts'
@@ -33,7 +33,7 @@ import {
   recoverMatching,
 } from '../lib/matching/store.ts'
 
-const pool = createPool()
+const pool = getPool()
 const boss = createBoss()
 let stopping = false
 const heartbeat = async () => {
@@ -133,7 +133,7 @@ async function shutdown() {
   clearInterval(timer)
   clearInterval(scheduleTimer)
   await boss.stop()
-  await pool.end()
+  await closePool()
 }
 process.on('SIGTERM', () => {
   void shutdown()
