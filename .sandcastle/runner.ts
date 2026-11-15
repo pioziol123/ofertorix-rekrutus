@@ -167,7 +167,20 @@ function epicBlocker(issue: Issue): string | null {
   const epic = epicOf(issue)
   if (!epic) return null
   if (!epic.labels?.includes('ready-for-agent')) return `epic ${epic.id} has not been handed off (no ready-for-agent)`
-  const children = JSON.parse(bd(['list', '--parent', epic.id, '--all', '--json', '--limit', '0'])) as Issue[]
+  // bd list --parent also matches ids by their dotted prefix, so a task moved out of the
+  // epic would still show up. Membership follows the parent field down from the epic.
+  const listed = JSON.parse(bd(['list', '--parent', epic.id, '--all', '--json', '--limit', '0'])) as Issue[]
+  const members = new Set([epic.id])
+  for (let grew = true; grew; ) {
+    grew = false
+    for (const issue of listed) {
+      if (issue.parent && members.has(issue.parent) && !members.has(issue.id)) {
+        members.add(issue.id)
+        grew = true
+      }
+    }
+  }
+  const children = listed.filter((issue) => issue.id !== epic.id && members.has(issue.id))
   const unprepared = children.filter(
     (child) =>
       child.issue_type !== 'epic' &&
@@ -308,7 +321,7 @@ function feedbackPrompt(report: string): string {
   return [
     'The runner checked your work and the task is not done yet:',
     report,
-    `Fix it within the slice, run ${GATE} until it exits 0, commit, and rewrite ${RESULT_FILE}. If the report shows a gap or contradiction in the documents rather than a defect in your code, finish as blocked with the question instead.`,
+    `Fix it within the task, run ${GATE} until it exits 0, commit, and rewrite ${RESULT_FILE}. If the report shows a gap or contradiction in the documents rather than a defect in your code, finish as blocked with the question instead.`,
   ].join('\n\n')
 }
 
@@ -421,8 +434,44 @@ async function implementAndVerify(
   }
 }
 
+/** An id without the project prefix: oferty-pracy-0mq.13 → 0mq.13. Hash ids contain no dash. */
+function shortId(id: string): string {
+  return id.slice(id.lastIndexOf('-') + 1)
+}
+
+function slug(text: string, maxLength = 50): string {
+  const ascii = text
+    .replace(/ł/g, 'l')
+    .replace(/Ł/g, 'L')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  if (ascii.length <= maxLength) return ascii
+  const cut = ascii.slice(0, maxLength)
+  // Cut at a word boundary and drop a dangling one- or two-letter word such as "i".
+  return cut.slice(0, cut.lastIndexOf('-') > 0 ? cut.lastIndexOf('-') : maxLength).replace(/-[a-z0-9]{1,2}$/, '')
+}
+
+/**
+ * Task branch: <epic>-<task>-<title slug>, e.g. 0mq-13-wprowadzic-wspolne-zarzadzanie.
+ * The task part is relative to the epic when the id is hierarchical; a task outside
+ * any epic uses its own short id alone.
+ */
+function taskBranch(issue: Issue): string {
+  const task = shortId(issue.id)
+  const epic = epicOf(issue)
+  let prefix = task
+  if (epic) {
+    const epicId = shortId(epic.id)
+    prefix = task.startsWith(`${epicId}.`) ? `${epicId}-${task.slice(epicId.length + 1)}` : `${epicId}-${task}`
+  }
+  return `${prefix}-${slug(issue.title)}`
+}
+
 async function processTask(issue: Issue): Promise<void> {
-  const branch = `agent/${issue.id}`
+  const branch = taskBranch(issue)
   logFile = join(logDir, `${issue.id}-${Date.now()}.log`)
   bd(['update', issue.id, '--claim'])
   tryGit(['branch', '-D', branch])

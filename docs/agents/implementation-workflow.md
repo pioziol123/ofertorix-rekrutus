@@ -12,16 +12,26 @@ The `spec-docs` skill owns how the documents are written. This file owns how doc
 | Document | Scope | bd |
 | --- | --- | --- |
 | PRD | Epic: problem, outcomes, scope, stages | The epic; `spec_id` is the PRD path |
-| Requirements | Slice: observable behaviour and acceptance criteria with stable IDs | Linked from the task |
-| Solution design | Slice: decisions, exact contracts, verification | Linked from the task |
+| Requirements | Task: observable behaviour and acceptance criteria with stable IDs | Linked from the task |
+| Solution design | Task: technical decisions, contracts, verification | Linked from the task |
+
+Each document stays at its own level:
+
+- **PRD**: business and functional intent at a very high level, quick to read. No technical solutions and no detailed requirements.
+- **Requirements**: business and functional decisions and requirements, more detailed than the PRD. No technical details: no library protocols, function names, file names or directories. Each criterion says how it is checked in the same terms (an automated test, a check of the running application, a review).
+- **Solution design**: every technical decision, the requirements restated in precise technical language. It names libraries, mechanisms and data semantics, but not concrete paths, file names or function names; the implementer chooses those.
+
+Specifications are written in Polish and call the unit of work *zadanie*.
+
+An epic's documents live in `docs/specs/<epic>-<slug>/`, where `<epic>` is the epic's bd id without the project prefix, for example `docs/specs/0mq-architektura-modulow/` for `oferty-pracy-0mq`. Specifications written before this rule keep their directories.
 
 ADRs, architecture documents and RFCs supplement these documents. Link them from the PRD or the solution design; every epic still has a PRD.
 
-A **slice** is one vertical, demoable increment that a person can review in one sitting. Split a slice when it holds behaviours that can be accepted separately, needs more than about 15 acceptance criteria, or changes the public contract of more than one module. Several slices can share one requirements or design file when each slice owns a section with stable IDs.
+An implementation task covers one vertical, demoable increment that a person can review in one sitting. Split a task when it holds behaviours that can be accepted separately, needs more than about 15 acceptance criteria, or changes the public contract of more than one module. Several tasks can share one requirements or design file when each task owns a section with stable IDs.
 
 ## The implementation task
 
-One bd task (type `task`, `bug` or `feature`) per slice, a child of its epic. The task points at the documents and holds no copy of their rules:
+One bd task (type `task`, `bug` or `feature`) per increment, a child of its epic. The task points at the documents and holds no copy of their rules:
 
 - `metadata.prd`, `metadata.requirements`, `metadata.sd`: repository-relative paths, optionally with a `#section` anchor.
 - `spec_id`: the requirements path.
@@ -42,7 +52,7 @@ A task leaves preparation with `ready-for-agent` only. Mark a task `ready-for-hu
 
 ## Epic hand-off
 
-An epic is handed off as a whole. Apply `ready-for-agent` to the epic only when every open child task carries `ready-for-agent` or `ready-for-human`; closed and deferred children do not count. Until then the runner takes none of the epic's tasks, even those already marked ready, so `master` never holds part of an epic whose remaining work may still change its decisions.
+An epic is handed off as a whole. Apply `ready-for-agent` to the epic only when every open child task carries `ready-for-agent` or `ready-for-human`; closed and deferred children do not count. Membership follows the `parent` field: a task moved out of the epic with `bd update --parent ""` keeps its dotted id but no longer counts. Until then the runner takes none of the epic's tasks, even those already marked ready, so `master` never holds part of an epic whose remaining work may still change its decisions.
 
 The runner checks this before each task: the nearest epic above the task carries `ready-for-agent`, and none of the epic's open children is unlabelled or `needs-info`. A task the runner returns as `needs-info` therefore pauses the rest of its epic until preparation resolves it. A `ready-for-human` task does not hold the epic back; its dependants wait in bd until the owner closes it. Tasks outside any epic are handed off one by one.
 
@@ -52,8 +62,8 @@ Before applying `ready-for-agent`:
 
 - Every linked document exists in the default branch and the anchors resolve.
 - Each acceptance criterion is observable and names how it is checked (test, command or inspection).
-- The solution design states the contracts the slice touches exactly enough to implement without guessing.
-- No open question blocks the slice; non-blocking assumptions are recorded in the documents.
+- The solution design states the contracts the task touches exactly enough to implement without guessing.
+- No open question blocks the task; non-blocking assumptions are recorded in the documents.
 - Blocking dependencies are wired in bd.
 
 The runner re-checks the first item and the presence of acceptance criteria deterministically and returns the task as `needs-info` when they fail.
@@ -65,7 +75,7 @@ Every agent runs in a Sandcastle `docker()` sandbox built from `.sandcastle/Dock
 For each task, in order:
 
 1. Pick the first task from `bd ready` with `ready-for-agent`, neither `ready-for-human` nor `needs-info`, and an epic that passes the epic hand-off check; claim it. Rebuild the sandbox image first when `pnpm-lock.yaml` or `.sandcastle/Dockerfile` changed on `master`.
-2. Create a sandbox on branch `agent/<task-id>` from `master`.
+2. Create a sandbox from `master` on the task branch `<epic>-<task>-<title slug>`, for example `0mq-13-wprowadzic-wspolne-zarzadzanie-polaczeniami` for `oferty-pracy-0mq.13`. Ids drop the project prefix; the task part is relative to the epic, and a task outside any epic uses its own id alone. Branches made by hand follow the same prefix.
 3. Run the implementing agent (`claude-opus-5-5`, effort `medium` by default) with the task and its documents. The agent runs the gate itself before finishing, writes a result file and commits on its branch; bd, merging and `master` belong to the runner.
 4. Check, in the same warm sandbox: `master` did not move during the run (the sandbox can write the shared git data; the runner restores it and stops if it did), the result file exists, the worktree is clean, the branch has commits and rebases cleanly on `master`, and the gate passes.
 5. In a fresh sandbox on a copy of the branch, run the gate again, then a separate reviewing agent against the diff, the documents and the acceptance criteria. Its verdict is `pass` or `fail` with findings. Only committed work reaches this step.
@@ -94,9 +104,9 @@ Inside the sandbox, run project commands directly from the worktree root:
 
 The agent classifies anything it learns that the documents do not cover:
 
-- **Code defect** in the slice: fix it within the slice.
+- **Code defect** in the task: fix it within the task.
 - **Specification gap or contradiction** that changes behaviour or a contract: stop and return `blocked` with the question. The task goes back to preparation.
-- **New scope** outside the slice: note it in the result as a follow-up; the runner files it as a bd task linked `discovered-from` the current one, with `needs-triage`.
+- **New scope** outside the task: note it in the result as a follow-up; the runner files it as a bd task linked `discovered-from` the current one, with `needs-triage`.
 
 ## After merge
 

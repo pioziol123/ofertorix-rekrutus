@@ -8,7 +8,7 @@ Start with `bd prime`. Use the installed beads skill for workflow guidance.
 ## Operations
 
 - Inspect: `bd ready`, `bd list --json`, `bd show <id>`.
-- Create specifications as epics and implementation slices as child tasks.
+- Create specifications as epics and implementation tasks as their children.
 - Include acceptance criteria in each implementation task.
 - Apply labels from `docs/agents/triage-labels.md`.
 - Record blockers with `bd dep add <task> <blocker>`.
