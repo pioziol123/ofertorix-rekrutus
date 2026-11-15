@@ -90,6 +90,15 @@ The managed Beads block is task-tracking guidance, not permission to override re
 - **Minimal**: Keep tool instruction files as pointers to `bd prime`; use the same conservative git policy unless active instructions say otherwise.
 - **Team-maintainer**: Only when the repository explicitly opts in, agents may close beads, run quality gates, commit, and push as part of session close. A current "do not commit" or "do not push" instruction still wins.
 
+### Repository opt-in: autonomous task completion
+
+This repository opts in to autonomous completion of implementation tasks. It relaxes the Conservative profile for commits and local merges only:
+
+- An agent may commit, merge the task's work into the local default branch, and close its bd task when all gates pass: tests, typecheck, lint, the checks named by the task's acceptance criteria, and an independent spec-conformance review in a fresh context. Record the evidence for each acceptance criterion in bd before closing.
+- If any gate fails or a behaviour change is discovered that the specification does not cover, do not merge; report it and leave the task open.
+- Pushing to any remote and Dolt remote sync still require explicit user authorization.
+- A current user instruction not to commit or merge still wins.
+
 ## Session Completion
 
 This protocol applies when ending a Beads implementation workflow. It is subordinate to explicit user, repository, and orchestrator instructions.
