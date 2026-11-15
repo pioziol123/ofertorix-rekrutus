@@ -9,6 +9,10 @@ Read `docs/agents/issue-tracker.md` before tracker operations.
 ### Triage labels
 Read `docs/agents/triage-labels.md` when classifying project issues.
 
+### Implementation workflow
+Read `docs/agents/implementation-workflow.md` before preparing
+or implementing a task.
+
 ### Domain docs
 Single-context project. Read `docs/agents/domain.md` before
 exploration, specification or design work.

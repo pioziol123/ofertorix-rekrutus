@@ -16,7 +16,9 @@ Start with `bd prime`. Use the installed beads skill for workflow guidance.
 - Close completed work with `bd close <id>`.
 
 Specifications and implementation tasks use `ready-for-agent`
-after their required review and approval.
+after their required review and approval. Implementation tasks
+follow `docs/agents/implementation-workflow.md`: document links in
+metadata, the readiness checklist and the unattended runner.
 
 Product documents and ADRs explain requirements and decisions;
 Beads tracks work and its status.
