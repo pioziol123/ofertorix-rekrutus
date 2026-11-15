@@ -33,7 +33,8 @@ const IMAGE_LABEL = 'oferty-pracy.sandbox-inputs'
 const RESULT_FILE = '.agent-result.json'
 const REVIEW_FILE = '.agent-review.json'
 const GATE = 'scripts/gate.sh'
-const MAX_ATTEMPTS = 2
+/** Feedback rounds into the implementing agent's session before the task goes back to preparation. */
+const MAX_FEEDBACK_TURNS = 3
 /** Skills the agent uses inside the sandbox, mounted read-only from the host. */
 const SKILLS = ['implement-task', 'tdd']
 
@@ -286,7 +287,7 @@ function agent() {
 
 // ---------- prompts ----------
 
-function implementPrompt(issue: Issue, failure: string | null): string {
+function implementPrompt(issue: Issue): string {
   const task = {
     id: issue.id,
     title: issue.title,
@@ -300,7 +301,14 @@ function implementPrompt(issue: Issue, failure: string | null): string {
     'Use the implement-task skill.',
     `Task:\n${JSON.stringify(task, null, 2)}`,
     `Result file: ${RESULT_FILE} in the worktree root.`,
-    failure ? `Failure report from the previous attempt:\n${failure}` : '',
+  ].join('\n\n')
+}
+
+function feedbackPrompt(report: string): string {
+  return [
+    'The runner checked your work and the task is not done yet:',
+    report,
+    `Fix it within the slice, run ${GATE} until it exits 0, commit, and rewrite ${RESULT_FILE}. If the report shows a gap or contradiction in the documents rather than a defect in your code, finish as blocked with the question instead.`,
   ].join('\n\n')
 }
 
@@ -315,6 +323,8 @@ function reviewPrompt(issue: Issue): string {
 
 // ---------- one task ----------
 
+type Sandbox = Awaited<ReturnType<typeof createSandbox>>
+
 /** Restores master if anything inside a sandbox moved it. Returns a report when it did. */
 function guardMaster(expected: string): string | null {
   const actual = git(['rev-parse', BASE_BRANCH])
@@ -323,30 +333,31 @@ function guardMaster(expected: string): string | null {
   return `${BASE_BRANCH} moved from ${expected.slice(0, 7)} to ${actual.slice(0, 7)} during the run and was restored.`
 }
 
-async function implement(issue: Issue, branch: string, masterSha: string, failure: string | null): Promise<Outcome> {
-  await using sandbox = await createSandbox({ branch, baseBranch: BASE_BRANCH, cwd: repoRoot, sandbox: sandboxProvider() })
+/** The runner's own checks in the implementing agent's warm sandbox, after each agent turn. */
+async function warmCheck(sandbox: Sandbox, issue: Issue, branch: string, masterSha: string): Promise<Outcome> {
   const worktree = sandbox.worktreePath
-  log(`${issue.id}: implementing in ${worktree}`)
-  await sandbox.exec(`rm -f ${RESULT_FILE} ${REVIEW_FILE}`)
-  const run = await sandbox.run({ agent: agent(), prompt: implementPrompt(issue, failure) })
-  log(`${issue.id}: agent finished (log ${run.logFilePath ?? 'none'})`)
-
   const moved = guardMaster(masterSha)
   if (moved) return { ok: false, report: moved, result: null, final: true }
 
   const result = readJson<AgentResult>(join(worktree, RESULT_FILE))
-  if (!result) return { ok: false, report: `The agent did not write ${RESULT_FILE}.`, result }
+  if (!result) return { ok: false, report: `You did not write ${RESULT_FILE}.`, result }
   if (result.status === 'blocked') return { ok: false, report: `Blocked: ${result.question}`, result, final: true }
 
   const dirty = git(['status', '--porcelain'], worktree)
-  if (dirty) return { ok: false, report: `Uncommitted changes left in the worktree:\n${dirty}`, result }
+  if (dirty) return { ok: false, report: `Uncommitted changes are left in the worktree:\n${dirty}`, result }
   if (git(['rev-list', '--count', `${BASE_BRANCH}..${branch}`]) === '0') {
-    return { ok: false, report: 'No commits on the task branch.', result }
+    return { ok: false, report: 'There are no commits on the task branch.', result }
   }
   const rebase = tryGit(['rebase', BASE_BRANCH], worktree)
   if (!rebase.ok) {
     tryGit(['rebase', '--abort'], worktree)
     return { ok: false, report: `Rebase on ${BASE_BRANCH} conflicted:\n${tail(rebase.out)}`, result, final: true }
+  }
+
+  log(`${issue.id}: running the gate in the warm sandbox`)
+  const gate = await sandbox.exec(GATE)
+  if (gate.exitCode !== 0) {
+    return { ok: false, report: `${GATE} failed in your sandbox:\n${tail(`${gate.stdout}${gate.stderr}`)}`, result }
   }
   return { ok: true, report: '', result }
 }
@@ -358,10 +369,11 @@ async function verify(issue: Issue, branch: string, masterSha: string): Promise<
   git(['branch', gateBranch, branch])
   try {
     await using sandbox = await createSandbox({ branch: gateBranch, cwd: repoRoot, sandbox: sandboxProvider() })
-    log(`${issue.id}: running the gate`)
+    log(`${issue.id}: running the gate in a fresh sandbox`)
     const gate = await sandbox.exec(GATE)
     if (gate.exitCode !== 0) {
-      return { ok: false, report: `Gate failed (${GATE}):\n${tail(`${gate.stdout}${gate.stderr}`)}`, result: null }
+      const report = `${GATE} failed in a fresh sandbox, which sees only committed work:\n${tail(`${gate.stdout}${gate.stderr}`)}`
+      return { ok: false, report, result: null }
     }
     log(`${issue.id}: running the spec review`)
     await sandbox.run({ agent: agent(), prompt: reviewPrompt(issue) })
@@ -373,11 +385,39 @@ async function verify(issue: Issue, branch: string, masterSha: string): Promise<
     const review = readJson<Review>(join(sandbox.worktreePath, REVIEW_FILE))
     if (!review) return { ok: false, report: `The reviewer did not write ${REVIEW_FILE}.`, result: null }
     if (review.verdict !== 'pass') {
-      return { ok: false, report: `Spec review failed:\n- ${review.findings.join('\n- ')}`, result: null }
+      return { ok: false, report: `The spec review failed:\n- ${review.findings.join('\n- ')}`, result: null }
     }
     return { ok: true, report: '', result: null }
   } finally {
     tryGit(['branch', '-D', gateBranch])
+  }
+}
+
+/**
+ * One implementing session in one warm sandbox. After each agent turn the runner
+ * checks the work itself; failures go back into the same session with resume,
+ * up to MAX_FEEDBACK_TURNS times. Work that passes is verified in a fresh sandbox.
+ */
+async function implementAndVerify(
+  issue: Issue,
+  branch: string,
+  masterSha: string,
+): Promise<{ outcome: Outcome; result: AgentResult | null }> {
+  await using sandbox = await createSandbox({ branch, baseBranch: BASE_BRANCH, cwd: repoRoot, sandbox: sandboxProvider() })
+  log(`${issue.id}: implementing in ${sandbox.worktreePath}`)
+  await sandbox.exec(`rm -f ${RESULT_FILE} ${REVIEW_FILE}`)
+  let run = await sandbox.run({ agent: agent(), prompt: implementPrompt(issue) })
+  let result: AgentResult | null = null
+  for (let turn = 1; ; turn++) {
+    let outcome = await warmCheck(sandbox, issue, branch, masterSha)
+    result = outcome.result ?? result
+    if (outcome.ok) outcome = await verify(issue, branch, masterSha)
+    if (outcome.ok || outcome.final) return { outcome, result }
+    if (turn > MAX_FEEDBACK_TURNS) return { outcome, result }
+    if (!run.resume) return { outcome: { ...outcome, report: `${outcome.report}\n(No agent session to resume.)` }, result }
+    log(`${issue.id}: feedback turn ${turn}: ${outcome.report.split('\n')[0]}`)
+    await sandbox.exec(`rm -f ${RESULT_FILE}`)
+    run = await run.resume(feedbackPrompt(outcome.report))
   }
 }
 
@@ -388,20 +428,9 @@ async function processTask(issue: Issue): Promise<void> {
   tryGit(['branch', '-D', branch])
   const masterSha = git(['rev-parse', BASE_BRANCH])
 
-  let failure: string | null = null
-  let outcome: Outcome | null = null
-  let result: AgentResult | null = null
-  for (let n = 1; n <= MAX_ATTEMPTS; n++) {
-    log(`${issue.id}: attempt ${n}`)
-    outcome = await implement(issue, branch, masterSha, failure)
-    result = outcome.result ?? result
-    if (outcome.ok) outcome = await verify(issue, branch, masterSha)
-    if (outcome.ok || outcome.final) break
-    failure = outcome.report
-    log(`${issue.id}: attempt ${n} failed: ${failure.split('\n')[0]}`)
-  }
-  if (!outcome?.ok || !result) {
-    returnToPreparation(issue, outcome?.report ?? 'Unknown failure.', branch)
+  const { outcome, result } = await implementAndVerify(issue, branch, masterSha)
+  if (!outcome.ok || !result) {
+    returnToPreparation(issue, outcome.report || 'Unknown failure.', branch)
     return
   }
 

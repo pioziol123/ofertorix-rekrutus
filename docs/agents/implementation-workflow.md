@@ -66,11 +66,11 @@ For each task, in order:
 
 1. Pick the first task from `bd ready` with `ready-for-agent`, neither `ready-for-human` nor `needs-info`, and an epic that passes the epic hand-off check; claim it. Rebuild the sandbox image first when `pnpm-lock.yaml` or `.sandcastle/Dockerfile` changed on `master`.
 2. Create a sandbox on branch `agent/<task-id>` from `master`.
-3. Run the implementing agent (`claude-opus-5-5`, effort `medium` by default) with the task and its documents. The agent writes a result file and commits on its branch; bd, merging and `master` belong to the runner.
-4. Check that `master` did not move during the run (the sandbox can write the shared git data); restore it and stop if it did. Check the result file, a clean worktree and at least one commit, then rebase the branch on `master`.
-5. In a fresh sandbox on a copy of the branch, run the gate (see Commands), then a separate reviewing agent against the diff, the documents and the acceptance criteria. Its verdict is `pass` or `fail` with findings. Only committed work reaches this step.
-6. On success: fast-forward `master` to the branch, comment the evidence, file follow-ups as `discovered-from` tasks with `needs-triage`, close the task.
-7. On failure: rerun step 3 once on the same branch with the failure report, then step 5 again. A second failure, a `blocked` result or a rebase conflict removes `ready-for-agent`, adds `needs-info`, comments the reason and keeps the branch for inspection.
+3. Run the implementing agent (`claude-opus-5-5`, effort `medium` by default) with the task and its documents. The agent runs the gate itself before finishing, writes a result file and commits on its branch; bd, merging and `master` belong to the runner.
+4. Check, in the same warm sandbox: `master` did not move during the run (the sandbox can write the shared git data; the runner restores it and stops if it did), the result file exists, the worktree is clean, the branch has commits and rebases cleanly on `master`, and the gate passes.
+5. In a fresh sandbox on a copy of the branch, run the gate again, then a separate reviewing agent against the diff, the documents and the acceptance criteria. Its verdict is `pass` or `fail` with findings. Only committed work reaches this step.
+6. When step 4 or 5 fails, send the report back into the implementing agent's session in the same warm sandbox (Sandcastle resume), so it keeps its context, and repeat from step 4. After three such feedback turns, or on a `blocked` result, a rebase conflict or a moved `master`, remove `ready-for-agent`, add `needs-info`, comment the reason and keep the branch for inspection.
+7. On success: fast-forward `master` to the branch, comment the evidence, file follow-ups as `discovered-from` tasks with `needs-triage`, close the task.
 
 The runner never pushes and never syncs Dolt; pushing `master` stays with the owner.
 
