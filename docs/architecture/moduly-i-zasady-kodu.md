@@ -13,6 +13,14 @@ Punkty wejścia aplikacji przekazują polecenia i zapytania do modułów przez i
 
 3. **Przypadek użycia wyznacza granicę transakcji.** Operacja realizująca przypadek użycia określa, które zmiany muszą zostać zatwierdzone albo wycofane razem, i koordynuje transakcję. Jeśli uczestniczy w niej kilka modułów, każdy zapisuje własne dane przez publiczną operację w tym samym kontekście transakcji. Mechanizm transakcji należy do wspólnej infrastruktury. [Martin Fowler, Service Layer](https://martinfowler.com/eaaCatalog/serviceLayer.html) · [Unit of Work](https://martinfowler.com/eaaCatalog/unitOfWork.html)
 
+## Zmiany danych podczas wykonywania procesu
+
+Proces może działać na danych, które między jego rozpoczęciem a zakończeniem zostaną zmienione lub usunięte przez inne operacje. Kolejne kroki mogą odczytać różne wersje tych samych danych albo powiązane informacje pochodzące z różnych momentów. Wcześniejsze ustalenia i warunki mogą przestać obowiązywać przed ich wykorzystaniem. Dotyczy to również pracy przekazywanej do wykonania asynchronicznego.
+
+Podczas projektowania każdego procesu należy rozpoznać te sytuacje, opisać ich konsekwencje dla poprawności przebiegu i znaczenia wyniku oraz określić, które są dopuszczalne, a które wymagają obsługi. Sposób ich zaadresowania musi wynikać z wymagań danego procesu i uwzględniać pozostałe uwarunkowania architektoniczne.
+
+Akceptacja konsekwencji współbieżnych zmian jest decyzją projektową i wymaga jawnego uzasadnienia, tak samo jak wprowadzenie zabezpieczeń.
+
 ## Reguły struktury kodu
 
 ### Katalog modułu

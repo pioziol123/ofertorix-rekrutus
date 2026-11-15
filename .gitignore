@@ -27,3 +27,6 @@ docs/research/profil-import-spike/node_modules/
 
 # Independent JobSpy fork checkout; see docs/specs/jobspy/local-development.md
 /.local/
+
+# Obsidian vault settings
+docs/.obsidian/

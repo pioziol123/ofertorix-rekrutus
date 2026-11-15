@@ -1,64 +1,73 @@
 # Źródła ofert
 
-Docelowa architektura modułu `modules/sources/`. Moduł odpowiada za katalog źródeł, zakres i wykonanie pobierania oraz zapis ogłoszeń źródłowych, ich rewizji i dostępności.
+Moduł Źródła ofert odpowiada za pozyskiwanie ogłoszeń z zewnętrznych źródeł oraz zachowanie ich treści, pochodzenia, historii zmian i informacji o dostępności. Dostarcza pozostałym częściom systemu dane do przeglądania ofert i ich oceny. Poniższy opis określa odpowiedzialności modułu i zasady interpretowania pobranych wyników.
 
-**Ogłoszenie źródłowe** to wpis w konkretnym portalu. Ta sama rekrutacja może mieć kilka ogłoszeń z osobnymi linkami, historią i dostępnością. Moduł **Oferty** odpowiada za powiązanie ich z jedną ofertą pracy i jej prezentację. **Dopasowanie** korzysta z zapisanej rewizji ogłoszenia i odpowiada za aktualność oceny. **Firmy** korzystają z treści ogłoszenia przy wiązaniu go z firmą. [Słownik domenowy](../../GLOSSARY.md) · [Mapa modułów](../../docs/architecture/moduly.md)
+## Co obejmuje moduł
 
-## Publiczne operacje
+Podstawowym obiektem jest **ogłoszenie źródłowe**, czyli konkretny wpis opublikowany w jednym źródle. Ta sama rekrutacja może być ogłaszana w kilku miejscach. Każde z tych ogłoszeń ma własną treść, link, historię i dostępność; zmiana jednego nie przesądza o stanie pozostałych.
 
-| Operacja | Kontrakt |
+Moduł udostępnia katalog obsługiwanych źródeł, pozwala zlecić pobranie ogłoszeń oraz sprawdzić jego postęp i wynik. Przechowuje znalezione ogłoszenia i umożliwia odczyt ich aktualnej treści oraz wcześniejszych wersji.
+
+Powiązanie kilku ogłoszeń z jedną ofertą pracy i prezentacja tej oferty należą do modułu Oferty. Moduł Dopasowanie korzysta z treści ogłoszeń przy ocenie zgodności z profilem zawodowym, a moduł Firmy przy wiązaniu ogłoszeń z organizacjami. Źródła ofert dostarczają im informacje o publikacjach; nie rozstrzygają za nie oceny oferty ani tożsamości pracodawcy.
+
+## Jak przebiega pobieranie
+
+Pobieranie dotyczy wybranego źródła i ustalonego **zakresu**. Zakres określa, jakie ogłoszenia mają zostać sprawdzone, na przykład przez wybór technologii, poziomu doświadczenia i ograniczeń liczby wyników. Jest ustalany dla danego uruchomienia, tak aby jego wynik można było odnieść do tego, co rzeczywiście miało zostać pobrane.
+
+**Przebieg synchronizacji** to jedno wykonanie takiego pobierania. Wyniki mogą przychodzić w wielu porcjach. Moduł zachowuje poprawne ogłoszenia w miarę ich otrzymywania, dlatego późniejszy błąd nie przekreśla już zebranych danych.
+
+| Stan przebiegu | Znaczenie |
 | --- | --- |
-| Odczyt katalogu źródeł | Udostępnia identyfikatory źródeł i informacje potrzebne do wyboru źródła oraz zakresu pobierania. |
-| Zlecenie pobrania | Przyjmuje źródło, parametry zakresu i przyczynę uruchomienia. Zwraca identyfikator przebiegu, jeśli zlecenie tworzy przebieg lub korzysta z aktywnego. |
-| Odczyt statusu przebiegu | Udostępnia źródło, zapisany zakres, status, daty, liczniki wyników i diagnostykę. |
-| Odczyt ogłoszeń | Udostępnia zapisane ogłoszenia do listy i szczegółów. Aktualna treść i jej identyfikator rewizji pochodzą z tej samej wersji. Można odczytać historię oraz wskazaną rewizję. |
+| Oczekujący | Pobranie zostało zlecone i czeka na rozpoczęcie. |
+| W trakcie | Trwa pobieranie i zapisywanie wyników. |
+| Kompletny | Sprawdzono cały ustalony zakres. |
+| Częściowy | Uzyskano użyteczne wyniki, ale nie sprawdzono całego zakresu lub nie udało się potwierdzić kompletności. |
+| Nieudany | Nie udało się uzyskać użytecznych wyników. |
 
-API, CLI i harmonogram przekazują zlecenia do modułu. Oferty, Dopasowanie i Firmy korzystają z interfejsu odczytu ogłoszeń. Moduł ukrywa przed klientami sposób przechowywania danych.
+Kompletny przebieg nie musi oznaczać pobrania wszystkich ogłoszeń istniejących w danym źródle. Kompletność odnosi się do ustalonego zakresu, a nie do całego rynku ofert. Wynik ograniczonego wyszukiwania może być kompletny, lecz nadal nie wystarczać do ustalenia, że inne ogłoszenie zostało usunięte.
 
-## Zakres i przebieg pobierania
+Źródła różnią się sposobem udostępniania danych i informacjami, które przekazują. Moduł uwzględnia te różnice podczas pobierania, ale udostępnia ogłoszenia w spójnej postaci, zachowując ich pochodzenie. Jeśli źródło nie dostarcza jakiejś informacji, jej brak pozostaje niewiadomą.
 
-**Zakres** określa, co sprawdzamy w jednym źródle. Obejmuje filtry, np. technologię i seniority, oraz ustawienia pobierania, np. sortowanie i limity. Zlecenie może korzystać z parametrów podanych przez użytkownika albo z konfiguracji źródła. Moduł przypisuje zakres przy tworzeniu przebiegu i używa zapisanego zakresu przy wykonaniu.
+## Tożsamość i historia ogłoszenia
 
-**Przebieg** to jedno wykonanie pobierania dla jednego źródła i zakresu. Może obejmować wiele zapytań i porcji wyników. W ścieżce kolejkowej utworzenie przebiegu i zlecenie zadania są atomowe. Zadanie przekazuje identyfikator jednego przebiegu, a worker deleguje jego wykonanie do modułu.
+Ogłoszenie rozpoznawane jest na podstawie źródła i identyfikatora nadanego mu w tym źródle. Ponowne pobranie tego samego ogłoszenia, także w innym zakresie wyszukiwania, aktualizuje istniejący zapis.
 
-| Stan | Znaczenie |
-| --- | --- |
-| `queued` | Przebieg zapisany i oczekujący na wykonanie. |
-| `running` | Przebieg przejęty do wykonania. Powtórne dostarczenie zadania nie uruchamia drugiego wykonania. |
-| `complete` | Sprawdzono cały ustalony zakres. |
-| `partial` | Sprawdzono część zakresu. Poprawnie zapisane wyniki są dostępne. |
-| `failed` | Pobierania nie udało się wykonać, np. nie dało się rozpocząć pracy albo wystąpił błąd przed uzyskaniem użytecznych wyników. |
+Gdy zmienia się treść ogłoszenia, moduł zachowuje nową wersję, nie usuwając poprzednich. Ponowne pobranie identycznej treści nie tworzy kolejnej wersji. Dzięki temu historia pokazuje zmiany publikacji, a nie samą częstotliwość pobierania.
 
-### Odpowiedzialności wewnątrz modułu
+Niezależnie od zmian treści zapisywana jest **obserwacja**: informacja, że konkretne ogłoszenie zostało znalezione w danym przebiegu. Ogłoszenie może więc zostać ponownie zaobserwowane bez powstania nowej wersji. Obserwacje pozwalają później ustalić, które znane ogłoszenia pojawiły się w wynikach synchronizacji.
 
-| Część modułu | Odpowiedzialność |
-| --- | --- |
-| Serwis uruchamiania kolektora | Przejmuje przebieg, odczytuje źródło i zakres, odnajduje konektor przez `ConnectorProvider` i uruchamia go przez wspólny interfejs. Przekazuje wyniki do zapisu, ustala końcowy status i uruchamia wspólną regułę dostępności. |
-| Serwis zapisu metadanych przebiegu | Tworzy i odczytuje przebiegi oraz utrwala ich przejęcie i zakończenie. Przechowuje źródło, zakres, przyczynę uruchomienia, daty, identyfikator zadania, status, liczniki i diagnostykę. Udostępnia stan potrzebny do obsługi przerwanych przebiegów. |
-| Serwis zapisu wyników | Zapisuje porcje ogłoszeń, ich rewizje i obserwacje w przebiegu. Zwraca liczniki potrzebne do podsumowania. Zapisuje porcje w miarę ich otrzymywania, więc późniejszy błąd zachowuje wcześniej zapisane wyniki. |
+## Jak ustalana jest dostępność
 
-## Konektory
+Dostępność dotyczy konkretnego ogłoszenia w jego źródle. Ustalamy ją na podstawie informacji o znalezionym ogłoszeniu albo, pod określonymi warunkami, jego braku w wynikach. Te dwie sytuacje wymagają różnych podstaw do podjęcia decyzji.
 
-Każdy konektor ma własny podkatalog w `modules/sources/infrastructure/adapters/connectors/` i implementuje wspólny interfejs. Przyjmuje zakres, zwraca ujednolicone ogłoszenia w jednej lub wielu porcjach oraz raportuje kompletność wyniku. Jeśli źródło podaje status ogłoszenia lub datę ważności, konektor przekazuje tę informację wraz z ogłoszeniem. Brak takiej informacji pozostaje niewiadomą.
+### Informacja o znalezionym ogłoszeniu
 
-`ConnectorProvider` jest wspólnym miejscem rejestracji i wyszukiwania konektorów po stałej, unikalnej nazwie. Kod uruchamiający korzysta z providera i wspólnego interfejsu. Dodanie konektora wymaga implementacji interfejsu we własnym podkatalogu i rejestracji. Szczegóły dostępu do portalu, walidacji odpowiedzi i przechodzenia przez strony pozostają w konektorze.
+Znalezienie ogłoszenia w wynikach aktywnych ofert pozwala potwierdzić jego dostępność już podczas pobierania, również gdy cały przebieg zakończy się częściowo. Nie trzeba czekać na pozostałe ogłoszenia, aby wykorzystać informację, którą źródło już przekazało.
 
-## Ogłoszenia i rewizje
+Samo zwrócenie treści przez źródło nie zawsze oznacza jednak, że ogłoszenie jest nadal aktywne. Źródło może udostępniać również publikacje zamknięte albo takie, których termin ważności już minął. Dlatego wraz z obserwacją trzeba uwzględniać podany status i datę ważności. Obecność ogłoszenia w odpowiedzi nie unieważnia informacji o jego wygaśnięciu.
 
-- **Tożsamość.** Ogłoszenie identyfikuje para źródło i identyfikator w tym źródle. Ponowne pobranie tego samego wpisu, również w innym zakresie, aktualizuje to samo ogłoszenie.
-- **Rewizja.** Pierwszy zapis i każda zmiana zapisanej treści tworzą rewizję. Identyczna treść zachowuje aktualną rewizję. Starsze rewizje pozostają dostępne przez interfejs odczytu.
-- **Obserwacja.** Moduł zapisuje, że dany przebieg widział ogłoszenie, również gdy jego treść się nie zmieniła. Obserwacja wiąże przebieg z ogłoszeniem i pozwala porównać wyniki po zakończeniu pobierania.
+Informacje odnoszące się bezpośrednio do konkretnego ogłoszenia nie wymagają kompletnej synchronizacji. Jeżeli źródło podaje termin ważności, jego upływ pozwala stwierdzić wygaśnięcie. Jeżeli nie podaje ani terminu, ani statusu zamknięcia, nie należy dopowiadać tych informacji.
 
-## Dostępność ogłoszenia
+### Brak ogłoszenia w wynikach
 
-Moduł stosuje wspólną regułę dostępności. Konektor dostarcza dane z portalu i informację o kompletności pobrania. Konfiguracja źródła określa, czy brak w pełnym wyniku jest podstawą do oznaczenia ogłoszenia jako niedostępnego.
+Nieznalezienie ogłoszenia nie jest samo w sobie dowodem niedostępności. Mogło ono znajdować się w niepobranej części wyników, poza zakresem wyszukiwania albo poza limitem odpowiedzi źródła.
 
-- **Informacja ze źródła.** Jawny status jest częścią danych ogłoszenia. Wygaśnięcie może też wynikać z upływu daty ważności podanej przez portal.
-- **Brak w pełnym wyniku.** Jeśli konfiguracja źródła na to pozwala, moduł porównuje zapisane ogłoszenia z obserwacjami bieżącego przebiegu w tym samym źródle i zakresie. W SOLID.Jobs, jeśli znane były A, B i C, a pełny przebieg znalazł A, C i D, moduł oznacza B jako niedostępne w źródle. Zapis niedostępności i oznaczenie przebiegu jako `complete` odbywają się w jednej transakcji.
-- **Brak wystarczających danych.** Niepełny lub nieudany przebieg pozostawia dostępność niewidzianych ogłoszeń bez zmian. To samo dotyczy pełnego wyniku, jeśli źródło nie daje podstaw do wnioskowania z braku, jak w wyszukiwaniu Himalayas.
+Dla źródeł, które pozwalają wyciągać wnioski z nieobecności ogłoszenia, moduł wykonuje osobną ocenę po zakończeniu pobierania. Oznaczenie ogłoszenia jako niedostępnego wymaga łącznie:
 
-Niedostępność, wygaśnięcie i ponowne pojawienie się dotyczą konkretnego ogłoszenia. Jego historia pozostaje dostępna. Stan rekrutacji i stan pozostałych ogłoszeń tej samej oferty są odrębne.
+- potwierdzenia kompletności przebiegu;
+- możliwości wnioskowania o niedostępności z braku w wynikach danego źródła;
+- porównania ogłoszeń i obserwacji dotyczących tego samego źródła oraz zakresu.
 
-## Refaktoryzacja
+Jeżeli którykolwiek z tych warunków nie jest spełniony, brak obserwacji pozostawia dotychczasową dostępność ogłoszenia bez zmian. Dotyczy to zarówno częściowego pobrania, jak i kompletnego wyszukiwania, którego wyniki nie są podstawą do wykrywania usuniętych ogłoszeń.
 
-Realizację modelu śledzi epik Beads `oferty-pracy-0mq` **Poprawki architektury kodu**. Odczyt ogłoszeń i rewizji opisuje `oferty-pracy-0mq.6`, a wspólną regułę dostępności po pełnym przebiegu `oferty-pracy-0mq.7`.
+### Przykład: przerwane pobieranie
+
+Załóżmy, że ogłoszenie A było wcześniej niedostępne, a ogłoszenie B dostępne. Podczas kolejnego pobierania źródło zwróciło A jako aktywne, lecz pobieranie przerwało się przed dotarciem do wszystkich wyników.
+
+A może ponownie zostać oznaczone jako dostępne: mamy nową informację o jego obecności. B zachowuje dotychczasowy stan, ponieważ nie wiemy, czy zniknęło, czy znajdowało się w niepobranej części. Dopiero pełne sprawdzenie odpowiedniego zakresu, dla źródła dopuszczającego takie wnioskowanie, pozwala uznać brak B za podstawę niedostępności.
+
+## Jak interpretować wynik
+
+Moduł dostarcza treść ogłoszeń wraz z ich historią oraz informacją o tym, co udało się sprawdzić. Wyniki częściowego pobierania pozostają użyteczne, ale nie pozwalają wnioskować o losie ogłoszeń, których nie znaleziono.
+
+Niedostępność w źródle, wygaśnięcie ogłoszenia i zakończenie rekrutacji to odrębne informacje. Usunięcie lub wygaśnięcie jednej publikacji nie przesądza o stanie innych ogłoszeń tej samej oferty ani o zakończeniu aplikacji użytkownika. Historia ogłoszenia pozostaje dostępna również wtedy, gdy sama publikacja przestaje być aktywna.
