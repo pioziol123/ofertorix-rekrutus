@@ -229,7 +229,8 @@ function returnToPreparation(issue: Issue, reason: string, branch: string | null
 function mainCheckoutBlocker(): string | null {
   const branch = git(['branch', '--show-current'])
   if (branch !== BASE_BRANCH) return `main checkout is on ${branch}, not ${BASE_BRANCH}`
-  if (git(['status', '--porcelain', '--untracked-files=no'])) {
+  // Every bd write refreshes the .beads export, including the runner's own claims and comments.
+  if (git(['status', '--porcelain', '--untracked-files=no', '--', '.', ':!.beads'])) {
     return 'main checkout has uncommitted changes to tracked files'
   }
   if (!existsSync(join(repoRoot, '.sandcastle', '.env'))) {
