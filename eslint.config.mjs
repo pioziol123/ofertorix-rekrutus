@@ -18,5 +18,6 @@ export default withNuxt({
     '.claude/**',
     '.codex/**',
     '.cursor/**',
+    '.sandcastle/**',
   ],
 })

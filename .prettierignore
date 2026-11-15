@@ -6,6 +6,7 @@ node_modules
 .claude
 .codex
 .cursor
+.sandcastle
 .git
 pnpm-lock.yaml
 docs

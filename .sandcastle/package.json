@@ -1,0 +1,16 @@
+{
+  "name": "oferty-pracy-sandcastle",
+  "private": true,
+  "type": "module",
+  "description": "Host-side tooling for running agents in Sandcastle sandboxes. Kept apart from the application's dependencies, which live only in Docker.",
+  "dependencies": {
+    "@ai-hero/sandcastle": "0.14.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "24.19.2"
+  }
+}

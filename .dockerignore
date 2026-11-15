@@ -1,4 +1,5 @@
 node_modules
+.sandcastle
 .nuxt
 .output
 .env

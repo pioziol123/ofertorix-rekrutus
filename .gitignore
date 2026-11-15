@@ -30,3 +30,7 @@ docs/research/profil-import-spike/node_modules/
 
 # Obsidian vault settings
 docs/.obsidian/
+.sandcastle/.env
+.sandcastle/node_modules/
+.sandcastle/logs/
+.sandcastle/worktrees/
