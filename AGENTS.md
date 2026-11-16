@@ -12,6 +12,7 @@ This file is the index of the project's agent documentation. It names each famil
 | **Tracker guide** | `docs/agents/issue-tracker.md` | Before bd operations. Use bd for specifications, tasks and dependencies. |
 | **Triage labels** | `docs/agents/triage-labels.md` | When classifying issues. It defines the labels that say what state an issue is in and who acts next. |
 | **Specifications** | `docs/specs/` | When working on an epic or task: the PRD, requirements and solution design it links. The process contract sets their layout. |
+| **Research** | `docs/research/` | When a question may already have been investigated, and to store the assets of a new investigation. Each file or directory holds one investigation; the bd issue it resolved links to it. Findings describe what was true when gathered; confirmed decisions live in the domain docs and specifications. |
 
 The architecture rules span several files with different roles:
 

@@ -43,7 +43,7 @@ user authorization. No Git remote is currently configured.
 - Record its resolution using `bd comment <id>`, then close it and append
   a named context pointer to the map's Decisions so far section.
 - Refer to issues by title in prose, with `bd show <id>` as the local
-  retrieval pointer. Store research assets under `docs/research/` and
+  retrieval pointer. Store research assets with the research and
   link their paths from the resolution comment.
 - Keep research assets in the current checkout while Git commits and
   pushes lack authorization. Do not switch branches in the shared
