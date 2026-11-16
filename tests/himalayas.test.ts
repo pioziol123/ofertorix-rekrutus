@@ -188,15 +188,13 @@ describe('Himalayas bounded HTTP transport', () => {
   ])(
     'exposes HTTP %i and Retry-After after %i attempts',
     async (status, attempts) => {
-      const fetcher = vi
-        .fn<typeof fetch>()
-        .mockImplementation(
-          async () =>
-            new Response('blocked', {
-              status,
-              headers: { 'Retry-After': '60' },
-            }),
-        )
+      const fetcher = vi.fn<typeof fetch>().mockImplementation(
+        async () =>
+          new Response('blocked', {
+            status,
+            headers: { 'Retry-After': '60' },
+          }),
+      )
       await expect(
         createPageFetcher(fetcher, async () => {})(1),
       ).rejects.toMatchObject({ status, retryAfter: '60' })
