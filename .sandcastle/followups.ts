@@ -106,15 +106,44 @@ export function criterionIds(acceptance: string | undefined): string[] {
   return ids
 }
 
+/** Longest range expanded; anything wider is left as written. */
+const MAX_RANGE = 100
+const RANGE = /((?:[A-Za-z0-9]+-)+[A-Za-z]*)(\d+)\s*(?:[–—-]|\.\.)\s*\1(\d+)(?![A-Za-z0-9])/g
+
+/**
+ * Every ID inside written ranges such as `F2-01–F2-05` or `A1-AC02..A1-AC04`,
+ * keeping the zero padding. Both ends must share the prefix.
+ */
+export function rangeIds(text: string): string[] {
+  const ids: string[] = []
+  for (const [, prefix, from, to] of text.matchAll(RANGE)) {
+    const start = Number(from)
+    const end = Number(to)
+    if (end <= start || end - start > MAX_RANGE) continue
+    for (let n = start; n <= end; n++) ids.push(`${prefix}${String(n).padStart(from!.length, '0')}`)
+  }
+  return ids
+}
+
 export function loadBearing(epic: Issue | null): Set<string> {
   const raw = epic?.metadata?.load_bearing
   const list = Array.isArray(raw) ? raw.map(String) : typeof raw === 'string' ? raw.split(',') : []
-  return new Set(list.map((id) => id.trim()).filter(Boolean))
+  const ids = list.map((id) => id.trim()).filter(Boolean)
+  return new Set([...ids, ...rangeIds(ids.join(','))])
+}
+
+/** Assumptions whose requirements include load-bearing IDs, with the IDs they touch. */
+export function bearingAssumptions(assumptions: Assumption[], epic: Issue | null): { id: string; touched: string[] }[] {
+  const bearing = loadBearing(epic)
+  return assumptions
+    .map((a) => ({ id: a.id, touched: (a.requirements ?? []).filter((id) => bearing.has(id)) }))
+    .filter((a) => a.touched.length)
 }
 
 function mentions(issue: Issue, id: string): boolean {
-  const text = [issue.title, issue.description, issue.design, issue.notes, issue.acceptance_criteria].join('\n')
-  return new RegExp(`(^|[^A-Za-z0-9-])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9-]|$)`).test(text)
+  const fields = [issue.title, issue.description, issue.design, issue.notes, issue.acceptance_criteria].join('\n')
+  if (rangeIds(fields).includes(id)) return true
+  return new RegExp(`(^|[^A-Za-z0-9-])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9-]|$)`).test(fields)
 }
 
 /** Open tasks other than the task itself and follow-ups that mention any of the deviation's IDs. */

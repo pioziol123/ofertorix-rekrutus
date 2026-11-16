@@ -4,10 +4,13 @@ import {
   type AgentResult,
   type Deviation,
   type Issue,
+  bearingAssumptions,
   criterionIds,
   dependants,
   deviationProblems,
   epicLabelPlan,
+  loadBearing,
+  rangeIds,
   resultShapeProblems,
 } from './followups.ts'
 
@@ -136,6 +139,39 @@ describe('dependants', () => {
       task(TASK, { description: 'R2-01' }),
     ]
     assert.deepEqual(dependants(deviation(), TASK, siblings), ['a'])
+  })
+})
+
+describe('rangeIds', () => {
+  it('expands dash and dot ranges with the same prefix, keeping padding', () => {
+    assert.deepEqual(rangeIds('Reguły: F2-01–F2-03, F2-08.'), ['F2-01', 'F2-02', 'F2-03'])
+    assert.deepEqual(rangeIds('A1-AC02..A1-AC04'), ['A1-AC02', 'A1-AC03', 'A1-AC04'])
+    assert.deepEqual(rangeIds('R-9 - R-11'), ['R-9', 'R-10', 'R-11'])
+  })
+
+  it('skips ranges with different prefixes, reversed ends or plain IDs', () => {
+    assert.deepEqual(rangeIds('F2-01–A1-05, F2-05–F2-01, F2-01 and F2-02'), [])
+  })
+})
+
+describe('ranges in dependants and load_bearing', () => {
+  it('finds a task that names the deviation’s ID only inside a range', () => {
+    const siblings = [task('a', { description: 'Reguły: F2-01–F2-05.' })]
+    assert.deepEqual(dependants(deviation({ requirements: ['F2-03'], deferred_acs: [] }), TASK, siblings), ['a'])
+  })
+
+  it('reads ranges in load_bearing', () => {
+    assert.ok(loadBearing({ ...epic, metadata: { load_bearing: 'F2-06–F2-08, A5-R03' } }).has('F2-07'))
+  })
+})
+
+describe('bearingAssumptions', () => {
+  it('lists assumptions touching load-bearing IDs', () => {
+    const bearing = { ...epic, metadata: { load_bearing: 'A1-AC05' } }
+    const a = (id: string, requirements: string[]) => ({ id, requirements, gap: '', decision: '', rule: '', if_reversed: '' })
+    assert.deepEqual(bearingAssumptions([a('ASM-1', ['F2-05']), a('ASM-2', ['F2-02', 'A1-AC05'])], bearing), [
+      { id: 'ASM-2', touched: ['A1-AC05'] },
+    ])
   })
 })
 

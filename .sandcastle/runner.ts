@@ -17,6 +17,7 @@ import { docker } from '@ai-hero/sandcastle/sandboxes/docker'
 import {
   type AgentResult,
   type Issue,
+  bearingAssumptions,
   dependants,
   deviationProblems,
   epicLabelPlan,
@@ -353,6 +354,13 @@ function epicBrief(ctx: EpicContext): string {
   ].join('\n')
 }
 
+/** Reviewer instruction for assumptions that settle a load-bearing requirement; empty when none does. */
+function bearingNote(assumptions: NonNullable<AgentResult['assumptions']>, ctx: EpicContext): string {
+  const bearing = bearingAssumptions(assumptions, ctx.epic)
+  if (!bearing.length) return ''
+  return `These assumptions settle load-bearing requirements of the epic: ${bearing.map((b) => `${b.id} (${b.touched.join(', ')})`).join('; ')}. Later tasks build on how they are read. Check each strictly: the reading must be the only one that keeps today's behaviour, or the conflict must belong to a later step of the classification (blocked). A reading that fixes the requirement's meaning for the rest of the epic is a finding.`
+}
+
 function implementPrompt(issue: Issue, ctx: EpicContext): string {
   const task = {
     id: issue.id,
@@ -388,9 +396,10 @@ function reviewPrompt(issue: Issue, result: AgentResult, ctx: EpicContext): stri
     'Read the documents in full, and docs/agents/implementation-workflow.md, section "Spec conflicts during implementation". Report requirements that are missing or partial, behaviour that was not asked for, and contracts implemented differently from the solution design. Quote the document line for each finding.',
     epicBrief(ctx),
     `The implementing agent recorded these assumptions:\n${JSON.stringify(assumptions, null, 2)}\nFor each, check that every acceptance criterion is really met, that the choice follows the precedence order, and that a test covers the edge case. An assumption that leaves a criterion unmet is a finding.`,
+    bearingNote(assumptions, ctx),
     `And these deviations, each deferring part of the task to a follow-up:\n${JSON.stringify(deviations, null, 2)}\nFor each, check against the classification and qualification rules in that section: that it does not belong to an earlier step (assumption or blocked), that the interim code follows precedence and carries its marker, and that the follow-up description lets a developer with no context understand the business and technical problem, the decision needed and how to verify the target. Check that each deviation's requirement IDs cover every requirement its interim code affects, including shared rules of the epic rather than only a narrower task criterion. Also check that the diff builds nothing new on the interim code of the epic's open follow-ups.`,
     `Write ${REVIEW_FILE} in the repository root as JSON: {"verdict": "pass" | "pass-with-deferral" | "fail", "findings": ["..."]}. Use "fail" when any finding means a criterion that is not deferred or a design contract is not met, or when any deviation or assumption does not hold. Use "pass-with-deferral" when the work passes and you accept every deviation; "pass" only when there are no deviations.`,
-  ].join('\n\n')
+  ].filter(Boolean).join('\n\n')
 }
 
 // ---------- one task ----------
@@ -596,8 +605,10 @@ function recordOutcome(issue: Issue, result: AgentResult, ctx: EpicContext): voi
 /** Adds assumptions to the epic's open assumptions task, creating it outside the epic when missing. */
 function recordAssumptions(issue: Issue, assumptions: NonNullable<AgentResult['assumptions']>, ctx: EpicContext): void {
   const scope = ctx.epic?.id ?? issue.id
+  const bearing = new Map(bearingAssumptions(assumptions, ctx.epic).map((b) => [b.id, b.touched]))
+  const flag = (id: string) => (bearing.has(id) ? `\n**Load-bearing (${bearing.get(id)!.join(', ')}): the rest of the epic builds on this reading; confirm it first.**` : '')
   const text = assumptions
-    .map((a) => `### ${issue.id} / ${a.id} (${a.requirements.join(', ')})\nGap: ${a.gap}\nDecision: ${a.decision}\nRule: ${a.rule}\nIf decided otherwise: ${a.if_reversed}`)
+    .map((a) => `### ${issue.id} / ${a.id} (${a.requirements.join(', ')})${flag(a.id)}\nGap: ${a.gap}\nDecision: ${a.decision}\nRule: ${a.rule}\nIf decided otherwise: ${a.if_reversed}`)
     .join('\n\n')
   let existing: Issue[] = []
   try {

@@ -155,7 +155,7 @@ The agent walks these questions in order and stops at the first that decides:
 4. **Is there no variant in which the epic stays consistent?** Then `blocked`.
 5. **Does the deviation qualify** (below) and fit the limits? Then it is a **deviation**: implement the interim behaviour, mark it and describe the follow-up. Otherwise `blocked`.
 
-An **assumption** needs all three: every criterion is met, the choice follows precedence, and reversing it later is a local change. Example: one requirement sorts a list by date, another puts pinned items first. Pinned items first, each group by date, meets both.
+An **assumption** needs all four: every criterion is met, the choice follows precedence, reversing it later is a local change, and a test covers the case the assumption rests on. An assumption may settle a `load_bearing` requirement when every criterion is met; the reviewer then checks it strictly and the owner confirms it first. Example: one requirement sorts a list by date, another puts pinned items first. Pinned items first, each group by date, meets both.
 
 A **deviation** leaves a criterion or requirement unmet on purpose. Example: a shared rule says every export includes archived records, while a criterion of the task forbids changing what today's export contains for one client. Precedence keeps today's export; the shared rule for that client is deferred to a follow-up.
 
@@ -181,24 +181,24 @@ Limits: at most 2 deviations per task and at most 3 open follow-ups per epic; a 
 
 - **The interim code** carries the marker `FOLLOW-UP(<task id>/DEV-<n>)` in a comment at each place the follow-up will change. A test of interim behaviour has the same marker in its name, and an `it.todo` names the target behaviour, so whoever takes the follow-up knows which tests to flip.
 - **The follow-up description**, written with the `write-documents` skill, for a developer who arrives without any context: the business context of the requirements, the conflict quoted with links to the requirement IDs, current behaviour with `file:line` at the commit, the interim decision and why it is safe, why a follow-up rather than a block (each qualification criterion), target options with their trade-offs, the decision the owner has to make, the marker, and how to verify the target. In the language of the specifications.
-- **Each assumption** in the result with the requirements, the gap, the decision, the precedence rule applied and what changes if the owner decides otherwise.
+- **Each assumption** in the result with the requirements, the gap, the decision, the precedence rule applied and what changes if the owner decides otherwise, and a test of the case it rests on, so the reading is pinned before anyone confirms it.
 
 Later tasks of the epic receive the open follow-ups in their prompt. They build no new behaviour on interim code. When they must touch it, they leave the marker in place and add the place to the follow-up through `new_scope`.
 
 ### What the runner checks
 
-Deterministically, before the review: the result's shape; the limits; one or two requirement IDs per deviation; deferred criteria that are criteria of the task, not all of them, and none in `load_bearing`; every criterion either in the evidence or deferred; the marker added by the task's own diff; and at most two other open, non-follow-up tasks of the epic mentioning the deviation's IDs in their fields. A failed check goes back to the agent as feedback.
+Deterministically, before the review: the result's shape; the limits; one or two requirement IDs per deviation; deferred criteria that are criteria of the task, not all of them, and none in `load_bearing`; every criterion either in the evidence or deferred; the marker added by the task's own diff; and at most two other open, non-follow-up tasks of the epic mentioning the deviation's IDs in their fields. An ID written inside a range such as `F2-01–F2-05` counts as mentioned; ranges in `load_bearing` count the same way. A failed check goes back to the agent as feedback.
 
-The reviewer then judges what a script cannot: whether each deviation qualifies, whether the interim choice follows precedence, whether the follow-up description stands on its own, whether every assumption really meets every criterion, and whether the change builds on another follow-up's interim code.
+The reviewer then judges what a script cannot: whether each deviation qualifies, whether the interim choice follows precedence, whether the follow-up description stands on its own, whether every assumption really meets every criterion and has a test of its case, whether an assumption on a `load_bearing` requirement fixes its meaning for the rest of the epic, and whether the change builds on another follow-up's interim code.
 
 ### Follow-ups and assumptions in bd
 
 After the merge the runner creates each follow-up as a child of the epic (standalone for a task outside any epic), with `needs-info`, `metadata.type=follow-up`, `metadata.marker`, `metadata.origin` and `discovered-from` the task. Tasks of the epic that mention the deviation's IDs get the follow-up as a blocker. The follow-up goes through preparation like any task: the owner decides, documents are updated, and `ready-for-agent` hands it off. Its acceptance criteria include removing its markers.
 
-Assumptions are collected in one triage task per epic, `metadata.type=assumptions` with `needs-triage`, outside the epic so it holds nothing back. The owner confirms each assumption in the solution design, or turns it into a change.
+Assumptions are collected in one triage task per epic, `metadata.type=assumptions` with `needs-triage`, outside the epic so it holds nothing back. The owner confirms each assumption in the solution design, or turns it into a change. Assumptions on `load_bearing` requirements are flagged there; confirm them first, since later tasks build on that reading.
 
 A change to a requirement that would alter the epic's outcome is not a follow-up. Finish the epic in its consistent variant and prepare the change as a new epic.
 
 ## After merge
 
-The owner tests `main`. Open follow-ups of the epic list the known deviations in `main`; they are not bugs. A defect found there becomes a new bug linked `discovered-from` the original task and goes through preparation. Before pushing `main`, check the epic's open follow-ups.
+The owner tests `main`. Open follow-ups of the epic list the known deviations in `main`; they are not bugs. A defect found there becomes a new bug linked `discovered-from` the original task and goes through preparation. Before pushing `main`, check the epic's open follow-ups and its assumptions task, the flagged assumptions first.
