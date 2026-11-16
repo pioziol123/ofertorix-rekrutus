@@ -59,7 +59,9 @@ export type RunAdmission = {
 export type AdmittedRun = { id: string; existing: boolean }
 
 // A queued run seen as a conflict can start before it is read back; the
-// admission then inserts again. Bounded so a fault cannot loop forever.
+// admission then inserts again, which F2-07 allows once the queued run has
+// started. Bounded so a fault cannot loop forever: after the last attempt the
+// admission fails, rolls back and the caller may request again.
 const admissionAttempts = 3
 
 /**
@@ -93,7 +95,10 @@ export function admitRun(admission: RunAdmission): Promise<AdmittedRun> {
 
 /**
  * Starts a queued run. Returns null, without changes, when the run is not
- * queued: a redelivered job or a finished run.
+ * queued: a redelivered job or a finished run. While another run of the same
+ * scope is running it throws the running-run index' unique violation
+ * (PostgreSQL code 23505) and the run stays queued: callers read that as
+ * "not now", not as a lost run (F2-07).
  */
 export function startRun(runId: string): Promise<SyncRun | null> {
   return markRunStarted(runId)

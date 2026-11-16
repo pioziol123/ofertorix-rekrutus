@@ -2,7 +2,15 @@ import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
 import { PgBoss } from 'pg-boss'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 import { closePool, queueDatabase, setPool } from '../../lib/db.ts'
 import { requireQueued } from '../../lib/queue.ts'
 import {
@@ -13,6 +21,21 @@ import {
   startRun,
   type RunAdmission,
 } from './sync-run-state.ts'
+import * as repository from './infrastructure/persistence/sync-runs.ts'
+
+// The repository stays real; single tests interleave other work between its
+// calls to reproduce races deterministically.
+vi.mock('./infrastructure/persistence/sync-runs.ts', async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import('./infrastructure/persistence/sync-runs.ts')
+    >()
+  return {
+    ...actual,
+    insertQueuedRun: vi.fn(actual.insertQueuedRun),
+    findQueuedRunId: vi.fn(actual.findQueuedRunId),
+  }
+})
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -56,6 +79,7 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
   }, 30_000)
 
   beforeEach(async () => {
+    vi.clearAllMocks()
     await pool.query(
       'TRUNCATE source_run_seen, source_ad_revisions, source_ads, source_sync_runs, source_scopes CASCADE',
     )
@@ -112,6 +136,59 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
     expect(await jobs()).toEqual([
       { id: run!.job_id, data: { runId: run!.id } },
     ])
+  })
+
+  it('admits a new queued run when the conflicting one starts before it is read (A3-AC01, F2-07, ASM-2)', async () => {
+    const first = await admitRun(admission())
+    // The admission's insert conflicts with the queued run, which then starts
+    // (another worker) before the admission reads it back.
+    vi.mocked(repository.findQueuedRunId).mockImplementationOnce(
+      async (scopeId) => {
+        await pool.query(
+          `UPDATE source_sync_runs SET status='running', started_at=now()
+        WHERE scope_id=$1 AND status='queued'`,
+          [scopeId],
+        )
+        return null
+      },
+    )
+    vi.clearAllMocks()
+    const second = await admitRun(admission())
+    expect(repository.insertQueuedRun).toHaveBeenCalledTimes(2)
+    expect(repository.findQueuedRunId).toHaveBeenCalledTimes(1)
+    expect(second).toEqual({ id: expect.any(String), existing: false })
+    expect(second.id).not.toBe(first.id)
+    const rows = await runs()
+    expect(rows.map((run) => [run.id, run.status])).toEqual([
+      [first.id, 'running'],
+      [second.id, 'queued'],
+    ])
+    expect((await jobs()).map((job) => job.data.runId).sort()).toEqual(
+      [first.id, second.id].sort(),
+    )
+    expect(await admitRun(admission())).toEqual({
+      id: second.id,
+      existing: true,
+    })
+  })
+
+  it('fails the admission without changes when it does not settle after three attempts (ASM-2)', async () => {
+    vi.mocked(repository.insertQueuedRun).mockResolvedValue(null)
+    vi.mocked(repository.findQueuedRunId).mockResolvedValue(null)
+    try {
+      await expect(admitRun(admission())).rejects.toThrow(
+        'Sync run admission did not settle; retry the request',
+      )
+      expect(repository.insertQueuedRun).toHaveBeenCalledTimes(3)
+      expect(repository.findQueuedRunId).toHaveBeenCalledTimes(3)
+    } finally {
+      // Restores the real repository functions given to vi.fn.
+      vi.mocked(repository.insertQueuedRun).mockReset()
+      vi.mocked(repository.findQueuedRunId).mockReset()
+    }
+    expect(await runs()).toEqual([])
+    expect(await jobs()).toEqual([])
+    expect((await pool.query('SELECT * FROM source_scopes')).rowCount).toBe(0)
   })
 
   it('creates neither the run nor the job when sending the job fails (A3-R02)', async () => {
