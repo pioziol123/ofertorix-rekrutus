@@ -139,6 +139,17 @@ export async function markRunFinished(
   return result.rowCount === 1
 }
 
+/** Adds one saved batch to the run's page, unique-ad and revision counters. */
+export async function addBatchToRunCounters(
+  runId: string,
+  batch: { uniqueAds: number; revisions: number },
+): Promise<void> {
+  await db().query(
+    'UPDATE source_sync_runs SET pages=pages+1,seen=seen+$2,revisions=revisions+$3 WHERE id=$1',
+    [runId, batch.uniqueAds, batch.revisions],
+  )
+}
+
 export async function findRun(runId: string): Promise<SyncRun | null> {
   const result = await db().query<RunRow>(
     `SELECT ${runColumns} FROM source_sync_runs r JOIN source_scopes s ON s.id=r.scope_id
