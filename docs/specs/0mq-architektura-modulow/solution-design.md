@@ -174,10 +174,11 @@ Wspólny helper żądań HTTP obsługuje konektory, które same komunikują się
 
 - Timeout pojedynczego żądania wynosi 5 s, a ponowienia są najwyżej dwa (najwyżej trzy próby). Obie wartości są konfigurowalne parametrem.
 - Do ponowienia kwalifikują się: błąd sieci, przekroczenie czasu, HTTP 429 i 5xx.
-- Przed ponowieniem helper czeka tyle, ile wskazuje `Retry-After`, a bez tego nagłówka 1 s. Gdy `Retry-After` przekracza 60 s, zgłasza błąd konektora z komunikatem o odroczonym ponowieniu i statusem HTTP.
+- Przed ponowieniem helper czeka tyle, ile wskazuje `Retry-After`, ale nie krócej niż 1 s, a bez tego nagłówka 1 s. Gdy `Retry-After` przekracza 60 s, zgłasza błąd konektora z komunikatem o odroczonym ponowieniu i statusem HTTP.
 - Inny status helper zwraca wywołującemu.
 - Zegar, funkcja oczekiwania i funkcja `fetch` są wstrzykiwalne na potrzeby testów.
 - Odstęp 1 s między żądaniami SOLID.Jobs zostaje w konektorze SOLID.Jobs.
+- Himalayas zachowuje limit 120 s na przebieg i nie zaczyna strony, gdy do limitu zostaje mniej niż 21 s. Konektor przekazuje helperowi moment końca limitu, a helper nie ponawia żądania, którego oczekiwanie i próba nie zmieszczą się przed nim.
 
 Konektory JobSpy i polskich portali uruchamiają procesy Python i zachowują obecne limity (F2-05):
 - limit czasu zapytań w JobSpy,
@@ -189,6 +190,7 @@ Konektory JobSpy i polskich portali uruchamiają procesy Python i zachowują obe
 - Dotychczasowe funkcje wykonania synchronizacji czterech źródeł pobierają dane wyłącznie przez konektory.
 - Funkcja przyjmująca porcję woła dotychczasowy zapis porcji z treściami ogłoszeń. Zadanie 0mq.4 zastępuje go nowym serwisem.
 - Status przebiegu wynika z rezultatu konektora: rezultat kompletny prowadzi dotychczasową ścieżką kompletną, a niekompletny dotychczasową ścieżką błędu, z powodem jako komunikatem.
+- Błąd zapisu porcji Himalayas zachowuje dotychczasowy status, komunikat i liczniki. Diagnostyka takiego przebiegu zawiera tylko zapytanie, liczbę stron, powód zatrzymania i niekompletność rynku, bo liczniki konektora nie wychodzą razem z błędem.
 - Zlecanie, blokady i oznaczanie niedostępności zostają bez zmian; zastępują je zadania 0mq.3–0mq.5, 0mq.16 i 0mq.7.
 
 ### Weryfikacja
@@ -212,7 +214,7 @@ Wymagania: [A2](requirements.md#a2).
 
 - Rejestr budowany jest z listy konektorów. Powtórzona nazwa przerywa budowę dedykowanym błędem z nazwą.
 - Rejestr udostępnia wyszukanie konektora po nazwie i listę nazw w kolejności rejestracji.
-- Wyszukanie nieznanej nazwy zgłasza dedykowany błąd z nazwą w osobnym polu. Komunikat zawiera tylko nazwę.
+- Wyszukanie nieznanej nazwy zgłasza dedykowany błąd z nazwą w osobnym polu. Komunikat ma postać `Unknown source: <nazwa>`, bez innych danych.
 - Rejestr aplikacji to jedyne miejsce, które importuje konkretne konektory. Rejestruje SOLID.Jobs, Himalayas, po jednym konektorze na każdy portal z katalogu JobSpy i na każdy polski portal.
 - Rejestr nie filtruje źródeł wyłączonych w konfiguracji. Włączenie źródła sprawdzają, jak dotąd, operacje zlecania.
 - Rejestr aplikacji powstaje przy imporcie modułu, więc błąd powtórzonej nazwy przerywa start serwera i workera.
@@ -271,7 +273,7 @@ Operacje są wewnętrzne dla modułu Źródła ofert. Przebieg jako obiekt zawie
 
 Pozostałe operacje:
 
-- **Rozpoczęcie** to warunkowa zmiana statusu z oczekującego na trwający z datą rozpoczęcia. Gdy warunek nie jest spełniony, operacja zwraca brak przebiegu.
+- **Rozpoczęcie** to warunkowa zmiana statusu z oczekującego na trwający z datą rozpoczęcia. Gdy warunek nie jest spełniony, operacja zwraca brak przebiegu. Gdy w zakresie trwa inny przebieg, indeks trwających zgłasza błąd unikalności, a przebieg zostaje oczekujący; wywołujący traktuje to jako „jeszcze nie teraz”.
 - **Zakończenie** przyjmuje status kompletny, częściowy albo nieudany, błąd i opcjonalną diagnostykę. Zmienia stan tylko przebiegu oczekującego lub trwającego i zwraca, czy zmiana nastąpiła. Status wybiera wywołujący.
 - **Odczyt przebiegu** po identyfikatorze, razem z parametrami zakresu.
 - **Lista przebiegów niezakończonych**, opcjonalnie dla jednego źródła, od najstarszego.
