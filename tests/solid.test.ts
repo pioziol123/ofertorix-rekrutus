@@ -99,6 +99,34 @@ describe('SOLID.Jobs source adapter', () => {
     expect(deferred).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps requests at least 1 s apart, retries included', async () => {
+    let now = 10_000
+    const requests: number[] = []
+    const clock = {
+      now: () => now,
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+    }
+    const sleep = async (ms: number) => {
+      now += ms
+    }
+    const fetcher = vi.fn<typeof fetch>(async (url) => {
+      requests.push(now)
+      const index = Number(new URL(String(url)).searchParams.get('pageIndex'))
+      // The first attempt at page 0 fails, with no wait requested.
+      if (requests.length === 1)
+        return new Response('', {
+          status: 503,
+          headers: { 'Retry-After': '0' },
+        })
+      return Response.json({ ...envelope(), pageIndex: index })
+    })
+    const read = createPageFetcher(fetcher, sleep, clock)
+    await read(0)
+    await read(1)
+    expect(requests).toEqual([10_000, 11_000, 12_000])
+  })
+
   it('does not retry permanent HTTP errors or malformed successful payloads', async () => {
     for (const response of [
       new Response('', { status: 400 }),

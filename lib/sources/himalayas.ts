@@ -173,8 +173,9 @@ export class HimalayasHttpError extends Error {
 
 /**
  * Reads one search page, 1 s after the previous one. Transport limits and
- * retries come from the shared HTTP helper; a final error status is thrown
- * as `HimalayasHttpError`.
+ * retries come from the shared HTTP helper, with no retry that would end
+ * after `deadlineAt` (clock time); a final error status is thrown as
+ * `HimalayasHttpError`.
  */
 export function createPageFetcher(
   fetcher: typeof fetch = fetch,
@@ -188,7 +189,11 @@ export function createPageFetcher(
     clock,
     maxBytes: 8 * 1024 * 1024,
   })
-  return async (page: number, signal?: AbortSignal): Promise<HimalayasPage> => {
+  return async (
+    page: number,
+    signal?: AbortSignal,
+    deadlineAt?: number,
+  ): Promise<HimalayasPage> => {
     const url = pageUrl(page)
     // Sequential caller holds the database lock; no hidden redirect.
     await sleep(1000)
@@ -198,6 +203,7 @@ export function createPageFetcher(
         url,
         { redirect: 'error', headers: { Accept: 'application/json' } },
         signal,
+        { deadlineAt },
       )
     } catch (error) {
       if (error instanceof RetryDeferredError)

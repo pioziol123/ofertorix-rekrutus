@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  parsePage as parseHimalayasPage,
+  type HimalayasPage,
+} from '../../../../lib/sources/himalayas.ts'
 import { createPageFetcher } from '../../../../lib/sources/solid.ts'
 import { jobspySources } from '../../../../lib/sources/jobspy-catalog.ts'
 import { polishSources } from '../../../../lib/sources/polish-catalog.ts'
@@ -212,5 +216,54 @@ describe('SOLID.Jobs connector', () => {
       ),
     ).rejects.toThrow('Source fetch aborted')
     expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Himalayas connector', () => {
+  afterEach(() => vi.useRealTimers())
+  const himalayasPage = (id: string, totalCount: number): HimalayasPage =>
+    parseHimalayasPage(
+      {
+        jobs: [
+          {
+            guid: `https://himalayas.app/companies/acme/jobs/${id}`,
+            applicationLink: `https://himalayas.app/companies/acme/jobs/${id}`,
+            title: 'Senior PHP Engineer',
+            description: '<p>Full description</p>',
+          },
+        ],
+        totalCount,
+        offset: 0,
+        limit: 20,
+      },
+      1,
+    )
+
+  it('starts no page later than 21 s before the 120 s deadline and gives each page that deadline', async () => {
+    vi.useFakeTimers()
+    const started = Date.now()
+    const deadlines: (number | undefined)[] = []
+    // Every page takes 25 s.
+    const fetchPage = vi.fn(
+      async (index: number, _signal?: AbortSignal, deadlineAt?: number) => {
+        deadlines.push(deadlineAt)
+        vi.setSystemTime(Date.now() + 25_000)
+        return { ...himalayasPage(`job-${index}`, 200), valid: true }
+      },
+    )
+    const connector = createHimalayasConnector(fetchPage)
+    const result = await connector.fetch(
+      connector.scopeParameters(),
+      async () => {},
+      new AbortController().signal,
+    )
+    // Pages start at 0, 25, 50 and 75 s; at 100 s only 20 s remain.
+    expect(fetchPage).toHaveBeenCalledTimes(4)
+    expect(deadlines).toEqual(Array(4).fill(started + 120_000))
+    expect(result).toMatchObject({
+      complete: false,
+      reason: 'Himalayas pilot incomplete; inspect diagnostics',
+      diagnostics: { stopReason: 'deadline', pages: 4 },
+    })
   })
 })

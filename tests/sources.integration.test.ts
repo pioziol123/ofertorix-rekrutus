@@ -392,6 +392,17 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     ).toEqual([{ id: queued!.id, status: 'complete', pages: 1, seen: 1 }])
   })
 
+  it('counts an empty invalid first page, so the run ends partial', async () => {
+    const result = await run([], { valid: false, totalCount: 5, totalPages: 1 })
+    expect(result).toMatchObject({
+      status: 'partial',
+      pages: 1,
+      seen: 0,
+      error:
+        'Invalid or changing pagination; saved valid offers, availability unchanged',
+    })
+  })
+
   it('makes one catchup slot after downtime and does not enqueue every missed day', async () => {
     const now = new Date('2026-10-31T12:00:00Z')
     const queued = await enqueueSync(pool, boss, 'scheduled', now)

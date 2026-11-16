@@ -172,6 +172,21 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       },
     ])
   })
+  it.each([
+    ['limited', 'partial', 'unverified'],
+    ['partial', 'partial', 'page_error'],
+    ['failed', 'failed', 'page_error'],
+  ])(
+    'keeps the status of an incomplete run without jobs: helper %s gives %s',
+    async (status, expected, stop_reason) => {
+      expect(await run({ status, stop_reason, jobs: [] })).toMatchObject({
+        status: expected,
+        seen: 0,
+        error: 'JobSpy query incomplete; inspect source diagnostics',
+      })
+    },
+  )
+
   it('never marks unseen offers unavailable after complete empty or partial queries', async () => {
     await run()
     expect((await run({ jobs: [] })).status).toBe('complete')

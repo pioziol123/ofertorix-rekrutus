@@ -12,6 +12,7 @@ import {
 } from 'vitest'
 import {
   HimalayasHttpError,
+  parameters,
   parsePage,
   type HimalayasPage,
 } from '../lib/sources/himalayas.ts'
@@ -228,6 +229,47 @@ integration(
           expect(result.diagnostics.stopReason).toBe('changing_pagination')
       },
     )
+
+    it('counts a page whose ads were all repeated', async () => {
+      const fetcher = vi
+        .fn()
+        .mockResolvedValueOnce(page(['one'], { totalCount: 40 }))
+        .mockResolvedValueOnce(page(['one'], { totalCount: 40 }))
+      const result = await syncHimalayas(pool, fetcher)
+      expect(result).toMatchObject({ status: 'partial', pages: 2, seen: 1 })
+      expect(result.diagnostics).toMatchObject({ pages: 2, duplicates: 1 })
+    })
+
+    it('records a failed page save as an incomplete read with short diagnostics', async () => {
+      await pool.query(
+        `ALTER TABLE source_ad_revisions ADD CONSTRAINT reject_fixture CHECK (payload->>'title' <> 'Rejected fixture')`,
+      )
+      const rejected = page(['rejected'])
+      rejected.jobs[0]!.title = 'Rejected fixture'
+      try {
+        const fetcher = vi
+          .fn()
+          .mockResolvedValueOnce(page(['saved'], { totalCount: 21 }))
+          .mockResolvedValueOnce(rejected)
+        const result = await syncHimalayas(pool, fetcher)
+        // Since connectors the save error leaves the connector unchanged, so
+        // the run keeps only what the sync path knows.
+        expect(result).toMatchObject({
+          status: 'partial',
+          error: 'Himalayas pilot incomplete; inspect diagnostics',
+        })
+        expect(result.diagnostics).toEqual({
+          query: parameters,
+          pages: 2,
+          stopReason: 'fetch_or_processing_error',
+          marketComplete: false,
+        })
+      } finally {
+        await pool.query(
+          'ALTER TABLE source_ad_revisions DROP CONSTRAINT reject_fixture',
+        )
+      }
+    })
 
     it('does not count a rolled-back page as saved and retains earlier committed pages', async () => {
       await pool.query(

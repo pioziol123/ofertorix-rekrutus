@@ -32,6 +32,14 @@ export type HttpRequestOptions = {
   clock?: Clock
 }
 
+export type RequestLimits = {
+  /**
+   * Clock time by which the request must end. Retries that could not finish
+   * by then are not made; the last answer or network error stands.
+   */
+  deadlineAt?: number
+}
+
 export type HttpResponse = {
   status: number
   ok: boolean
@@ -52,7 +60,7 @@ const maxRetryWaitMs = 60_000
  * helper waits for `Retry-After`, at least 1 s. A `Retry-After` beyond 60 s
  * ends with `RetryDeferredError`. Repeated network errors end with a
  * `ConnectorError`; any other status, or the last retryable one, is returned
- * to the caller.
+ * to the caller. An optional deadline also limits the retries.
  */
 export function createHttpRequest(options: HttpRequestOptions) {
   const {
@@ -67,8 +75,13 @@ export function createHttpRequest(options: HttpRequestOptions) {
     url: URL | string,
     init: RequestInit = {},
     signal?: AbortSignal,
+    limits: RequestLimits = {},
   ): Promise<HttpResponse> => {
     const fetcher = options.fetch ?? fetch
+    // A retry is made only if it can finish before the caller's deadline.
+    const fits = (wait: number) =>
+      limits.deadlineAt === undefined ||
+      clock.now() + wait + timeoutMs <= limits.deadlineAt
     for (let attempt = 0; ; attempt++) {
       throwIfAborted(signal)
       const last = attempt >= retries
@@ -98,7 +111,7 @@ export function createHttpRequest(options: HttpRequestOptions) {
         signal?.removeEventListener('abort', abort)
       }
       if (!response) {
-        if (last)
+        if (last || !fits(defaultRetryWaitMs))
           throw new ConnectorError(
             `${label} network error or timeout after retry`,
           )
@@ -119,7 +132,15 @@ export function createHttpRequest(options: HttpRequestOptions) {
       // Do not retry earlier than Retry-After when it exceeds our waiting budget.
       if (!Number.isFinite(wait) || wait > maxRetryWaitMs)
         throw new RetryDeferredError(label, response.status, retryAfter)
-      await sleep(Math.max(defaultRetryWaitMs, wait))
+      const pause = Math.max(defaultRetryWaitMs, wait)
+      if (!fits(pause))
+        return {
+          status: response.status,
+          ok: false,
+          headers: response.headers,
+          body: Buffer.alloc(0),
+        }
+      await sleep(pause)
     }
   }
 }

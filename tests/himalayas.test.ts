@@ -234,6 +234,31 @@ describe('Himalayas bounded HTTP transport', () => {
     ])
   })
 
+  it('makes no retry that would end after the run deadline', async () => {
+    let now = 0
+    const clock = {
+      now: () => now,
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+    }
+    const sleep = async (ms: number) => {
+      now += ms
+    }
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(
+        async () =>
+          new Response('', { status: 429, headers: { 'Retry-After': '60' } }),
+      )
+    const read = createPageFetcher(fetcher, sleep, clock)
+    await expect(read(1, undefined, 30_000)).rejects.toMatchObject({
+      status: 429,
+      retryAfter: '60',
+    })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(now).toBe(1000)
+  })
+
   it('rejects oversized streamed responses and malformed JSON', async () => {
     const huge = vi
       .fn<typeof fetch>()

@@ -173,6 +173,82 @@ describe('HTTP request helper for connectors', () => {
     expect(time.waits).toEqual([30_000])
   })
 
+  it('waits at least 1 s before a retry, even when Retry-After is shorter', async () => {
+    const time = fakeClock()
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response('', { status: 503, headers: { 'Retry-After': '0' } }),
+      )
+      .mockResolvedValueOnce(Response.json({}))
+    const request = createHttpRequest({
+      label: 'API',
+      fetch: fetcher,
+      sleep: time.sleep,
+      clock: time.clock,
+    })
+    expect(await request('https://source.test')).toMatchObject({ ok: true })
+    expect(time.waits).toEqual([1000])
+  })
+
+  it('makes no retry that could not end before the deadline', async () => {
+    const time = fakeClock()
+    const limited = vi
+      .fn<typeof fetch>()
+      .mockImplementation(
+        async () =>
+          new Response('', { status: 429, headers: { 'Retry-After': '30' } }),
+      )
+    const request = createHttpRequest({
+      label: 'API',
+      fetch: limited,
+      sleep: time.sleep,
+      clock: time.clock,
+    })
+    // 30 s wait + 5 s attempt would end at 35 s, past the 20 s deadline.
+    expect(
+      await request('https://source.test', {}, undefined, {
+        deadlineAt: 20_000,
+      }),
+    ).toMatchObject({ status: 429, ok: false })
+    expect(limited).toHaveBeenCalledTimes(1)
+    expect(time.waits).toEqual([])
+
+    const failing = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new Error('network'))
+    const failingRequest = createHttpRequest({
+      label: 'API',
+      fetch: failing,
+      sleep: time.sleep,
+      clock: time.clock,
+    })
+    await expect(
+      failingRequest('https://source.test', {}, undefined, {
+        deadlineAt: time.time() + 3000,
+      }),
+    ).rejects.toThrow('API network error or timeout after retry')
+    expect(failing).toHaveBeenCalledTimes(1)
+
+    // A retry that fits is still made.
+    const busy = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockResolvedValueOnce(Response.json({}))
+    const busyRequest = createHttpRequest({
+      label: 'API',
+      fetch: busy,
+      sleep: time.sleep,
+      clock: time.clock,
+    })
+    expect(
+      await busyRequest('https://source.test', {}, undefined, {
+        deadlineAt: time.time() + 6000,
+      }),
+    ).toMatchObject({ ok: true })
+    expect(busy).toHaveBeenCalledTimes(2)
+  })
+
   it('uses the 5 s limit and two retries by default, both configurable', async () => {
     vi.useFakeTimers()
     const { fetcher, aborted } = silentSource(() => Date.now())

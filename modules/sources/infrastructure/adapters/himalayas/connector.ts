@@ -15,12 +15,14 @@ import {
 export type HimalayasPageFetcher = (
   page: number,
   signal?: AbortSignal,
+  deadlineAt?: number,
 ) => Promise<HimalayasPage>
 
 export const incompleteReason =
   'Himalayas pilot incomplete; inspect diagnostics'
 const deadlineMs = 120_000
-// Existing completeness criterion: no page starts later than 21 s before the deadline.
+// Existing completeness criterion: no page starts later than 21 s before the
+// deadline. Retries of a page also end by the deadline.
 const pageBudgetMs = 21_000
 
 /**
@@ -61,7 +63,7 @@ export function createHimalayasConnector(
         throwIfAborted(signal)
         let page: HimalayasPage
         try {
-          page = await fetchPage(index, signal)
+          page = await fetchPage(index, signal, deadline)
         } catch (error) {
           if (error instanceof ConnectorAbortedError) throw error
           incomplete = true
