@@ -10,14 +10,14 @@ Start with `bd prime`. Use the installed beads skill for workflow guidance.
 - Inspect: `bd ready`, `bd list --json`, `bd show <id>`.
 - Create specifications as epics and implementation tasks as their children.
 - Include acceptance criteria in each implementation task.
-- Apply labels from `docs/agents/triage-labels.md`.
+- Apply the triage labels.
 - Record blockers with `bd dep add <task> <blocker>`.
 - Claim work with `bd update <id> --claim`.
 - Close completed work with `bd close <id>`.
 
 Specifications and implementation tasks use `ready-for-agent`
 after their required review and approval. Implementation tasks
-follow `docs/agents/implementation-workflow.md`: document links in
+follow the process contract: document links in
 metadata, the readiness checklist and the unattended runner.
 
 Product documents and ADRs explain requirements and decisions;

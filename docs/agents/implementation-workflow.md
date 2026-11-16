@@ -27,6 +27,8 @@ An epic's documents live in `docs/specs/<epic>-<slug>/`, where `<epic>` is the e
 
 ADRs, architecture documents and RFCs supplement these documents. Link them from the PRD or the solution design; every epic still has a PRD.
 
+The project's architecture rules bind every task, whether or not its documents link them, and apply at all three stages: preparation checks each design option against them, the implementer follows them, and the reviewer checks the diff against them. Their section on the costs of design decisions works the same way at each stage: a cost is named when an option carries it, and it enters the code only as a decision the solution design records, or as an assumption the implementer records (see [Spec conflicts during implementation](#spec-conflicts-during-implementation)).
+
 An implementation task covers one vertical, demoable increment that a person can review in one sitting. Split a task when it holds behaviours that can be accepted separately, needs more than about 15 acceptance criteria, or changes the public contract of more than one module. Several tasks can share one requirements or design file when each task owns a section with stable IDs.
 
 ## The implementation task

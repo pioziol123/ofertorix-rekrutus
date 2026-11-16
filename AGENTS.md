@@ -1,44 +1,28 @@
 # Agent Instructions
 
-## Agent skills
+This file is the index of the project's agent documentation. It names each family of documents, says when to read it and where it starts. Every other document reaches another family through the name this index gives it.
 
-### Issue tracker
-Use Beads (`bd`) for specifications, tasks and dependencies.
-Read `docs/agents/issue-tracker.md` before tracker operations.
+## Documentation map
 
-### Triage labels
-Read `docs/agents/triage-labels.md` when classifying project issues.
+| Name | Entry | Read it |
+| --- | --- | --- |
+| **Process contract** | `docs/agents/implementation-workflow.md` | Before preparing or implementing a task. It defines the specification documents, bd tasks and their labels, the hand-off, the runner and how spec conflicts are classified. |
+| **Architecture rules** | `docs/architecture/` (files below) | Before designing, implementing or reviewing a change. They bind every task, whether or not its documents cite them. |
+| **Domain docs** | `docs/agents/domain.md` | Before exploration, specification or design. It lists the glossary, confirmed product decisions and ADRs. |
+| **Tracker guide** | `docs/agents/issue-tracker.md` | Before bd operations. Use bd for specifications, tasks and dependencies. |
+| **Triage labels** | `docs/agents/triage-labels.md` | When classifying issues. It defines the labels that say what state an issue is in and who acts next. |
+| **Specifications** | `docs/specs/` | When working on an epic or task: the PRD, requirements and solution design it links. The process contract sets their layout. |
 
-### Implementation workflow
-Read `docs/agents/implementation-workflow.md` before preparing
-or implementing a task.
+The architecture rules span several files with different roles:
 
-### Domain docs
-Single-context project. Read `docs/agents/domain.md` before
-exploration, specification or design work.
+- `docs/architecture/moduly-i-zasady-kodu.md` holds the binding rules: dependencies between modules, code structure, database access and the costs of design decisions. Check every design option and every change against them.
+- `docs/architecture/moduly.md` maps modules to what they own. Use it to place a change in the module that owns its data and rules.
+- `docs/architecture/README.md` describes the current code as C4 diagrams. It orients you in the system; it does not bind decisions.
 
-This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
+## How documents refer to each other
 
-> **Architecture in one line:** Issues live in a local Dolt database
-> (`.beads/dolt/`); cross-machine sync uses `bd dolt push/pull` (a
-> git-compatible protocol), stored under `refs/dolt/data` on your git
-> remote — separate from `refs/heads/*` where your code lives.
-> `.beads/issues.jsonl` is a passive export, not the wire protocol.
->
-> See [sync-concepts](https://github.com/gastownhall/beads/blob/main/docs/core-concepts/sync-concepts.md)
-> for the one-screen overview and anti-patterns (don't treat JSONL as the
-> source of truth; don't `bd import` during normal operation; don't
-> reach for third-party Dolt hosting before trying the default).
+Paths to agent documentation live in this file only. A process document, a skill or a runner prompt names another family by its name from the map above, for example "the architecture rules", and the reader finds the path here. A document may still give paths to the files it describes itself and to files of its own family. Specifications may link a specific rule they cite as evidence. When a family moves or splits, update its row in the map.
 
-## Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
-```
 
 ## Non-Interactive Shell Commands
 

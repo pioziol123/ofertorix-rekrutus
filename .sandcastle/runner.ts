@@ -383,7 +383,7 @@ function feedbackPrompt(report: string): string {
   return [
     'The runner checked your work and the task is not done yet:',
     report,
-    `Fix it within the task, run ${GATE} until it exits 0, commit, and rewrite ${RESULT_FILE}. If the report shows a spec conflict rather than a defect in your code, classify it as the workflow file's section "Spec conflicts during implementation" says: an assumption or a qualifying deviation goes into the result, anything else means finishing as blocked with the question.`,
+    `Fix it within the task, run ${GATE} until it exits 0, commit, and rewrite ${RESULT_FILE}. If the report shows a spec conflict rather than a defect in your code, classify it as the process contract's section "Spec conflicts during implementation" says: an assumption or a qualifying deviation goes into the result, anything else means finishing as blocked with the question.`,
   ].join('\n\n')
 }
 
@@ -393,7 +393,8 @@ function reviewPrompt(issue: Issue, result: AgentResult, ctx: EpicContext): stri
   return [
     `Review the change on this branch against its specification. Diff: git diff ${BASE_BRANCH}...HEAD. Do not modify tracked files.`,
     `Documents: ${JSON.stringify(issue.metadata)}. Acceptance criteria:\n${issue.acceptance_criteria}`,
-    'Read the documents in full, and docs/agents/implementation-workflow.md, section "Spec conflicts during implementation". Report requirements that are missing or partial, behaviour that was not asked for, and contracts implemented differently from the solution design. Quote the document line for each finding.',
+    'Read the documents in full, and the section "Spec conflicts during implementation" of the process contract that AGENTS.md names. Report requirements that are missing or partial, behaviour that was not asked for, and contracts implemented differently from the solution design. Quote the document line for each finding.',
+    'Also read the architecture rules that AGENTS.md names and check the diff against them. A design cost from their list that the diff introduces is a finding unless the solution design records it or the implementing agent recorded it as an assumption; such an assumption names the architecture rule in place of a precedence rule.',
     epicBrief(ctx),
     `The implementing agent recorded these assumptions:\n${JSON.stringify(assumptions, null, 2)}\nFor each, check that every acceptance criterion is really met, that the choice follows the precedence order, and that a test covers the edge case. An assumption that leaves a criterion unmet is a finding.`,
     bearingNote(assumptions, ctx),
@@ -446,7 +447,7 @@ async function warmCheck(sandbox: Sandbox, issue: Issue, branch: string, baseSha
     hasMarker: (text) => diff.split('\n').some((line) => line.startsWith('+') && line.includes(text)),
   })
   if (problems.length) {
-    const report = `The result's evidence and deviations fail the runner's checks (docs/agents/implementation-workflow.md, "What the runner checks"):\n- ${problems.join('\n- ')}`
+    const report = `The result's evidence and deviations fail the runner's checks (process contract, "What the runner checks"):\n- ${problems.join('\n- ')}`
     return { ok: false, report, result }
   }
 
@@ -621,7 +622,7 @@ function recordAssumptions(issue: Issue, assumptions: NonNullable<AgentResult['a
     bdQuiet(['comment', open.id, text])
     return
   }
-  const description = `Implementing agents settled these gaps in the specification of ${scope} by the precedence rule in docs/agents/implementation-workflow.md. Confirm each one in the solution design, or turn it into a change.\n\n${text}`
+  const description = `Implementing agents settled these gaps in the specification of ${scope} by the precedence rule of the process contract. Confirm each one in the solution design, or turn it into a change.\n\n${text}`
   bdQuiet(['create', '--title', `Potwierdzić założenia agentów dla ${scope}`, '--description', description, '--type', 'task',
     '--labels', 'needs-triage', '--metadata', JSON.stringify({ type: 'assumptions', epic: scope }),
     '--deps', `discovered-from:${issue.id}`, '--silent'])

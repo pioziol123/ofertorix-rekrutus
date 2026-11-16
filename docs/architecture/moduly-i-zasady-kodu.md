@@ -21,6 +21,19 @@ Podczas projektowania każdego procesu należy rozpoznać te sytuacje, opisać i
 
 Akceptacja konsekwencji współbieżnych zmian jest decyzją projektową i wymaga jawnego uzasadnienia, tak samo jak wprowadzenie zabezpieczeń.
 
+## Koszty decyzji projektowych
+
+Niektóre rozwiązania działają poprawnie, a mimo to zostawiają koszt, który ujawnia się dopiero przy kolejnych zmianach. Poniższe koszty same w sobie nie są zakazami: każdy bywa uzasadniony. Nie łagodzą reguł z pozostałych sekcji: publiczna operacja nadal wymaga wskazanego klienta. Każdy wymaga jednak jawnej decyzji. Przy przygotowaniu zadania nazywamy go jako minus opcji, która go niesie, także opcji rekomendowanej, a wybraną opcję z takim kosztem zapisujemy w solution design razem z tym kosztem. Kosztu, którego solution design nie przyjął, implementacja nie wprowadza bez odnotowania go.
+
+1. **Funkcja bez odbiorcy.** Operacja, pole lub mechanizm dodany teraz, choć nic w zadaniu z niego nie korzysta. Powstaje bez kryterium akceptacji, a zadanie, które go potrzebuje, może mieć inne wymagania. Dla publicznych operacji modułu rozwija to zasadę, że [operacje są domyślnie wewnętrzne](#reguły-zależności). Uzasadnieniem bywa koszt późniejszego dodania, np. danych, których nie da się odtworzyć wstecz.
+2. **Zgodność wsteczna wewnętrznego interfejsu.** Zachowanie starego kształtu operacji lub kontraktu, choć wszyscy jego odbiorcy są w tym repozytorium. Utrzymujemy i testujemy wtedy dwie ścieżki zamiast zmienić odbiorców w tym samym zadaniu. Uzasadnieniem bywają odbiorcy spoza repozytorium albo dane zapisane w starym formacie.
+3. **Drugi mechanizm do tego samego.** Nowy sposób realizacji czegoś, co moduł lub wspólna infrastruktura już robi, np. drugi zapis historii albo druga kolejka. Każda kolejna zmiana musi wybierać między nimi, a mechanizmy się rozchodzą. Przed dodaniem szukamy istniejącego mechanizmu po jego znaczeniu, nie po nazwie, którą sami byśmy nadali. Uzasadnieniem jest wymaganie, którego istniejący mechanizm nie spełnia, nazwane w solution design.
+4. **Stała lista z dwoma właścicielami.** Ten sam zamknięty zbiór wartości zdefiniowany w dwóch miejscach, np. w module i w instrukcji dla modelu AI. Zmiana w jednym miejscu bez drugiego daje ciche niespójności. Każdy wspólny fakt ma jednego właściciela, a pozostałe miejsca od niego czytają; to ta sama zasada, którą [moduł stosuje do swoich danych](#reguły-zależności).
+5. **Zapisana kopia zamiast odwołania.** Wartość skopiowana z innego miejsca tam, gdzie wystarczyłby identyfikator odczytywany przy użyciu. Kopia się dezaktualizuje i wymaga synchronizacji. Uzasadnieniem jest wymóg zachowania stanu z danej chwili, np. treści ogłoszenia, do której odnosi się nieaktualna ocena dopasowania.
+6. **Reguła przeniesiona bez jej powodu.** Ograniczenie skopiowane z innego zadania, modułu lub starego kodu, którego powód w nowym miejscu nie obowiązuje. Wygląda na uzgodnione, choć nikt go dla tego przypadku nie ustalał. Przenosimy regułę razem z powodem, który sprawdziliśmy w nowym miejscu.
+
+Akceptacja każdego z tych kosztów, tak jak akceptacja skutków współbieżnych zmian, jest decyzją projektową z jawnym uzasadnieniem.
+
 ## Reguły struktury kodu
 
 ### Katalog modułu
