@@ -19,7 +19,7 @@ Each document stays at its own level:
 
 - **PRD**: business and functional intent at a very high level, quick to read. No technical solutions and no detailed requirements.
 - **Requirements**: business and functional decisions and requirements, more detailed than the PRD. No technical details: no library protocols, function names, file names or directories. Each criterion says how it is checked in the same terms (an automated test, a check of the running application, a review).
-- **Solution design**: every technical decision, the requirements restated in precise technical language. It names libraries, mechanisms and data semantics, but not concrete paths, file names or function names; the implementer chooses those.
+- **Solution design**: every technical decision, the requirements restated in precise technical language. It names libraries, mechanisms and data semantics, but not concrete paths, file names or function names; the implementer chooses those. Each decision lists the options the owner discarded, each with the owner's reason, the verified fact that ruled it out, or none.
 
 Specifications are written in Polish and call the unit of work *zadanie*.
 
@@ -87,7 +87,7 @@ Before applying `ready-for-agent`:
 
 - Every linked document exists in the default branch and the anchors resolve.
 - Each acceptance criterion is observable and names how it is checked (test, command or inspection).
-- The solution design states the contracts the task touches exactly enough to implement without guessing.
+- The solution design states the contracts the task touches exactly enough to implement without guessing, and each of its decisions lists the options the owner discarded with the reason or "none recorded".
 - No open question blocks the task; non-blocking assumptions are recorded in the documents.
 - Blocking dependencies are wired in bd.
 
@@ -149,8 +149,9 @@ Read "at most N" and "up to X s" as upper bounds that must hold together, not as
 
 ### Classification
 
-The agent walks these questions in order and stops at the first that decides:
+The agent walks these questions in order and stops at the first that decides. No step may take an option the solution design records as discarded, because the owner has already rejected it: no interpretation in step 1 and no interim code in step 5.
 
+0. **Would only a discarded option resolve the conflict?** Then `blocked`; the question names the option and quotes the reason recorded for discarding it, or says that none was recorded.
 1. **Is every acceptance criterion met under one interpretation, chosen by precedence?** Then it is an **assumption**: decide, record and carry on.
 2. **Does the conflict touch a requirement in the epic's `load_bearing` list?** Then `blocked`.
 3. **Would the interim code be one-way:** a schema change or migration, a change to the meaning of stored data, a public module contract, an external integration, security? Then `blocked`.
