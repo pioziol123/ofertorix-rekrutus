@@ -139,11 +139,7 @@ integration('batch save in an isolated PostgreSQL schema', () => {
     await expect(saveBatch(run, [ad('d'), brokenAd()])).rejects.toThrow(
       BatchSaveError,
     )
-    expect((await ads()).map((row) => row.external_id)).toEqual([
-      'a',
-      'b',
-      'c',
-    ])
+    expect((await ads()).map((row) => row.external_id)).toEqual(['a', 'b', 'c'])
     expect(await observations(run.id)).toEqual(['a', 'b', 'c'])
     for (const key of ['a', 'b', 'c'])
       expect(await revisions(key)).toEqual([

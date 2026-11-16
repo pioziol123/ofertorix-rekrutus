@@ -5,7 +5,8 @@ import { fingerprint, hash, importQueue, scheduleDay, source } from './solid.ts'
 import { ConnectorError } from '../../modules/sources/infrastructure/adapters/connector.ts'
 import type { ConnectorProvider } from '../../modules/sources/infrastructure/adapters/connector-registry.ts'
 import { sourceConnectors } from '../../modules/sources/infrastructure/adapters/source-connectors.ts'
-import { transaction, saveOffers } from './store.ts'
+import { saveBatch } from '../../modules/sources/save-batch.ts'
+import { transaction } from './store.ts'
 
 const dispatchLock = 'solid-jobs-dispatch'
 const executionLock = 'solid-jobs-execution'
@@ -169,12 +170,7 @@ export async function executeSync(
         connector.scopeParameters(),
         async (ads) => {
           if (connectionLost) throw new Error('Database session lost')
-          await saveOffers(
-            client,
-            run,
-            ads.map((ad) => ad.content),
-            source,
-          )
+          await saveBatch({ id: run.id, scopeId: run.scope_id, source }, ads)
         },
         new AbortController().signal,
       )

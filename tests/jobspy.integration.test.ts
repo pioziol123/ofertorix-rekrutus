@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
+import { setPool } from '../lib/db.ts'
 import { PgBoss } from 'pg-boss'
 import {
   afterAll,
@@ -41,6 +42,8 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       options: `-c search_path=${schema}`,
       max: 8,
     })
+    // The batch save uses the shared database access (T-03).
+    setPool(pool)
     for (const migration of [
       '1770000000001_sources',
       '1770000000005_jobspy',

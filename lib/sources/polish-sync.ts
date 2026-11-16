@@ -5,7 +5,8 @@ import { hash, scheduleDay } from './solid.ts'
 import { ConnectorError } from '../../modules/sources/infrastructure/adapters/connector.ts'
 import type { ConnectorProvider } from '../../modules/sources/infrastructure/adapters/connector-registry.ts'
 import { sourceConnectors } from '../../modules/sources/infrastructure/adapters/source-connectors.ts'
-import { saveOffers, transaction } from './store.ts'
+import { saveBatch } from '../../modules/sources/save-batch.ts'
+import { transaction } from './store.ts'
 import {
   polishEnabled,
   polishQueue,
@@ -178,12 +179,7 @@ export async function executePolish(
         scope.rows[0]?.parameters,
         async (ads) => {
           if (lost) throw new Error('Database session lost')
-          await saveOffers(
-            client,
-            run,
-            ads.map((ad) => ad.content),
-            source,
-          )
+          await saveBatch({ id: run.id, scopeId: run.scope_id, source }, ads)
           delivered += ads.length
         },
         new AbortController().signal,
