@@ -377,6 +377,28 @@ Wykonawca jest operacją modułu Źródła ofert wywoływaną z handlera kolejki
 | A5-AC06–AC09 | Test z rzeczywistą kolejką: worker A przejmuje przebieg i zostaje zatrzymany bez zakończenia zadania (symulacja utraty); po wygaśnięciu heartbeat worker B ponawia próbę; zapisy A po utracie są odrzucane; liczba ogłoszeń i przebiegów się zgadza. Ponowne dostarczenie zakończonego przebiegu nie zmienia stanu. Dla AC09 przebieg trwający z zadaniem w stanie końcowym. Wartość heartbeat w teście może być minimalna (10 s). |
 | A5-AC10, AC11 | Istniejące testy integracyjne ścieżek synchronizacji, uzupełnione o wykonanie przez wspólnego wykonawcę. |
 
+<a id="a19"></a>
+
+## Zadanie 0mq.19 — Przyjęcie bez ponawiania
+
+Wymagania: [A19](requirements.md#a19).
+
+### Przyjęcie
+
+Kontrakt przyjęcia z [0mq.3](#a3) się nie zmienia: zwraca identyfikator przebiegu i informację, czy wskazano istniejący. Indeksy z 0mq.3 zostają. Zmienia się krok 3:
+
+3. Bez wstawienia: jedna próba odczytu przebiegu oczekującego zakresu, a gdy go nie ma, przebiegu trwającego zakresu (ruszył po konflikcie). Znaleziony przebieg jest zwracany jako istniejący, bez wysyłania zadania. Gdy nie ma żadnego, przyjęcie zgłasza błąd z prośbą o ponowne zlecenie i transakcja się wycofuje.
+
+Pętla do trzech prób z 0mq.3 zostaje usunięta razem z jej testami.
+
+### Weryfikacja
+
+| Kryterium | Sprawdzenie |
+| --- | --- |
+| A19-AC01, AC02 | Testy integracyjne według T-03 z dotychczasowym sposobem wymuszenia wyścigu z testów 0mq.3: oczekujący przebieg rusza (AC01) albo rusza i się kończy (AC02) między wstawieniem a odczytem. |
+| A19-AC03 | Przegląd kodu. |
+| A19-AC04 | Istniejące testy przyjęcia z 0mq.3. |
+
 <a id="a16"></a>
 
 ## Zadanie 0mq.16 — Wspólne zlecanie i kolejka

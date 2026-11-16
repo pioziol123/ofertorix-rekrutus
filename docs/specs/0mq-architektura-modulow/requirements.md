@@ -233,6 +233,25 @@ Każdy przebieg, niezależnie od źródła, wykonuje jeden wspólny proces. Odcz
 | A5-AC11 | Wszystkie dotychczasowe sposoby zlecania (CLI dla każdego źródła, zlecenie polskiego portalu z aplikacji, harmonogram SOLID.Jobs) kończą się przebiegiem wykonanym przez wspólny proces. | Istniejące i uzupełnione testy synchronizacji |
 | A5-AC12 | Wynik zadania rozróżnia testy wykonane od pominiętych. | Przegląd wyniku zadania |
 
+<a id="a19"></a>
+
+## Zadanie 0mq.19 — Przyjęcie bez ponawiania prób
+
+Gdy zlecenie trafia na istniejący oczekujący przebieg tego samego źródła i zakresu, przyjęcie zwraca ten przebieg z informacją, że synchronizacja już jest zlecona, i niczego nie ponawia. Dziś przyjęcie z zadania 0mq.3 ponawia wstawienie do trzech razy, gdy oczekujący przebieg ruszy, zanim zostanie odczytany. Decyzja właściciela z 2026-11-16: ponawianie jest zbędne. Reguła F2-07 się nie zmienia. Reguły: F2-07.
+
+| Wymaganie | Treść |
+| --- | --- |
+| A19-R01 | Przyjęcie, które nie wstawiło przebiegu z powodu oczekującego przebiegu tego zakresu, nie ponawia wstawienia. Zwraca identyfikator tego przebiegu i informację, że wskazano istniejący, także gdy przebieg w międzyczasie ruszył. |
+| A19-R02 | Gdy przebiegu, który zablokował wstawienie, nie ma już wśród aktywnych, przyjęcie kończy się błędem bez zmian, a wywołujący może zlecić ponownie. |
+| A19-R03 | Pozostałe zachowanie przyjęcia z zadania 0mq.3 i reguła F2-07 się nie zmieniają. |
+
+| Kryterium | Warunek akceptacji | Sprawdzenie |
+| --- | --- | --- |
+| A19-AC01 | Gdy oczekujący przebieg rusza między nieudanym wstawieniem a odczytem, przyjęcie zwraca identyfikator tego przebiegu z informacją, że wskazano istniejący, i nie tworzy przebiegu ani zlecenia w kolejce. | Test automatyczny na rzeczywistej bazie i kolejce |
+| A19-AC02 | Gdy przebieg, który zablokował wstawienie, zakończy się przed odczytem, przyjęcie kończy się błędem i nie zostawia przebiegu, zakresu ani zlecenia. | jw. |
+| A19-AC03 | Przyjęcie wykonuje najwyżej jedną próbę wstawienia. | Przegląd kodu i test z A19-AC01 |
+| A19-AC04 | Kryteria A3-AC01–AC05 nadal są spełnione. | Istniejące testy przyjęcia |
+
 <a id="a16"></a>
 
 ## Zadanie 0mq.16 — Wspólne zlecanie synchronizacji

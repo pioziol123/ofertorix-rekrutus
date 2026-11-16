@@ -49,7 +49,7 @@ Aplikacja działa jak dotąd, z kilkoma wyjątkami:
 | Etap | Zadania |
 | --- | --- |
 | Wspólny dostęp do danych | [0mq.13](requirements.md#a13) |
-| Jeden proces synchronizacji źródeł | [0mq.1](requirements.md#a1), [0mq.2](requirements.md#a2), [0mq.3](requirements.md#a3), [0mq.4](requirements.md#a4), [0mq.5](requirements.md#a5), [0mq.16](requirements.md#a16), [0mq.7](requirements.md#a7) |
+| Jeden proces synchronizacji źródeł | [0mq.1](requirements.md#a1), [0mq.2](requirements.md#a2), [0mq.3](requirements.md#a3), [0mq.4](requirements.md#a4), [0mq.5](requirements.md#a5), [0mq.19](requirements.md#a19), [0mq.16](requirements.md#a16), [0mq.7](requirements.md#a7) |
 | Moduły Oferty i Profil zawodowy z publicznymi odczytami | [0mq.8](requirements.md#a8), [0mq.6](requirements.md#a6), [0mq.10](requirements.md#a10) |
 | Moduł AI z ogólnym kontraktem | [0mq.14](requirements.md#a14), [0mq.9](requirements.md#a9), [0mq.11](requirements.md#a11), [0mq.17](requirements.md#a17) |
 | Usunięcie obejść i docelowe katalogi | [0mq.18](requirements.md#a18), [0mq.12](requirements.md#a12) |
