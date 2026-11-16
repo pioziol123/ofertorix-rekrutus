@@ -1,5 +1,11 @@
 import { finishedRunStatus } from './domain/run-status.ts'
-import { finishRun, listUnfinishedRuns } from './sync-run-state.ts'
+import { syncJobOptions } from './sync-job-options.ts'
+import {
+  finishRun,
+  listUnfinishedRuns,
+  readRun,
+  type SyncRun,
+} from './sync-run-state.ts'
 
 /** Queue job states in which no attempt will execute the job any more. */
 const endedJobStates = new Set(['completed', 'failed', 'cancelled'])
@@ -13,31 +19,67 @@ export type SyncJobLookup = (job: {
 const interrupted = {
   running: 'Worker interrupted; request a new import',
   queued: 'Queue delivery ended; request a new import',
+  inProcess: 'Import interrupted; request a new import',
 } as const
 
+// A run executed in the requesting process has no queue job to tell whether
+// it is alive. It gets as long as one queue attempt may take.
+const inProcessLimitMs = syncJobOptions.expireInSeconds * 1000
+
 /**
- * Finishes the unfinished runs no queue work will execute any more: their
- * job does not exist or has ended (A5-R06). Such a run ends partial or
- * failed by its saved ads, with a message that asks for a new request.
- * Runs whose job waits, is retried or is active stay as they are.
+ * Finishes the unfinished runs no work will execute any more (A5-R06): a
+ * queued or running run whose queue job does not exist or has ended, and a
+ * run executed without a queue that has been running longer than a queue
+ * attempt may take. Such a run ends partial or failed by its saved ads,
+ * with a message that asks for a new request. Runs whose job waits, is
+ * retried or is active stay as they are.
  *
  * Every change is conditional on the run still being unfinished, without
  * session locks, so several workers may recover at the same time.
  */
-export async function recoverSyncRuns(findJob: SyncJobLookup): Promise<void> {
+export async function recoverSyncRuns(
+  findJob: SyncJobLookup,
+  now: Date = new Date(),
+): Promise<void> {
   for (const run of await listUnfinishedRuns()) {
-    const job = run.jobId
-      ? await findJob({ source: run.source, jobId: run.jobId })
-      : null
-    if (job && !endedJobStates.has(job.state)) continue
-    await finishRun(run.id, {
+    if (run.jobId) {
+      const job = await findJob({ source: run.source, jobId: run.jobId })
+      if (job && !endedJobStates.has(job.state)) continue
+    } else if (
+      run.status === 'running' &&
+      now.getTime() - (run.startedAt ?? now).getTime() < inProcessLimitMs
+    )
+      continue
+    await finishInterrupted(
+      run,
+      run.status === 'queued' ? interrupted.queued : interrupted.running,
+    )
+  }
+}
+
+/**
+ * Finishes a run executed in the requesting process after that process
+ * stopped it, while its attempt still holds it.
+ */
+export async function finishStoppedRun(
+  runId: string,
+  attempt: number,
+): Promise<void> {
+  const run = await readRun(runId)
+  if (run) await finishInterrupted(run, interrupted.inProcess, attempt)
+}
+
+function finishInterrupted(run: SyncRun, error: string, attempt?: number) {
+  return finishRun(
+    run.id,
+    {
       status: finishedRunStatus({
         sourceComplete: false,
         saveFailed: false,
         uniqueAds: run.uniqueAds,
       }),
-      error:
-        run.status === 'running' ? interrupted.running : interrupted.queued,
-    })
-  }
+      error,
+    },
+    attempt,
+  )
 }

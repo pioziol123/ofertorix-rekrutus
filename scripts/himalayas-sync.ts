@@ -1,8 +1,7 @@
 import { closePool } from '../lib/db.ts'
 import { syncHimalayas } from '../lib/sources/himalayas-sync.ts'
 
-// Ending the process stops the run without finishing it; the worker's
-// recovery then ends it as interrupted.
+// Stopping the script ends its run as interrupted.
 const stop = new AbortController()
 for (const signal of ['SIGINT', 'SIGTERM'] as const)
   process.once(signal, () => stop.abort())

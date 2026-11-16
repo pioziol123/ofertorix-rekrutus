@@ -2,6 +2,7 @@ import { transaction } from '../../lib/db.ts'
 import type { ConnectorProvider } from './infrastructure/adapters/connector-registry.ts'
 import { sourceConnectors } from './infrastructure/adapters/source-connectors.ts'
 import { executeStartedRun } from './execute-sync-run.ts'
+import { finishStoppedRun } from './recover-sync-runs.ts'
 import { admitRun, readRun, startRun, type SyncRun } from './sync-run-state.ts'
 
 /** The scope already has an active run; nothing was created or fetched. */
@@ -18,8 +19,9 @@ export class SyncRunAlreadyActiveError extends Error {
  * 0mq.16 queues every source, Himalayas runs this way (A5-R08).
  *
  * The run is created and started together, so a scope with an active run
- * gets an error and no run. Aborting the signal stops the run without
- * finishing it; recovery then ends it as interrupted.
+ * gets an error and no run. Aborting the signal stops the fetch and ends
+ * the run as interrupted (F2-13): no queue would retry it. A process that
+ * dies leaves the run to recovery.
  */
 export async function runSyncInProcess(
   request: {
@@ -49,10 +51,16 @@ export async function runSyncInProcess(
       throw error
     }
   })
-  await executeStartedRun(
-    run,
-    { attempt: run.attempt ?? 0, signal: request.signal },
-    connectors,
-  )
+  const attempt = run.attempt ?? 0
+  try {
+    await executeStartedRun(
+      run,
+      { attempt, signal: request.signal },
+      connectors,
+    )
+  } catch (error) {
+    if (request.signal.aborted) await finishStoppedRun(run.id, attempt)
+    throw error
+  }
   return (await readRun(run.id))!
 }

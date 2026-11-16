@@ -588,4 +588,95 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
     })
     expect(await readRun(run.id)).toEqual(run)
   })
+
+  it('ends a run stopped in the calling process as interrupted (A5-R08, F2-13)', async () => {
+    const stop = new AbortController()
+    const connector = simulated('simulated-alpha', async (_, onBatch) => {
+      await onBatch([ad('one')])
+      stop.abort()
+      throw new Error('aborted fetch')
+    })
+    await expect(
+      runSyncInProcess(
+        {
+          source: 'simulated-alpha',
+          scheduleDay: '2026-11-16',
+          signal: stop.signal,
+        },
+        createConnectorRegistry([connector]),
+      ),
+    ).rejects.toThrow('aborted fetch')
+    expect(
+      (await pool.query('SELECT status,seen,error FROM source_sync_runs')).rows,
+    ).toEqual([
+      {
+        status: 'partial',
+        seen: 1,
+        error: 'Import interrupted; request a new import',
+      },
+    ])
+  })
+
+  // ASM-1: a run executed without a queue has no job telling whether its
+  // process is alive; recovery leaves it while a queue attempt could last.
+  it('leaves a running run without a queue job to its process for as long as a queue attempt may take (ASM-1)', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const connector = simulated('simulated-alpha', async (_, onBatch) => {
+      await onBatch([ad('one')])
+      entered()
+      await gate
+      return { complete: true }
+    })
+    const execution = runSyncInProcess(
+      {
+        source: 'simulated-alpha',
+        scheduleDay: '2026-11-16',
+        signal: new AbortController().signal,
+      },
+      createConnectorRegistry([connector]),
+    )
+    await started
+    const findJob = vi.fn()
+    await recoverSyncRuns(findJob)
+    expect(findJob).not.toHaveBeenCalled()
+    release()
+    expect(await execution).toMatchObject({ status: 'complete' })
+
+    // A process that died: the run stays running without a job.
+    const orphan = await runSyncInProcess(
+      {
+        source: 'simulated-beta',
+        scheduleDay: '2026-11-16',
+        signal: new AbortController().signal,
+      },
+      createConnectorRegistry([simulated('simulated-beta', batches([]))]),
+    )
+    await pool.query(
+      "UPDATE source_sync_runs SET status='running',finished_at=NULL,seen=0 WHERE id=$1",
+      [orphan.id],
+    )
+    const startedAt = (await readRun(orphan.id))!.startedAt!
+    await recoverSyncRuns(
+      findJob,
+      new Date(
+        startedAt.getTime() + (syncJobOptions.expireInSeconds - 1) * 1000,
+      ),
+    )
+    expect((await readRun(orphan.id))!.status).toBe('running')
+    await recoverSyncRuns(
+      findJob,
+      new Date(startedAt.getTime() + syncJobOptions.expireInSeconds * 1000),
+    )
+    expect(await readRun(orphan.id)).toMatchObject({
+      status: 'failed',
+      error: 'Worker interrupted; request a new import',
+    })
+  })
 })

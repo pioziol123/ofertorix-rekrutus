@@ -4,8 +4,6 @@ import {
   recoverSyncRuns,
   type SyncJobLookup,
 } from '../../modules/sources/index.ts'
-import type { ConnectorProvider } from '../../modules/sources/infrastructure/adapters/connector-registry.ts'
-import { sourceConnectors } from '../../modules/sources/infrastructure/adapters/source-connectors.ts'
 import { queueFor } from './jobspy.ts'
 import { jobspySources, type JobspySource } from './jobspy-catalog.ts'
 import { polishQueue, polishSources, type PolishSource } from './polish.ts'
@@ -41,7 +39,8 @@ export const syncQueues = [
  */
 export async function workSyncQueues(
   boss: PgBoss,
-  connectors: ConnectorProvider = sourceConnectors,
+  /** Tests replace the application's connectors. */
+  connectors?: Parameters<typeof executeSyncRun>[1],
 ): Promise<void> {
   for (const queue of syncQueues)
     await boss.work<{ runId: string }>(queue, async (jobs) => {
