@@ -89,6 +89,7 @@ Before applying `ready-for-agent`:
 - Each acceptance criterion is observable and names how it is checked (test, command or inspection).
 - The solution design states the contracts the task touches exactly enough to implement without guessing, and each of its decisions lists the options the owner discarded with the reason or "none recorded".
 - No open question blocks the task; non-blocking assumptions are recorded in the documents.
+- `node scripts/check-spec-altitude.ts` run on the task's linked PRD, requirements and solution design, by path, exits 0. In the PRD and requirements no warning remains. In the solution design a remaining warning names a library, one of its options or a stored column, which the design carries on purpose; it needs no further record. A line that must name legacy code to identify it carries `<!-- altitude-ok: <reason> -->`.
 - Blocking dependencies are wired in bd.
 
 The runner re-checks the first item and the presence of acceptance criteria deterministically and returns the task as `needs-info` when they fail.
@@ -123,6 +124,7 @@ Inside the sandbox, run project commands directly from the worktree root:
 
 - `scripts/gate.sh` is the gate: `pnpm install --offline --frozen-lockfile`, `pnpm lint`, `pnpm typecheck` and `scripts/test-integration.sh`.
 - `scripts/test-integration.sh` starts PostgreSQL, applies pending migrations, builds the app, runs the web server and the worker in the background, runs every test including integration, and stops what it started.
+- `scripts/check-spec-altitude.ts` checks specification documents for detail below their level: code file names, paths into code directories, function or class code and code blocks other than diagrams are errors; inline code that reads as an identifier, a member access or a call is a warning to review.
 - Single checks run as usual, for example `pnpm vitest run tests/offers.test.ts`; install dependencies first with `pnpm install --offline --frozen-lockfile`.
 
 ## Discoveries during implementation
