@@ -41,7 +41,11 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       options: `-c search_path=${schema}`,
       max: 8,
     })
-    for (const migration of ['1770000000001_sources', '1770000000005_jobspy']) {
+    for (const migration of [
+      '1770000000001_sources',
+      '1770000000005_jobspy',
+      '1770000000014_sync_run_state',
+    ]) {
       const sql: string[] = []
       createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),

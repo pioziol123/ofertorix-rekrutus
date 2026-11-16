@@ -43,9 +43,13 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
       max: 8,
     })
     const sql: string[] = []
-    createRequire(import.meta.url)(
-      '../migrations/1770000000001_sources.cjs',
-    ).up({ sql: (statement: string) => sql.push(statement) })
+    for (const migration of [
+      '1770000000001_sources',
+      '1770000000014_sync_run_state',
+    ])
+      createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
+        sql: (statement: string) => sql.push(statement),
+      })
     await pool.query(sql.join('\n'))
     boss = new PgBoss({
       connectionString: process.env.DATABASE_URL,

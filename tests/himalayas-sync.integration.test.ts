@@ -65,6 +65,7 @@ integration(
       for (const migration of [
         '1770000000001_sources',
         '1770000000005_jobspy',
+        '1770000000014_sync_run_state',
       ]) {
         const sql: string[] = []
         createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
