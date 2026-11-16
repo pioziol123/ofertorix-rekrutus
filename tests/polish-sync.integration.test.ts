@@ -208,6 +208,17 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
       ).toEqual([{ external_id, url, valid_to, content_hash }])
     },
   )
+  // ASM-2: since 0mq.5 the page counter counts saved batches, one per
+  // helper result; the helper's page count stays in the diagnostics.
+  it("counts the saved batch, not the helper's pages, and keeps them in the diagnostics (ASM-2)", async () => {
+    const diagnostics = { ...result().diagnostics, pages: 3 }
+    const row = await run(query(), [record('bulldogjob')], { diagnostics })
+    expect(row).toMatchObject({
+      status: 'complete',
+      pages: 1,
+      diagnostics: { pages: 3 },
+    })
+  })
   it('persists regional NFJ aliases as one canonical offer across imports', async () => {
     const q = query('nofluffjobs')
     const city = nfjAliasRecord('city'),
