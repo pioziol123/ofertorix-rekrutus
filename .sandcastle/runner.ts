@@ -14,6 +14,18 @@ import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { claudeCode, createSandbox } from '@ai-hero/sandcastle'
 import { docker } from '@ai-hero/sandcastle/sandboxes/docker'
+import {
+  type AgentResult,
+  type Issue,
+  dependants,
+  deviationProblems,
+  epicLabelPlan,
+  isFollowUp,
+  isOpen,
+  loadBearing,
+  marker,
+  resultShapeProblems,
+} from './followups.ts'
 
 const { values: opts } = parseArgs({
   options: {
@@ -36,35 +48,19 @@ const GATE = 'scripts/gate.sh'
 /** Feedback rounds into the implementing agent's session before the task goes back to preparation. */
 const MAX_FEEDBACK_TURNS = 3
 /** Skills the agent uses inside the sandbox, mounted read-only from the host. */
-const SKILLS = ['implement-task', 'tdd']
+const SKILLS = ['implement-task', 'tdd', 'write-documents']
 
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
-interface Issue {
-  id: string
-  title: string
-  description?: string
-  design?: string
-  notes?: string
-  acceptance_criteria?: string
-  issue_type?: string
-  labels?: string[]
-  metadata?: Record<string, string>
-  parent?: string | null
-  status?: string
-}
-
-interface AgentResult {
-  status: 'done' | 'blocked'
-  summary: string
-  evidence: { ac: string; check: string; result: string }[]
-  followups?: { title: string; description: string }[]
-  question: string | null
-}
-
 interface Review {
-  verdict: 'pass' | 'fail'
+  verdict: 'pass' | 'pass-with-deferral' | 'fail'
   findings: string[]
+}
+
+/** The epic a task belongs to and its children, read once when the task starts. */
+interface EpicContext {
+  epic: Issue | null
+  children: Issue[]
 }
 
 interface Outcome {
@@ -167,6 +163,25 @@ function epicBlocker(issue: Issue): string | null {
   const epic = epicOf(issue)
   if (!epic) return null
   if (!epic.labels?.includes('ready-for-agent')) return `epic ${epic.id} has not been handed off (no ready-for-agent)`
+  // Follow-ups keep the epic open but do not hold its other tasks back.
+  const children = epicChildren(epic)
+  const unprepared = children.filter(
+    (child) =>
+      child.issue_type !== 'epic' &&
+      !isFollowUp(child) &&
+      child.status !== 'closed' &&
+      child.status !== 'deferred' &&
+      !child.labels?.includes('ready-for-human') &&
+      (!child.labels?.includes('ready-for-agent') || child.labels.includes('needs-info')),
+  )
+  if (unprepared.length) {
+    return `epic ${epic.id} still has tasks in preparation: ${unprepared.map((c) => c.id).join(', ')}`
+  }
+  return null
+}
+
+/** Every issue below an epic, any status. */
+function epicChildren(epic: Issue): Issue[] {
   // bd list --parent also matches ids by their dotted prefix, so a task moved out of the
   // epic would still show up. Membership follows the parent field down from the epic.
   const listed = JSON.parse(bd(['list', '--parent', epic.id, '--all', '--json', '--limit', '0'])) as Issue[]
@@ -180,19 +195,42 @@ function epicBlocker(issue: Issue): string | null {
       }
     }
   }
-  const children = listed.filter((issue) => issue.id !== epic.id && members.has(issue.id))
-  const unprepared = children.filter(
-    (child) =>
-      child.issue_type !== 'epic' &&
-      child.status !== 'closed' &&
-      child.status !== 'deferred' &&
-      !child.labels?.includes('ready-for-human') &&
-      (!child.labels?.includes('ready-for-agent') || child.labels.includes('needs-info')),
-  )
-  if (unprepared.length) {
-    return `epic ${epic.id} still has tasks in preparation: ${unprepared.map((c) => c.id).join(', ')}`
+  return listed.filter((issue) => issue.id !== epic.id && members.has(issue.id))
+}
+
+function epicContext(issue: Issue): EpicContext {
+  const epic = epicOf(issue)
+  return { epic, children: epic ? epicChildren(epic) : [] }
+}
+
+/**
+ * Keeps follow_ups on handed-off epics in step with their children and takes an epic back
+ * (needs-info) when only follow-ups remain and one of them still waits for a decision.
+ */
+function reconcileEpics(apply: boolean): void {
+  const epics = JSON.parse(bd(['list', '--type', 'epic', '--json', '--limit', '0'])) as Issue[]
+  for (const summary of epics) {
+    const epic = bdShow(summary.id)
+    if (!isOpen(epic)) continue
+    const plan = epicLabelPlan(epic, epicChildren(epic))
+    if (!plan) continue
+    const change = [
+      ...plan.add.map((l) => `+${l}`),
+      ...plan.remove.map((l) => `-${l}`),
+      ...(plan.followUps === undefined ? [] : [plan.followUps ? 'follow_ups=true' : 'follow_ups removed']),
+    ].join(' ')
+    if (!apply) {
+      console.log(`Epic ${epic.id}: would reconcile labels: ${change}`)
+      continue
+    }
+    const args = ['update', epic.id]
+    for (const label of plan.add) args.push('--add-label', label)
+    for (const label of plan.remove) args.push('--remove-label', label)
+    if (plan.followUps === true) args.push('--set-metadata', 'follow_ups=true')
+    if (plan.followUps === false) args.push('--unset-metadata', 'follow_ups')
+    bdQuiet(args)
+    log(`epic ${epic.id}: reconciled labels: ${change}`)
   }
-  return null
 }
 
 /** Deterministic part of the readiness checklist. Returns the problems found. */
@@ -201,7 +239,7 @@ function readinessProblems(issue: Issue): string[] {
   const meta = issue.metadata ?? {}
   const required = meta.lane === 'small' ? ['prd'] : ['prd', 'requirements', 'sd']
   for (const key of required) {
-    const link = meta[key]
+    const link = typeof meta[key] === 'string' ? meta[key] : undefined
     if (!link) {
       problems.push(`metadata.${key} is missing`)
       continue
@@ -301,7 +339,21 @@ function agent() {
 
 // ---------- prompts ----------
 
-function implementPrompt(issue: Issue): string {
+/** What the agents need to know about the epic's follow-ups and load-bearing requirements. */
+function epicBrief(ctx: EpicContext): string {
+  if (!ctx.epic) return 'The task belongs to no epic: no load-bearing requirements and no open follow-ups.'
+  const followUps = ctx.children
+    .filter((c) => isFollowUp(c) && isOpen(c))
+    .map((c) => ({ id: c.id, title: c.title, marker: c.metadata?.marker }))
+  return [
+    `Epic: ${ctx.epic.id}. Load-bearing requirements: ${[...loadBearing(ctx.epic)].join(', ') || 'none marked'}.`,
+    followUps.length
+      ? `Open follow-ups of the epic; their marked code is interim, build nothing new on it:\n${JSON.stringify(followUps, null, 2)}`
+      : 'The epic has no open follow-ups.',
+  ].join('\n')
+}
+
+function implementPrompt(issue: Issue, ctx: EpicContext): string {
   const task = {
     id: issue.id,
     title: issue.title,
@@ -314,6 +366,7 @@ function implementPrompt(issue: Issue): string {
   return [
     'Use the implement-task skill.',
     `Task:\n${JSON.stringify(task, null, 2)}`,
+    epicBrief(ctx),
     `Result file: ${RESULT_FILE} in the worktree root.`,
   ].join('\n\n')
 }
@@ -322,16 +375,21 @@ function feedbackPrompt(report: string): string {
   return [
     'The runner checked your work and the task is not done yet:',
     report,
-    `Fix it within the task, run ${GATE} until it exits 0, commit, and rewrite ${RESULT_FILE}. If the report shows a gap or contradiction in the documents rather than a defect in your code, finish as blocked with the question instead.`,
+    `Fix it within the task, run ${GATE} until it exits 0, commit, and rewrite ${RESULT_FILE}. If the report shows a spec conflict rather than a defect in your code, classify it as the workflow file's section "Spec conflicts during implementation" says: an assumption or a qualifying deviation goes into the result, anything else means finishing as blocked with the question.`,
   ].join('\n\n')
 }
 
-function reviewPrompt(issue: Issue): string {
+function reviewPrompt(issue: Issue, result: AgentResult, ctx: EpicContext): string {
+  const deviations = result.deviations ?? []
+  const assumptions = result.assumptions ?? []
   return [
     `Review the change on this branch against its specification. Diff: git diff ${BASE_BRANCH}...HEAD. Do not modify tracked files.`,
     `Documents: ${JSON.stringify(issue.metadata)}. Acceptance criteria:\n${issue.acceptance_criteria}`,
-    'Read the documents in full. Report requirements that are missing or partial, behaviour that was not asked for, and contracts implemented differently from the solution design. Quote the document line for each finding.',
-    `Write ${REVIEW_FILE} in the repository root as JSON: {"verdict": "pass" | "fail", "findings": ["..."]}. Use "fail" when any finding means an acceptance criterion or a design contract is not met.`,
+    'Read the documents in full, and docs/agents/implementation-workflow.md, section "Spec conflicts during implementation". Report requirements that are missing or partial, behaviour that was not asked for, and contracts implemented differently from the solution design. Quote the document line for each finding.',
+    epicBrief(ctx),
+    `The implementing agent recorded these assumptions:\n${JSON.stringify(assumptions, null, 2)}\nFor each, check that every acceptance criterion is really met, that the choice follows the precedence order, and that a test covers the edge case. An assumption that leaves a criterion unmet is a finding.`,
+    `And these deviations, each deferring part of the task to a follow-up:\n${JSON.stringify(deviations, null, 2)}\nFor each, check against the classification and qualification rules in that section: that it does not belong to an earlier step (assumption or blocked), that the interim code follows precedence and carries its marker, and that the follow-up description lets a developer with no context understand the business and technical problem, the decision needed and how to verify the target. Check that each deviation's requirement IDs cover every requirement its interim code affects, including shared rules of the epic rather than only a narrower task criterion. Also check that the diff builds nothing new on the interim code of the epic's open follow-ups.`,
+    `Write ${REVIEW_FILE} in the repository root as JSON: {"verdict": "pass" | "pass-with-deferral" | "fail", "findings": ["..."]}. Use "fail" when any finding means a criterion that is not deferred or a design contract is not met, or when any deviation or assumption does not hold. Use "pass-with-deferral" when the work passes and you accept every deviation; "pass" only when there are no deviations.`,
   ].join('\n\n')
 }
 
@@ -348,7 +406,7 @@ function guardMaster(expected: string): string | null {
 }
 
 /** The runner's own checks in the implementing agent's warm sandbox, after each agent turn. */
-async function warmCheck(sandbox: Sandbox, issue: Issue, branch: string, masterSha: string): Promise<Outcome> {
+async function warmCheck(sandbox: Sandbox, issue: Issue, branch: string, masterSha: string, ctx: EpicContext): Promise<Outcome> {
   const worktree = sandbox.worktreePath
   const moved = guardMaster(masterSha)
   if (moved) return { ok: false, report: moved, result: null, final: true }
@@ -367,6 +425,21 @@ async function warmCheck(sandbox: Sandbox, issue: Issue, branch: string, masterS
     tryGit(['rebase', '--abort'], worktree)
     return { ok: false, report: `Rebase on ${BASE_BRANCH} conflicted:\n${tail(rebase.out)}`, result, final: true }
   }
+  const shape = resultShapeProblems(result)
+  if (shape.length) return { ok: false, report: `${RESULT_FILE} does not match the shape in the implement-task skill:\n- ${shape.join('\n- ')}`, result }
+  // Markers count only when the task's own diff adds them.
+  const diff = tryGit(['diff', `${BASE_BRANCH}...HEAD`], worktree).out
+  const problems = deviationProblems(result, {
+    taskId: issue.id,
+    acceptance: issue.acceptance_criteria,
+    epic: ctx.epic,
+    siblings: ctx.children,
+    hasMarker: (text) => diff.split('\n').some((line) => line.startsWith('+') && line.includes(text)),
+  })
+  if (problems.length) {
+    const report = `The result's evidence and deviations fail the runner's checks (docs/agents/implementation-workflow.md, "What the runner checks"):\n- ${problems.join('\n- ')}`
+    return { ok: false, report, result }
+  }
 
   log(`${issue.id}: running the gate in the warm sandbox`)
   const gate = await sandbox.exec(GATE)
@@ -377,7 +450,7 @@ async function warmCheck(sandbox: Sandbox, issue: Issue, branch: string, masterS
 }
 
 /** Gate and review in a fresh sandbox on a copy of the task branch, so only committed work counts. */
-async function verify(issue: Issue, branch: string, masterSha: string): Promise<Outcome> {
+async function verify(issue: Issue, branch: string, masterSha: string, result: AgentResult, ctx: EpicContext): Promise<Outcome> {
   const gateBranch = `${branch}-gate`
   tryGit(['branch', '-D', gateBranch])
   git(['branch', gateBranch, branch])
@@ -390,7 +463,7 @@ async function verify(issue: Issue, branch: string, masterSha: string): Promise<
       return { ok: false, report, result: null }
     }
     log(`${issue.id}: running the spec review`)
-    await sandbox.run({ agent: agent(), prompt: reviewPrompt(issue) })
+    await sandbox.run({ agent: agent(), prompt: reviewPrompt(issue, result, ctx) })
     const moved = guardMaster(masterSha)
     if (moved) return { ok: false, report: moved, result: null, final: true }
     if (git(['rev-parse', gateBranch]) !== git(['rev-parse', branch])) {
@@ -398,8 +471,14 @@ async function verify(issue: Issue, branch: string, masterSha: string): Promise<
     }
     const review = readJson<Review>(join(sandbox.worktreePath, REVIEW_FILE))
     if (!review) return { ok: false, report: `The reviewer did not write ${REVIEW_FILE}.`, result: null }
-    if (review.verdict !== 'pass') {
-      return { ok: false, report: `The spec review failed:\n- ${review.findings.join('\n- ')}`, result: null }
+    const findings = Array.isArray(review.findings) ? review.findings.map(String) : []
+    // Exactly one verdict passes: pass-with-deferral when the result has deviations, pass otherwise.
+    const expected = result.deviations?.length ? 'pass-with-deferral' : 'pass'
+    if (review.verdict !== expected) {
+      const report = review.verdict === 'fail'
+        ? `The spec review failed:\n- ${findings.join('\n- ')}`
+        : `The spec review did not pass (verdict ${JSON.stringify(review.verdict)}, expected ${expected}):\n- ${findings.join('\n- ')}`
+      return { ok: false, report, result: null }
     }
     return { ok: true, report: '', result: null }
   } finally {
@@ -416,16 +495,17 @@ async function implementAndVerify(
   issue: Issue,
   branch: string,
   masterSha: string,
+  ctx: EpicContext,
 ): Promise<{ outcome: Outcome; result: AgentResult | null }> {
   await using sandbox = await createSandbox({ branch, baseBranch: BASE_BRANCH, cwd: repoRoot, sandbox: sandboxProvider() })
   log(`${issue.id}: implementing in ${sandbox.worktreePath}`)
   await sandbox.exec(`rm -f ${RESULT_FILE} ${REVIEW_FILE}`)
-  let run = await sandbox.run({ agent: agent(), prompt: implementPrompt(issue) })
+  let run = await sandbox.run({ agent: agent(), prompt: implementPrompt(issue, ctx) })
   let result: AgentResult | null = null
   for (let turn = 1; ; turn++) {
-    let outcome = await warmCheck(sandbox, issue, branch, masterSha)
+    let outcome = await warmCheck(sandbox, issue, branch, masterSha, ctx)
     result = outcome.result ?? result
-    if (outcome.ok) outcome = await verify(issue, branch, masterSha)
+    if (outcome.ok && result) outcome = await verify(issue, branch, masterSha, result, ctx)
     if (outcome.ok || outcome.final) return { outcome, result }
     if (turn > MAX_FEEDBACK_TURNS) return { outcome, result }
     if (!run.resume) return { outcome: { ...outcome, report: `${outcome.report}\n(No agent session to resume.)` }, result }
@@ -471,14 +551,80 @@ function taskBranch(issue: Issue): string {
   return `${prefix}-${slug(issue.title)}`
 }
 
+/** Comments the evidence and files follow-ups, assumptions and new scope after a merge. */
+function recordOutcome(issue: Issue, result: AgentResult, ctx: EpicContext): void {
+  const deviations = result.deviations ?? []
+  const assumptions = result.assumptions ?? []
+  const evidence = result.evidence.map((e) => `- ${e.ac}: ${e.check} → ${e.result}`).join('\n')
+  const sections = [result.summary, `Evidence:\n${evidence}`]
+  if (assumptions.length) {
+    sections.push(`Assumptions:\n${assumptions.map((a) => `- ${a.id} (${a.requirements.join(', ')}): ${a.decision} Rule: ${a.rule}`).join('\n')}`)
+  }
+  const review = deviations.length ? 'spec review passed with deferral' : 'spec review passed'
+  sections.push(`Gate passed in a fresh sandbox; ${review}.`)
+
+  const filed: string[] = []
+  for (const d of deviations) {
+    const tag = marker(issue.id, d.id)
+    const meta = JSON.stringify({ type: 'follow-up', marker: tag, origin: issue.id })
+    const args = ['create', '--title', d.title, '--description', d.description, '--type', 'task',
+      '--labels', 'needs-info', '--metadata', meta, '--deps', `discovered-from:${issue.id}`, '--silent']
+    if (ctx.epic) args.push('--parent', ctx.epic.id, '--no-inherit-labels')
+    let id = ''
+    try {
+      id = bd(args).trim().split('\n').pop()!.trim()
+    } catch (error) {
+      log(`${issue.id}: filing follow-up ${d.id} failed: ${(error as Error).message.split('\n')[0]}`)
+      filed.push(`- ${d.id}: NOT FILED, ${d.title} (defers ${d.deferred_acs.join(', ') || 'no criterion'}; marker ${tag})`)
+      continue
+    }
+    const waiting = dependants(d, issue.id, ctx.children)
+    for (const dependant of waiting) bdQuiet(['dep', 'add', dependant, id])
+    const blocks = waiting.length ? `; blocks ${waiting.join(', ')}` : ''
+    filed.push(`- ${d.id} → ${id}: ${d.title} (defers ${d.deferred_acs.join(', ') || 'no criterion'}; marker ${tag}${blocks})`)
+  }
+  if (filed.length) sections.push(`Known deviations in ${BASE_BRANCH}, each with a follow-up:\n${filed.join('\n')}`)
+  bdQuiet(['comment', issue.id, sections.join('\n\n')])
+
+  if (assumptions.length) recordAssumptions(issue, assumptions, ctx)
+  for (const scope of result.new_scope ?? result.followups ?? []) {
+    bdQuiet(['create', '--title', scope.title, '--description', scope.description, '--type', 'task',
+      '--labels', 'needs-triage', '--deps', `discovered-from:${issue.id}`, '--silent'])
+  }
+}
+
+/** Adds assumptions to the epic's open assumptions task, creating it outside the epic when missing. */
+function recordAssumptions(issue: Issue, assumptions: NonNullable<AgentResult['assumptions']>, ctx: EpicContext): void {
+  const scope = ctx.epic?.id ?? issue.id
+  const text = assumptions
+    .map((a) => `### ${issue.id} / ${a.id} (${a.requirements.join(', ')})\nGap: ${a.gap}\nDecision: ${a.decision}\nRule: ${a.rule}\nIf decided otherwise: ${a.if_reversed}`)
+    .join('\n\n')
+  let existing: Issue[] = []
+  try {
+    existing = JSON.parse(bd(['list', '--metadata-field', 'type=assumptions', '--metadata-field', `epic=${scope}`, '--json', '--limit', '0'])) as Issue[]
+  } catch (error) {
+    log(`${issue.id}: looking up the assumptions task failed: ${(error as Error).message.split('\n')[0]}`)
+  }
+  const open = existing.find(isOpen)
+  if (open) {
+    bdQuiet(['comment', open.id, text])
+    return
+  }
+  const description = `Implementing agents settled these gaps in the specification of ${scope} by the precedence rule in docs/agents/implementation-workflow.md. Confirm each one in the solution design, or turn it into a change.\n\n${text}`
+  bdQuiet(['create', '--title', `Potwierdzić założenia agentów dla ${scope}`, '--description', description, '--type', 'task',
+    '--labels', 'needs-triage', '--metadata', JSON.stringify({ type: 'assumptions', epic: scope }),
+    '--deps', `discovered-from:${issue.id}`, '--silent'])
+}
+
 async function processTask(issue: Issue): Promise<void> {
   const branch = taskBranch(issue)
   logFile = join(logDir, `${issue.id}-${Date.now()}.log`)
   bd(['update', issue.id, '--claim'])
   tryGit(['branch', '-D', branch])
   const masterSha = git(['rev-parse', BASE_BRANCH])
+  const ctx = epicContext(issue)
 
-  const { outcome, result } = await implementAndVerify(issue, branch, masterSha)
+  const { outcome, result } = await implementAndVerify(issue, branch, masterSha, ctx)
   if (!outcome.ok || !result) {
     returnToPreparation(issue, outcome.report || 'Unknown failure.', branch)
     return
@@ -492,13 +638,9 @@ async function processTask(issue: Issue): Promise<void> {
   }
   const sha = git(['rev-parse', '--short', 'HEAD'])
 
-  const evidence = result.evidence.map((e) => `- ${e.ac}: ${e.check} → ${e.result}`).join('\n')
-  bdQuiet(['comment', issue.id, `${result.summary}\n\nEvidence:\n${evidence}\n\nGate passed in a fresh sandbox; spec review passed.`])
-  for (const followup of result.followups ?? []) {
-    bdQuiet(['create', '--title', followup.title, '--description', followup.description, '--type', 'task',
-      '--labels', 'needs-triage', '--deps', `discovered-from:${issue.id}`, '--silent'])
-  }
-  bd(['close', issue.id, '--reason', `Merged ${branch} into ${BASE_BRANCH} at ${sha} by the agent runner.`])
+  recordOutcome(issue, result, ctx)
+  const deferred = result.deviations?.length ? ` with ${result.deviations.length} deviation(s) deferred to follow-ups` : ''
+  bd(['close', issue.id, '--reason', `Merged ${branch} into ${BASE_BRANCH} at ${sha} by the agent runner${deferred}.`])
   tryGit(['branch', '-d', branch])
   log(`${issue.id}: merged at ${sha} and closed`)
   notify(`${issue.id} merged`, issue.title)
@@ -507,6 +649,7 @@ async function processTask(issue: Issue): Promise<void> {
 // ---------- entry ----------
 
 function dryRun(): void {
+  reconcileEpics(false)
   const blocker = mainCheckoutBlocker()
   console.log(blocker ? `Main checkout: NOT READY (${blocker})` : `Main checkout: ready on ${BASE_BRANCH}`)
   const inputs = tryGit(['cat-file', '-e', `${BASE_BRANCH}:.sandcastle/Dockerfile`]).ok ? imageInputs() : null
@@ -537,6 +680,7 @@ async function main(): Promise<void> {
     if (blocker) log(`waiting: ${blocker}`)
     else {
       ensureImage()
+      reconcileEpics(true)
       for (const summary of candidates()) {
         const issue = bdShow(summary.id)
         const waiting = epicBlocker(issue)

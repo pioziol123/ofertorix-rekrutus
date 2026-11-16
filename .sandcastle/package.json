@@ -7,7 +7,8 @@
     "@ai-hero/sandcastle": "0.14.0"
   },
   "scripts": {
-    "typecheck": "tsc --project tsconfig.json"
+    "typecheck": "tsc --project tsconfig.json",
+    "test": "node --test followups.test.ts"
   },
   "devDependencies": {
     "typescript": "5.9.3",

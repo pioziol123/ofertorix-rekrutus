@@ -98,8 +98,8 @@ The managed Beads block is task-tracking guidance, not permission to override re
 
 This repository opts in to autonomous completion of implementation tasks. It relaxes the Conservative profile for commits and local merges only:
 
-- An agent may commit, merge the task's work into the local default branch, and close its bd task when all gates pass: tests, typecheck, lint, the checks named by the task's acceptance criteria, and an independent spec-conformance review in a fresh context. Record the evidence for each acceptance criterion in bd before closing.
-- If any gate fails or a behaviour change is discovered that the specification does not cover, do not merge; report it and leave the task open.
+- An agent may commit, merge the task's work into the local default branch, and close its bd task when all gates pass: tests, typecheck, lint, the checks named by the task's acceptance criteria, and an independent spec-conformance review in a fresh context. Record in bd before closing the evidence for each acceptance criterion, or the registered deviation that defers it.
+- If any gate fails, or a spec conflict is discovered that `docs/agents/implementation-workflow.md` (section "Spec conflicts during implementation") classifies as blocking, do not merge; report it and leave the task open. Assumptions and qualifying deviations are recorded and merged as that section describes.
 - Pushing to any remote and Dolt remote sync still require explicit user authorization.
 - A current user instruction not to commit or merge still wins.
 
