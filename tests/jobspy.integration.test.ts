@@ -24,6 +24,7 @@ import { enqueueSync, executeSync, recoverSync } from '../lib/sources/sync.ts'
 import { hash, importQueue } from '../lib/sources/solid.ts'
 import { readOffers } from '../lib/offers.ts'
 import { job, result, sourceResult } from './fixtures/jobspy/result.ts'
+import { jobspyWith, solidJobsWith } from './source-connectors.fixtures.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -79,7 +80,13 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       .rows[0]
   async function run(overrides: Record<string, unknown> = {}) {
     const queued = await enqueueJobspy(pool, boss)
-    await executeJobspy(pool, boss, queued.id, async () => result(overrides))
+    await executeJobspy(
+      pool,
+      boss,
+      queued.id,
+      'indeed',
+      jobspyWith(async () => result(overrides), 'indeed'),
+    )
     return stored(queued.id)
   }
 
@@ -239,16 +246,28 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
-    const execution = executeJobspy(pool, boss, queued.id, async () => {
-      entered()
-      await gate
-      return result()
-    })
+    const execution = executeJobspy(
+      pool,
+      boss,
+      queued.id,
+      'indeed',
+      jobspyWith(async () => {
+        entered()
+        await gate
+        return result()
+      }, 'indeed'),
+    )
     await started
     try {
       await recoverJobspy(pool, boss)
       const duplicate = vi.fn()
-      await executeJobspy(pool, boss, queued.id, duplicate)
+      await executeJobspy(
+        pool,
+        boss,
+        queued.id,
+        'indeed',
+        jobspyWith(duplicate, 'indeed'),
+      )
       expect(duplicate).not.toHaveBeenCalled()
       expect((await stored(queued.id)).status).toBe('running')
     } finally {
@@ -256,7 +275,13 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       await execution
     }
     const late = vi.fn()
-    await executeJobspy(pool, boss, queued.id, late)
+    await executeJobspy(
+      pool,
+      boss,
+      queued.id,
+      'indeed',
+      jobspyWith(late, 'indeed'),
+    )
     expect(late).not.toHaveBeenCalled()
     expect((await stored(queued.id)).status).toBe('complete')
   })
@@ -276,21 +301,38 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     expect((await stored(solid.id)).status).toBe('running')
     expect((await enqueueJobspy(pool, boss)).id).not.toBe(indeed.id)
     const late = vi.fn()
-    await executeJobspy(pool, boss, indeed.id, late)
+    await executeJobspy(
+      pool,
+      boss,
+      indeed.id,
+      'indeed',
+      jobspyWith(late, 'indeed'),
+    )
     expect(late).not.toHaveBeenCalled()
   })
   it('does not consume SOLID delivery and never merges an identical external ID across sources', async () => {
     const solid = (await enqueueSync(pool, boss))!
     const collector = vi.fn()
-    await executeJobspy(pool, boss, solid.id, collector)
+    await executeJobspy(
+      pool,
+      boss,
+      solid.id,
+      'indeed',
+      jobspyWith(collector, 'indeed'),
+    )
     expect(collector).not.toHaveBeenCalled()
     expect((await stored(solid.id)).status).toBe('queued')
-    await executeSync(pool, boss, solid.id, async () => ({
-      jobs: [{ jobOfferKey: 'ab123', title: 'SOLID offer' }],
-      valid: true,
-      totalCount: 1,
-      totalPages: 1,
-    }))
+    await executeSync(
+      pool,
+      boss,
+      solid.id,
+      solidJobsWith(async () => ({
+        jobs: [{ jobOfferKey: 'ab123', title: 'SOLID offer' }],
+        valid: true,
+        totalCount: 1,
+        totalPages: 1,
+      })),
+    )
     await run()
     expect(
       (
@@ -305,9 +347,15 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
   })
   it('redacts arbitrary collector exceptions and rejects disabled execution without invoking collection', async () => {
     const queued = await enqueueJobspy(pool, boss)
-    await executeJobspy(pool, boss, queued.id, async () => {
-      throw new Error('secret token from scraper')
-    })
+    await executeJobspy(
+      pool,
+      boss,
+      queued.id,
+      'indeed',
+      jobspyWith(async () => {
+        throw new Error('secret token from scraper')
+      }, 'indeed'),
+    )
     expect(await stored(queued.id)).toMatchObject({
       status: 'failed',
       error: 'JobSpy import failed',
@@ -315,7 +363,13 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     const next = await enqueueJobspy(pool, boss)
     vi.stubEnv('JOBSPY_ENABLED', 'false')
     const collector = vi.fn()
-    await executeJobspy(pool, boss, next.id, collector)
+    await executeJobspy(
+      pool,
+      boss,
+      next.id,
+      'indeed',
+      jobspyWith(collector, 'indeed'),
+    )
     expect(collector).not.toHaveBeenCalled()
     expect(await stored(next.id)).toMatchObject({
       status: 'failed',
@@ -341,7 +395,13 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       reused: true,
     })
     const collector = vi.fn()
-    await executeJobspy(pool, boss, queued.id, collector)
+    await executeJobspy(
+      pool,
+      boss,
+      queued.id,
+      'indeed',
+      jobspyWith(collector, 'indeed'),
+    )
     expect(collector).not.toHaveBeenCalled()
     expect(await stored(queued.id)).toMatchObject({
       status: 'failed',
@@ -374,7 +434,13 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       await boss.getJobById(queueFor('bayt'), baytRow.job_id),
     ).toMatchObject({ data: { runId: bayt.id } })
     const wrongCollector = vi.fn()
-    await executeJobspy(pool, boss, bayt.id, wrongCollector, 'linkedin')
+    await executeJobspy(
+      pool,
+      boss,
+      bayt.id,
+      'linkedin',
+      jobspyWith(wrongCollector, 'linkedin'),
+    )
     expect(wrongCollector).not.toHaveBeenCalled()
     expect((await stored(bayt.id)).status).toBe('queued')
 
@@ -389,12 +455,12 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       pool,
       boss,
       linkedin.id,
-      async () => {
+      'linkedin',
+      jobspyWith(async () => {
         entered()
         await gate
         return sourceResult('linkedin')
-      },
-      'linkedin',
+      }, 'linkedin'),
     )
     await started
     try {
@@ -405,8 +471,8 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
         pool,
         boss,
         bayt.id,
-        async () => sourceResult('bayt'),
         'bayt',
+        jobspyWith(async () => sourceResult('bayt'), 'bayt'),
       )
       expect(await stored(bayt.id)).toMatchObject({
         status: 'partial',

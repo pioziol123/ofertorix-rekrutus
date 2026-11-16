@@ -28,6 +28,7 @@ import { readOffers } from '../lib/offers.ts'
 import { hash } from '../lib/sources/solid.ts'
 import { nfjAliasRecord } from './fixtures/polish/json-record.ts'
 import { query, record, result } from './fixtures/polish/result.ts'
+import { polishWith } from './source-connectors.fixtures.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -86,8 +87,8 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
       pool,
       boss,
       queued.id,
-      async () => result(q, records, overrides),
       q.source,
+      polishWith(async () => result(q, records, overrides), q.source),
     )
     return (
       await pool.query('SELECT * FROM source_sync_runs WHERE id=$1', [
@@ -252,7 +253,13 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
   it('rejects wrong-source execution and does not expose its run through another source', async () => {
     const queued = await enqueuePolish(pool, boss, query('theprotocol'))
     const collect = vi.fn()
-    await executePolish(pool, boss, queued.id, collect, 'bulldogjob')
+    await executePolish(
+      pool,
+      boss,
+      queued.id,
+      'bulldogjob',
+      polishWith(collect, 'bulldogjob'),
+    )
     expect(collect).not.toHaveBeenCalled()
     expect((await polishStatus(pool, queued.id, 'bulldogjob')).run).toBeNull()
     expect(
@@ -271,7 +278,13 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
       (await polishStatus(pool, second.id, 'theprotocol')).run?.status,
     ).toBe('running')
     const collect = vi.fn()
-    await executePolish(pool, boss, first.id, collect, 'bulldogjob')
+    await executePolish(
+      pool,
+      boss,
+      first.id,
+      'bulldogjob',
+      polishWith(collect, 'bulldogjob'),
+    )
     expect(collect).not.toHaveBeenCalled()
   })
   it('protects an active execution from recovery and duplicate delivery', async () => {
@@ -283,16 +296,28 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
       gate = new Promise<void>((resolve) => {
         release = resolve
       })
-    const execution = executePolish(pool, boss, queued.id, async () => {
-      entered()
-      await gate
-      return result()
-    })
+    const execution = executePolish(
+      pool,
+      boss,
+      queued.id,
+      'bulldogjob',
+      polishWith(async () => {
+        entered()
+        await gate
+        return result()
+      }, 'bulldogjob'),
+    )
     await started
     try {
       await recoverPolish(pool, boss, 'bulldogjob')
       const duplicate = vi.fn()
-      await executePolish(pool, boss, queued.id, duplicate)
+      await executePolish(
+        pool,
+        boss,
+        queued.id,
+        'bulldogjob',
+        polishWith(duplicate, 'bulldogjob'),
+      )
       expect(duplicate).not.toHaveBeenCalled()
       expect((await polishStatus(pool, queued.id)).run?.status).toBe('running')
     } finally {
@@ -303,9 +328,15 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
   })
   it('redacts arbitrary subprocess failures and permits a later import', async () => {
     const queued = await enqueuePolish(pool, boss, query())
-    await executePolish(pool, boss, queued.id, async () => {
-      throw new Error('SECRET cookie and database url')
-    })
+    await executePolish(
+      pool,
+      boss,
+      queued.id,
+      'bulldogjob',
+      polishWith(async () => {
+        throw new Error('SECRET cookie and database url')
+      }, 'bulldogjob'),
+    )
     expect((await polishStatus(pool, queued.id)).run).toMatchObject({
       status: 'failed',
       seen: 0,

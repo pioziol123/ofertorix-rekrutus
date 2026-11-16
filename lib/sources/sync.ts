@@ -3,10 +3,8 @@ import type { Pool, PoolClient } from 'pg'
 import type { PgBoss } from 'pg-boss'
 import { fingerprint, hash, importQueue, scheduleDay, source } from './solid.ts'
 import { ConnectorError } from '../../modules/sources/infrastructure/adapters/connector.ts'
-import {
-  createSolidJobsConnector,
-  type SolidJobsPageFetcher,
-} from '../../modules/sources/infrastructure/adapters/solid-jobs/connector.ts'
+import type { ConnectorProvider } from '../../modules/sources/infrastructure/adapters/connector-registry.ts'
+import { sourceConnectors } from '../../modules/sources/infrastructure/adapters/source-connectors.ts'
 import { transaction, saveOffers } from './store.ts'
 
 const dispatchLock = 'solid-jobs-dispatch'
@@ -29,7 +27,7 @@ export async function enqueueSync(
   now = new Date(),
 ): Promise<{ id: string; reused: boolean } | null> {
   const day = scheduleDay(now)
-  const parameters = createSolidJobsConnector().scopeParameters()
+  const parameters = sourceConnectors.get(source).scopeParameters()
   const client = await pool.connect()
   try {
     return await transaction(client, async () => {
@@ -138,9 +136,9 @@ export async function executeSync(
   pool: Pool,
   boss: PgBoss,
   runId: string,
-  fetchPage?: SolidJobsPageFetcher,
+  connectors: ConnectorProvider = sourceConnectors,
 ): Promise<void> {
-  const connector = createSolidJobsConnector(fetchPage)
+  const connector = connectors.get(source)
   const client = await pool.connect()
   let locked = false
   // pg emits asynchronous errors on loss of a checked-out session; stop writing if its lock is lost.

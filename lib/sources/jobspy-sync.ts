@@ -6,7 +6,8 @@ import {
   ConnectorError,
   type ConnectorResult,
 } from '../../modules/sources/infrastructure/adapters/connector.ts'
-import { createJobspyConnector } from '../../modules/sources/infrastructure/adapters/jobspy/connector.ts'
+import type { ConnectorProvider } from '../../modules/sources/infrastructure/adapters/connector-registry.ts'
+import { sourceConnectors } from '../../modules/sources/infrastructure/adapters/source-connectors.ts'
 import { saveOffers, transaction } from './store.ts'
 import { jobspyEnabled, queueFor } from './jobspy.ts'
 import {
@@ -59,7 +60,7 @@ export async function enqueueJobspy(
   source: JobspySource = 'indeed',
 ) {
   if (!jobspyEnabled(source)) throw new Error('JobSpy source is disabled')
-  const parameters = createJobspyConnector(source).scopeParameters()
+  const parameters = sourceConnectors.get(source).scopeParameters()
   const client = await pool.connect()
   try {
     return await transaction(client, async () => {
@@ -143,8 +144,8 @@ export async function executeJobspy(
   pool: Pool,
   boss: PgBoss,
   runId: string,
-  collect?: () => Promise<unknown>,
   source: JobspySource = 'indeed',
+  connectors: ConnectorProvider = sourceConnectors,
 ) {
   const client = await pool.connect()
   let locked = false,
@@ -178,10 +179,7 @@ export async function executeJobspy(
         'SELECT parameters FROM source_scopes WHERE id=$1',
         [run.scope_id],
       )
-      const connector = createJobspyConnector(
-        source,
-        collect && (() => collect()),
-      )
+      const connector = connectors.get(source)
       let delivered = 0
       const outcome = await connector.fetch(
         scope.rows[0]?.parameters,

@@ -3,7 +3,8 @@ import type { Pool, PoolClient } from 'pg'
 import type { PgBoss } from 'pg-boss'
 import { hash, scheduleDay } from './solid.ts'
 import { ConnectorError } from '../../modules/sources/infrastructure/adapters/connector.ts'
-import { createPolishConnector } from '../../modules/sources/infrastructure/adapters/polish/connector.ts'
+import type { ConnectorProvider } from '../../modules/sources/infrastructure/adapters/connector-registry.ts'
+import { sourceConnectors } from '../../modules/sources/infrastructure/adapters/source-connectors.ts'
 import { saveOffers, transaction } from './store.ts'
 import {
   polishEnabled,
@@ -61,7 +62,7 @@ export async function enqueuePolish(
   query = polishQuery.parse(query)
   const source = query.source
   if (!polishEnabled(source)) throw new Error('Polish source is disabled')
-  const parameters = createPolishConnector(source).scopeParameters(query)
+  const parameters = sourceConnectors.get(source).scopeParameters(query)
   const client = await pool.connect()
   try {
     return await transaction(client, async () => {
@@ -136,8 +137,8 @@ export async function executePolish(
   pool: Pool,
   boss: PgBoss,
   runId: string,
-  collect?: () => Promise<unknown>,
   source: PolishSource = 'bulldogjob',
+  connectors: ConnectorProvider = sourceConnectors,
 ) {
   const client = await pool.connect()
   let locked = false,
@@ -171,10 +172,7 @@ export async function executePolish(
         'SELECT parameters FROM source_scopes WHERE id=$1',
         [run.scope_id],
       )
-      const connector = createPolishConnector(
-        source,
-        collect && (() => collect()),
-      )
+      const connector = connectors.get(source)
       let delivered = 0
       const outcome = await connector.fetch(
         scope.rows[0]?.parameters,

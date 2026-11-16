@@ -4,21 +4,17 @@ import {
   type HimalayasPage,
 } from '../../../../lib/sources/himalayas.ts'
 import { createPageFetcher } from '../../../../lib/sources/solid.ts'
-import { jobspySources } from '../../../../lib/sources/jobspy-catalog.ts'
 import { polishSources } from '../../../../lib/sources/polish-catalog.ts'
 import { hash } from '../../domain/canonical-hash.ts'
 import type { ConnectorAd, SourceConnector } from './connector.ts'
 import { createHimalayasConnector } from './himalayas/connector.ts'
-import { createJobspyConnector } from './jobspy/connector.ts'
 import { createPolishConnector } from './polish/connector.ts'
 import { createSolidJobsConnector } from './solid-jobs/connector.ts'
+import { sourceConnectors } from './source-connectors.ts'
 
-const connectors: SourceConnector[] = [
-  createSolidJobsConnector(),
-  createHimalayasConnector(),
-  ...jobspySources.map((source) => createJobspyConnector(source)),
-  ...polishSources.map((source) => createPolishConnector(source)),
-]
+const connectors: SourceConnector[] = sourceConnectors
+  .names()
+  .map((name) => sourceConnectors.get(name))
 
 /** Fingerprints of the default scopes, computed before the connectors. */
 const fingerprintsBefore: Record<string, string> = {

@@ -1,6 +1,7 @@
 import {
   createPageFetcher,
   HimalayasHttpError,
+  incompleteReason,
   parameters,
   source,
   type HimalayasPage,
@@ -18,8 +19,6 @@ export type HimalayasPageFetcher = (
   deadlineAt?: number,
 ) => Promise<HimalayasPage>
 
-export const incompleteReason =
-  'Himalayas pilot incomplete; inspect diagnostics'
 const deadlineMs = 120_000
 // Existing completeness criterion: no page starts later than 21 s before the
 // deadline. Retries of a page also end by the deadline.

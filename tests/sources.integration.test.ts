@@ -14,6 +14,7 @@ import {
 import { enqueueSync, executeSync, recoverSync } from '../lib/sources/sync.ts'
 import { importQueue, type Offer, type Page } from '../lib/sources/solid.ts'
 import { createPageFetcher, hash } from '../lib/sources/solid.ts'
+import { solidJobsWith } from './source-connectors.fixtures.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -73,7 +74,12 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
 
   async function run(jobs: Offer[], overrides: Partial<Page> = {}) {
     const queued = await enqueueSync(pool, boss)
-    await executeSync(pool, boss, queued!.id, async () => page(jobs, overrides))
+    await executeSync(
+      pool,
+      boss,
+      queued!.id,
+      solidJobsWith(async () => page(jobs, overrides)),
+    )
     return (
       await pool.query('SELECT * FROM source_sync_runs WHERE id=$1', [
         queued!.id,
@@ -184,7 +190,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
       .mockRejectedValueOnce(
         new Error('API network error or timeout after retry'),
       )
-    await executeSync(pool, boss, queued!.id, fetcher)
+    await executeSync(pool, boss, queued!.id, solidJobsWith(fetcher))
     const stored = (
       await pool.query('SELECT * FROM source_sync_runs WHERE id=$1', [
         queued!.id,
@@ -219,7 +225,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
                 totalPages: 2,
               }),
         )
-      await executeSync(pool, boss, queued!.id, fetcher)
+      await executeSync(pool, boss, queued!.id, solidJobsWith(fetcher))
       expect(
         (
           await pool.query('SELECT status FROM source_sync_runs WHERE id=$1', [
@@ -276,11 +282,16 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
-    const execution = executeSync(pool, boss, queued!.id, async () => {
-      entered()
-      await gate
-      return page([{ jobOfferKey: 'active' }])
-    })
+    const execution = executeSync(
+      pool,
+      boss,
+      queued!.id,
+      solidJobsWith(async () => {
+        entered()
+        await gate
+        return page([{ jobOfferKey: 'active' }])
+      }),
+    )
     await started
     try {
       await recoverSync(pool, boss)
@@ -292,7 +303,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
         ).rows[0].status,
       ).toBe('running')
       const duplicateFetch = vi.fn()
-      await executeSync(pool, boss, queued!.id, duplicateFetch)
+      await executeSync(pool, boss, queued!.id, solidJobsWith(duplicateFetch))
       expect(duplicateFetch).not.toHaveBeenCalled()
       expect(
         (
@@ -329,7 +340,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
       ).rows[0].status,
     ).toBe('partial')
     const fetcher = vi.fn()
-    await executeSync(pool, boss, queued!.id, fetcher)
+    await executeSync(pool, boss, queued!.id, solidJobsWith(fetcher))
     expect(fetcher).not.toHaveBeenCalled()
     expect((await enqueueSync(pool, boss))!.id).not.toBe(queued!.id)
   })
@@ -383,7 +394,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
       pool,
       boss,
       queued!.id,
-      createPageFetcher(fetcher, async () => {}),
+      solidJobsWith(createPageFetcher(fetcher, async () => {})),
     )
     expect(fetcher).toHaveBeenCalledTimes(3)
     expect(
@@ -406,7 +417,12 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
   it('makes one catchup slot after downtime and does not enqueue every missed day', async () => {
     const now = new Date('2026-10-31T12:00:00Z')
     const queued = await enqueueSync(pool, boss, 'scheduled', now)
-    await executeSync(pool, boss, queued!.id, async () => page([]))
+    await executeSync(
+      pool,
+      boss,
+      queued!.id,
+      solidJobsWith(async () => page([])),
+    )
     expect(await enqueueSync(pool, boss, 'scheduled', now)).toBeNull()
     expect(
       (

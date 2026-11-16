@@ -1,21 +1,23 @@
 import { randomUUID } from 'node:crypto'
 import type { Pool } from 'pg'
-import { fingerprint, parameters, source } from './himalayas.ts'
-import type { ConnectorResult } from '../../modules/sources/infrastructure/adapters/connector.ts'
 import {
-  createHimalayasConnector,
+  fingerprint,
   incompleteReason,
-  type HimalayasPageFetcher,
-} from '../../modules/sources/infrastructure/adapters/himalayas/connector.ts'
+  parameters,
+  source,
+} from './himalayas.ts'
+import type { ConnectorResult } from '../../modules/sources/infrastructure/adapters/connector.ts'
+import type { ConnectorProvider } from '../../modules/sources/infrastructure/adapters/connector-registry.ts'
+import { sourceConnectors } from '../../modules/sources/infrastructure/adapters/source-connectors.ts'
 import { saveOffers, transaction } from './store.ts'
 import { scheduleDay } from './solid.ts'
 
 // Manual pilot only. No scheduler, AI or queue retry is involved.
 export async function syncHimalayas(
   pool: Pool,
-  fetchPage?: HimalayasPageFetcher,
+  connectors: ConnectorProvider = sourceConnectors,
 ) {
-  const connector = createHimalayasConnector(fetchPage)
+  const connector = connectors.get(source)
   const client = await pool.connect()
   let locked = false,
     lost = false

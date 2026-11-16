@@ -26,13 +26,16 @@ const unstable =
  * A repeated ad makes the result incomplete but does not stop fetching.
  */
 export function createSolidJobsConnector(
-  fetchPage: SolidJobsPageFetcher = createPageFetcher(),
+  injectedFetchPage?: SolidJobsPageFetcher,
 ): SourceConnector {
   return {
     name: source,
     infersUnavailabilityFromAbsence: true,
     scopeParameters: () => ({ ...parameters }),
     async fetch(_parameters, onBatch, signal) {
+      // A fetcher per run keeps the request pacing local to the run, as when
+      // each run built its own connector.
+      const fetchPage = injectedFetchPage ?? createPageFetcher()
       const ids = new Set<string>()
       let baseline: Page | undefined
       let issue: string | undefined

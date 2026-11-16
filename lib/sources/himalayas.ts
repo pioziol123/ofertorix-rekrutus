@@ -8,6 +8,9 @@ import {
 } from '../../modules/sources/infrastructure/adapters/http-request.ts'
 
 export const source = 'himalayas'
+/** Why a Himalayas run is incomplete; the diagnostics say more. */
+export const incompleteReason =
+  'Himalayas pilot incomplete; inspect diagnostics'
 export const parameters = {
   source,
   adapterVersion: 1,

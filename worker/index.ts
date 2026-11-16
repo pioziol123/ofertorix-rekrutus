@@ -63,14 +63,14 @@ for (const source of jobspySources) {
   await recoverJobspy(pool, boss, source)
   await boss.work<{ runId: string }>(queueFor(source), async (jobs) => {
     for (const job of jobs)
-      await executeJobspy(pool, boss, job.data.runId, undefined, source)
+      await executeJobspy(pool, boss, job.data.runId, source)
   })
 }
 for (const source of polishSources) {
   await recoverPolish(pool, boss, source)
   await boss.work<{ runId: string }>(polishQueue(source), async (jobs) => {
     for (const job of jobs)
-      await executePolish(pool, boss, job.data.runId, undefined, source)
+      await executePolish(pool, boss, job.data.runId, source)
   })
 }
 await boss.work<{ runId: string }>(importQueue, async (jobs) => {
