@@ -11,13 +11,14 @@ import {
 import { closePool, getPool } from '../lib/db.ts'
 import { createBoss, smokeQueue } from '../lib/queue.ts'
 
-import { importQueue, scheduleDay } from '../lib/sources/solid.ts'
-import { enqueueSync, executeSync, recoverSync } from '../lib/sources/sync.ts'
-import { queueFor } from '../lib/sources/jobspy.ts'
-import { jobspySources } from '../lib/sources/jobspy-catalog.ts'
-import { executeJobspy, recoverJobspy } from '../lib/sources/jobspy-sync.ts'
-import { polishSources, polishQueue } from '../lib/sources/polish.ts'
-import { executePolish, recoverPolish } from '../lib/sources/polish-sync.ts'
+import { scheduleDay } from '../lib/sources/solid.ts'
+import { enqueueSync } from '../lib/sources/sync.ts'
+import { syncQueueFor, syncQueues } from '../lib/sources/sync-queues.ts'
+import {
+  executeSyncRun,
+  recoverSyncRuns,
+  type SyncJobLookup,
+} from '../modules/sources/index.ts'
 
 import {
   parseQueue,
@@ -58,24 +59,23 @@ await boss.work<{ checkId: string }>(smokeQueue, async (jobs) => {
 })
 // Validate the schedule before registering the importer.
 scheduleDay()
-await recoverSync(pool, boss)
-for (const source of jobspySources) {
-  await recoverJobspy(pool, boss, source)
-  await boss.work<{ runId: string }>(queueFor(source), async (jobs) => {
-    for (const job of jobs)
-      await executeJobspy(pool, boss, job.data.runId, source)
-  })
+const findSyncJob: SyncJobLookup = async ({ source, jobId }) => {
+  const queue = syncQueueFor(source)
+  return queue ? boss.getJobById(queue, jobId) : null
 }
-for (const source of polishSources) {
-  await recoverPolish(pool, boss, source)
-  await boss.work<{ runId: string }>(polishQueue(source), async (jobs) => {
+await recoverSyncRuns(findSyncJob)
+// Every source queue runs the shared executor. An aborted or lost attempt
+// throws, so the queue retries the job and the next attempt continues the run.
+for (const queue of syncQueues)
+  await boss.work<{ runId: string }>(queue, async (jobs) => {
     for (const job of jobs)
-      await executePolish(pool, boss, job.data.runId, source)
+      await executeSyncRun({
+        runId: job.data.runId,
+        jobId: job.id,
+        attempt: job.retryCount,
+        signal: job.signal,
+      })
   })
-}
-await boss.work<{ runId: string }>(importQueue, async (jobs) => {
-  for (const job of jobs) await executeSync(pool, boss, job.data.runId)
-})
 await recoverImports(pool, boss)
 await resumeAi(pool, boss)
 await recoverLocalProfiles(pool, boss)
@@ -104,9 +104,7 @@ async function schedule() {
   if (scheduling || stopping) return
   scheduling = true
   try {
-    await recoverSync(pool, boss)
-    for (const source of jobspySources) await recoverJobspy(pool, boss, source)
-    for (const source of polishSources) await recoverPolish(pool, boss, source)
+    await recoverSyncRuns(findSyncJob)
     await enqueueSync(pool, boss, 'scheduled')
     await recoverImports(pool, boss)
     await resumeAi(pool, boss)

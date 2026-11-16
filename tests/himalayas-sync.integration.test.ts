@@ -13,7 +13,6 @@ import {
 } from 'vitest'
 import {
   HimalayasHttpError,
-  parameters,
   parsePage,
   type HimalayasPage,
 } from '../lib/sources/himalayas.ts'
@@ -69,6 +68,7 @@ integration(
         '1770000000001_sources',
         '1770000000005_jobspy',
         '1770000000014_sync_run_state',
+        '1770000000015_sync_run_attempt',
       ]) {
         const sql: string[] = []
         createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
@@ -90,10 +90,7 @@ integration(
       }
     })
     const run = (ids: string[], overrides: Partial<HimalayasPage> = {}) =>
-      syncHimalayas(
-        pool,
-        himalayasWith(async () => page(ids, overrides)),
-      )
+      syncHimalayas(himalayasWith(async () => page(ids, overrides)))
 
     it('persists exact source links, dates and content and projects the real source', async () => {
       const result = await run(['one'])
@@ -158,12 +155,7 @@ integration(
       const changed = page(['one'])
       changed.jobs[0]!.title = 'Updated Senior PHP'
       expect(
-        (
-          await syncHimalayas(
-            pool,
-            himalayasWith(async () => changed),
-          )
-        ).revisions,
+        (await syncHimalayas(himalayasWith(async () => changed))).revisions,
       ).toBe(1)
       expect((await run(['one'])).revisions).toBe(1)
       expect((await pool.query('SELECT * FROM source_ads')).rowCount).toBe(1)
@@ -186,7 +178,7 @@ integration(
         .fn()
         .mockResolvedValueOnce(page(['new'], { totalCount: 21 }))
         .mockRejectedValueOnce(new HimalayasHttpError(429, '60'))
-      const result = await syncHimalayas(pool, himalayasWith(fetcher))
+      const result = await syncHimalayas(himalayasWith(fetcher))
       expect(fetcher.mock.calls.map(([index]) => index)).toEqual([1, 2])
       expect(result).toMatchObject({
         status: 'partial',
@@ -198,7 +190,6 @@ integration(
         (await pool.query('SELECT availability FROM source_ads')).rows,
       ).toEqual([{ availability: 'available' }, { availability: 'available' }])
       const failed = await syncHimalayas(
-        pool,
         himalayasWith(async () => {
           throw new Error('secret connection string and raw HTML')
         }),
@@ -233,7 +224,7 @@ integration(
               kind === 'pagination' ? { valid: false } : { [kind]: 1 },
             ),
           )
-        const result = await syncHimalayas(pool, himalayasWith(fetcher))
+        const result = await syncHimalayas(himalayasWith(fetcher))
         expect(result.status).toBe('partial')
         expect(result.seen).toBeGreaterThan(0)
         if (kind === 'duplicates') {
@@ -253,12 +244,12 @@ integration(
         .fn()
         .mockResolvedValueOnce(page(['one'], { totalCount: 40 }))
         .mockResolvedValueOnce(page(['one'], { totalCount: 40 }))
-      const result = await syncHimalayas(pool, himalayasWith(fetcher))
+      const result = await syncHimalayas(himalayasWith(fetcher))
       expect(result).toMatchObject({ status: 'partial', pages: 2, seen: 1 })
       expect(result.diagnostics).toMatchObject({ pages: 2, duplicates: 1 })
     })
 
-    it('records a failed page save as an incomplete read with short diagnostics', async () => {
+    it('records a failed page save as an incomplete run with a generic message', async () => {
       await pool.query(
         `ALTER TABLE source_ad_revisions ADD CONSTRAINT reject_fixture CHECK (payload->>'title' <> 'Rejected fixture')`,
       )
@@ -269,18 +260,14 @@ integration(
           .fn()
           .mockResolvedValueOnce(page(['saved'], { totalCount: 21 }))
           .mockResolvedValueOnce(rejected)
-        const result = await syncHimalayas(pool, himalayasWith(fetcher))
-        // Since connectors the save error leaves the connector unchanged, so
-        // the run keeps only what the sync path knows.
+        const result = await syncHimalayas(himalayasWith(fetcher))
+        // Since 0mq.5 the shared executor ends the run on a save error with
+        // the generic message and keeps no source diagnostics (A5-R01).
         expect(result).toMatchObject({
           status: 'partial',
-          error: 'Himalayas pilot incomplete; inspect diagnostics',
-        })
-        expect(result.diagnostics).toEqual({
-          query: parameters,
-          pages: 2,
-          stopReason: 'fetch_or_processing_error',
-          marketComplete: false,
+          seen: 1,
+          error: 'Import interrupted by a storage or processing error',
+          diagnostics: null,
         })
       } finally {
         await pool.query(
@@ -296,10 +283,7 @@ integration(
       const rejected = page(['rejected'])
       rejected.jobs[0]!.title = 'Rejected fixture'
       try {
-        const failed = await syncHimalayas(
-          pool,
-          himalayasWith(async () => rejected),
-        )
+        const failed = await syncHimalayas(himalayasWith(async () => rejected))
         expect(failed).toMatchObject({
           status: 'failed',
           seen: 0,
@@ -311,7 +295,7 @@ integration(
           .fn()
           .mockResolvedValueOnce(page(['saved'], { totalCount: 21 }))
           .mockResolvedValueOnce(rejected)
-        const partial = await syncHimalayas(pool, himalayasWith(fetcher))
+        const partial = await syncHimalayas(himalayasWith(fetcher))
         expect(partial).toMatchObject({
           status: 'partial',
           seen: 1,
@@ -330,7 +314,6 @@ integration(
 
     it('does not store untrusted Retry-After response content in diagnostics', async () => {
       const result = await syncHimalayas(
-        pool,
         himalayasWith(async () => {
           throw new HimalayasHttpError(429, '<html>secret response body</html>')
         }),
@@ -346,7 +329,7 @@ integration(
       const fetcher = vi.fn(async (index: number) =>
         page([`job-${index}`], { totalCount: 200 }),
       )
-      const result = await syncHimalayas(pool, himalayasWith(fetcher))
+      const result = await syncHimalayas(himalayasWith(fetcher))
       expect(fetcher).toHaveBeenCalledTimes(5)
       expect(result).toMatchObject({
         status: 'partial',
@@ -366,7 +349,6 @@ integration(
         entered = resolve
       })
       const active = syncHimalayas(
-        pool,
         himalayasWith(async () => {
           entered()
           await gate
@@ -376,9 +358,9 @@ integration(
       await started
       try {
         const duplicate = vi.fn()
-        await expect(
-          syncHimalayas(pool, himalayasWith(duplicate)),
-        ).rejects.toThrow('already running')
+        await expect(syncHimalayas(himalayasWith(duplicate))).rejects.toThrow(
+          'already running',
+        )
         expect(duplicate).not.toHaveBeenCalled()
         expect(
           (await pool.query('SELECT status FROM source_sync_runs')).rows,

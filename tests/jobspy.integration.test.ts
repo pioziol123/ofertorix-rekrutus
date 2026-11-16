@@ -15,17 +15,16 @@ import {
 } from 'vitest'
 import {
   enqueueJobspy,
-  executeJobspy,
   jobspyStatus,
   jobspyCatalogStatus,
-  recoverJobspy,
 } from '../lib/sources/jobspy-sync.ts'
 import { jobspyQueue, queueFor } from '../lib/sources/jobspy.ts'
-import { enqueueSync, executeSync, recoverSync } from '../lib/sources/sync.ts'
+import { enqueueSync } from '../lib/sources/sync.ts'
 import { hash, importQueue } from '../lib/sources/solid.ts'
 import { readOffers } from '../lib/offers.ts'
 import { job, result, sourceResult } from './fixtures/jobspy/result.ts'
 import { jobspyWith, solidJobsWith } from './source-connectors.fixtures.ts'
+import { deliver, recover } from './sync-run.fixtures.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -48,6 +47,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       '1770000000001_sources',
       '1770000000005_jobspy',
       '1770000000014_sync_run_state',
+      '1770000000015_sync_run_attempt',
     ]) {
       const sql: string[] = []
       createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
@@ -87,11 +87,8 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       .rows[0]
   async function run(overrides: Record<string, unknown> = {}) {
     const queued = await enqueueJobspy(pool, boss)
-    await executeJobspy(
-      pool,
-      boss,
+    await deliver(
       queued.id,
-      'indeed',
       jobspyWith(async () => result(overrides), 'indeed'),
     )
     return stored(queued.id)
@@ -186,12 +183,14 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       },
     ])
   })
+  // Since 0mq.5 an incomplete run without saved ads is failed, whatever the
+  // helper status (A5-R03).
   it.each([
-    ['limited', 'partial', 'unverified'],
-    ['partial', 'partial', 'page_error'],
+    ['limited', 'failed', 'unverified'],
+    ['partial', 'failed', 'page_error'],
     ['failed', 'failed', 'page_error'],
   ])(
-    'keeps the status of an incomplete run without jobs: helper %s gives %s',
+    'fails an incomplete run without jobs: helper %s gives %s',
     async (status, expected, stop_reason) => {
       expect(await run({ status, stop_reason, jobs: [] })).toMatchObject({
         status: expected,
@@ -253,11 +252,8 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
-    const execution = executeJobspy(
-      pool,
-      boss,
+    const execution = deliver(
       queued.id,
-      'indeed',
       jobspyWith(async () => {
         entered()
         await gate
@@ -266,15 +262,9 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     )
     await started
     try {
-      await recoverJobspy(pool, boss)
+      await recover(boss)
       const duplicate = vi.fn()
-      await executeJobspy(
-        pool,
-        boss,
-        queued.id,
-        'indeed',
-        jobspyWith(duplicate, 'indeed'),
-      )
+      await deliver(queued.id, jobspyWith(duplicate, 'indeed'))
       expect(duplicate).not.toHaveBeenCalled()
       expect((await stored(queued.id)).status).toBe('running')
     } finally {
@@ -282,56 +272,33 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       await execution
     }
     const late = vi.fn()
-    await executeJobspy(
-      pool,
-      boss,
-      queued.id,
-      'indeed',
-      jobspyWith(late, 'indeed'),
-    )
+    await deliver(queued.id, jobspyWith(late, 'indeed'))
     expect(late).not.toHaveBeenCalled()
     expect((await stored(queued.id)).status).toBe('complete')
   })
-  it('limits recovery in each adapter to its own source and permits a fresh JobSpy run', async () => {
+  // Since 0mq.5 one recovery serves every source and ends only runs whose
+  // queue job has ended (A5-R06).
+  it('recovers a run only when its own queue job has ended and permits a fresh JobSpy run', async () => {
     const indeed = await enqueueJobspy(pool, boss)
     const solid = (await enqueueSync(pool, boss))!
     await pool.query("UPDATE source_sync_runs SET status='running'")
-    await recoverSync(pool, boss)
+    await boss.cancel(importQueue, (await stored(solid.id)).job_id)
+    await recover(boss)
     expect((await stored(indeed.id)).status).toBe('running')
     expect((await stored(solid.id)).status).toBe('failed')
-    await pool.query(
-      "UPDATE source_sync_runs SET status='running' WHERE id=$1",
-      [solid.id],
-    )
-    await recoverJobspy(pool, boss)
+    await boss.cancel(jobspyQueue, (await stored(indeed.id)).job_id)
+    await recover(boss)
     expect((await stored(indeed.id)).status).toBe('failed')
-    expect((await stored(solid.id)).status).toBe('running')
     expect((await enqueueJobspy(pool, boss)).id).not.toBe(indeed.id)
     const late = vi.fn()
-    await executeJobspy(
-      pool,
-      boss,
-      indeed.id,
-      'indeed',
-      jobspyWith(late, 'indeed'),
-    )
+    await deliver(indeed.id, jobspyWith(late, 'indeed'))
     expect(late).not.toHaveBeenCalled()
   })
-  it('does not consume SOLID delivery and never merges an identical external ID across sources', async () => {
+  // Since 0mq.5 the shared executor runs the delivered run with its own
+  // source's connector; the queue no longer selects the source (A5-R01).
+  it('never merges an identical external ID across sources', async () => {
     const solid = (await enqueueSync(pool, boss))!
-    const collector = vi.fn()
-    await executeJobspy(
-      pool,
-      boss,
-      solid.id,
-      'indeed',
-      jobspyWith(collector, 'indeed'),
-    )
-    expect(collector).not.toHaveBeenCalled()
-    expect((await stored(solid.id)).status).toBe('queued')
-    await executeSync(
-      pool,
-      boss,
+    await deliver(
       solid.id,
       solidJobsWith(async () => ({
         jobs: [{ jobOfferKey: 'ab123', title: 'SOLID offer' }],
@@ -354,29 +321,21 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
   })
   it('redacts arbitrary collector exceptions and rejects disabled execution without invoking collection', async () => {
     const queued = await enqueueJobspy(pool, boss)
-    await executeJobspy(
-      pool,
-      boss,
+    await deliver(
       queued.id,
-      'indeed',
       jobspyWith(async () => {
         throw new Error('secret token from scraper')
       }, 'indeed'),
     )
+    // Since 0mq.5 the shared executor stores one generic message (A5-R01).
     expect(await stored(queued.id)).toMatchObject({
       status: 'failed',
-      error: 'JobSpy import failed',
+      error: 'Import interrupted by a storage or processing error',
     })
     const next = await enqueueJobspy(pool, boss)
     vi.stubEnv('JOBSPY_ENABLED', 'false')
     const collector = vi.fn()
-    await executeJobspy(
-      pool,
-      boss,
-      next.id,
-      'indeed',
-      jobspyWith(collector, 'indeed'),
-    )
+    await deliver(next.id, jobspyWith(collector, 'indeed'))
     expect(collector).not.toHaveBeenCalled()
     expect(await stored(next.id)).toMatchObject({
       status: 'failed',
@@ -387,7 +346,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     const queued = await enqueueJobspy(pool, boss)
     const row = await stored(queued.id)
     await boss.cancel(jobspyQueue, row.job_id)
-    await recoverJobspy(pool, boss)
+    await recover(boss)
     expect((await stored(queued.id)).status).toBe('failed')
   })
   it('deduplicates across parameter scopes and rejects a stale scope before collection', async () => {
@@ -402,13 +361,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       reused: true,
     })
     const collector = vi.fn()
-    await executeJobspy(
-      pool,
-      boss,
-      queued.id,
-      'indeed',
-      jobspyWith(collector, 'indeed'),
-    )
+    await deliver(queued.id, jobspyWith(collector, 'indeed'))
     expect(collector).not.toHaveBeenCalled()
     expect(await stored(queued.id)).toMatchObject({
       status: 'failed',
@@ -440,16 +393,6 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     expect(
       await boss.getJobById(queueFor('bayt'), baytRow.job_id),
     ).toMatchObject({ data: { runId: bayt.id } })
-    const wrongCollector = vi.fn()
-    await executeJobspy(
-      pool,
-      boss,
-      bayt.id,
-      'linkedin',
-      jobspyWith(wrongCollector, 'linkedin'),
-    )
-    expect(wrongCollector).not.toHaveBeenCalled()
-    expect((await stored(bayt.id)).status).toBe('queued')
 
     let entered!: () => void, release!: () => void
     const started = new Promise<void>((resolve) => {
@@ -458,11 +401,8 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
-    const execution = executeJobspy(
-      pool,
-      boss,
+    const execution = deliver(
       linkedin.id,
-      'linkedin',
       jobspyWith(async () => {
         entered()
         await gate
@@ -471,14 +411,11 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     )
     await started
     try {
-      await recoverJobspy(pool, boss, 'linkedin')
-      await recoverJobspy(pool, boss, 'bayt')
+      await recover(boss)
+      await recover(boss)
       expect((await stored(linkedin.id)).status).toBe('running')
-      await executeJobspy(
-        pool,
-        boss,
+      await deliver(
         bayt.id,
-        'bayt',
         jobspyWith(async () => sourceResult('bayt'), 'bayt'),
       )
       expect(await stored(bayt.id)).toMatchObject({
@@ -514,9 +451,11 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       "UPDATE source_sync_runs SET status='running' WHERE id=ANY($1::uuid[])",
       [[linkedin.id, next.id]],
     )
-    await recoverJobspy(pool, boss, 'linkedin')
+    await recover(boss)
     expect((await stored(next.id)).status).toBe('running')
-    await recoverJobspy(pool, boss, 'bayt')
+    await boss.cancel(queueFor('bayt'), (await stored(next.id)).job_id)
+    await recover(boss)
     expect((await stored(next.id)).status).toBe('failed')
+    expect((await stored(linkedin.id)).status).toBe('running')
   })
 })

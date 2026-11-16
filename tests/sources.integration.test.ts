@@ -12,7 +12,9 @@ import {
   it,
   vi,
 } from 'vitest'
-import { enqueueSync, executeSync, recoverSync } from '../lib/sources/sync.ts'
+import { enqueueSync } from '../lib/sources/sync.ts'
+import { executeSyncRun, recoverSyncRuns } from '../modules/sources/index.ts'
+import type { ConnectorProvider } from '../modules/sources/infrastructure/adapters/connector-registry.ts'
 import { importQueue, type Offer, type Page } from '../lib/sources/solid.ts'
 import { createPageFetcher, hash } from '../lib/sources/solid.ts'
 import { solidJobsWith } from './source-connectors.fixtures.ts'
@@ -48,12 +50,14 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     const sql: string[] = []
     for (const migration of [
       '1770000000001_sources',
+      '1770000000005_jobspy',
       '1770000000014_sync_run_state',
+      '1770000000015_sync_run_attempt',
     ])
       createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),
       })
-    await pool.query(sql.join('\n'))
+    await pool.query(sql.join(';\n'))
     boss = new PgBoss({
       connectionString: process.env.DATABASE_URL,
       schema: queueSchema,
@@ -79,11 +83,29 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     }
   })
 
+  // A queue delivery of the run's job, first attempt, to the shared executor.
+  async function executeSync(runId: string, connectors: ConnectorProvider) {
+    const { job_id } = (
+      await pool.query('SELECT job_id FROM source_sync_runs WHERE id=$1', [
+        runId,
+      ])
+    ).rows[0]
+    await executeSyncRun(
+      {
+        runId,
+        jobId: job_id,
+        attempt: 0,
+        signal: new AbortController().signal,
+      },
+      connectors,
+    )
+  }
+  const recoverSync = () =>
+    recoverSyncRuns(({ jobId }) => boss.getJobById(importQueue, jobId))
+
   async function run(jobs: Offer[], overrides: Partial<Page> = {}) {
     const queued = await enqueueSync(pool, boss)
     await executeSync(
-      pool,
-      boss,
       queued!.id,
       solidJobsWith(async () => page(jobs, overrides)),
     )
@@ -197,7 +219,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
       .mockRejectedValueOnce(
         new Error('API network error or timeout after retry'),
       )
-    await executeSync(pool, boss, queued!.id, solidJobsWith(fetcher))
+    await executeSync(queued!.id, solidJobsWith(fetcher))
     const stored = (
       await pool.query('SELECT * FROM source_sync_runs WHERE id=$1', [
         queued!.id,
@@ -232,7 +254,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
                 totalPages: 2,
               }),
         )
-      await executeSync(pool, boss, queued!.id, solidJobsWith(fetcher))
+      await executeSync(queued!.id, solidJobsWith(fetcher))
       expect(
         (
           await pool.query('SELECT status FROM source_sync_runs WHERE id=$1', [
@@ -290,8 +312,6 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
       release = resolve
     })
     const execution = executeSync(
-      pool,
-      boss,
       queued!.id,
       solidJobsWith(async () => {
         entered()
@@ -301,7 +321,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     )
     await started
     try {
-      await recoverSync(pool, boss)
+      await recoverSync()
       expect(
         (
           await pool.query('SELECT status FROM source_sync_runs WHERE id=$1', [
@@ -310,7 +330,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
         ).rows[0].status,
       ).toBe('running')
       const duplicateFetch = vi.fn()
-      await executeSync(pool, boss, queued!.id, solidJobsWith(duplicateFetch))
+      await executeSync(queued!.id, solidJobsWith(duplicateFetch))
       expect(duplicateFetch).not.toHaveBeenCalled()
       expect(
         (
@@ -332,13 +352,16 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     ).toBe('complete')
   })
 
+  // Since 0mq.5 a running run is orphaned when its queue job has ended, and
+  // it ends partial by its saved ads (A5-R03, A5-R06).
   it('recovers orphaned running imports and ignores late delivery', async () => {
     const queued = await enqueueSync(pool, boss)
-    await pool.query(
-      "UPDATE source_sync_runs SET status='running',pages=1 WHERE id=$1",
+    const { rows } = await pool.query(
+      "UPDATE source_sync_runs SET status='running',attempt=0,pages=1,seen=1 WHERE id=$1 RETURNING job_id",
       [queued!.id],
     )
-    await recoverSync(pool, boss)
+    await boss.cancel(importQueue, rows[0].job_id)
+    await recoverSync()
     expect(
       (
         await pool.query('SELECT status FROM source_sync_runs WHERE id=$1', [
@@ -347,7 +370,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
       ).rows[0].status,
     ).toBe('partial')
     const fetcher = vi.fn()
-    await executeSync(pool, boss, queued!.id, solidJobsWith(fetcher))
+    await executeSync(queued!.id, solidJobsWith(fetcher))
     expect(fetcher).not.toHaveBeenCalled()
     expect((await enqueueSync(pool, boss))!.id).not.toBe(queued!.id)
   })
@@ -398,8 +421,6 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
         }),
       )
     await executeSync(
-      pool,
-      boss,
       queued!.id,
       solidJobsWith(createPageFetcher(fetcher, async () => {})),
     )
@@ -410,10 +431,11 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     ).toEqual([{ id: queued!.id, status: 'complete', pages: 1, seen: 1 }])
   })
 
-  it('counts an empty invalid first page, so the run ends partial', async () => {
+  // Since 0mq.5 an incomplete run without saved ads is failed (A5-R03).
+  it('counts an empty invalid first page, and the run without saved ads fails', async () => {
     const result = await run([], { valid: false, totalCount: 5, totalPages: 1 })
     expect(result).toMatchObject({
-      status: 'partial',
+      status: 'failed',
       pages: 1,
       seen: 0,
       error:
@@ -425,8 +447,6 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     const now = new Date('2026-10-31T12:00:00Z')
     const queued = await enqueueSync(pool, boss, 'scheduled', now)
     await executeSync(
-      pool,
-      boss,
       queued!.id,
       solidJobsWith(async () => page([])),
     )

@@ -1,15 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import type { Pool, PoolClient } from 'pg'
+import type { Pool } from 'pg'
 import type { PgBoss } from 'pg-boss'
 import { fingerprint, hash, importQueue, scheduleDay, source } from './solid.ts'
-import { ConnectorError } from '../../modules/sources/infrastructure/adapters/connector.ts'
-import type { ConnectorProvider } from '../../modules/sources/infrastructure/adapters/connector-registry.ts'
+import { syncJobOptions } from '../../modules/sources/index.ts'
 import { sourceConnectors } from '../../modules/sources/infrastructure/adapters/source-connectors.ts'
-import { saveBatch } from '../../modules/sources/save-batch.ts'
 import { transaction } from './store.ts'
 
 const dispatchLock = 'solid-jobs-dispatch'
-const executionLock = 'solid-jobs-execution'
 export type Run = {
   id: string
   scope_id: string
@@ -63,8 +60,7 @@ export async function enqueueSync(
         { runId: id },
         {
           db: { executeSql: (text, values) => client.query(text, values) },
-          retryLimit: 0,
-          expireInSeconds: 3600,
+          ...syncJobOptions,
         },
       )
       if (!jobId) throw new Error('Import job was not queued')
@@ -76,138 +72,6 @@ export async function enqueueSync(
     })
   } finally {
     client.release()
-  }
-}
-
-async function failRun(client: PoolClient, id: string, error: string) {
-  await client.query(
-    `UPDATE source_sync_runs SET status=CASE WHEN pages>0 THEN 'partial' ELSE 'failed' END,
-    error=$2,finished_at=now() WHERE id=$1 AND status IN ('queued','running')`,
-    [id, error],
-  )
-}
-
-// Called only while holding the execution lock: another worker cannot own a running run.
-async function recoverLocked(client: PoolClient, boss: PgBoss) {
-  await client.query(
-    `UPDATE source_sync_runs SET status=CASE WHEN pages>0 THEN 'partial' ELSE 'failed' END,
-    error='Worker interrupted; request a new import',finished_at=now() WHERE status='running'
-    AND scope_id IN (SELECT id FROM source_scopes WHERE source=$1)`,
-    [source],
-  )
-  const queued = await client.query<Run>(
-    `SELECT * FROM source_sync_runs WHERE status='queued' AND scope_id IN (SELECT id FROM source_scopes WHERE source=$1)`,
-    [source],
-  )
-  for (const run of queued.rows) {
-    const job = run.job_id
-      ? await boss.getJobById(importQueue, run.job_id)
-      : null
-    if (!job || ['failed', 'cancelled', 'completed'].includes(job.state)) {
-      await failRun(
-        client,
-        run.id,
-        'Queue delivery ended; request a new import',
-      )
-    }
-  }
-}
-
-export async function recoverSync(pool: Pool, boss: PgBoss): Promise<void> {
-  const client = await pool.connect()
-  try {
-    const lock = await client.query<{ locked: boolean }>(
-      'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
-      [executionLock],
-    )
-    if (!lock.rows[0]!.locked) return
-    try {
-      await recoverLocked(client, boss)
-    } finally {
-      await client.query('SELECT pg_advisory_unlock(hashtext($1))', [
-        executionLock,
-      ])
-    }
-  } finally {
-    client.release()
-  }
-}
-
-export async function executeSync(
-  pool: Pool,
-  boss: PgBoss,
-  runId: string,
-  connectors: ConnectorProvider = sourceConnectors,
-): Promise<void> {
-  const connector = connectors.get(source)
-  const client = await pool.connect()
-  let locked = false
-  // pg emits asynchronous errors on loss of a checked-out session; stop writing if its lock is lost.
-  let connectionLost = false
-  const lost = () => {
-    connectionLost = true
-  }
-  client.on('error', lost)
-  try {
-    const result = await client.query<{ locked: boolean }>(
-      'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
-      [executionLock],
-    )
-    locked = result.rows[0]!.locked
-    // A duplicate delivery must never fail the run owned by the lock holder.
-    // A different queued run is reconciled after this delivery ends.
-    if (!locked) return
-    await recoverLocked(client, boss)
-    const claimed = await client.query<Run>(
-      `UPDATE source_sync_runs SET status='running',started_at=now()
-      WHERE id=$1 AND status='queued' AND scope_id IN (SELECT id FROM source_scopes WHERE source=$2) RETURNING *`,
-      [runId, source],
-    )
-    const run = claimed.rows[0]
-    if (!run) return // Late delivery of a recovered or already finished job.
-    try {
-      const outcome = await connector.fetch(
-        connector.scopeParameters(),
-        async (ads) => {
-          if (connectionLost) throw new Error('Database session lost')
-          await saveBatch({ id: run.id, scopeId: run.scope_id, source }, ads)
-        },
-        new AbortController().signal,
-      )
-      if (!outcome.complete) {
-        await failRun(client, run.id, outcome.reason)
-        return
-      }
-      await transaction(client, async () => {
-        await client.query(
-          `UPDATE source_ads a SET availability='unavailable'
-          WHERE source=$1 AND last_seen_scope_id=$2
-          AND NOT EXISTS (SELECT 1 FROM source_run_seen s WHERE s.run_id=$3 AND s.source_ad_id=a.id)`,
-          [source, run.scope_id, run.id],
-        )
-        await client.query(
-          `UPDATE source_sync_runs SET status='complete',finished_at=now() WHERE id=$1`,
-          [run.id],
-        )
-      })
-    } catch (error) {
-      // Only connector errors are exposed; never persist credentials or raw response bodies.
-      const message =
-        error instanceof ConnectorError
-          ? error.message
-          : 'Import interrupted by a storage or processing error'
-      await failRun(client, run.id, message)
-    }
-  } finally {
-    client.off('error', lost)
-    try {
-      if (locked && !connectionLost)
-        await client.query('SELECT pg_advisory_unlock(hashtext($1))', [
-          executionLock,
-        ])
-    } finally {
-      client.release(connectionLost)
-    }
   }
 }
 

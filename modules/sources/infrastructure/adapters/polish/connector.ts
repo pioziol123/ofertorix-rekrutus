@@ -1,5 +1,6 @@
 import {
   parsePolish,
+  polishEnabled,
   polishParameters,
   polishQuery,
   runPolish,
@@ -25,7 +26,8 @@ const invalid = 'Invalid Polish source result'
  * A Polish job portal, read by the helper process in one batch. The scope
  * comes from the validated query of the request. It is complete when the
  * helper exhausted the results and no record was rejected, repeated or
- * without a description.
+ * without a description. A portal disabled in configuration is not
+ * fetched.
  */
 export function createPolishConnector(
   source: PolishSource,
@@ -41,6 +43,8 @@ export function createPolishConnector(
     },
     async fetch(parameters, onBatch, signal) {
       throwIfAborted(signal)
+      if (!polishEnabled(source))
+        throw new ConnectorError('Polish source is disabled')
       const query = polishQuery.parse(
         (parameters as { query?: unknown } | null)?.query,
       )

@@ -61,6 +61,7 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
       '1770000000001_sources',
       '1770000000005_jobspy',
       '1770000000014_sync_run_state',
+      '1770000000015_sync_run_attempt',
     ]) {
       const sql: string[] = []
       createRequire(import.meta.url)(`../../migrations/${migration}.cjs`).up({

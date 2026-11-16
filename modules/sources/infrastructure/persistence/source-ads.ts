@@ -3,7 +3,7 @@ import { db } from '../../../../lib/db.ts'
 
 /**
  * Source ads with their observations and content revisions. Internal to the
- * Sources module; the batch save is its only client.
+ * Sources module; the batch save and the run executor are its clients.
  */
 
 export type ObservedAd = {
@@ -64,4 +64,21 @@ export async function addCurrentRevision(
     adId,
     revisionId,
   ])
+}
+
+/**
+ * Marks the source's ads last seen in the scope, but not observed in the
+ * run, as unavailable: the rule SOLID.Jobs applied before connectors.
+ */
+export async function markUnobservedScopeAdsUnavailable(run: {
+  id: string
+  scopeId: string
+  source: string
+}): Promise<void> {
+  await db().query(
+    `UPDATE source_ads a SET availability='unavailable'
+    WHERE source=$1 AND last_seen_scope_id=$2
+    AND NOT EXISTS (SELECT 1 FROM source_run_seen s WHERE s.run_id=$3 AND s.source_ad_id=a.id)`,
+    [run.source, run.scopeId, run.id],
+  )
 }

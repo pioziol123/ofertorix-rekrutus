@@ -5,6 +5,7 @@ import {
   findRun,
   findUnfinishedRuns,
   insertQueuedRun,
+  lockHeldRun,
   markRunFinished,
   markRunStarted,
   setRunJob,
@@ -33,6 +34,8 @@ export type SyncRun = {
   scheduleDay: string
   status: SyncRunStatus
   jobId: string | null
+  /** The queue attempt holding the run since it started. */
+  attempt: number | null
   pages: number
   uniqueAds: number
   revisions: number
@@ -52,8 +55,10 @@ export type RunAdmission = {
   /**
    * Sends the run's queue job inside the admission's transaction (pg-boss
    * with the shared `db` adapter) and returns the job id, or throws.
+   * Without it the run has no queue job: the requesting process executes it
+   * itself.
    */
-  sendJob: (runId: string) => Promise<string>
+  sendJob?: (runId: string) => Promise<string>
 }
 
 export type AdmittedRun = { id: string; existing: boolean }
@@ -83,7 +88,7 @@ export function admitRun(admission: RunAdmission): Promise<AdmittedRun> {
         scheduleDay: admission.scheduleDay,
       })
       if (id) {
-        await setRunJob(id, await admission.sendJob(id))
+        if (admission.sendJob) await setRunJob(id, await admission.sendJob(id))
         return { id, existing: false }
       }
       const queued = await findQueuedRunId(scopeId)
@@ -93,20 +98,47 @@ export function admitRun(admission: RunAdmission): Promise<AdmittedRun> {
   })
 }
 
-/**
- * Starts a queued run. Returns null, without changes, when the run is not
- * queued: a redelivered job or a finished run. While another run of the same
- * scope is running it throws the running-run index' unique violation
- * (PostgreSQL code 23505) and the run stays queued: callers read that as
- * "not now", not as a lost run (F2-07).
- */
-export function startRun(runId: string): Promise<SyncRun | null> {
-  return markRunStarted(runId)
+/** The queue job and its attempt that execute a run (F2-13). */
+export type RunAttempt = {
+  /** The run's queue job; null for a run executed without a queue. */
+  jobId: string | null
+  /** The job's retry count: 0 for the first attempt. */
+  attempt: number
 }
 
 /**
- * Finishes a queued or running run with the status the caller chose.
- * Returns false, without changes, when the run had already finished.
+ * Starts a queued run under the attempt, or hands a running run over to a
+ * later attempt of its own queue job: the run continues instead of a new one
+ * (F2-13). Returns null, without changes, otherwise: a redelivered attempt or
+ * a finished run. While another run of the same scope is running a queued
+ * run throws the running-run index' unique violation (PostgreSQL code 23505)
+ * and stays queued: callers read that as "not now", not as a lost run
+ * (F2-07).
+ */
+export function startRun(
+  runId: string,
+  attempt: RunAttempt = { jobId: null, attempt: 0 },
+): Promise<SyncRun | null> {
+  return markRunStarted(runId, attempt)
+}
+
+/**
+ * Inside a transaction: whether the attempt still holds the run, returned
+ * locked until the transaction ends, so a later attempt or recovery cannot
+ * take it over before the transaction's writes commit. Null when the run
+ * was lost: finished, or taken over by a later attempt.
+ */
+export function holdRun(
+  runId: string,
+  attempt: number,
+): Promise<SyncRun | null> {
+  return lockHeldRun(runId, attempt)
+}
+
+/**
+ * Finishes a queued or running run with the status the caller chose; given
+ * an attempt, only while that attempt holds the run. Returns false, without
+ * changes, when the run had already finished or was taken over.
  */
 export function finishRun(
   runId: string,
@@ -115,12 +147,17 @@ export function finishRun(
     error: string | null
     diagnostics?: unknown
   },
+  attempt?: number,
 ): Promise<boolean> {
-  return markRunFinished(runId, {
-    status: outcome.status,
-    error: outcome.error,
-    diagnostics: outcome.diagnostics ?? null,
-  })
+  return markRunFinished(
+    runId,
+    {
+      status: outcome.status,
+      error: outcome.error,
+      diagnostics: outcome.diagnostics ?? null,
+    },
+    attempt,
+  )
 }
 
 /** The run with its scope parameters, or null. */

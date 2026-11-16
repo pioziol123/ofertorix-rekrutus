@@ -22,6 +22,7 @@ type RunRow = {
   schedule_day: string
   status: SyncRunStatus
   job_id: string | null
+  attempt: number | null
   pages: number
   seen: number
   revisions: number
@@ -33,7 +34,7 @@ type RunRow = {
 }
 
 const runColumns = `r.id, r.scope_id, s.source, s.parameters, r.trigger,
-  r.schedule_day::text AS schedule_day, r.status, r.job_id, r.pages, r.seen,
+  r.schedule_day::text AS schedule_day, r.status, r.job_id, r.attempt, r.pages, r.seen,
   r.revisions, r.error, r.diagnostics, r.created_at, r.started_at, r.finished_at`
 
 function toRun(row: RunRow): SyncRun {
@@ -46,6 +47,7 @@ function toRun(row: RunRow): SyncRun {
     scheduleDay: row.schedule_day,
     status: row.status,
     jobId: row.job_id,
+    attempt: row.attempt,
     pages: row.pages,
     uniqueAds: row.seen,
     revisions: row.revisions,
@@ -103,19 +105,51 @@ export async function setRunJob(runId: string, jobId: string): Promise<void> {
   ])
 }
 
-/** Moves a queued run to running; null when the run is not queued. */
-export async function markRunStarted(runId: string): Promise<SyncRun | null> {
+/**
+ * Moves a queued run to running under the attempt, or hands a running run of
+ * the same queue job over to a later attempt of that job. Null when neither
+ * applies: a redelivered attempt or a finished run.
+ */
+export async function markRunStarted(
+  runId: string,
+  claim: { jobId: string | null; attempt: number },
+): Promise<SyncRun | null> {
   const result = await db().query<RunRow>(
     `WITH started AS (
-      UPDATE source_sync_runs SET status='running', started_at=now()
-      WHERE id=$1 AND status='queued' RETURNING *
+      UPDATE source_sync_runs SET status='running', attempt=$3,
+        started_at=CASE WHEN status='queued' THEN now() ELSE started_at END
+      WHERE id=$1 AND (status='queued' OR (status='running'
+        AND $2::uuid IS NOT NULL AND job_id=$2::uuid AND coalesce(attempt,-1) < $3))
+      RETURNING *
     ) SELECT ${runColumns} FROM started r JOIN source_scopes s ON s.id=r.scope_id`,
-    [runId],
+    [runId, claim.jobId, claim.attempt],
   )
   return result.rows[0] ? toRun(result.rows[0]) : null
 }
 
-/** Finishes a queued or running run; false when it had already finished. */
+/**
+ * Locks the run until the end of the transaction when the attempt still
+ * holds it, that is the run is running under that attempt, and returns it.
+ * Null otherwise.
+ */
+export async function lockHeldRun(
+  runId: string,
+  attempt: number,
+): Promise<SyncRun | null> {
+  const result = await db().query<RunRow>(
+    `WITH held AS (
+      SELECT * FROM source_sync_runs WHERE id=$1 AND status='running' AND attempt=$2
+      FOR UPDATE
+    ) SELECT ${runColumns} FROM held r JOIN source_scopes s ON s.id=r.scope_id`,
+    [runId, attempt],
+  )
+  return result.rows[0] ? toRun(result.rows[0]) : null
+}
+
+/**
+ * Finishes a queued or running run; given an attempt, only a run running
+ * under that attempt. False when nothing changed.
+ */
 export async function markRunFinished(
   runId: string,
   outcome: {
@@ -123,10 +157,12 @@ export async function markRunFinished(
     error: string | null
     diagnostics: unknown
   },
+  attempt?: number,
 ): Promise<boolean> {
   const result = await db().query(
     `UPDATE source_sync_runs SET status=$2, error=$3, diagnostics=$4, finished_at=now()
-    WHERE id=$1 AND status IN ('queued','running')`,
+    WHERE id=$1 AND CASE WHEN $5::int IS NULL THEN status IN ('queued','running')
+      ELSE status='running' AND attempt=$5::int END`,
     [
       runId,
       outcome.status,
@@ -134,6 +170,7 @@ export async function markRunFinished(
       outcome.diagnostics === undefined || outcome.diagnostics === null
         ? null
         : JSON.stringify(outcome.diagnostics),
+      attempt ?? null,
     ],
   )
   return result.rowCount === 1
