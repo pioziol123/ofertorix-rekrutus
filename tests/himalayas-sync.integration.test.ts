@@ -16,6 +16,7 @@ import {
   type HimalayasPage,
 } from '../lib/sources/himalayas.ts'
 import { syncHimalayas } from '../lib/sources/himalayas-sync.ts'
+import { hash } from '../lib/sources/solid.ts'
 import { readOffers } from '../lib/offers.ts'
 
 const integration =
@@ -119,6 +120,29 @@ integration(
       })
     })
 
+    it('stores ads with the identifiers, links, expiry, hashes and content from before connectors', async () => {
+      expect((await run(['pinned'])).status).toBe('complete')
+      expect(
+        (
+          await pool.query(
+            'SELECT a.external_id,a.url,a.valid_to,r.content_hash,r.payload FROM source_ads a JOIN source_ad_revisions r ON r.id=a.current_revision_id ORDER BY a.external_id',
+          )
+        ).rows.map(({ payload, valid_to, ...row }) => {
+          // The stored content is the content the hash was computed from.
+          expect(hash(payload)).toBe(row.content_hash)
+          return { ...row, valid_to: valid_to?.toISOString() ?? null }
+        }),
+      ).toEqual([
+        {
+          external_id: 'https://himalayas.app/companies/acme/jobs/pinned',
+          url: 'https://himalayas.app/companies/acme/jobs/pinned?ref=api%2Bfeed',
+          valid_to: '2027-01-15T08:00:00.000Z',
+          content_hash:
+            'd1a100ef1f4457880c11826b7dbd71d1619ea68df82b0c02ebbc7e5db27f51d7',
+        },
+      ])
+    })
+
     it('is idempotent across runs and preserves changed and reverted revisions', async () => {
       expect((await run(['one'])).revisions).toBe(1)
       expect((await run(['one'])).revisions).toBe(0)
@@ -147,7 +171,7 @@ integration(
         .mockResolvedValueOnce(page(['new'], { totalCount: 21 }))
         .mockRejectedValueOnce(new HimalayasHttpError(429, '60'))
       const result = await syncHimalayas(pool, fetcher)
-      expect(fetcher.mock.calls).toEqual([[1], [2]])
+      expect(fetcher.mock.calls.map(([index]) => index)).toEqual([1, 2])
       expect(result).toMatchObject({
         status: 'partial',
         seen: 1,

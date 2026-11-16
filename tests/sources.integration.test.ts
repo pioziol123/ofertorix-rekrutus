@@ -13,6 +13,7 @@ import {
 } from 'vitest'
 import { enqueueSync, executeSync, recoverSync } from '../lib/sources/sync.ts'
 import { importQueue, type Offer, type Page } from '../lib/sources/solid.ts'
+import { createPageFetcher, hash } from '../lib/sources/solid.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -331,6 +332,64 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     await executeSync(pool, boss, queued!.id, fetcher)
     expect(fetcher).not.toHaveBeenCalled()
     expect((await enqueueSync(pool, boss))!.id).not.toBe(queued!.id)
+  })
+
+  it('stores ads with the identifiers, links, expiry, hashes and content from before connectors', async () => {
+    const content = {
+      jobOfferKey: 'pinned',
+      url: 'https://solid.jobs/offer/pinned',
+      validTo: '2027-01-31T23:59:59Z',
+      title: 'Senior PHP',
+      unknownField: { enum: 'future' },
+    }
+    expect((await run([content])).status).toBe('complete')
+    expect(
+      (
+        await pool.query(
+          'SELECT a.external_id,a.url,a.valid_to,r.content_hash,r.payload FROM source_ads a JOIN source_ad_revisions r ON r.id=a.current_revision_id ORDER BY a.external_id',
+        )
+      ).rows.map(({ payload, valid_to, ...row }) => {
+        // The stored content is the content the hash was computed from.
+        expect(hash(payload)).toBe(row.content_hash)
+        return { ...row, valid_to: valid_to?.toISOString() ?? null }
+      }),
+    ).toEqual([
+      {
+        external_id: 'pinned',
+        url: 'https://solid.jobs/offer/pinned',
+        valid_to: '2027-01-31T23:59:59.000Z',
+        content_hash:
+          '9bc31069b6c2c759fb30a4816ee1529d9f71d9978ff478ddaa815198df2f7f9e',
+      },
+    ])
+  })
+
+  it('retries a transient source failure inside the same run', async () => {
+    const queued = await enqueueSync(pool, boss)
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce(
+        Response.json({
+          jobs: [{ jobOfferKey: 'retried' }],
+          pageIndex: 0,
+          pageSize: 100,
+          totalCount: 1,
+          totalPages: 1,
+        }),
+      )
+    await executeSync(
+      pool,
+      boss,
+      queued!.id,
+      createPageFetcher(fetcher, async () => {}),
+    )
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    expect(
+      (await pool.query('SELECT id,status,pages,seen FROM source_sync_runs'))
+        .rows,
+    ).toEqual([{ id: queued!.id, status: 'complete', pages: 1, seen: 1 }])
   })
 
   it('makes one catchup slot after downtime and does not enqueue every missed day', async () => {

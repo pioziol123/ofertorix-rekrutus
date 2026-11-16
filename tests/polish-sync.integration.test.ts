@@ -25,6 +25,7 @@ import {
   type PolishQuery,
 } from '../lib/sources/polish.ts'
 import { readOffers } from '../lib/offers.ts'
+import { hash } from '../lib/sources/solid.ts'
 import { nfjAliasRecord } from './fixtures/polish/json-record.ts'
 import { query, record, result } from './fixtures/polish/result.ts'
 
@@ -157,6 +158,52 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
         listing: record(source).listing,
         detail: record(source).detail,
       })
+    },
+  )
+  it.each([
+    [
+      'bulldogjob',
+      '123-one',
+      'https://bulldogjob.pl/companies/jobs/123-one',
+      null,
+      '93e2c2840b1fb36b9b94efdfe9d431c6d88dfd4a7166c5efc0fd14b51d18ba30',
+    ],
+    [
+      'theprotocol',
+      'one',
+      'https://theprotocol.it/praca/senior-php,oferta,one',
+      null,
+      '399d859d9c64b7181e90916dcf2d4684430378c847899514c45906e85c5ca267',
+    ],
+    [
+      'justjoinit',
+      'fixture-guid-one',
+      'https://justjoin.it/job-offer/fixture-senior-php-one',
+      '2026-12-02T23:59:59.000Z',
+      '7847a0a81090d9bc607fcf6de28a9cc91378a00d0e8a1831c3f5085707a5aa4d',
+    ],
+    [
+      'nofluffjobs',
+      'fixture-php-one-remote',
+      'https://nofluffjobs.com/pl/job/fixture-public-php-one-remote',
+      null,
+      '3324ad12577297bc8e3cba48108ee89ecc0f1c83cc0dc3cb16b83a4149410767',
+    ],
+  ] as const)(
+    'stores %s ads with the identifiers, links, expiry, hashes and content from before connectors',
+    async (source, external_id, url, valid_to, content_hash) => {
+      expect((await run(query(source))).status).toBe('complete')
+      expect(
+        (
+          await pool.query(
+            'SELECT a.external_id,a.url,a.valid_to,r.content_hash,r.payload FROM source_ads a JOIN source_ad_revisions r ON r.id=a.current_revision_id ORDER BY a.external_id',
+          )
+        ).rows.map(({ payload, valid_to, ...row }) => {
+          // The stored content is the content the hash was computed from.
+          expect(hash(payload)).toBe(row.content_hash)
+          return { ...row, valid_to: valid_to?.toISOString() ?? null }
+        }),
+      ).toEqual([{ external_id, url, valid_to, content_hash }])
     },
   )
   it('persists regional NFJ aliases as one canonical offer across imports', async () => {

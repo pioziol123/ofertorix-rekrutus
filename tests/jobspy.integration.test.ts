@@ -22,6 +22,7 @@ import {
 import { jobspyQueue, queueFor } from '../lib/sources/jobspy.ts'
 import { enqueueSync, executeSync, recoverSync } from '../lib/sources/sync.ts'
 import { importQueue } from '../lib/sources/solid.ts'
+import { hash } from '../lib/sources/solid.ts'
 import { readOffers } from '../lib/offers.ts'
 import { job, result, sourceResult } from './fixtures/jobspy/result.ts'
 
@@ -149,6 +150,28 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     expect(
       (await pool.query('SELECT external_id FROM source_ads')).rows,
     ).toEqual([{ external_id: 'ab123' }])
+  })
+  it('stores ads with the identifiers, links, expiry, hashes and content from before connectors', async () => {
+    expect((await run()).status).toBe('complete')
+    expect(
+      (
+        await pool.query(
+          'SELECT a.external_id,a.url,a.valid_to,r.content_hash,r.payload FROM source_ads a JOIN source_ad_revisions r ON r.id=a.current_revision_id ORDER BY a.external_id',
+        )
+      ).rows.map(({ payload, valid_to, ...row }) => {
+        // The stored content is the content the hash was computed from.
+        expect(hash(payload)).toBe(row.content_hash)
+        return { ...row, valid_to: valid_to?.toISOString() ?? null }
+      }),
+    ).toEqual([
+      {
+        external_id: 'ab123',
+        url: 'https://pl.indeed.com/viewjob?jk=ab123',
+        valid_to: null,
+        content_hash:
+          'ec649f38b03cdf598c90c2d231c0fe4fbbd8ff6a1d428be9674cfa18e08624fa',
+      },
+    ])
   })
   it('never marks unseen offers unavailable after complete empty or partial queries', async () => {
     await run()
