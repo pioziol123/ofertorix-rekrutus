@@ -13,12 +13,10 @@ import { createBoss, smokeQueue } from '../lib/queue.ts'
 
 import { scheduleDay } from '../lib/sources/solid.ts'
 import { enqueueSync } from '../lib/sources/sync.ts'
-import { syncQueueFor, syncQueues } from '../lib/sources/sync-queues.ts'
 import {
-  executeSyncRun,
-  recoverSyncRuns,
-  type SyncJobLookup,
-} from '../modules/sources/index.ts'
+  recoverSyncQueues,
+  workSyncQueues,
+} from '../lib/sources/sync-queues.ts'
 
 import {
   parseQueue,
@@ -59,23 +57,8 @@ await boss.work<{ checkId: string }>(smokeQueue, async (jobs) => {
 })
 // Validate the schedule before registering the importer.
 scheduleDay()
-const findSyncJob: SyncJobLookup = async ({ source, jobId }) => {
-  const queue = syncQueueFor(source)
-  return queue ? boss.getJobById(queue, jobId) : null
-}
-await recoverSyncRuns(findSyncJob)
-// Every source queue runs the shared executor. An aborted or lost attempt
-// throws, so the queue retries the job and the next attempt continues the run.
-for (const queue of syncQueues)
-  await boss.work<{ runId: string }>(queue, async (jobs) => {
-    for (const job of jobs)
-      await executeSyncRun({
-        runId: job.data.runId,
-        jobId: job.id,
-        attempt: job.retryCount,
-        signal: job.signal,
-      })
-  })
+await recoverSyncQueues(boss)
+await workSyncQueues(boss)
 await recoverImports(pool, boss)
 await resumeAi(pool, boss)
 await recoverLocalProfiles(pool, boss)
@@ -104,7 +87,7 @@ async function schedule() {
   if (scheduling || stopping) return
   scheduling = true
   try {
-    await recoverSyncRuns(findSyncJob)
+    await recoverSyncQueues(boss)
     await enqueueSync(pool, boss, 'scheduled')
     await recoverImports(pool, boss)
     await resumeAi(pool, boss)
