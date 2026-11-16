@@ -21,8 +21,7 @@ import {
 } from '../lib/sources/jobspy-sync.ts'
 import { jobspyQueue, queueFor } from '../lib/sources/jobspy.ts'
 import { enqueueSync, executeSync, recoverSync } from '../lib/sources/sync.ts'
-import { importQueue } from '../lib/sources/solid.ts'
-import { hash } from '../lib/sources/solid.ts'
+import { hash, importQueue } from '../lib/sources/solid.ts'
 import { readOffers } from '../lib/offers.ts'
 import { job, result, sourceResult } from './fixtures/jobspy/result.ts'
 
