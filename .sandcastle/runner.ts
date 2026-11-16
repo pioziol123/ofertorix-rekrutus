@@ -48,6 +48,12 @@ const REVIEW_FILE = '.agent-review.json'
 const GATE = 'scripts/gate.sh'
 /** Feedback rounds into the implementing agent's session before the task goes back to preparation. */
 const MAX_FEEDBACK_TURNS = 3
+/**
+ * Seconds an agent may go without a complete stream line before sandcastle fails the run.
+ * The default 600 is too short: the CLI emits a line only once a whole message is done, so
+ * a long think followed by a large Write of a new module shows up as one silent stretch.
+ */
+const AGENT_IDLE_TIMEOUT_SECONDS = 1800
 /** Skills the agent uses inside the sandbox, mounted read-only from the host. */
 const SKILLS = ['implement-task', 'tdd', 'write-documents']
 
@@ -473,7 +479,7 @@ async function verify(issue: Issue, branch: string, baseSha: string, result: Age
       return { ok: false, report, result: null }
     }
     log(`${issue.id}: running the spec review`)
-    await sandbox.run({ agent: agent(), prompt: reviewPrompt(issue, result, ctx) })
+    await sandbox.run({ agent: agent(), prompt: reviewPrompt(issue, result, ctx), idleTimeoutSeconds: AGENT_IDLE_TIMEOUT_SECONDS })
     const moved = guardBase(baseSha)
     if (moved) return { ok: false, report: moved, result: null, final: true }
     if (git(['rev-parse', gateBranch]) !== git(['rev-parse', branch])) {
@@ -510,7 +516,7 @@ async function implementAndVerify(
   await using sandbox = await createSandbox({ branch, baseBranch: BASE_BRANCH, cwd: repoRoot, sandbox: sandboxProvider() })
   log(`${issue.id}: implementing in ${sandbox.worktreePath}`)
   await sandbox.exec(`rm -f ${RESULT_FILE} ${REVIEW_FILE}`)
-  let run = await sandbox.run({ agent: agent(), prompt: implementPrompt(issue, ctx) })
+  let run = await sandbox.run({ agent: agent(), prompt: implementPrompt(issue, ctx), idleTimeoutSeconds: AGENT_IDLE_TIMEOUT_SECONDS })
   let result: AgentResult | null = null
   for (let turn = 1; ; turn++) {
     let outcome = await warmCheck(sandbox, issue, branch, baseSha, ctx)
@@ -521,7 +527,7 @@ async function implementAndVerify(
     if (!run.resume) return { outcome: { ...outcome, report: `${outcome.report}\n(No agent session to resume.)` }, result }
     log(`${issue.id}: feedback turn ${turn}: ${outcome.report.split('\n')[0]}`)
     await sandbox.exec(`rm -f ${RESULT_FILE}`)
-    run = await run.resume(feedbackPrompt(outcome.report))
+    run = await run.resume(feedbackPrompt(outcome.report), { idleTimeoutSeconds: AGENT_IDLE_TIMEOUT_SECONDS })
   }
 }
 
@@ -636,7 +642,17 @@ async function processTask(issue: Issue): Promise<void> {
   const baseSha = git(['rev-parse', BASE_BRANCH])
   const ctx = epicContext(issue)
 
-  const { outcome, result } = await implementAndVerify(issue, branch, baseSha, ctx)
+  let attempt: Awaited<ReturnType<typeof implementAndVerify>>
+  try {
+    attempt = await implementAndVerify(issue, branch, baseSha, ctx)
+  } catch (error) {
+    // A sandbox or agent failure (idle timeout, docker error) must not kill the runner
+    // and leave the task claimed: hand it back like any other failed attempt.
+    const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+    returnToPreparation(issue, `The runner stopped the attempt on an error: ${message}`, branch)
+    return
+  }
+  const { outcome, result } = attempt
   if (!outcome.ok || !result) {
     returnToPreparation(issue, outcome.report || 'Unknown failure.', branch)
     return
