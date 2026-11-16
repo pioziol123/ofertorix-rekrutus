@@ -3,7 +3,7 @@
 Work moves through two phases separated by a **hand-off**:
 
 1. **Preparation** happens with the owner. Any input (a bd epic, a ticket, a document, a chat request) becomes specification documents and a bd task that meets the readiness checklist. The `task-prep` skill runs this phase. Applying `ready-for-agent` is the hand-off.
-2. **Execution** happens unattended. The runner (`node .sandcastle/runner.ts`) takes ready tasks one at a time, has an agent implement each in its own sandbox, runs the gates, merges into `master` and closes the task. The agent follows the `implement-task` skill. The owner's next contact with the work is testing `master`.
+2. **Execution** happens unattended. The runner (`node .sandcastle/runner.ts`) takes ready tasks one at a time, has an agent implement each in its own sandbox, runs the gates, merges into `main` and closes the task. The agent follows the `implement-task` skill. The owner's next contact with the work is testing `main`.
 
 The `spec-docs` skill owns how the documents are written. This file owns how documents, tasks and the runner connect.
 
@@ -62,7 +62,7 @@ A task leaves preparation with `ready-for-agent` only. Mark a task `ready-for-hu
 
 ## Epic hand-off
 
-An epic is handed off as a whole. Apply `ready-for-agent` to the epic only when every open child task carries `ready-for-agent` or `ready-for-human`; closed and deferred children do not count. Membership follows the `parent` field: a task moved out of the epic with `bd update --parent ""` keeps its dotted id but no longer counts. Until then the runner takes none of the epic's tasks, even those already marked ready, so `master` holds no part of an epic whose remaining work may still change its decisions. The one exception is a registered deviation; see [Spec conflicts during implementation](#spec-conflicts-during-implementation).
+An epic is handed off as a whole. Apply `ready-for-agent` to the epic only when every open child task carries `ready-for-agent` or `ready-for-human`; closed and deferred children do not count. Membership follows the `parent` field: a task moved out of the epic with `bd update --parent ""` keeps its dotted id but no longer counts. Until then the runner takes none of the epic's tasks, even those already marked ready, so `main` holds no part of an epic whose remaining work may still change its decisions. The one exception is a registered deviation; see [Spec conflicts during implementation](#spec-conflicts-during-implementation).
 
 The runner checks this before each task: the nearest epic above the task carries `ready-for-agent`, and none of the epic's open children is unlabelled or `needs-info`. Follow-ups are left out of this check: an open follow-up keeps the epic open but does not pause its other tasks. A task the runner returns as `needs-info` pauses the rest of its epic until preparation resolves it. A `ready-for-human` task does not hold the epic back; its dependants wait in bd until the owner closes it. Tasks outside any epic are handed off one by one.
 
@@ -77,7 +77,7 @@ Before each pass the runner updates every handed-off epic from the state of its 
 
 The runner never hands an epic off. Once every open follow-up is prepared and carries `ready-for-agent`, preparation (the `task-prep` skill) hands the epic off again with the owner's approval, as in the first hand-off, and the runner implements the follow-ups. A follow-up that implementing a follow-up files takes the epic back again. Removing `ready-for-agent` pauses an epic in any phase.
 
-An epic with open follow-ups is not finished, and its follow-ups list the known deviations in `master`.
+An epic with open follow-ups is not finished, and its follow-ups list the known deviations in `main`.
 
 ## Readiness checklist
 
@@ -97,17 +97,17 @@ Every agent runs in a Sandcastle `docker()` sandbox built from `.sandcastle/Dock
 
 For each task, in order:
 
-1. Pick the first task from `bd ready` with `ready-for-agent`, neither `ready-for-human` nor `needs-info`, and an epic that passes the epic hand-off check; claim it. Rebuild the sandbox image first when `pnpm-lock.yaml` or `.sandcastle/Dockerfile` changed on `master`.
-2. Create a sandbox from `master` on the task branch `<epic>-<task>-<title slug>`, for example `0mq-13-wprowadzic-wspolne-zarzadzanie-polaczeniami` for `oferty-pracy-0mq.13`. Ids drop the project prefix; the task part is relative to the epic, and a task outside any epic uses its own id alone. Branches made by hand follow the same prefix.
-3. Run the implementing agent (`claude-opus-5-5`, effort `medium` by default) with the task and its documents. The agent runs the gate itself before finishing, writes a result file and commits on its branch; bd, merging and `master` belong to the runner.
-4. Check, in the same warm sandbox: `master` did not move during the run (the sandbox can write the shared git data; the runner restores it and stops if it did), the result file exists, the worktree is clean, the branch has commits and rebases cleanly on `master`, the result's shape and deviations pass the [deterministic checks](#what-the-runner-checks), and the gate passes.
+1. Pick the first task from `bd ready` with `ready-for-agent`, neither `ready-for-human` nor `needs-info`, and an epic that passes the epic hand-off check; claim it. Rebuild the sandbox image first when `pnpm-lock.yaml` or `.sandcastle/Dockerfile` changed on `main`.
+2. Create a sandbox from `main` on the task branch `<epic>-<task>-<title slug>`, for example `0mq-13-wprowadzic-wspolne-zarzadzanie-polaczeniami` for `oferty-pracy-0mq.13`. Ids drop the project prefix; the task part is relative to the epic, and a task outside any epic uses its own id alone. Branches made by hand follow the same prefix.
+3. Run the implementing agent (`claude-opus-5-5`, effort `medium` by default) with the task and its documents. The agent runs the gate itself before finishing, writes a result file and commits on its branch; bd, merging and `main` belong to the runner.
+4. Check, in the same warm sandbox: `main` did not move during the run (the sandbox can write the shared git data; the runner restores it and stops if it did), the result file exists, the worktree is clean, the branch has commits and rebases cleanly on `main`, the result's shape and deviations pass the [deterministic checks](#what-the-runner-checks), and the gate passes.
 5. In a fresh sandbox on a copy of the branch, run the gate again, then a separate reviewing agent against the diff, the documents, the acceptance criteria and the result's assumptions and deviations. Its verdict is `pass`, `pass-with-deferral` (every deviation accepted) or `fail` with findings. A result with deviations needs `pass-with-deferral`. Only committed work reaches this step.
-6. When step 4 or 5 fails, send the report back into the implementing agent's session in the same warm sandbox (Sandcastle resume), so it keeps its context, and repeat from step 4. After three such feedback turns, or on a `blocked` result, a rebase conflict or a moved `master`, remove `ready-for-agent`, add `needs-info`, comment the reason and keep the branch for inspection.
-7. On success: fast-forward `master` to the branch, comment the evidence, the assumptions and the deviations, file a follow-up for each deviation and wire it to block the tasks that depend on it, add the assumptions to the epic's assumptions task, file new scope as `discovered-from` tasks with `needs-triage`, and close the task.
+6. When step 4 or 5 fails, send the report back into the implementing agent's session in the same warm sandbox (Sandcastle resume), so it keeps its context, and repeat from step 4. After three such feedback turns, or on a `blocked` result, a rebase conflict or a moved `main`, remove `ready-for-agent`, add `needs-info`, comment the reason and keep the branch for inspection.
+7. On success: fast-forward `main` to the branch, comment the evidence, the assumptions and the deviations, file a follow-up for each deviation and wire it to block the tasks that depend on it, add the assumptions to the epic's assumptions task, file new scope as `discovered-from` tasks with `needs-triage`, and close the task.
 
-The runner never pushes and never syncs Dolt; pushing `master` stays with the owner.
+The runner never pushes and never syncs Dolt; pushing `main` stays with the owner.
 
-Run it in a terminal from the main checkout, on a clean `master`, after `npm install` in `.sandcastle/` and with `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) in `.sandcastle/.env`:
+Run it in a terminal from the main checkout, on a clean `main`, after `npm install` in `.sandcastle/` and with `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) in `.sandcastle/.env`:
 
 - `node .sandcastle/runner.ts --dry-run` lists the candidates and the readiness verdict for each, without writing anything.
 - `node .sandcastle/runner.ts --once` processes at most one task; without `--once` it polls every `--interval` minutes.
@@ -201,4 +201,4 @@ A change to a requirement that would alter the epic's outcome is not a follow-up
 
 ## After merge
 
-The owner tests `master`. Open follow-ups of the epic list the known deviations in `master`; they are not bugs. A defect found there becomes a new bug linked `discovered-from` the original task and goes through preparation. Before pushing `master`, check the epic's open follow-ups.
+The owner tests `main`. Open follow-ups of the epic list the known deviations in `main`; they are not bugs. A defect found there becomes a new bug linked `discovered-from` the original task and goes through preparation. Before pushing `main`, check the epic's open follow-ups.

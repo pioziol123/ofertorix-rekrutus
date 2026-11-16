@@ -41,7 +41,7 @@ Aplikacja działa jak dotąd, z kilkoma wyjątkami:
 ## Sukces
 
 - Po każdym zadaniu epiku aplikacja działa i przechodzi wszystkie kontrole jakości.
-- Właściciel sprawdza na `master` listę i szczegóły ofert, synchronizację źródeł, import CV, oceny dopasowania i research firm.
+- Właściciel sprawdza na `main` listę i szczegóły ofert, synchronizację źródeł, import CV, oceny dopasowania i research firm.
 - Dodanie nowego źródła ofert albo dostawcy AI nie wymaga zmian w pozostałych modułach.
 
 ## Etapy

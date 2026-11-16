@@ -4,7 +4,7 @@ Data: 2026-11-15. Wersja: `@ai-hero/sandcastle` 0.14.0. Branch: `spike/sandcastl
 
 ## Pytanie
 
-Czy Sandcastle nadaje się na warstwę izolacji dla `scripts/agent-runner.ts`, tak żeby agent pracował bez nadzoru z pełnymi uprawnieniami w środku, ale bez dostępu do danych właściciela, jego stacku i `master`?
+Czy Sandcastle nadaje się na warstwę izolacji dla `scripts/agent-runner.ts`, tak żeby agent pracował bez nadzoru z pełnymi uprawnieniami w środku, ale bez dostępu do danych właściciela, jego stacku i `main`?
 
 ## Wybór dostawcy sandboxa
 
@@ -48,7 +48,7 @@ Sprawdzenia bez agenta (`node .sandcastle/spike.ts probe`), w jednym sandboxie, 
 
 Pominięty test to `polish-python.test.ts`, który wymaga Pythona; pomijany jest także w obecnej bramce.
 
-Przebieg agenta (`node .sandcastle/spike.ts agent`, `claude-opus-5-5`, effort `medium`): 36 s, sygnał zakończenia odebrany, jeden commit na branchu agenta z tożsamością właściciela, `master` bez zmian.
+Przebieg agenta (`node .sandcastle/spike.ts agent`, `claude-opus-5-5`, effort `medium`): 36 s, sygnał zakończenia odebrany, jeden commit na branchu agenta z tożsamością właściciela, `main` bez zmian.
 
 Pułapki napotkane po drodze:
 
@@ -58,9 +58,9 @@ Pułapki napotkane po drodze:
 
 ## Ryzyko: wspólny `.git` jest zapisywalny
 
-Sandcastle montuje `.git` głównego repo z prawem zapisu, bo commity z worktree trafiają do wspólnej bazy obiektów i referencji. Tylko `hooks`, `config` i `info` są tylko do odczytu. Agent może więc technicznie przestawić `refs/heads/master` albo usunąć inne branche.
+Sandcastle montuje `.git` głównego repo z prawem zapisu, bo commity z worktree trafiają do wspólnej bazy obiektów i referencji. Tylko `hooks`, `config` i `info` są tylko do odczytu. Agent może więc technicznie przestawić `refs/heads/main` albo usunąć inne branche.
 
-Zabezpieczenie w runnerze: zapisać SHA `master` przed uruchomieniem agenta i porównać po zakończeniu. Zmiana oznacza przywrócenie referencji, odrzucenie zadania i powiadomienie właściciela.
+Zabezpieczenie w runnerze: zapisać SHA `main` przed uruchomieniem agenta i porównać po zakończeniu. Zmiana oznacza przywrócenie referencji, odrzucenie zadania i powiadomienie właściciela.
 
 ## Wnioski dla runnera
 
@@ -69,6 +69,6 @@ Zabezpieczenie w runnerze: zapisać SHA `master` przed uruchomieniem agenta i po
 3. Agent uruchamia pełne testy, z integracją, bezpośrednio w sandboxie przez `scripts/test-integration.sh`.
 4. Bramkę runnera uruchamiać w świeżym sandboxie z tego samego obrazu (`sandbox.exec()`): `pnpm install --offline --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `scripts/test-integration.sh`. Agent i bramka pracują w identycznym środowisku.
 5. Po przejściu runnera na sandbox `scripts/agent-compose.sh`, `scripts/agent-exec.sh` i `scripts/agent-gate.sh` stają się zbędne, a projekt Compose `oferty-pracy-agent` (z wolumenami) można usunąć.
-6. Dodać kontrolę SHA `master` przed i po przebiegu agenta.
+6. Dodać kontrolę SHA `main` przed i po przebiegu agenta.
 7. Przebudowywać obraz, gdy zmieni się `pnpm-lock.yaml`. Runner może porównywać hash lockfile'a z etykietą obrazu. Nowe migracje nie wymagają przebudowy.
 8. Plik wyniku `.agent-result.json` można zastąpić wyjściem strukturalnym Sandcastle (`output`).

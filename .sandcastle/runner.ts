@@ -2,7 +2,7 @@
  * Unattended runner for prepared bd tasks, with agents in Sandcastle docker sandboxes.
  * Contract: docs/agents/implementation-workflow.md (section "Execution").
  *
- * Run from the main checkout on a clean master:
+ * Run from the main checkout on a clean main:
  *   node .sandcastle/runner.ts [--once] [--dry-run] [--task <id>] [--model <id>]
  *        [--effort <level>] [--interval <minutes>] [--rebuild-image]
  */
@@ -39,7 +39,7 @@ const { values: opts } = parseArgs({
   },
 })
 
-const BASE_BRANCH = 'master'
+const BASE_BRANCH = 'main'
 const IMAGE = 'oferty-pracy-sandbox'
 const IMAGE_LABEL = 'oferty-pracy.sandbox-inputs'
 const RESULT_FILE = '.agent-result.json'
@@ -397,8 +397,8 @@ function reviewPrompt(issue: Issue, result: AgentResult, ctx: EpicContext): stri
 
 type Sandbox = Awaited<ReturnType<typeof createSandbox>>
 
-/** Restores master if anything inside a sandbox moved it. Returns a report when it did. */
-function guardMaster(expected: string): string | null {
+/** Restores the base branch if anything inside a sandbox moved it. Returns a report when it did. */
+function guardBase(expected: string): string | null {
   const actual = git(['rev-parse', BASE_BRANCH])
   if (actual === expected) return null
   git(['update-ref', `refs/heads/${BASE_BRANCH}`, expected, actual])
@@ -406,9 +406,9 @@ function guardMaster(expected: string): string | null {
 }
 
 /** The runner's own checks in the implementing agent's warm sandbox, after each agent turn. */
-async function warmCheck(sandbox: Sandbox, issue: Issue, branch: string, masterSha: string, ctx: EpicContext): Promise<Outcome> {
+async function warmCheck(sandbox: Sandbox, issue: Issue, branch: string, baseSha: string, ctx: EpicContext): Promise<Outcome> {
   const worktree = sandbox.worktreePath
-  const moved = guardMaster(masterSha)
+  const moved = guardBase(baseSha)
   if (moved) return { ok: false, report: moved, result: null, final: true }
 
   const result = readJson<AgentResult>(join(worktree, RESULT_FILE))
@@ -450,7 +450,7 @@ async function warmCheck(sandbox: Sandbox, issue: Issue, branch: string, masterS
 }
 
 /** Gate and review in a fresh sandbox on a copy of the task branch, so only committed work counts. */
-async function verify(issue: Issue, branch: string, masterSha: string, result: AgentResult, ctx: EpicContext): Promise<Outcome> {
+async function verify(issue: Issue, branch: string, baseSha: string, result: AgentResult, ctx: EpicContext): Promise<Outcome> {
   const gateBranch = `${branch}-gate`
   tryGit(['branch', '-D', gateBranch])
   git(['branch', gateBranch, branch])
@@ -464,7 +464,7 @@ async function verify(issue: Issue, branch: string, masterSha: string, result: A
     }
     log(`${issue.id}: running the spec review`)
     await sandbox.run({ agent: agent(), prompt: reviewPrompt(issue, result, ctx) })
-    const moved = guardMaster(masterSha)
+    const moved = guardBase(baseSha)
     if (moved) return { ok: false, report: moved, result: null, final: true }
     if (git(['rev-parse', gateBranch]) !== git(['rev-parse', branch])) {
       return { ok: false, report: 'The reviewer committed to the branch under review.', result: null, final: true }
@@ -494,7 +494,7 @@ async function verify(issue: Issue, branch: string, masterSha: string, result: A
 async function implementAndVerify(
   issue: Issue,
   branch: string,
-  masterSha: string,
+  baseSha: string,
   ctx: EpicContext,
 ): Promise<{ outcome: Outcome; result: AgentResult | null }> {
   await using sandbox = await createSandbox({ branch, baseBranch: BASE_BRANCH, cwd: repoRoot, sandbox: sandboxProvider() })
@@ -503,9 +503,9 @@ async function implementAndVerify(
   let run = await sandbox.run({ agent: agent(), prompt: implementPrompt(issue, ctx) })
   let result: AgentResult | null = null
   for (let turn = 1; ; turn++) {
-    let outcome = await warmCheck(sandbox, issue, branch, masterSha, ctx)
+    let outcome = await warmCheck(sandbox, issue, branch, baseSha, ctx)
     result = outcome.result ?? result
-    if (outcome.ok && result) outcome = await verify(issue, branch, masterSha, result, ctx)
+    if (outcome.ok && result) outcome = await verify(issue, branch, baseSha, result, ctx)
     if (outcome.ok || outcome.final) return { outcome, result }
     if (turn > MAX_FEEDBACK_TURNS) return { outcome, result }
     if (!run.resume) return { outcome: { ...outcome, report: `${outcome.report}\n(No agent session to resume.)` }, result }
@@ -621,10 +621,10 @@ async function processTask(issue: Issue): Promise<void> {
   logFile = join(logDir, `${issue.id}-${Date.now()}.log`)
   bd(['update', issue.id, '--claim'])
   tryGit(['branch', '-D', branch])
-  const masterSha = git(['rev-parse', BASE_BRANCH])
+  const baseSha = git(['rev-parse', BASE_BRANCH])
   const ctx = epicContext(issue)
 
-  const { outcome, result } = await implementAndVerify(issue, branch, masterSha, ctx)
+  const { outcome, result } = await implementAndVerify(issue, branch, baseSha, ctx)
   if (!outcome.ok || !result) {
     returnToPreparation(issue, outcome.report || 'Unknown failure.', branch)
     return
