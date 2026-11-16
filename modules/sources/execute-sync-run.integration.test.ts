@@ -430,6 +430,20 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
     ])
   })
 
+  // ASM-4: the run's own source selects the connector, not the delivery.
+  it('executes a delivered run with the connector of its own source (ASM-4)', async () => {
+    const alpha = vi.fn(batches([[ad('alpha')]]))
+    const beta = vi.fn(batches([[ad('beta')]]))
+    const runId = await admit(simulated('simulated-beta', beta))
+    await executeNext(
+      simulated('simulated-alpha', alpha),
+      simulated('simulated-beta', beta),
+    )
+    expect(alpha).not.toHaveBeenCalled()
+    expect(await stored(runId)).toMatchObject({ status: 'complete', seen: 1 })
+    expect(await adIds()).toEqual(['beta'])
+  })
+
   it('stops an attempt whose signal is aborted without finishing the run', async () => {
     const stop = new AbortController()
     const connector = simulated('simulated-alpha', async (_, onBatch) => {
