@@ -1,21 +1,21 @@
 import { randomUUID } from 'node:crypto'
 import type { Pool } from 'pg'
+import { fingerprint, parameters, source } from './himalayas.ts'
+import type { ConnectorResult } from '../../modules/sources/infrastructure/adapters/connector.ts'
 import {
-  createPageFetcher,
-  fingerprint,
-  HimalayasHttpError,
-  parameters,
-  source,
-  type HimalayasPage,
-} from './himalayas.ts'
+  createHimalayasConnector,
+  incompleteReason,
+  type HimalayasPageFetcher,
+} from '../../modules/sources/infrastructure/adapters/himalayas/connector.ts'
 import { saveOffers, transaction } from './store.ts'
 import { scheduleDay } from './solid.ts'
 
 // Manual pilot only. No scheduler, AI or queue retry is involved.
 export async function syncHimalayas(
   pool: Pool,
-  fetchPage: (page: number) => Promise<HimalayasPage> = createPageFetcher(),
+  fetchPage?: HimalayasPageFetcher,
 ) {
+  const connector = createHimalayasConnector(fetchPage)
   const client = await pool.connect()
   let locked = false,
     lost = false
@@ -42,7 +42,7 @@ export async function syncHimalayas(
       const scope = await client.query<{ id: string }>(
         `INSERT INTO source_scopes(id,source,fingerprint,parameters) VALUES ($1,$2,$3,$4)
         ON CONFLICT(fingerprint) DO UPDATE SET fingerprint=EXCLUDED.fingerprint RETURNING id`,
-        [randomUUID(), source, fingerprint, parameters],
+        [randomUUID(), source, fingerprint, connector.scopeParameters()],
       )
       const scopeId = scope.rows[0]!.id
       await client.query(
@@ -52,85 +52,48 @@ export async function syncHimalayas(
       )
       return { id, scope_id: scopeId }
     })
-    const diagnostics = {
-      query: parameters,
-      pages: 0,
-      totalCount: null as number | null,
-      duplicates: 0,
-      rejected: 0,
-      missingDescriptions: 0,
-      stopReason: 'exhausted',
-      retryAfter: null as string | null,
-      marketComplete: false,
-    }
-    const ids = new Set<string>()
     let saved = 0
-    let incomplete = false
-    const deadline = Date.now() + 120_000
+    let batches = 0
+    let outcome: ConnectorResult
     try {
-      for (let index = 1; index <= parameters.maxPages; index++) {
-        if (Date.now() + 21_000 > deadline) {
-          incomplete = true
-          diagnostics.stopReason = 'deadline'
-          break
-        }
-        const page = await fetchPage(index)
-        if (lost) throw new Error('Database session lost')
-        diagnostics.pages++
-        diagnostics.totalCount ??= page.totalCount
-        diagnostics.rejected += page.rejected
-        diagnostics.missingDescriptions += page.missingDescriptions
-        const unique = page.jobs.filter((job) => {
-          if (ids.has(job.jobOfferKey)) {
-            diagnostics.duplicates++
-            return false
-          }
-          ids.add(job.jobOfferKey)
-          return true
-        })
-        await saveOffers(client, run, unique, source)
-        saved += unique.length
-        incomplete ||=
-          page.rejected > 0 ||
-          page.missingDescriptions > 0 ||
-          diagnostics.duplicates > 0
-        if (!page.valid || page.totalCount !== diagnostics.totalCount) {
-          incomplete = true
-          diagnostics.stopReason = 'changing_pagination'
-          break
-        }
-        if (index * 20 >= page.totalCount) break
-        if (index === parameters.maxPages) {
-          incomplete = true
-          diagnostics.stopReason = 'page_limit'
-        }
-      }
-    } catch (error) {
-      if (lost) throw error
-      incomplete = true
-      diagnostics.stopReason =
-        error instanceof HimalayasHttpError
-          ? `http_${error.status}`
-          : 'fetch_or_processing_error'
-      // Preserve only bounded numeric/date Retry-After, never arbitrary response text.
-      const retry =
-        error instanceof HimalayasHttpError ? error.retryAfter : null
-      if (
-        retry &&
-        retry.length <= 100 &&
-        (/^\d+$/.test(retry) || Number.isFinite(Date.parse(retry)))
+      outcome = await connector.fetch(
+        connector.scopeParameters(),
+        async (ads) => {
+          batches++
+          if (lost) throw new Error('Database session lost')
+          await saveOffers(
+            client,
+            run,
+            ads.map((ad) => ad.content),
+            source,
+          )
+          saved += ads.length
+        },
+        new AbortController().signal,
       )
-        diagnostics.retryAfter = retry
+    } catch (error) {
+      // A failed batch save ends the run as incomplete, like a fetch failure.
+      if (lost) throw error
+      outcome = {
+        complete: false,
+        reason: incompleteReason,
+        diagnostics: {
+          query: parameters,
+          pages: batches,
+          stopReason: 'fetch_or_processing_error',
+          marketComplete: false,
+        },
+      }
     }
-    const status = incomplete ? (saved ? 'partial' : 'failed') : 'complete'
+    const status = outcome.complete ? 'complete' : saved ? 'partial' : 'failed'
     const result = await client.query(
       `UPDATE source_sync_runs SET status=$2,error=$3,diagnostics=$4,finished_at=now()
       WHERE id=$1 RETURNING id,status,seen,revisions,pages,error,diagnostics`,
       [
         id,
         status,
-        incomplete ? 'Himalayas pilot incomplete; inspect diagnostics' : null,
-        diagnostics,
+        outcome.complete ? null : outcome.reason,
+        outcome.diagnostics ?? null,
       ],
     )
     return result.rows[0]!

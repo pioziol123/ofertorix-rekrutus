@@ -2,14 +2,13 @@ import { randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import type { PgBoss } from 'pg-boss'
 import { hash, scheduleDay } from './solid.ts'
+import { ConnectorError } from '../../modules/sources/infrastructure/adapters/connector.ts'
+import { createPolishConnector } from '../../modules/sources/infrastructure/adapters/polish/connector.ts'
 import { saveOffers, transaction } from './store.ts'
 import {
   polishEnabled,
   polishQueue,
-  polishParameters,
   polishQuery,
-  parsePolish,
-  runPolish,
   polishCatalog,
   polishSources,
   type PolishSource,
@@ -62,6 +61,7 @@ export async function enqueuePolish(
   query = polishQuery.parse(query)
   const source = query.source
   if (!polishEnabled(source)) throw new Error('Polish source is disabled')
+  const parameters = createPolishConnector(source).scopeParameters(query)
   const client = await pool.connect()
   try {
     return await transaction(client, async () => {
@@ -77,12 +77,7 @@ export async function enqueuePolish(
       const scope = await client.query<{ id: string }>(
         `INSERT INTO source_scopes(id,source,fingerprint,parameters)
         VALUES ($1,$2,$3,$4) ON CONFLICT(fingerprint) DO UPDATE SET fingerprint=EXCLUDED.fingerprint RETURNING id`,
-        [
-          randomUUID(),
-          source,
-          hash(polishParameters(query)),
-          polishParameters(query),
-        ],
+        [randomUUID(), source, hash(parameters), parameters],
       )
       const id = randomUUID()
       await client.query(
@@ -168,45 +163,53 @@ export async function executePolish(
     const run = claimed.rows[0]
     if (!run) return
     try {
-      if (!polishEnabled(source)) throw new Error('Polish source is disabled')
+      if (!polishEnabled(source)) {
+        await fail(client, run.id, 'Polish source is disabled')
+        return
+      }
       const scope = await client.query(
         'SELECT parameters FROM source_scopes WHERE id=$1',
         [run.scope_id],
       )
-      const parameters = scope.rows[0]?.parameters
-      const query = polishQuery.parse(parameters?.query)
-      if (query.source !== source || parameters?.adapterVersion !== 1)
-        throw new Error('Invalid Polish source result')
-      const batch = parsePolish(
-        await (collect ?? (() => runPolish(query)))(),
-        query,
+      const connector = createPolishConnector(
+        source,
+        collect && (() => collect()),
       )
-      if (lost) throw new Error('Database session lost')
-      await saveOffers(client, run, batch.jobs, source)
+      let delivered = 0
+      const outcome = await connector.fetch(
+        scope.rows[0]?.parameters,
+        async (ads) => {
+          if (lost) throw new Error('Database session lost')
+          await saveOffers(
+            client,
+            run,
+            ads.map((ad) => ad.content),
+            source,
+          )
+          delivered += ads.length
+        },
+        new AbortController().signal,
+      )
+      const status = outcome.complete
+        ? 'complete'
+        : delivered
+          ? 'partial'
+          : 'failed'
       await client.query(
         `UPDATE source_sync_runs SET status=$2,error=$3,diagnostics=$4,pages=$5,finished_at=now() WHERE id=$1`,
         [
           run.id,
-          batch.status,
-          batch.error,
-          batch.diagnostics,
-          batch.diagnostics.pages,
+          status,
+          outcome.complete ? null : outcome.reason,
+          outcome.diagnostics ?? null,
+          outcome.diagnostics?.pages,
         ],
       )
     } catch (error) {
-      const safe = new Set([
-        'Polish source is disabled',
-        'Invalid Polish source result',
-        'Polish source process timed out',
-        'Polish source output limit exceeded',
-        'Polish source process could not start',
-        'Polish source process failed',
-        'Invalid Polish source process output',
-      ])
       await fail(
         client,
         run.id,
-        error instanceof Error && safe.has(error.message)
+        error instanceof ConnectorError
           ? error.message
           : 'Polish source import failed',
       )

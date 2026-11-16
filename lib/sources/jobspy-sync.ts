@@ -2,15 +2,13 @@ import { randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import type { PgBoss } from 'pg-boss'
 import { hash, scheduleDay } from './solid.ts'
-import { saveOffers, transaction } from './store.ts'
 import {
-  jobspyEnabled,
-  fingerprintFor,
-  parametersFor,
-  queueFor,
-  parseJobspy,
-  runJobspy,
-} from './jobspy.ts'
+  ConnectorError,
+  type ConnectorResult,
+} from '../../modules/sources/infrastructure/adapters/connector.ts'
+import { createJobspyConnector } from '../../modules/sources/infrastructure/adapters/jobspy/connector.ts'
+import { saveOffers, transaction } from './store.ts'
+import { jobspyEnabled, queueFor } from './jobspy.ts'
 import {
   jobspyCatalog,
   jobspySources,
@@ -61,6 +59,7 @@ export async function enqueueJobspy(
   source: JobspySource = 'indeed',
 ) {
   if (!jobspyEnabled(source)) throw new Error('JobSpy source is disabled')
+  const parameters = createJobspyConnector(source).scopeParameters()
   const client = await pool.connect()
   try {
     return await transaction(client, async () => {
@@ -76,7 +75,7 @@ export async function enqueueJobspy(
       const scope = await client.query<{ id: string }>(
         `INSERT INTO source_scopes(id,source,fingerprint,parameters)
         VALUES ($1,$2,$3,$4) ON CONFLICT(fingerprint) DO UPDATE SET fingerprint=EXCLUDED.fingerprint RETURNING id`,
-        [randomUUID(), source, fingerprintFor(source), parametersFor(source)],
+        [randomUUID(), source, hash(parameters), parameters],
       )
       const id = randomUUID()
       await client.query(
@@ -131,6 +130,15 @@ export async function recoverJobspy(
   }
 }
 
+// The status JobSpy runs had before connectors: an incomplete run is failed
+// only when the helper failed without returning any job.
+function legacyStatus(outcome: ConnectorResult, delivered: number) {
+  if (outcome.complete) return 'complete'
+  return outcome.diagnostics?.status === 'failed' && delivered === 0
+    ? 'failed'
+    : 'partial'
+}
+
 export async function executeJobspy(
   pool: Pool,
   boss: PgBoss,
@@ -162,37 +170,47 @@ export async function executeJobspy(
     const run = claimed.rows[0]
     if (!run) return
     try {
-      if (!jobspyEnabled(source)) throw new Error('JobSpy source is disabled')
+      if (!jobspyEnabled(source)) {
+        await fail(client, run.id, 'JobSpy source is disabled')
+        return
+      }
       const scope = await client.query(
         'SELECT parameters FROM source_scopes WHERE id=$1',
         [run.scope_id],
       )
-      if (hash(scope.rows[0]?.parameters) !== fingerprintFor(source))
-        throw new Error('Invalid JobSpy result')
-      const batch = parseJobspy(
-        await (collect ?? (() => runJobspy({ source })))(),
+      const connector = createJobspyConnector(
         source,
+        collect && (() => collect()),
       )
-      if (lost) throw new Error('Database session lost')
-      await saveOffers(client, run, batch.jobs, source)
+      let delivered = 0
+      const outcome = await connector.fetch(
+        scope.rows[0]?.parameters,
+        async (ads) => {
+          if (lost) throw new Error('Database session lost')
+          await saveOffers(
+            client,
+            run,
+            ads.map((ad) => ad.content),
+            source,
+          )
+          delivered += ads.length
+        },
+        new AbortController().signal,
+      )
       await client.query(
         `UPDATE source_sync_runs SET status=$2,error=$3,diagnostics=$4,finished_at=now() WHERE id=$1`,
-        [run.id, batch.status, batch.error, batch.diagnostics],
+        [
+          run.id,
+          legacyStatus(outcome, delivered),
+          outcome.complete ? null : outcome.reason,
+          outcome.diagnostics ?? null,
+        ],
       )
     } catch (error) {
-      const safe = new Set([
-        'JobSpy source is disabled',
-        'Invalid JobSpy result',
-        'JobSpy process timed out',
-        'JobSpy output limit exceeded',
-        'JobSpy process could not start',
-        'JobSpy process failed',
-        'Invalid JobSpy process output',
-      ])
       await fail(
         client,
         run.id,
-        error instanceof Error && safe.has(error.message)
+        error instanceof ConnectorError
           ? error.message
           : 'JobSpy import failed',
       )

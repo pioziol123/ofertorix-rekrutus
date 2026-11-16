@@ -2,6 +2,10 @@ import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import { hash, type Offer } from './solid.ts'
+import {
+  ConnectorAbortedError,
+  ConnectorError,
+} from '../../modules/sources/infrastructure/adapters/connector.ts'
 import { normalizeJsonSource } from './polish-json.ts'
 
 import {
@@ -333,7 +337,7 @@ export function parsePolish(value: unknown, query: PolishQuery) {
     parsed.data.source !== query.source ||
     hash(parsed.data.query) !== hash(query)
   )
-    throw new Error('Invalid Polish source result')
+    throw new ConnectorError('Invalid Polish source result')
   const data = parsed.data,
     jobs: Offer[] = [],
     ids = new Set<string>()
@@ -384,6 +388,8 @@ export type PolishProcessOptions = {
   runner?: string
   timeoutMs?: number
   maxBytes?: number
+  /** Aborting kills the process and rejects with `ConnectorAbortedError`. */
+  signal?: AbortSignal
 }
 export function runPolish(
   query: PolishQuery,
@@ -422,6 +428,9 @@ export function runPolish(
       () => stop('Polish source process timed out'),
       options.timeoutMs ?? 180_000,
     )
+    const abort = () => stop('Polish source process aborted')
+    if (options.signal?.aborted) abort()
+    else options.signal?.addEventListener('abort', abort, { once: true })
     const read = (chunk: Buffer, stdout: boolean) => {
       bytes += chunk.length
       if (bytes > (options.maxBytes ?? 8 * 1024 * 1024))
@@ -436,14 +445,19 @@ export function runPolish(
     })
     child.on('close', (code) => {
       clearTimeout(timer)
+      options.signal?.removeEventListener('abort', abort)
       if (issue || code !== 0) {
-        reject(new Error(issue ?? 'Polish source process failed'))
+        reject(
+          options.signal?.aborted
+            ? new ConnectorAbortedError()
+            : new ConnectorError(issue ?? 'Polish source process failed'),
+        )
         return
       }
       try {
         resolveResult(JSON.parse(Buffer.concat(chunks).toString('utf8')))
       } catch {
-        reject(new Error('Invalid Polish source process output'))
+        reject(new ConnectorError('Invalid Polish source process output'))
       }
     })
     child.stdin.end(JSON.stringify(query))

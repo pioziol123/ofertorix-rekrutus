@@ -182,52 +182,58 @@ describe('Himalayas bounded HTTP transport', () => {
     expect(order).toEqual(['sleep', 'fetch', 'sleep', 'fetch'])
   })
 
-  it.each([403, 429])(
-    'does not retry HTTP %i and exposes Retry-After',
-    async (status) => {
+  it.each([
+    [403, 1],
+    [429, 3],
+  ])(
+    'exposes HTTP %i and Retry-After after %i attempts',
+    async (status, attempts) => {
       const fetcher = vi
         .fn<typeof fetch>()
-        .mockResolvedValue(
-          new Response('blocked', { status, headers: { 'Retry-After': '60' } }),
+        .mockImplementation(
+          async () =>
+            new Response('blocked', {
+              status,
+              headers: { 'Retry-After': '60' },
+            }),
         )
       await expect(
         createPageFetcher(fetcher, async () => {})(1),
       ).rejects.toMatchObject({ status, retryAfter: '60' })
-      expect(fetcher).toHaveBeenCalledTimes(1)
+      expect(fetcher).toHaveBeenCalledTimes(attempts)
       expect(new HimalayasHttpError(status, null).message).toBe(
         `Himalayas HTTP ${status}`,
       )
     },
   )
 
-  it('aborts a request after the declared timeout without retrying', async () => {
+  it('aborts each attempt after 5 s and gives up after three attempts', async () => {
     vi.useFakeTimers()
+    const aborted: number[] = []
     const fetcher = vi.fn<typeof fetch>(
       (_url, options) =>
         new Promise((_resolve, reject) => {
           options!.signal!.addEventListener(
             'abort',
-            () => reject(options!.signal!.reason),
+            () => {
+              aborted.push(Date.now())
+              reject(new Error('aborted'))
+            },
             { once: true },
           )
         }),
     )
-    // AbortSignal.timeout uses a native timer; inspect its configured duration via a spy.
-    const signal = new AbortController()
-    const timeout = vi
-      .spyOn(AbortSignal, 'timeout')
-      .mockReturnValue(signal.signal)
-    try {
-      const pending = createPageFetcher(fetcher, async () => {})(1)
-      const assertion = expect(pending).rejects.toThrow('timed out')
-      await Promise.resolve()
-      signal.abort(new Error('timed out'))
-      await assertion
-      expect(timeout).toHaveBeenCalledWith(20_000)
-      expect(fetcher).toHaveBeenCalledTimes(1)
-    } finally {
-      timeout.mockRestore()
-    }
+    const started = Date.now()
+    const pending = createPageFetcher(fetcher, async () => {})(1)
+    const assertion = expect(pending).rejects.toThrow(
+      'Himalayas network error or timeout after retry',
+    )
+    await vi.advanceTimersByTimeAsync(15_000)
+    await assertion
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    expect(aborted.map((time) => time - started)).toEqual([
+      5000, 10_000, 15_000,
+    ])
   })
 
   it('rejects oversized streamed responses and malformed JSON', async () => {

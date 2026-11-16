@@ -4,33 +4,33 @@ Docelowa architektura modułu `modules/ai/`. Moduł przyjmuje zlecenie wykonania
 
 ## Podział odpowiedzialności
 
-| Część | Odpowiedzialność |
-| --- | --- |
-| Moduł zlecający | Przygotowuje potrzebne dane i wiąże zlecenie z ich wersją. Sprawdza wynik według własnych reguł i decyduje, czy można zapisać lub opublikować rezultat domenowy. |
+| Część               | Odpowiedzialność                                                                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Moduł zlecający     | Przygotowuje potrzebne dane i wiąże zlecenie z ich wersją. Sprawdza wynik według własnych reguł i decyduje, czy można zapisać lub opublikować rezultat domenowy.                                 |
 | Warstwa integrująca | Przekłada konkretny przypadek użycia na instrukcję i schemat odpowiedzi. Korzysta z publicznych operacji AI i przekazuje modułowi zlecającemu ujednolicony stan oraz wynik w ustalonym formacie. |
-| Moduł AI | Dobiera skonfigurowanego wykonawcę, utrwala konfigurację, zarządza stanem wykonania i rozlicza użycie. Udostępnia wynik do walidacji domenowej. |
-| Adapter wykonawcy | Tłumaczy żądanie, odpowiedź, błędy i dane o użyciu. Obsługuje protokół wykonawcy, np. cykl partii albo cykl sesji agenta. |
+| Moduł AI            | Dobiera skonfigurowanego wykonawcę, utrwala konfigurację, zarządza stanem wykonania i rozlicza użycie. Udostępnia wynik do walidacji domenowej.                                                  |
+| Adapter wykonawcy   | Tłumaczy żądanie, odpowiedź, błędy i dane o użyciu. Obsługuje protokół wykonawcy, np. cykl partii albo cykl sesji agenta.                                                                        |
 
 Moduł AI zapisuje stan wykonania, użycie i koszt. Wynik wykonania jest wejściem do operacji modułu zlecającego, który stosuje własne warunki zapisu i publikacji. Stan wykonania, rozliczenie i decyzja o przyjęciu treści są odrębne.
 
 ## Publiczne operacje
 
-| Operacja | Kontrakt |
-| --- | --- |
-| Zlecenie wykonania | Przyjmuje typ zadania, identyfikator operacji domenowej i przygotowane wejście. Zwraca identyfikator wykonania i jego początkowy stan albo zdefiniowany błąd. |
-| Odczyt wykonania | Udostępnia stan, wynik w ustalonym formacie, użycie, koszt oraz przyczynę błędu lub oczekiwania. Odczyt historii pozwala odróżnić wykonania tej samej operacji. |
+| Operacja                      | Kontrakt                                                                                                                                                                                                                            |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Zlecenie wykonania            | Przyjmuje typ zadania, identyfikator operacji domenowej i przygotowane wejście. Zwraca identyfikator wykonania i jego początkowy stan albo zdefiniowany błąd.                                                                       |
+| Odczyt wykonania              | Udostępnia stan, wynik w ustalonym formacie, użycie, koszt oraz przyczynę błędu lub oczekiwania. Odczyt historii pozwala odróżnić wykonania tej samej operacji.                                                                     |
 | Polecenia dotyczące wykonania | Umożliwiają sprawdzenie, zatrzymanie, pominięcie, wznowienie lub ponowienie zgodnie z możliwościami wykonawcy i stanem wykonania. Przyjęcie polecenia oznacza zapis intencji. Potwierdzony skutek jest widoczny w stanie wykonania. |
-| Odczyt budżetu | Udostępnia limit okresu, kwoty zarezerwowane i rozliczone oraz środki dostępne dla nowych zleceń. |
+| Odczyt budżetu                | Udostępnia limit okresu, kwoty zarezerwowane i rozliczone oraz środki dostępne dla nowych zleceń.                                                                                                                                   |
 
 Publiczne operacje ukrywają kolejkę, protokół dostawcy i sposób zapisu stanu. Operacja domenowa ma własny identyfikator. Każde jej wykonanie ma osobny identyfikator, a płatna próba ma osobny zapis rozliczenia.
 
 ## Sposoby wykonania
 
-| Sposób | Przebieg |
-| --- | --- |
-| Bezpośrednie wywołanie modelu | Wykonawca wysyła jedno żądanie i odbiera odpowiedź, np. z OpenAI Responses API albo Ollamy. Dla klienta modułu wykonanie ma identyfikator i stan. |
-| Partia u dostawcy | Wykonawca wysyła partię, sprawdza jej stan i przypisuje odebrane wyniki do poszczególnych wykonań. Poprawny wynik jednej pozycji można odebrać także wtedy, gdy inna pozycja zakończy się błędem. Przykładem jest OpenAI Batch API. |
-| Sesja agenta | Wykonawca zarządza sesją, obserwuje jej postęp i zbiera wynik oraz materiały z udostępnionych narzędzi. Agent prowadzi pętlę pracy, a dozwolone narzędzia zależą od zadania. Docelowy lokalny wykonawca korzysta z OpenCode i Ollamy. |
+| Sposób                        | Przebieg                                                                                                                                                                                                                              |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bezpośrednie wywołanie modelu | Wykonawca wysyła jedno żądanie i odbiera odpowiedź, np. z OpenAI Responses API albo Ollamy. Dla klienta modułu wykonanie ma identyfikator i stan.                                                                                     |
+| Partia u dostawcy             | Wykonawca wysyła partię, sprawdza jej stan i przypisuje odebrane wyniki do poszczególnych wykonań. Poprawny wynik jednej pozycji można odebrać także wtedy, gdy inna pozycja zakończy się błędem. Przykładem jest OpenAI Batch API.   |
+| Sesja agenta                  | Wykonawca zarządza sesją, obserwuje jej postęp i zbiera wynik oraz materiały z udostępnionych narzędzi. Agent prowadzi pętlę pracy, a dozwolone narzędzia zależą od zadania. Docelowy lokalny wykonawca korzysta z OpenCode i Ollamy. |
 
 Konfiguracja określa dopuszczalne sposoby wykonania i wybór modelu dla typu zadania. Przy zleceniu moduł utrwala wejście, wersję instrukcji i schematu oraz ustawienia wykonawcy i ewentualnego cennika. Oczekujące wykonanie zachowuje tę migawkę po zmianie konfiguracji. Sekrety są pobierane z konfiguracji wykonawczej. Niedostępny wykonawca lub brak wymaganej zdolności daje jawny stan.
 

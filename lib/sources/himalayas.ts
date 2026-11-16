@@ -1,6 +1,11 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import { hash, type Offer } from './solid.ts'
+import { RetryDeferredError } from '../../modules/sources/infrastructure/adapters/connector.ts'
+import {
+  createHttpRequest,
+  type Clock,
+} from '../../modules/sources/infrastructure/adapters/http-request.ts'
 
 export const source = 'himalayas'
 export const parameters = {
@@ -166,43 +171,44 @@ export class HimalayasHttpError extends Error {
   }
 }
 
+/**
+ * Reads one search page, 1 s after the previous one. Transport limits and
+ * retries come from the shared HTTP helper; a final error status is thrown
+ * as `HimalayasHttpError`.
+ */
 export function createPageFetcher(
   fetcher: typeof fetch = fetch,
   sleep = (ms: number) => delay(ms),
+  clock?: Clock,
 ) {
-  return async (page: number): Promise<HimalayasPage> => {
-    // Sequential caller holds the database lock; no hidden redirect or retry.
+  const request = createHttpRequest({
+    label: 'Himalayas',
+    fetch: fetcher,
+    sleep,
+    clock,
+    maxBytes: 8 * 1024 * 1024,
+  })
+  return async (page: number, signal?: AbortSignal): Promise<HimalayasPage> => {
+    const url = pageUrl(page)
+    // Sequential caller holds the database lock; no hidden redirect.
     await sleep(1000)
-    const response = await fetcher(pageUrl(page), {
-      redirect: 'error',
-      signal: AbortSignal.timeout(20_000),
-      headers: { Accept: 'application/json' },
-    })
-    if (!response.ok) {
-      await response.body?.cancel()
+    let response
+    try {
+      response = await request(
+        url,
+        { redirect: 'error', headers: { Accept: 'application/json' } },
+        signal,
+      )
+    } catch (error) {
+      if (error instanceof RetryDeferredError)
+        throw new HimalayasHttpError(error.status, error.retryAfter)
+      throw error
+    }
+    if (!response.ok)
       throw new HimalayasHttpError(
         response.status,
         response.headers.get('retry-after'),
       )
-    }
-    // Bound response buffering even when Content-Length is missing or incorrect.
-    const reader = response.body?.getReader()
-    if (!reader) throw new Error('Invalid Himalayas response')
-    const chunks: Uint8Array[] = []
-    let size = 0
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        size += value.byteLength
-        if (size > 8 * 1024 * 1024)
-          throw new Error('Himalayas response too large')
-        chunks.push(value)
-      }
-    } finally {
-      await reader.cancel()
-      reader.releaseLock()
-    }
-    return parsePage(JSON.parse(Buffer.concat(chunks).toString('utf8')), page)
+    return parsePage(JSON.parse(response.body.toString('utf8')), page)
   }
 }

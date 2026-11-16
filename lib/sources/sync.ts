@@ -1,15 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import type { PgBoss } from 'pg-boss'
+import { fingerprint, hash, importQueue, scheduleDay, source } from './solid.ts'
+import { ConnectorError } from '../../modules/sources/infrastructure/adapters/connector.ts'
 import {
-  createPageFetcher,
-  fingerprint,
-  importQueue,
-  parameters,
-  scheduleDay,
-  source,
-} from './solid.ts'
-import type { Page } from './solid.ts'
+  createSolidJobsConnector,
+  type SolidJobsPageFetcher,
+} from '../../modules/sources/infrastructure/adapters/solid-jobs/connector.ts'
 import { transaction, saveOffers } from './store.ts'
 
 const dispatchLock = 'solid-jobs-dispatch'
@@ -32,6 +29,7 @@ export async function enqueueSync(
   now = new Date(),
 ): Promise<{ id: string; reused: boolean } | null> {
   const day = scheduleDay(now)
+  const parameters = createSolidJobsConnector().scopeParameters()
   const client = await pool.connect()
   try {
     return await transaction(client, async () => {
@@ -41,7 +39,7 @@ export async function enqueueSync(
       const scope = await client.query<{ id: string }>(
         `INSERT INTO source_scopes(id,source,fingerprint,parameters)
         VALUES ($1,$2,$3,$4) ON CONFLICT(fingerprint) DO UPDATE SET fingerprint=EXCLUDED.fingerprint RETURNING id`,
-        [randomUUID(), source, fingerprint, parameters],
+        [randomUUID(), source, hash(parameters), parameters],
       )
       const scopeId = scope.rows[0]!.id
       const active = await client.query<{ id: string }>(
@@ -140,8 +138,9 @@ export async function executeSync(
   pool: Pool,
   boss: PgBoss,
   runId: string,
-  fetchPage: (index: number) => Promise<Page> = createPageFetcher(),
+  fetchPage?: SolidJobsPageFetcher,
 ): Promise<void> {
+  const connector = createSolidJobsConnector(fetchPage)
   const client = await pool.connect()
   let locked = false
   // pg emits asynchronous errors on loss of a checked-out session; stop writing if its lock is lost.
@@ -168,34 +167,21 @@ export async function executeSync(
     const run = claimed.rows[0]
     if (!run) return // Late delivery of a recovered or already finished job.
     try {
-      let baseline: Page | undefined
-      let issue: string | undefined
-      for (let index = 0; index < 1000; index++) {
-        const page = await fetchPage(index)
-        if (connectionLost) throw new Error('Database session lost')
-        if (!baseline) baseline = page
-        const duplicate = await saveOffers(client, run, page.jobs, source)
-        if (
-          !page.valid ||
-          duplicate ||
-          page.totalCount !== baseline.totalCount ||
-          page.totalPages !== baseline.totalPages
-        ) {
-          issue =
-            'Invalid or changing pagination; saved valid offers, availability unchanged'
-          break
-        }
-        if (index + 1 >= baseline.totalPages) break
-        if (index === 999) issue = 'Import page safety limit exceeded'
-      }
-      const counts = await client.query<{ seen: number }>(
-        'SELECT seen FROM source_sync_runs WHERE id=$1',
-        [run.id],
+      const outcome = await connector.fetch(
+        connector.scopeParameters(),
+        async (ads) => {
+          if (connectionLost) throw new Error('Database session lost')
+          await saveOffers(
+            client,
+            run,
+            ads.map((ad) => ad.content),
+            source,
+          )
+        },
+        new AbortController().signal,
       )
-      if (!baseline || counts.rows[0]!.seen !== baseline.totalCount)
-        issue ??= 'Incomplete unique offer count'
-      if (issue) {
-        await failRun(client, run.id, issue)
+      if (!outcome.complete) {
+        await failRun(client, run.id, outcome.reason)
         return
       }
       await transaction(client, async () => {
@@ -211,10 +197,9 @@ export async function executeSync(
         )
       })
     } catch (error) {
-      // Only adapter-generated errors are exposed; never persist credentials or raw response bodies.
+      // Only connector errors are exposed; never persist credentials or raw response bodies.
       const message =
-        error instanceof Error &&
-        /^(API |Invalid API|Missing API)/.test(error.message)
+        error instanceof ConnectorError
           ? error.message
           : 'Import interrupted by a storage or processing error'
       await failRun(client, run.id, message)

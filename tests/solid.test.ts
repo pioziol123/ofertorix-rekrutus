@@ -70,7 +70,7 @@ describe('SOLID.Jobs source adapter', () => {
     expect(() => parsePage({ jobs: null }, 0)).toThrow()
   })
 
-  it('retries a transient failure once and respects bounded Retry-After', async () => {
+  it('retries a transient failure at most twice and respects bounded Retry-After', async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -87,7 +87,7 @@ describe('SOLID.Jobs source adapter', () => {
     await expect(
       createPageFetcher(unavailable, async () => {})(0),
     ).rejects.toThrow('503')
-    expect(unavailable).toHaveBeenCalledTimes(2)
+    expect(unavailable).toHaveBeenCalledTimes(3)
     const deferred = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
@@ -116,7 +116,7 @@ describe('SOLID.Jobs source adapter', () => {
     await expect(createPageFetcher(fetcher, async () => {})(0)).rejects.toThrow(
       'after retry',
     )
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher).toHaveBeenCalledTimes(3)
   })
 })
 

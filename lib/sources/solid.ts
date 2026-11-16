@@ -1,5 +1,12 @@
-import { createHash } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
+import { ConnectorError } from '../../modules/sources/infrastructure/adapters/connector.ts'
+import {
+  createHttpRequest,
+  type Clock,
+} from '../../modules/sources/infrastructure/adapters/http-request.ts'
+import { hash } from '../../modules/sources/domain/canonical-hash.ts'
+
+export { canonical, hash } from '../../modules/sources/domain/canonical-hash.ts'
 
 export const source = 'solid-jobs'
 export const importQueue = 'source-solid-jobs'
@@ -15,20 +22,6 @@ export const parameters = {
   direction: 'asc',
 } as const
 
-export function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
-  if (value !== null && typeof value === 'object') {
-    const record = value as Record<string, unknown>
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonical(record[key])}`)
-      .join(',')}}`
-  }
-  return JSON.stringify(value) ?? 'null'
-}
-export function hash(value: unknown): string {
-  return createHash('sha256').update(canonical(value)).digest('hex')
-}
 export const fingerprint = hash(parameters)
 export type Offer = Record<string, unknown> & { jobOfferKey: string }
 export type Page = {
@@ -85,50 +78,40 @@ export function parsePage(value: unknown, index: number): Page {
   return { jobs, totalCount: Number(count), totalPages: Number(pages), valid }
 }
 
+/**
+ * Reads one API page. Requests are at least 1 s apart; transport limits and
+ * retries come from the shared HTTP helper.
+ */
 export function createPageFetcher(
   fetcher: typeof fetch = fetch,
   sleep = (ms: number) => delay(ms),
+  clock?: Clock,
 ) {
+  const now = () => clock?.now() ?? Date.now()
   let lastRequest = 0
-  return async (index: number): Promise<Page> => {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      await sleep(Math.max(0, 1000 - (Date.now() - lastRequest)))
-      lastRequest = Date.now()
-      let response: Response
-      try {
-        response = await fetcher(pageUrl(index), {
-          headers: { 'X-Api-Version': parameters.apiVersion },
-          signal: AbortSignal.timeout(30_000),
-        })
-      } catch {
-        if (attempt === 0) continue
-        throw new Error('API network error or timeout after retry')
-      }
-      if (response.ok) {
-        try {
-          return parsePage(await response.json(), index)
-        } catch {
-          throw new Error('Invalid API response')
-        }
-      }
-      if (
-        (response.status === 429 || response.status >= 500) &&
-        attempt === 0
-      ) {
-        const retry = response.headers.get('retry-after')
-        const seconds = retry === null ? 1 : Number(retry)
-        const wait = Number.isFinite(seconds)
-          ? seconds * 1000
-          : Date.parse(retry!) - Date.now()
-        // Do not retry earlier than Retry-After when it exceeds our waiting budget.
-        if (!Number.isFinite(wait) || wait > 60_000)
-          throw new Error(`API HTTP ${response.status}; retry deferred`)
-        await sleep(Math.max(1000, wait))
-        continue
-      }
-      throw new Error(`API HTTP ${response.status}`)
+  // Every attempt, retries included, counts towards the interval.
+  const request = createHttpRequest({
+    label: 'API',
+    fetch: (url, init) => {
+      lastRequest = now()
+      return fetcher(url, init)
+    },
+    sleep,
+    clock,
+  })
+  return async (index: number, signal?: AbortSignal): Promise<Page> => {
+    await sleep(Math.max(0, 1000 - (now() - lastRequest)))
+    const response = await request(
+      pageUrl(index),
+      { headers: { 'X-Api-Version': parameters.apiVersion } },
+      signal,
+    )
+    if (!response.ok) throw new ConnectorError(`API HTTP ${response.status}`)
+    try {
+      return parsePage(JSON.parse(response.body.toString('utf8')), index)
+    } catch {
+      throw new ConnectorError('Invalid API response')
     }
-    throw new Error('API attempt limit reached')
   }
 }
 

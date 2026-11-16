@@ -4,6 +4,10 @@ import { resolve } from 'node:path'
 import { z } from 'zod'
 import { hash, type Offer } from './solid.ts'
 import {
+  ConnectorAbortedError,
+  ConnectorError,
+} from '../../modules/sources/infrastructure/adapters/connector.ts'
+import {
   jobspyCatalog,
   remoteMarket,
   sourceEnabled,
@@ -134,7 +138,7 @@ export function parseJobspy(value: unknown, source: JobspySource = 'indeed') {
   const expected = parametersFor(source)
 
   const parsed = envelope.safeParse(value)
-  if (!parsed.success) throw new Error('Invalid JobSpy result')
+  if (!parsed.success) throw new ConnectorError('Invalid JobSpy result')
   const data = parsed.data
   if (
     data.source !== source ||
@@ -145,7 +149,7 @@ export function parseJobspy(value: unknown, source: JobspySource = 'indeed') {
     data.jobs.length > expected.query.results_wanted ||
     Date.parse(data.finished_at) < Date.parse(data.started_at)
   )
-    throw new Error('Invalid JobSpy result')
+    throw new ConnectorError('Invalid JobSpy result')
   let rejected = 0,
     duplicates = 0,
     outsideScope = 0
@@ -265,6 +269,8 @@ export type ProcessOptions = {
   runner?: string
   timeoutMs?: number
   maxBytes?: number
+  /** Aborting kills the process and rejects with `ConnectorAbortedError`. */
+  signal?: AbortSignal
   source?: JobspySource
 }
 export function runJobspy(options: ProcessOptions = {}): Promise<unknown> {
@@ -303,6 +309,9 @@ export function runJobspy(options: ProcessOptions = {}): Promise<unknown> {
       () => stop('JobSpy process timed out'),
       options.timeoutMs ?? 120_000,
     )
+    const abort = () => stop('JobSpy process aborted')
+    if (options.signal?.aborted) abort()
+    else options.signal?.addEventListener('abort', abort, { once: true })
     const read = (chunk: Buffer, stdout: boolean) => {
       bytes += chunk.length
       if (bytes > (options.maxBytes ?? 8 * 1024 * 1024))
@@ -317,14 +326,19 @@ export function runJobspy(options: ProcessOptions = {}): Promise<unknown> {
     })
     child.on('close', (code) => {
       clearTimeout(timer)
+      options.signal?.removeEventListener('abort', abort)
       if (issue || code !== 0) {
-        reject(new Error(issue ?? 'JobSpy process failed'))
+        reject(
+          options.signal?.aborted
+            ? new ConnectorAbortedError()
+            : new ConnectorError(issue ?? 'JobSpy process failed'),
+        )
         return
       }
       try {
         resolveResult(JSON.parse(Buffer.concat(chunks).toString('utf8')))
       } catch {
-        reject(new Error('Invalid JobSpy process output'))
+        reject(new ConnectorError('Invalid JobSpy process output'))
       }
     })
     child.stdin.end(

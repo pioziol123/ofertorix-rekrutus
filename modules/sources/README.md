@@ -16,13 +16,13 @@ Pobieranie dotyczy wybranego źródła i ustalonego **zakresu**. Zakres określa
 
 **Przebieg synchronizacji** to jedno wykonanie takiego pobierania. Wyniki mogą przychodzić w wielu porcjach. Moduł zachowuje poprawne ogłoszenia w miarę ich otrzymywania, dlatego późniejszy błąd nie przekreśla już zebranych danych.
 
-| Stan przebiegu | Znaczenie |
-| --- | --- |
-| Oczekujący | Pobranie zostało zlecone i czeka na rozpoczęcie. |
-| W trakcie | Trwa pobieranie i zapisywanie wyników. |
-| Kompletny | Sprawdzono cały ustalony zakres. |
-| Częściowy | Uzyskano użyteczne wyniki, ale nie sprawdzono całego zakresu lub nie udało się potwierdzić kompletności. |
-| Nieudany | Nie udało się uzyskać użytecznych wyników. |
+| Stan przebiegu | Znaczenie                                                                                                |
+| -------------- | -------------------------------------------------------------------------------------------------------- |
+| Oczekujący     | Pobranie zostało zlecone i czeka na rozpoczęcie.                                                         |
+| W trakcie      | Trwa pobieranie i zapisywanie wyników.                                                                   |
+| Kompletny      | Sprawdzono cały ustalony zakres.                                                                         |
+| Częściowy      | Uzyskano użyteczne wyniki, ale nie sprawdzono całego zakresu lub nie udało się potwierdzić kompletności. |
+| Nieudany       | Nie udało się uzyskać użytecznych wyników.                                                               |
 
 Kompletny przebieg nie musi oznaczać pobrania wszystkich ogłoszeń istniejących w danym źródle. Kompletność odnosi się do ustalonego zakresu, a nie do całego rynku ofert. Wynik ograniczonego wyszukiwania może być kompletny, lecz nadal nie wystarczać do ustalenia, że inne ogłoszenie zostało usunięte.
 

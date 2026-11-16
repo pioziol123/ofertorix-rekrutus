@@ -10,5 +10,10 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["lib/**/*.ts", "worker/**/*.ts", "scripts/**/*.ts"]
+  "include": [
+    "lib/**/*.ts",
+    "modules/**/*.ts",
+    "worker/**/*.ts",
+    "scripts/**/*.ts"
+  ]
 }
