@@ -365,6 +365,7 @@ Wykonawca jest operacją modułu Źródła ofert wywoływaną z handlera kolejki
 
 - Handlery wszystkich dotychczasowych kolejek źródeł wywołują wspólnego wykonawcę. Dotychczasowe funkcje wykonania i odzyskiwania czterech ścieżek oraz ich blokady sesyjne zostają usunięte.
 - Dotychczasowe zlecanie zostaje (zastąpi je zadanie 0mq.16), z opcjami zadań z punktu "Kolejka i odzyskiwanie" zamiast obecnych (`retryLimit` 0). Kolejki są tworzone z tymi opcjami przy inicjalizacji. Jeden aktywny przebieg na źródło zapewniają do zadania 0mq.16 kolejki osobne dla źródeł i dotychczasowe reguły zlecania przy jednym workerze wdrożenia.
+- Status niekompletnego przebiegu ustala wyłącznie krok 4 (A5-R03), bez dotychczasowych reguł źródeł. Niekompletny przebieg bez unikalnego ogłoszenia kończy się jako nieudany także w SOLID.Jobs (dziś częściowy po przeczytaniu strony) i w JobSpy (dziś częściowy przy statusie narzędzia innym niż nieudany). Testy integracyjne, które utrwalały dotychczasowe statusy tych przypadków, oczekują teraz statusu nieudanego. Decyzja właściciela z 2026-11-16 zastępuje w tym zakresie założenia ASM-2 i ASM-4 z zadania 0mq.1.
 - Himalayas: CLI tworzy przebieg dotychczasowym sposobem i wywołuje wspólnego wykonawcę w swoim procesie, z sygnałem przerwanym przy zakończeniu procesu.
 - Zmiany stanu przebiegu w nowym kodzie przechodzą przez operacje z [0mq.3](#a3), rozszerzone o token.
 
