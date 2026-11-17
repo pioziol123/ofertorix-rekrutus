@@ -32,7 +32,10 @@ export type ReceiverDecision =
  * the settlement commit together. The cost is settled whatever it decides.
  */
 export type ResultReceiver = {
-  /** A result that matches the response schema. */
+  /**
+   * A result that matches the response schema. The provider enforces the
+   * schema (strict structured output); AI checks that the result is JSON.
+   */
   receiveResult(delivery: ExecutionResultDelivery): Promise<ReceiverDecision>
   /** A final state without a result. */
   receiveFailure(delivery: ExecutionFailureDelivery): Promise<void>

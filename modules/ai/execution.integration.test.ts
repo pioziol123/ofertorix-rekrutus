@@ -423,20 +423,35 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(failures).toMatchObject([{ cause: 'http' }])
   })
 
-  it('accepts agent work and ends it explicitly while no adapter offers the mode', async () => {
-    const admitted = await requestExecution(
-      request({ mode: { kind: 'agent', tools: ['web_search'] } }),
-    )
-    expect(admitted.state).toBe('queued')
-    await work()
-    expect(calls).toEqual([])
-    expect(await readExecution(admitted.executionId)).toMatchObject({
-      mode: 'agent',
-      state: 'failed',
-      cause: 'unsupported_mode',
-      cost: { reserved: ceiling, actual: '0.000000', unknown: false },
+  it('refuses agent work until an adapter brings its reservation rule', async () => {
+    const requested = request({
+      mode: { kind: 'agent', tools: ['web_search'] },
     })
-    expect(failures).toMatchObject([{ cause: 'unsupported_mode' }])
+    await expect(requestExecution(requested)).rejects.toEqual(
+      new AiRequestError('unsupported_mode'),
+    )
+    expect(await readExecutionHistory(requested.operationId)).toEqual([])
+    expect(await jobs()).toEqual([])
+    expect((await readBudget()).reserved).toBe('0.000000')
+  })
+
+  it('ends a completed response that is not JSON without a result and settles its cost', async () => {
+    const admitted = await requestExecution(request())
+    answers.push(async () => ({
+      outcome: 'completed',
+      text: 'not json',
+      usage: { inputTokens: 100, outputTokens: 50 },
+      responseId: null,
+    }))
+    await work()
+    expect(results).toEqual([])
+    expect(failures).toMatchObject([{ cause: 'format' }])
+    expect(await readExecution(admitted.executionId)).toMatchObject({
+      state: 'failed',
+      result: null,
+      cause: 'format',
+      cost: { actual: '0.000800', unknown: false },
+    })
   })
 
   it('keeps the cost unknown and reserved when the saved endpoint changed, as the Profile path does', async () => {

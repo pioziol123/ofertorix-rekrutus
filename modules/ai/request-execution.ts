@@ -71,6 +71,10 @@ function snapshot(
 async function admit(requests: ExecutionRequest[]) {
   for (const request of requests) validate(request)
   const first = requests[0]!
+  // Agent work reserves the token cap plus the fees of its paid tools, a
+  // rule its adapter brings in task oferty-pracy-0mq.17. Until then it is
+  // refused rather than funded below the existing rule.
+  if (first.mode.kind === 'agent') throw new AiRequestError('unsupported_mode')
   const settings = executionSettings(first.jobType, first.mode.kind)
   return transaction(async () => {
     for (const request of requests)
