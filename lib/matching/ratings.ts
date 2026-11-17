@@ -3,12 +3,12 @@ import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { tx } from '../profile/store.ts'
 import { projectOffer } from '../offers.ts'
-import type { ProfileData } from '../../modules/profile/index.ts'
 import {
-  activeProfileVersion,
-  profileVersionNumbers,
-  withProfileNumbers,
-} from './profile-versions.ts'
+  readActiveProfileVersion,
+  readProfileVersionMetadata,
+  type ProfileData,
+  type ProfileVersion,
+} from '../../modules/profile/index.ts'
 import {
   assessmentSchema,
   calculate,
@@ -23,6 +23,41 @@ const uuid = z
   .uuid()
   .transform((id) => id.toLowerCase())
 export class RatingConflict extends Error {}
+/**
+ * Matching reads confirmed profile versions only through the Profile module's
+ * public read. The read takes no row locks: a profile confirmed between this
+ * read and a later write is accepted (owner's decision in 0mq.13), and the
+ * owner can enqueue the assessment again.
+ */
+
+/** The active confirmed version, or null when the owner has confirmed none. */
+export async function activeProfileVersion(): Promise<ProfileVersion | null> {
+  const read = await readActiveProfileVersion()
+  return read.active ? read.version : null
+}
+
+/** Version numbers of the given versions, read in one query, by id. */
+export async function profileVersionNumbers(
+  ids: readonly string[],
+): Promise<Map<string, number>> {
+  const metadata = await readProfileVersionMetadata(ids)
+  return new Map(metadata.map((version) => [version.id, version.number]))
+}
+
+/**
+ * Adds the number of each row's profile version. Every stored assessment
+ * references an existing version; a row without one is left out, as the
+ * former join with the versions did.
+ */
+export function withProfileNumbers<T extends { profile_version_id: string }>(
+  rows: T[],
+  numbers: Map<string, number>,
+): (T & { profile_number: number })[] {
+  return rows.flatMap((row) => {
+    const number = numbers.get(row.profile_version_id)
+    return number === undefined ? [] : [{ ...row, profile_number: number }]
+  })
+}
 export const manualRatingCommand = z
   .object({
     commandId: uuid,
@@ -130,12 +165,13 @@ async function insertRevision(
     )
   return { id, calculation }
 }
-// The ad keeps its row lock until 0mq.6 moves the read to Sources; the profile
-// version comes from the caller's lock-free read of the active version.
+// Reads of another module's data take no row locks (architecture rule on
+// database access, 6): the ad and the profile may change between this check
+// and the write, as the owner accepted in 0mq.13.
 async function currentAdRevision(client: PoolClient, adId: string) {
   const row = (
     await client.query(
-      'SELECT current_revision_id FROM source_ads WHERE id=$1 FOR SHARE',
+      'SELECT current_revision_id FROM source_ads WHERE id=$1',
       [adId],
     )
   ).rows[0]
@@ -427,15 +463,8 @@ export type RatingView = {
   is_current: boolean
   stale: boolean
 }
-export async function readRatings(pool: Pool, adId: string) {
-  return readRatingsAgainst(
-    pool,
-    adId,
-    (await activeProfileVersion())?.id ?? null,
-  )
-}
 /** The rating history of an ad, stale against the given active profile version. */
-export async function readRatingsAgainst(
+export async function readRatings(
   pool: Pool,
   adId: string,
   activeProfileVersionId: string | null,

@@ -14,6 +14,7 @@ import {
 import { decorateMatching, matchingListStatus } from '../lib/matching/list.ts'
 import { projectOffer } from '../lib/offers.ts'
 import {
+  activeProfileVersion,
   manualContext,
   readRatings,
   readWeights,
@@ -110,6 +111,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
       await admin.end()
     }
   })
+  const activeId = async () => (await activeProfileVersion())?.id ?? null
   const offers = () => [
     projectOffer({
       id: ad,
@@ -251,7 +253,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
       reason: 'Własna ocena',
     })
     const assertSame = async () => {
-      const detail = (await readRatings(pool, ad)).current!
+      const detail = (await readRatings(pool, ad, await activeId())).current!
       expect(
         (await decorateMatching(pool, offers()))[0]!.assessment,
       ).toMatchObject({

@@ -296,6 +296,51 @@ integration(
       expect(provider.uploads).toBe(1)
       expect(provider.creates).toBe(1)
     })
+    it('publishes an AI result on the run’s own connection and accepts a profile confirmed during the download', async () => {
+      const request = await enqueueMatching(pool, boss, ad)
+      // One connection only: the run holds it, so any read needing a second
+      // connection while it is held would time out.
+      const single = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        options: `-c search_path=${schema}`,
+        max: 1,
+        connectionTimeoutMillis: 2000,
+      })
+      const confirmed = randomUUID()
+      class ConfirmingProvider extends Provider {
+        override async results(batch: Batch, expected: string[]) {
+          // The owner confirms a new version while results are downloaded.
+          await pool.query(
+            'INSERT INTO profile_versions(id,number,data,command_id,draft_revision) VALUES($1,2,$2,$3,2)',
+            [confirmed, emptyProfile(), randomUUID()],
+          )
+          await pool.query('UPDATE profile_head SET active_version_id=$1', [
+            confirmed,
+          ])
+          return super.results(batch, expected)
+        }
+      }
+      setPool(single)
+      try {
+        await executeMatching(
+          single,
+          boss,
+          request.id,
+          new ConfirmingProvider(),
+        )
+      } finally {
+        await single.end()
+        setPool(pool)
+      }
+      expect(await row(request.id)).toMatchObject({ state: 'completed' })
+      const view = await readMatching(pool, ad)
+      expect(view.current).toMatchObject({
+        request_id: request.id,
+        profile_number: 1,
+        stale: true,
+      })
+      expect(view.history[0]).toMatchObject({ stale: true })
+    })
     it('persists a safe HTTP upload failure without resubmission or analysis cost', async () => {
       const request = await enqueueMatching(pool, boss, ad)
       const fetcher = vi.fn(

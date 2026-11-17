@@ -2,7 +2,7 @@ import type { Pool } from 'pg'
 import type { OfferView } from '../offers.ts'
 import { chargeCeiling } from '../ai/budget.ts'
 import { matchingConfiguration } from './store.ts'
-import { activeProfileVersion } from './profile-versions.ts'
+import { activeProfileVersion } from './ratings.ts'
 import {
   matchingGroupLabels,
   matchingPending,

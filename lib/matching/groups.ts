@@ -5,7 +5,7 @@ import type { PgBoss } from 'pg-boss'
 import { z } from 'zod'
 import { tx } from '../profile/store.ts'
 import { requireQueued } from '../queue.ts'
-import { activeProfileVersion } from './profile-versions.ts'
+import { activeProfileVersion } from './ratings.ts'
 import {
   BatchClient,
   BatchError,
@@ -231,6 +231,9 @@ export async function executeMatchingGroup(
   id: string,
   provider?: BatchClient,
 ) {
+  // Read before this run holds its connection, so publishing results never
+  // waits for a second one; the read takes no lock (see applyMatchingLine).
+  const activeProfileVersionId = (await activeProfileVersion())?.id ?? null
   const client = await pool.connect()
   try {
     if (
@@ -445,6 +448,7 @@ export async function executeMatchingGroup(
               member,
               results.get(member.id),
               batch,
+              activeProfileVersionId,
             )
         await client.query(
           "UPDATE matching_groups SET state='completed',error=NULL,updated_at=now() WHERE id=$1",

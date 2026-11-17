@@ -1,4 +1,10 @@
-import { publishAiRating, readRatingsAgainst } from './ratings.ts'
+import {
+  activeProfileVersion,
+  profileVersionNumbers,
+  publishAiRating,
+  readRatings,
+  withProfileNumbers,
+} from './ratings.ts'
 import { batchArchive } from './archive.ts'
 import { randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
@@ -7,11 +13,6 @@ import { aiConfiguration, type AiConfiguration } from '../ai/configuration.ts'
 import { chargeCeiling, reserve } from '../ai/budget.ts'
 import { tx } from '../profile/store.ts'
 import type { ProfileVersion } from '../../modules/profile/index.ts'
-import {
-  activeProfileVersion,
-  profileVersionNumbers,
-  withProfileNumbers,
-} from './profile-versions.ts'
 import { projectOffer } from '../offers.ts'
 import { requireQueued } from '../queue.ts'
 import {
@@ -198,6 +199,10 @@ export async function applyMatchingLine(
   row: MatchingRecord,
   line: BatchLine | undefined,
   batch: Batch,
+  // Read by the caller before it took its connection, without a lock: a
+  // version confirmed since then is the accepted race of 0mq.13 and shows as
+  // a stale rating; the owner can enqueue it again.
+  activeProfileVersionId: string | null,
 ) {
   if (!line || line.error || line.response?.status_code !== 200) {
     const noCharge =
@@ -249,14 +254,11 @@ export async function applyMatchingLine(
       if (error instanceof AssessmentError) diagnostic = error.code
       /* Keep usage settlement even if content failed validation. */
     }
-    // Read outside the transaction: this connection holds it, and the read
-    // takes no lock, so it needs no part in it.
-    const profile = result ? await activeProfileVersion() : null
     await tx(client, async () => {
       await settle(client, row.attempt_id, cost, usage, responseId)
       if (result)
         calculation = (
-          await publishAiRating(client, row, result, profile?.id ?? null)
+          await publishAiRating(client, row, result, activeProfileVersionId)
         ).calculation
       await client.query(
         'UPDATE matching_requests SET state=$2,result=$3,calculation=$4,error=$5,updated_at=now() WHERE id=$1',
@@ -279,6 +281,9 @@ export async function executeMatching(
   id: string,
   provider?: BatchClient,
 ) {
+  // Read before this run holds its connection, so publishing a result never
+  // waits for a second one; the read takes no lock (see applyMatchingLine).
+  const activeProfileVersionId = (await activeProfileVersion())?.id ?? null
   const client = await pool.connect()
   try {
     const locked = (
@@ -480,7 +485,13 @@ export async function executeMatching(
           )
           return
         }
-        await applyMatchingLine(client, row, results.get(id), batch)
+        await applyMatchingLine(
+          client,
+          row,
+          results.get(id),
+          batch,
+          activeProfileVersionId,
+        )
       }
       // Cleanup is independent of result validity and never resubmits a request.
       const cleanup = (
@@ -571,6 +582,6 @@ export async function readMatching(pool: Pool, adId: string) {
       ? chargeCeiling(config, config.maxInputTokens, config.maxOutputTokens)
       : null,
     history: withProfileNumbers(result.rows, numbers),
-    ...(await readRatingsAgainst(pool, adId, activeId)),
+    ...(await readRatings(pool, adId, activeId)),
   }
 }
