@@ -65,6 +65,7 @@ const runner: Runner = {
   },
   startCommit: git(repo, ['rev-parse', 'HEAD']),
   reportedVersions: new Set(),
+  pause: () => new Promise((resolve) => setTimeout(resolve, Number(opts.interval) * 60_000)),
   ...(opts.task ? { onlyTask: opts.task } : {}),
 }
 

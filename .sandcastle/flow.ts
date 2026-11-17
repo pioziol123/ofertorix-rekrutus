@@ -8,10 +8,10 @@ import { join } from 'node:path'
 import {
   BASE_BRANCH,
   branchExists,
-  commitsBetween,
   deleteReturnBranch,
   fetchMain,
   git,
+  imageInputs,
   missingAt,
   programTree,
   pushMain,
@@ -51,14 +51,6 @@ export interface EpicContext {
   children: Issue[]
 }
 
-export interface Outcome {
-  ok: boolean
-  report: string
-  result: AgentResult | null
-  /** A failure that a second attempt cannot fix. */
-  final?: boolean
-}
-
 export interface Runner {
   /** The runner's copy: a clone of the exchange point's repository. */
   repo: string
@@ -74,6 +66,8 @@ export interface Runner {
   startCommit: string
   /** Program trees at the exchange point already reported as newer. */
   reportedVersions: Set<string>
+  /** The usual pause between cycles; a delivery waiting for GitHub retries after it. */
+  pause(): Promise<void>
   /** Only this task is considered, as with --task. */
   onlyTask?: string
 }
@@ -313,82 +307,132 @@ function reviewPrompt(issue: Issue, result: AgentResult, ctx: EpicContext, baseS
 
 // ---------- one task ----------
 
+/** Delivery retries because the exchange point changed, before the task goes back (U3-R06). */
+export const MAX_DELIVERY_RETRIES = 5
+
+/**
+ * What the runner keeps about a running task, in memory, for the duration of the run
+ * (solution design of oferty-pracy-uuk, task uuk.3, "State of a task").
+ */
+interface TaskRun {
+  issue: Issue
+  branch: string
+  ctx: EpicContext
+  sandbox: WarmSandbox
+  /** The exchange point commit the work must sit on: the fetched base, or the newer main it was replayed onto. */
+  base: string
+  /** The commit of main on which the work last passed the gate; null before the first pass. */
+  gateBase: string | null
+  /** The checked commit of the work. */
+  commit: string | null
+  result: AgentResult | null
+  review: Review['verdict'] | null
+  turns: number
+  retries: number
+  /** Image inputs of the commit the warm sandbox was opened from. */
+  warmInputs: string
+  /** The image was rebuilt from a newer main during the task, so the warm sandbox is out of date. */
+  envChanged: boolean
+}
+
+type Step = { ok: true } | { ok: false; report: string; final?: boolean }
+
+/**
+ * Replays the task branch, checked out in the worktree, on top of `onto`. On a conflict the
+ * replay is aborted and the report names the conflicting files and the commits of main
+ * between `from` and `onto` that change them (U3-R05).
+ */
+function replay(worktree: string, from: string, onto: string): Step {
+  const rebase = tryGit(worktree, ['rebase', onto])
+  if (rebase.ok) return { ok: true }
+  const files = tryGit(worktree, ['diff', '--name-only', '--diff-filter=U']).out.split('\n').filter(Boolean)
+  tryGit(worktree, ['rebase', '--abort'])
+  const commits = files.length ? tryGit(worktree, ['log', '--format=%h %s', `${from}..${onto}`, '--', ...files]).out : ''
+  const report = [
+    `Replaying the task branch on ${BASE_BRANCH} at ${onto} conflicted.`,
+    files.length ? `Conflicting files:\n${files.map((f) => `- ${f}`).join('\n')}` : `git said:\n${tail(rebase.out, 20)}`,
+    commits ? `Commits of ${BASE_BRANCH} since ${from.slice(0, 7)} that change them:\n${commits.split('\n').map((c) => `- ${c}`).join('\n')}` : '',
+    `Rebase the task branch on commit ${onto} yourself (git rebase ${onto}), resolve the conflict, run ${GATE} until it exits 0, commit, and rewrite ${RESULT_FILE}.`,
+  ].filter(Boolean).join('\n\n')
+  return { ok: false, report }
+}
+
 /** The runner's own checks in the implementing agent's warm sandbox, after each agent turn. */
-async function warmCheck(r: Runner, sandbox: WarmSandbox, issue: Issue, branch: string, baseSha: string, ctx: EpicContext): Promise<Outcome> {
-  const worktree = sandbox.worktreePath
+async function warmCheck(r: Runner, t: TaskRun): Promise<Step> {
+  const worktree = t.sandbox.worktreePath
   const result = readJson<AgentResult>(join(worktree, RESULT_FILE))
-  if (!result) return { ok: false, report: `You did not write ${RESULT_FILE}.`, result }
-  if (result.status === 'blocked') return { ok: false, report: `Blocked: ${result.question}`, result, final: true }
+  if (!result) return { ok: false, report: `You did not write ${RESULT_FILE}.` }
+  t.result = result
+  if (result.status === 'blocked') return { ok: false, report: `Blocked: ${result.question}`, final: true }
 
   const dirty = git(worktree, ['status', '--porcelain'])
-  if (dirty) return { ok: false, report: `Uncommitted changes are left in the worktree:\n${dirty}`, result }
-  if (git(r.repo, ['rev-list', '--count', `${baseSha}..refs/heads/${branch}`]) === '0') {
-    return { ok: false, report: 'There are no commits on the task branch.', result }
+  if (dirty) return { ok: false, report: `Uncommitted changes are left in the worktree:\n${dirty}` }
+  if (git(r.repo, ['rev-list', '--count', `${t.base}..refs/heads/${t.branch}`]) === '0') {
+    return { ok: false, report: 'There are no commits on the task branch.' }
   }
-  // The base is the commit the runner fetched, not the main branch the sandbox can write to.
-  const rebase = tryGit(worktree, ['rebase', baseSha])
-  if (!rebase.ok) {
-    tryGit(worktree, ['rebase', '--abort'])
-    return { ok: false, report: `Rebase on ${BASE_BRANCH} at ${baseSha.slice(0, 7)} conflicted:\n${tail(rebase.out)}`, result, final: true }
-  }
+  // The base is a commit the runner fetched, not the main branch the sandbox can write to.
+  const replayed = replay(worktree, t.gateBase ?? t.base, t.base)
+  if (!replayed.ok) return replayed
   const shape = resultShapeProblems(result)
-  if (shape.length) return { ok: false, report: `${RESULT_FILE} does not match the shape in the implement-task skill:\n- ${shape.join('\n- ')}`, result }
+  if (shape.length) return { ok: false, report: `${RESULT_FILE} does not match the shape in the implement-task skill:\n- ${shape.join('\n- ')}` }
   // Markers count only when the task's own diff adds them.
-  const diff = tryGit(worktree, ['diff', `${baseSha}...HEAD`]).out
+  const diff = tryGit(worktree, ['diff', `${t.base}...HEAD`]).out
   const problems = deviationProblems(result, {
-    taskId: issue.id,
-    acceptance: issue.acceptance_criteria,
-    epic: ctx.epic,
-    siblings: ctx.children,
+    taskId: t.issue.id,
+    acceptance: t.issue.acceptance_criteria,
+    epic: t.ctx.epic,
+    siblings: t.ctx.children,
     hasMarker: (text) => diff.split('\n').some((line) => line.startsWith('+') && line.includes(text)),
   })
   if (problems.length) {
-    const report = `The result's evidence and deviations fail the runner's checks (process contract, "What the runner checks"):\n- ${problems.join('\n- ')}`
-    return { ok: false, report, result }
+    return { ok: false, report: `The result's evidence and deviations fail the runner's checks (process contract, "What the runner checks"):\n- ${problems.join('\n- ')}` }
   }
 
-  r.log(`${issue.id}: running the gate in the warm sandbox`)
-  const gate = await sandbox.exec(GATE)
-  if (gate.exitCode !== 0) {
-    return { ok: false, report: `${GATE} failed in your sandbox:\n${tail(`${gate.stdout}${gate.stderr}`)}`, result }
-  }
-  return { ok: true, report: '', result }
+  r.log(`${t.issue.id}: running the gate in the warm sandbox`)
+  const gate = await t.sandbox.exec(GATE)
+  if (gate.exitCode !== 0) return { ok: false, report: `${GATE} failed in your sandbox:\n${tail(`${gate.stdout}${gate.stderr}`)}` }
+  return { ok: true }
 }
 
 /**
- * Gate and review in a fresh sandbox on a copy of the task branch, so only committed work
- * counts. On success `commit` is the checked commit, which is what gets delivered.
+ * The gate in a fresh sandbox on a copy of the task branch, so only committed work counts,
+ * and, when asked, the review of the task's whole change against `t.base`. On success the
+ * branch's commit becomes the checked commit and `t.base` the commit of the last gate.
  */
-async function verify(r: Runner, issue: Issue, branch: string, baseSha: string, result: AgentResult, ctx: EpicContext): Promise<Outcome & { commit?: string }> {
-  const commit = git(r.repo, ['rev-parse', `refs/heads/${branch}`])
-  const gateBranch = `${branch}-gate`
+async function verify(r: Runner, t: TaskRun, withReview: boolean): Promise<Step> {
+  const commit = git(r.repo, ['rev-parse', `refs/heads/${t.branch}`])
+  const gateBranch = `${t.branch}-gate`
   git(r.repo, ['branch', '--force', gateBranch, commit])
   try {
     const sandbox = await r.sandboxes.fresh(gateBranch)
     try {
-      r.log(`${issue.id}: running the gate in a fresh sandbox`)
+      r.log(`${t.issue.id}: running the gate in a fresh sandbox on ${BASE_BRANCH} at ${t.base.slice(0, 7)}`)
       const gate = await sandbox.exec(GATE)
       if (gate.exitCode !== 0) {
-        const report = `${GATE} failed in a fresh sandbox, which sees only committed work:\n${tail(`${gate.stdout}${gate.stderr}`)}`
-        return { ok: false, report, result: null }
+        return { ok: false, report: `${GATE} failed in a fresh sandbox, which sees only committed work:\n${tail(`${gate.stdout}${gate.stderr}`)}` }
       }
-      r.log(`${issue.id}: running the spec review`)
-      await sandbox.review(reviewPrompt(issue, result, ctx, baseSha))
-      if (git(r.repo, ['rev-parse', `refs/heads/${gateBranch}`]) !== commit) {
-        return { ok: false, report: 'The reviewer committed to the branch under review.', result: null, final: true }
+      if (withReview) {
+        r.log(`${t.issue.id}: running the spec review`)
+        await sandbox.review(reviewPrompt(t.issue, t.result!, t.ctx, t.base))
+        if (git(r.repo, ['rev-parse', `refs/heads/${gateBranch}`]) !== commit) {
+          return { ok: false, report: 'The reviewer committed to the branch under review.', final: true }
+        }
+        const review = readJson<Review>(join(sandbox.worktreePath, REVIEW_FILE))
+        if (!review) return { ok: false, report: `The reviewer did not write ${REVIEW_FILE}.` }
+        const findings = Array.isArray(review.findings) ? review.findings.map(String) : []
+        // Exactly one verdict passes: pass-with-deferral when the result has deviations, pass otherwise.
+        const expected = t.result!.deviations?.length ? 'pass-with-deferral' : 'pass'
+        if (review.verdict !== expected) {
+          const report = review.verdict === 'fail'
+            ? `The spec review failed:\n- ${findings.join('\n- ')}`
+            : `The spec review did not pass (verdict ${JSON.stringify(review.verdict)}, expected ${expected}):\n- ${findings.join('\n- ')}`
+          return { ok: false, report }
+        }
+        t.review = review.verdict
       }
-      const review = readJson<Review>(join(sandbox.worktreePath, REVIEW_FILE))
-      if (!review) return { ok: false, report: `The reviewer did not write ${REVIEW_FILE}.`, result: null }
-      const findings = Array.isArray(review.findings) ? review.findings.map(String) : []
-      // Exactly one verdict passes: pass-with-deferral when the result has deviations, pass otherwise.
-      const expected = result.deviations?.length ? 'pass-with-deferral' : 'pass'
-      if (review.verdict !== expected) {
-        const report = review.verdict === 'fail'
-          ? `The spec review failed:\n- ${findings.join('\n- ')}`
-          : `The spec review did not pass (verdict ${JSON.stringify(review.verdict)}, expected ${expected}):\n- ${findings.join('\n- ')}`
-        return { ok: false, report, result: null }
-      }
-      return { ok: true, report: '', result: null, commit }
+      t.commit = commit
+      t.gateBase = t.base
+      return { ok: true }
     } finally {
       await sandbox.close()
     }
@@ -397,29 +441,99 @@ async function verify(r: Runner, issue: Issue, branch: string, baseSha: string, 
   }
 }
 
+/** Checks after an agent turn: the warm checks, then the fresh gate and the review. */
+async function fullChecks(r: Runner, t: TaskRun): Promise<Step> {
+  const warm = await warmCheck(r, t)
+  return warm.ok ? verify(r, t, true) : warm
+}
+
+type Delivery = { delivered: true } | { delivered?: false; feedback: string } | { delivered?: false; returned: string }
+
 /**
- * One implementing session in one warm sandbox. After each agent turn the runner
- * checks the work itself; failures go back into the same session with resume,
- * up to MAX_FEEDBACK_TURNS times. Work that passes is verified in a fresh sandbox.
+ * Delivery with a changing exchange point (task uuk.3, "Delivery steps"). Runs before the
+ * warm sandbox closes so a failure can still go back to the agent.
  */
-async function implementAndVerify(r: Runner, issue: Issue, branch: string, baseSha: string, ctx: EpicContext): Promise<{ outcome: Outcome; result: AgentResult | null; commit?: string }> {
+async function deliver(r: Runner, t: TaskRun): Promise<Delivery> {
+  for (;;) {
+    // 1. Fetch; while GitHub is unreachable the checked work waits with its sandbox open (U3-R07).
+    const fetched = fetchMain(r.repo)
+    if (!fetched.ok) {
+      r.log(`${t.issue.id}: delivery waits, GitHub is unreachable: ${firstLine(fetched.error)}`)
+      await r.pause()
+      continue
+    }
+    // 2–4. main changed since the last gate: replay the work on it and check it again.
+    if (fetched.sha !== t.gateBase) {
+      t.retries++
+      if (t.retries > MAX_DELIVERY_RETRIES) {
+        return { returned: `${BASE_BRANCH} on GitHub changed during delivery more than ${MAX_DELIVERY_RETRIES} times; the last change was ${t.gateBase!.slice(0, 7)} → ${fetched.sha.slice(0, 7)}.` }
+      }
+      const from = t.gateBase!
+      r.log(`${t.issue.id}: ${BASE_BRANCH} on GitHub moved ${from.slice(0, 7)} → ${fetched.sha.slice(0, 7)}; replaying the work (retry ${t.retries} of ${MAX_DELIVERY_RETRIES})`)
+      t.base = fetched.sha
+      if (imageInputs(r.repo, fetched.sha) !== t.warmInputs) {
+        r.log(`${t.issue.id}: the dependency list or the image recipe changed on ${BASE_BRANCH}; building the image from ${fetched.sha.slice(0, 7)}`)
+        r.images.ensure(fetched.sha)
+        t.envChanged = true
+      }
+      const replayed = replay(t.sandbox.worktreePath, from, fetched.sha)
+      if (!replayed.ok) return { feedback: replayed.report }
+      const changed = git(r.repo, ['diff', '--name-only', from, fetched.sha]).split('\n').filter(Boolean)
+      const documents = Object.values(documentLinks(t.issue)).filter(Boolean)
+      const touched = documents.filter((doc) => changed.includes(doc))
+      if (touched.length) r.log(`${t.issue.id}: the change of ${BASE_BRANCH} includes task documents (${touched.join(', ')}); the review runs again`)
+      const checked = await verify(r, t, touched.length > 0)
+      if (!checked.ok) return checked.final ? { returned: checked.report } : { feedback: checked.report }
+      continue
+    }
+    // 5. Push the checked commit, never forced.
+    const pushed = pushMain(r.repo, t.commit!)
+    if (pushed.ok) return { delivered: true }
+    // The cause comes from fetching again, not from the text of git's message.
+    const again = fetchMain(r.repo)
+    if (!again.ok || again.sha !== t.gateBase) continue
+    return { returned: `Delivery failed: ${tail(pushed.out, 10)}` }
+  }
+}
+
+/**
+ * One implementing session in one warm sandbox, from the first agent turn to delivery.
+ * Every failure that a correction can fix goes back into the same session as a feedback
+ * turn, MAX_FEEDBACK_TURNS at most. Returns the delivered commit or the reason to return.
+ */
+async function runTask(r: Runner, issue: Issue, branch: string, baseSha: string, ctx: EpicContext): Promise<{ ok: true; commit: string; result: AgentResult } | { ok: false; report: string }> {
   const sandbox = await r.sandboxes.warm(branch)
+  const t: TaskRun = {
+    issue, branch, ctx, sandbox, base: baseSha, gateBase: null, commit: null, result: null, review: null,
+    turns: 0, retries: 0, warmInputs: imageInputs(r.repo, baseSha), envChanged: false,
+  }
+  /** Sends a report back to the agent; returns why the task goes back instead, if it must. */
+  const feedback = async (report: string): Promise<string | null> => {
+    if (t.envChanged) return `The environment changed during the task (the dependency list or the image recipe on ${BASE_BRANCH}), and the agent's sandbox is out of date, so it cannot correct the work:\n${report}`
+    if (t.turns >= MAX_FEEDBACK_TURNS) return report
+    t.turns++
+    r.log(`${issue.id}: feedback turn ${t.turns}: ${firstLine(report)}`)
+    await sandbox.exec(`rm -f ${RESULT_FILE}`)
+    if (!(await sandbox.resume(feedbackPrompt(report)))) return `${report}\n(No agent session to resume.)`
+    return null
+  }
   try {
     r.log(`${issue.id}: implementing in ${sandbox.worktreePath}`)
     await sandbox.exec(`rm -f ${RESULT_FILE} ${REVIEW_FILE}`)
     await sandbox.start(implementPrompt(issue, ctx, baseSha))
-    let result: AgentResult | null = null
-    for (let turn = 1; ; turn++) {
-      let outcome: Outcome & { commit?: string } = await warmCheck(r, sandbox, issue, branch, baseSha, ctx)
-      result = outcome.result ?? result
-      if (outcome.ok && result) outcome = await verify(r, issue, branch, baseSha, result, ctx)
-      if (outcome.ok || outcome.final) return { outcome, result, commit: outcome.commit }
-      if (turn > MAX_FEEDBACK_TURNS) return { outcome, result }
-      r.log(`${issue.id}: feedback turn ${turn}: ${firstLine(outcome.report)}`)
-      await sandbox.exec(`rm -f ${RESULT_FILE}`)
-      if (!(await sandbox.resume(feedbackPrompt(outcome.report)))) {
-        return { outcome: { ...outcome, report: `${outcome.report}\n(No agent session to resume.)` }, result }
+    for (;;) {
+      const checked = await fullChecks(r, t)
+      if (!checked.ok) {
+        if (checked.final) return { ok: false, report: checked.report }
+        const stop = await feedback(checked.report)
+        if (stop) return { ok: false, report: stop }
+        continue
       }
+      const delivery = await deliver(r, t)
+      if (delivery.delivered) return { ok: true, commit: t.commit!, result: t.result! }
+      if ('returned' in delivery) return { ok: false, report: delivery.returned }
+      const stop = await feedback(delivery.feedback)
+      if (stop) return { ok: false, report: stop }
     }
   } finally {
     await sandbox.close()
@@ -534,23 +648,6 @@ function recordAssumptions(r: Runner, issue: Issue, assumptions: NonNullable<Age
   }))
 }
 
-/**
- * Delivers the checked commit to the exchange point without forcing (U2-R10–R12).
- * Returns null on success, otherwise the reason the task goes back.
- */
-function deliver(r: Runner, commit: string, baseSha: string): string | null {
-  const pushed = pushMain(r.repo, commit)
-  if (pushed.ok) return null
-  // The cause comes from fetching again, not from the text of git's message.
-  const fetched = fetchMain(r.repo)
-  if (!fetched.ok) return `Delivery failed: GitHub is unreachable: ${firstLine(fetched.error)}`
-  if (fetched.sha !== baseSha) {
-    const commits = commitsBetween(r.repo, baseSha, fetched.sha)
-    return `Delivery failed: ${BASE_BRANCH} on GitHub changed during the task (${baseSha.slice(0, 7)} → ${fetched.sha.slice(0, 7)}). New commits:\n${commits.map((c) => `- ${c}`).join('\n')}`
-  }
-  return `Delivery failed: ${tail(pushed.out, 10)}`
-}
-
 /** Runs one task from the fetched exchange point state `baseSha` to delivery or return. */
 export async function processTask(r: Runner, issue: Issue, baseSha: string): Promise<void> {
   const branch = taskBranch(r, issue)
@@ -560,9 +657,9 @@ export async function processTask(r: Runner, issue: Issue, baseSha: string): Pro
     git(r.repo, ['branch', '--force', branch, baseSha])
     const ctx = epicContext(r, issue)
 
-    let attempt: Awaited<ReturnType<typeof implementAndVerify>>
+    let outcome: Awaited<ReturnType<typeof runTask>>
     try {
-      attempt = await implementAndVerify(r, issue, branch, baseSha, ctx)
+      outcome = await runTask(r, issue, branch, baseSha, ctx)
     } catch (error) {
       // A sandbox or agent failure (idle timeout, docker error) must not kill the runner
       // and leave the task claimed: hand it back like any other failed attempt.
@@ -570,17 +667,11 @@ export async function processTask(r: Runner, issue: Issue, baseSha: string): Pro
       returnToPreparation(r, issue, `The runner stopped the attempt on an error: ${message}`, branch)
       return
     }
-    const { outcome, result, commit } = attempt
-    if (!outcome.ok || !result || !commit) {
+    if (!outcome.ok) {
       returnToPreparation(r, issue, outcome.report || 'Unknown failure.', branch)
       return
     }
-
-    const failed = deliver(r, commit, baseSha)
-    if (failed) {
-      returnToPreparation(r, issue, failed, branch)
-      return
-    }
+    const { commit, result } = outcome
     const sha = commit.slice(0, 7)
     recordOutcome(r, issue, result, ctx)
     const deferred = result.deviations?.length ? ` with ${result.deviations.length} deviation(s) deferred to follow-ups` : ''

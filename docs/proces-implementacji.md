@@ -176,12 +176,13 @@ The runner checks in order:
 
 - Every failure from steps 3.4 and 3.5 goes back as a report **to the same agent session** (Sandcastle resume), so the agent keeps its context.
 - The limit is **3 fix rounds**, shared by all kinds of failure: a failed gate, a missing result, a review fail.
-- These end the work with no fix rounds, going straight to a return: `blocked`, a rebase conflict and a reviewer commit.
+- A rebase conflict is a fix round too: the report lists the conflicting files and the commits of `main` that caused them, and the agent resolves it itself.
+- These end the work with no fix rounds, going straight to a return: `blocked` and a reviewer commit.
 
 #### 3.7. Completion
 
 **Success:**
-1. the runner pushes the checked commit to `main` on GitHub, without forcing; when `main` there changed during the task, or GitHub is unreachable, the task goes back with that reason and the new commits named;
+1. delivery to `main` on GitHub, while the agent's sandbox is still open. When `main` changed since the last gate, the runner replays the work on top of it and runs the gate again in a fresh sandbox, and the review too when the change touched a task document; then it pushes without forcing. A conflict or a failed check after the replay is a fix round. When GitHub is unreachable, the work waits and the runner retries after each pause, taking no new task. The task goes back after a sixth change of `main` during delivery, or when a fix round would be needed after the change of `main` rebuilt the sandbox image;
 2. a comment on the task: summary, evidence for the ACs, assumptions and known deviations;
 3. for each deviation a follow-up as a child of the epic (`needs-info`, `type=follow-up`, `marker`, `origin`, `discovered-from`), wired as a blocker of the tasks that mention its ID;
 4. assumptions added to the epic's triage task (section 5.6);

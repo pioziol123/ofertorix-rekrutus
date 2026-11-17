@@ -123,8 +123,13 @@ export function committingAgent(file = 'feature.txt', content = 'feature\n'): Ag
 export class FakeSandboxes implements Sandboxes {
   /** Exit code of the gate, per call; the last value repeats. */
   gateExits: number[] = [0]
+  /** Overrides gateExits: the gate's exit code from the kind of sandbox and its worktree. */
+  gate?: (kind: 'warm' | 'fresh', worktree: string) => number
   verdict: 'pass' | 'fail' = 'pass'
   gateCalls = 0
+  /** Gate runs and image builds in order, e.g. 'gate:warm', 'gate:fresh', 'image:<sha>'. */
+  events: string[] = []
+  reviews = 0
   prompts: string[] = []
   private counter = 0
 
@@ -144,9 +149,10 @@ export class FakeSandboxes implements Sandboxes {
     return path
   }
 
-  private exec(worktree: string, command: string): ExecResult {
+  private exec(worktree: string, command: string, kind: 'warm' | 'fresh'): ExecResult {
     if (command === GATE) {
-      const code = this.gateExits[Math.min(this.gateCalls, this.gateExits.length - 1)]!
+      this.events.push(`gate:${kind}`)
+      const code = this.gate ? this.gate(kind, worktree) : this.gateExits[Math.min(this.gateCalls, this.gateExits.length - 1)]!
       this.gateCalls++
       return { exitCode: code, stdout: code ? 'gate failed\n' : 'gate ok\n', stderr: '' }
     }
@@ -165,7 +171,7 @@ export class FakeSandboxes implements Sandboxes {
     }
     return {
       worktreePath: worktree,
-      exec: async (command) => this.exec(worktree, command),
+      exec: async (command) => this.exec(worktree, command, 'warm'),
       start: play,
       resume: async (prompt) => {
         await play(prompt)
@@ -179,8 +185,12 @@ export class FakeSandboxes implements Sandboxes {
     const worktree = this.worktree(branch)
     return {
       worktreePath: worktree,
-      exec: async (command) => this.exec(worktree, command),
-      review: async () => writeFile(worktree, REVIEW_FILE, JSON.stringify({ verdict: this.verdict, findings: [] })),
+      exec: async (command) => this.exec(worktree, command, 'fresh'),
+      review: async () => {
+        this.reviews++
+        this.events.push('review')
+        writeFile(worktree, REVIEW_FILE, JSON.stringify({ verdict: this.verdict, findings: [] }))
+      },
       close: async () => void sh(this.repo, 'worktree', 'remove', '--force', worktree),
     }
   }
@@ -201,6 +211,9 @@ export interface World {
   notifications: { title: string; message: string }[]
   logs: string[]
   runner: Runner
+  /** Called on each pause of a waiting delivery; the test may repair GitHub here. */
+  onPause: () => void
+  pauses: number
   cleanup(): void
 }
 
@@ -243,17 +256,25 @@ export function world(agentTurn: AgentTurn = committingAgent(), tasks: string[] 
     repo: runnerCopy,
     db,
     sandboxes,
-    images: { ensure: (commit) => void images.push(commit) },
+    images: { ensure: (commit) => { images.push(commit); sandboxes.events.push(`image:${commit}`) } },
     notifier: { notify: (title, message) => void notifications.push({ title, message }) },
     log: (message) => void logs.push(message),
     logTo: () => {},
     startCommit: sh(runnerCopy, 'rev-parse', 'HEAD'),
     reportedVersions: new Set(),
+    pause: async () => {
+      w.pauses++
+      if (w.pauses > 50) throw new Error('delivery kept waiting')
+      w.onPause()
+    },
   }
-  return {
+  const w: World = {
     base, exchange, owner, runnerCopy, other, db, sandboxes, images, notifications, logs, runner,
+    onPause: () => {},
+    pauses: 0,
     cleanup: () => rmSync(base, { recursive: true, force: true }),
   }
+  return w
 }
 
 /** Branches, HEAD, index, status and file contents of a working copy. */

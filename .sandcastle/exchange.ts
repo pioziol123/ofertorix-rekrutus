@@ -5,6 +5,7 @@
  * agent's environment has no effect. The runner trusts commit ids, not branch names.
  */
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 
 export const BASE_BRANCH = 'main'
 export const REMOTE = 'origin'
@@ -83,4 +84,14 @@ export function deleteReturnBranch(repo: string, branch: string): void {
 
 export function branchExists(repo: string, branch: string): boolean {
   return tryGit(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).ok
+}
+
+/** Files the agent environment's image is built from that change rarely. */
+export const IMAGE_INPUT_FILES = ['pnpm-lock.yaml', '.sandcastle/Dockerfile']
+
+/** Hash of the image inputs at a commit; a missing file counts as empty. */
+export function imageInputs(repo: string, commit: string): string {
+  const hash = createHash('sha256')
+  for (const file of IMAGE_INPUT_FILES) hash.update(`${file}\0${tryGit(repo, ['show', `${commit}:${file}`]).ok ? git(repo, ['show', `${commit}:${file}`]) : ''}\0`)
+  return hash.digest('hex').slice(0, 16)
 }

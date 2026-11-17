@@ -3,13 +3,12 @@
  * Kept apart from runner.ts so a check of a running environment uses the same setup.
  */
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { claudeCode, createSandbox } from '@ai-hero/sandcastle'
 import { docker } from '@ai-hero/sandcastle/sandboxes/docker'
-import { git } from './exchange.ts'
+import { git, imageInputs } from './exchange.ts'
 import type { FreshSandbox, Images, Sandboxes, WarmSandbox } from './ports.ts'
 
 export const IMAGE = 'oferty-pracy-sandbox'
@@ -79,13 +78,6 @@ export function dockerSandboxes({ repo, model, effort }: { repo: string; model: 
       }
     },
   }
-}
-
-/** Hash of everything the image is built from that changes rarely, at a commit. */
-function imageInputs(repo: string, commit: string): string {
-  const hash = createHash('sha256')
-  for (const file of ['pnpm-lock.yaml', '.sandcastle/Dockerfile']) hash.update(git(repo, ['show', `${commit}:${file}`]))
-  return hash.digest('hex').slice(0, 16)
 }
 
 /** Builds the image from the content of a fetched commit, not from the working files. */

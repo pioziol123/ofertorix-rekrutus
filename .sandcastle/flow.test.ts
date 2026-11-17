@@ -79,29 +79,8 @@ describe('uuk.2: runner in its own copy', () => {
     assert.equal(exchangeFile(w, 'second.txt'), 'second')
   })
 
-  it('U2-AC05: does not overwrite a commit pushed during the task and returns it with that commit', async () => {
-    let theirs = ''
-    w = world(async (ctx) => {
-      committingAgent()(ctx)
-      theirs = pushFiles(w.other, { 'owner.txt': 'owner\n' }, 'owner: pushed during the task')
-    })
-    await cycle(w.runner)
-    assert.equal(exchangeMain(w), theirs)
-    assert.equal(exchangeFile(w, 'feature.txt'), null)
-    assert.match(commentsOf('t-1'), new RegExp(`changed during the task[\\s\\S]*${theirs.slice(0, 7)} owner: pushed during the task`))
-    assert.ok(w.db.show('t-1').labels?.includes('needs-info'))
-  })
-
-  it('U2-AC05: returns the task with that reason when GitHub is unreachable at delivery', async () => {
-    w = world(async (ctx) => {
-      committingAgent()(ctx)
-      sh(w.runnerCopy, 'remote', 'set-url', 'origin', `${w.base}/gone.git`)
-    })
-    await cycle(w.runner)
-    assert.match(commentsOf('t-1'), /Delivery failed: GitHub is unreachable/)
-    assert.match(commentsOf('t-1'), /stayed only in the runner's copy on branch/)
-    assert.equal(exchangeFile(w, 'feature.txt'), null)
-  })
+  // U2-AC05 (return on a change of GitHub during the task) is replaced by uuk.3:
+  // see delivery.test.ts, U3-AC01 and U3-AC07.
 
   it('U2-AC06: a returned task leaves its branch on GitHub, and the merge removes it', async () => {
     w = world()
@@ -126,11 +105,11 @@ describe('uuk.2: runner in its own copy', () => {
       // The newer program reaches the exchange point during the first task.
       if (!exchangeFile(w, '.sandcastle/runner.ts')?.includes('v2')) pushFiles(w.other, { '.sandcastle/runner.ts': '// runner v2\n' }, 'runner v2')
     }, ['t-1', 't-2', 't-3'])
-    // t-1 is returned: GitHub changed during it. The next cycles run in the old version.
-    assert.equal(await cycle(w.runner), true)
-    assert.match(commentsOf('t-1'), /runner v2/)
+    // The newer program arrives during t-1; it and the next tasks still run in the old version.
     assert.equal(await cycle(w.runner), true)
     assert.equal(await cycle(w.runner), true)
+    assert.equal(await cycle(w.runner), true)
+    assert.equal(w.db.show('t-1').status, 'closed')
     assert.equal(w.db.show('t-2').status, 'closed')
     assert.equal(w.db.show('t-3').status, 'closed')
     assert.equal(w.notifications.filter((n) => n.title === 'Newer runner on GitHub').length, 1)
