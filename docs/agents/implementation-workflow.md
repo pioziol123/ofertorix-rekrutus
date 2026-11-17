@@ -87,6 +87,8 @@ Before applying `ready-for-agent`:
 
 - Every linked document is in `main` on `origin` with content identical to the owner's copy, uncommitted changes included, and the anchors resolve. Push `main` first, then run `node scripts/check-spec-sync.ts <id>` for the task, and for the epic before handing it off; it fetches `origin` and exits 0 only when every document matches, otherwise it lists each one as missing at the exchange point, different in content, or missing on disk.
 - Each acceptance criterion is observable and names how it is checked (test, command or inspection).
+- No requirement or criterion refers to behaviour it does not name ("as before", "unchanged", "correctly"). A task that moves or rebuilds existing code lists the behaviours it keeps as criteria; a shared criterion that nothing else changes does not replace that list.
+- Every operation the task adds or changes has an outcome, or an open question, for each situation in the architecture rules' section on situations every operation answers.
 - The solution design states the contracts the task touches exactly enough to implement without guessing, and each of its decisions lists the options the owner discarded with the reason or "none recorded".
 - No open question blocks the task; non-blocking assumptions are recorded in the documents.
 - `node scripts/check-spec-altitude.ts` run on the task's linked PRD, requirements and solution design, by path, exits 0. In the PRD and requirements no warning remains. In the solution design a remaining warning names a library, one of its options or a stored column, which the design carries on purpose; it needs no further record. A line that must name legacy code to identify it carries `<!-- altitude-ok: <reason> -->`.
