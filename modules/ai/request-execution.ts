@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { transaction } from '../../lib/db.ts'
 import { admitExecutions, type RequestedExecution } from './admit-executions.ts'
+import { schemaValidator } from './domain/response-schema.ts'
 import { AiRequestError } from './errors.ts'
 import {
   executionSettings,
@@ -48,6 +49,7 @@ function validate(request: ExecutionRequest) {
     typeof request.responseSchema.schema !== 'object' ||
     request.responseSchema.schema === null ||
     !Object.keys(request.responseSchema.schema).length ||
+    !schemaValidator(request.responseSchema.schema) ||
     (mode.kind === 'batch' && !uuid.test(mode.groupId)) ||
     (mode.kind === 'agent' &&
       (!Array.isArray(mode.tools) || mode.tools.some((t) => !t.trim())))

@@ -35,6 +35,8 @@ import {
   type ModelUsage,
   type ReceiverDecision,
 } from './index.ts'
+import { admitExecutions } from './admit-executions.ts'
+import { executionSettings } from './execution-settings.ts'
 import type { ProviderAdapter } from './provider-adapter.ts'
 import { registerProviderAdapter } from './provider-registry.ts'
 
@@ -44,6 +46,12 @@ const settingsKey = 'summaries'
 vi.mock('./client-settings.ts', () => ({
   clientSettings: {
     summaries: {
+      provider: 'simulated',
+      model: 'simulated-model',
+      reasoningEffort: null,
+    },
+    // A client that registered no receiver.
+    unreceived: {
       provider: 'simulated',
       model: 'simulated-model',
       reasoningEffort: null,
@@ -58,19 +66,8 @@ vi.mock('./model-catalog.ts', () => ({
         provider: 'simulated',
         model: 'simulated-model',
         reasoningEfforts: [null],
-        // The same price list in both modes the simulated adapter may declare.
         prices: {
           single: {
-            model: 'simulated-model',
-            version: 'prices-1',
-            inputUsdPerMillion: '1',
-            outputUsdPerMillion: '2',
-            usdPln: '4',
-            fxVersion: 'fx-1',
-            maxInputTokens: 1000,
-            maxOutputTokens: 500,
-          },
-          batch: {
             model: 'simulated-model',
             version: 'prices-1',
             inputUsdPerMillion: '1',
@@ -103,7 +100,7 @@ integration('AI execution coordination with a real database and queue', () => {
   /** What the simulated provider answers next; one entry per call. */
   let answers: Array<() => Promise<ModelResult>>
   let calls: Array<{ model: string; instructions: string; input: string }>
-  let modes: Array<keyof ProviderAdapter['modes'] | 'batch'>
+  let adapterPresent: boolean
   let decide: (delivery: ExecutionResultDelivery) => Promise<ReceiverDecision>
   let results: ExecutionResultDelivery[]
   let failures: ExecutionFailureDelivery[]
@@ -215,13 +212,11 @@ integration('AI execution coordination with a real database and queue', () => {
         return answer()
       },
     })
-    // The modes the simulated adapter declares, read on every request.
+    // The simulated adapter declares single mode while it is present.
     registerProviderAdapter({
       provider: 'simulated',
       get modes() {
-        return Object.fromEntries(
-          modes.map((mode) => [mode, mode === 'single' ? single : {}]),
-        )
+        return adapterPresent ? { single } : {}
       },
     })
     registerResultReceiver(settingsKey, {
@@ -242,7 +237,7 @@ integration('AI execution coordination with a real database and queue', () => {
 
   beforeEach(async () => {
     answers = []
-    modes = ['single']
+    adapterPresent = true
     calls = []
     results = []
     failures = []
@@ -692,21 +687,48 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(await jobs()).toEqual([admitted.executionId])
   })
 
-  it('reserves a group as a whole or not at all, once an adapter declares batch mode', async () => {
-    modes = ['single', 'batch']
+  it('reserves a group as a whole or not at all, at request and in recovery', async () => {
+    // The shared admission, as a group request will use it once an adapter
+    // runs batch mode (task oferty-pracy-0mq.17).
     await pool.query('INSERT INTO ai_budget_months VALUES($1,0.01)', [
       budgetMonth(),
     ])
+    const settings = executionSettings(settingsKey, 'single')
     const groupId = randomUUID()
-    const items = [
-      request({ mode: { kind: 'batch', groupId } }),
-      request({ mode: { kind: 'batch', groupId } }),
-    ]
-    const waiting = await requestExecutionGroup(items)
+    const admission = () => ({
+      settingsKey,
+      operationId: randomUUID(),
+      inputVersion: null,
+      mode: 'batch' as const,
+      groupId,
+      supersedes: null,
+      snapshot: {
+        kind: 'ai-execution' as const,
+        settings,
+        instruction: 'Summarise the text.',
+        responseSchema: request().responseSchema,
+        input: 'Some text',
+        tools: [],
+      },
+      attempt: 1,
+      generation: randomUUID(),
+    })
+    const waiting = await transaction(() =>
+      admitExecutions([admission(), admission()], settings),
+    )
     expect(waiting.map((e) => e.state)).toEqual([
       'waiting_budget',
       'waiting_budget',
     ])
+    expect((await readBudget()).reserved).toBe('0.000000')
+    // Funds for one item only: the group still waits.
+    await pool.query('UPDATE ai_budget_months SET limit_pln=0.009')
+    await recoverExecutions()
+    expect(
+      (await Promise.all(waiting.map((e) => readExecution(e.executionId)))).map(
+        (e) => e!.state,
+      ),
+    ).toEqual(['waiting_budget', 'waiting_budget'])
     await pool.query('UPDATE ai_budget_months SET limit_pln=0.016')
     await recoverExecutions()
     const funded = await Promise.all(
@@ -716,14 +738,125 @@ integration('AI execution coordination with a real database and queue', () => {
       ['queued', groupId, ceiling],
       ['queued', groupId, ceiling],
     ])
-    // The simulated batch mode does no work: an explicit final state.
-    modes = ['single']
+  })
+
+  it('ends an execution whose adapter disappeared before it ran as an AI failure, with nothing charged', async () => {
+    const admitted = await requestExecution(request())
+    adapterPresent = false
     await work()
-    expect(failures[0]).toMatchObject({
-      cause: 'unsupported_mode',
-      cost: { actual: '0.000000' },
-    })
     expect(calls).toEqual([])
+    expect(failures).toMatchObject([
+      { cause: 'adapter_unavailable', cost: { actual: '0.000000' } },
+    ])
+    expect(await readExecution(admitted.executionId)).toMatchObject({
+      state: 'failed',
+      cause: 'adapter_unavailable',
+      cost: { actual: '0.000000', unknown: false },
+    })
+  })
+
+  it('ends a JSON result that does not match the response schema without a result and settles its cost', async () => {
+    const admitted = await requestExecution(request())
+    answers.push(completed({ text: 42 }))
+    await work()
+    expect(results).toEqual([])
+    expect(failures).toMatchObject([{ cause: 'format' }])
+    expect(await readExecution(admitted.executionId)).toMatchObject({
+      state: 'failed',
+      result: null,
+      cause: 'format',
+      cost: { actual: '0.000800', unknown: false },
+    })
+  })
+
+  it('refuses a response schema it cannot check, with nothing reserved', async () => {
+    const requested = request({
+      responseSchema: { name: 'broken', schema: { type: 'no-such-type' } },
+    })
+    await expect(requestExecution(requested)).rejects.toEqual(
+      new AiRequestError('invalid_request'),
+    )
+    expect(await jobs()).toEqual([])
+    expect((await readBudget()).reserved).toBe('0.000000')
+  })
+
+  it('treats a missing receiver as a failed delivery: the result is kept and the job retried', async () => {
+    const admitted = await requestExecution(
+      request({ settingsKey: 'unreceived' }),
+    )
+    answers.push(completed({ text: 'summary' }))
+    await expect(work()).rejects.toThrow('No receiver')
+    expect(await readExecution(admitted.executionId)).toMatchObject({
+      state: 'delivering',
+      result: { text: 'summary' },
+      cost: { reserved: ceiling, actual: null, unknown: false },
+      delivery: {
+        attempts: 1,
+        lastError: 'Error: No receiver for settings key unreceived',
+      },
+    })
+    expect(await jobState(admitted.executionId)).toEqual([
+      { state: 'retry', retry_count: 0 },
+    ])
+  })
+
+  it('leaves an execution waiting for delivery alone in recovery', async () => {
+    decide = async () => {
+      throw new Error('client bug')
+    }
+    const admitted = await requestExecution(request())
+    answers.push(completed({ text: 'summary' }))
+    await expect(work()).rejects.toThrow('client bug')
+    await admin.query(`DELETE FROM ${queueSchema}.job WHERE name=$1`, [
+      aiExecutionQueue,
+    ])
+    await recoverExecutions()
+    expect(await jobs()).toEqual([])
+    expect(await readExecution(admitted.executionId)).toMatchObject({
+      state: 'delivering',
+      delivery: { attempts: 1 },
+    })
+    expect(results).toHaveLength(1)
+  })
+
+  it('A14-AC11: keeps the stage only in the execution; the attempt holds the settlement status', async () => {
+    decide = async () => {
+      throw new Error('client bug')
+    }
+    const admitted = await requestExecution(request())
+    const attempt = async () =>
+      (
+        await pool.query(
+          'SELECT state, error FROM ai_attempts WHERE execution_id=$1',
+          [admitted.executionId],
+        )
+      ).rows[0]
+    expect(await attempt()).toEqual({ state: 'open', error: null })
+    answers.push(completed({ text: 'summary' }))
+    await expect(work()).rejects.toThrow('client bug')
+    expect((await readExecution(admitted.executionId))!.state).toBe(
+      'delivering',
+    )
+    expect(await attempt()).toEqual({ state: 'open', error: null })
+    decide = async () => ({ accepted: false, reason: 'quote not found' })
+    await runExecution(admitted.executionId)
+    expect(await attempt()).toEqual({ state: 'settled', error: null })
+    expect(
+      (
+        await pool.query(
+          'SELECT state, cause, result_status, error_code, disposition, publication_allowed, runtime_state FROM ai_executions WHERE id=$1',
+          [admitted.executionId],
+        )
+      ).rows[0],
+    ).toEqual({
+      state: 'rejected',
+      cause: 'quote not found',
+      result_status: null,
+      error_code: null,
+      disposition: 'active',
+      publication_allowed: true,
+      runtime_state: 'not_started',
+    })
   })
 
   it('E01-AC03: settlement keeps the month of the attempt', async () => {

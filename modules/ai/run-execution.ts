@@ -2,6 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { transaction } from '../../lib/db.ts'
 import { admitExecutions } from './admit-executions.ts'
 import { chargeCeiling } from './domain/cost.ts'
+import { parseResult } from './domain/response-schema.ts'
 import {
   claimDelivery,
   claimExecution,
@@ -44,12 +45,16 @@ async function callProvider(execution: ExecutionRow): Promise<Outcome> {
     retry: false,
     retryAfterMs: 1000,
   }
+  // A request is accepted only in a mode the adapter declares (refused
+  // otherwise with unsupported_mode, before any reservation). An adapter
+  // that no longer declares it when the job runs is a failure on the AI
+  // side with its own cause; nothing reached a provider.
   const single =
     execution.mode === 'single'
       ? providerAdapter(settings.provider)?.modes.single
       : undefined
-  // The adapter was removed after the request was accepted.
-  if (!single) return { ...outcome, cause: 'unsupported_mode', notSent: true }
+  if (!single)
+    return { ...outcome, cause: 'adapter_unavailable', notSent: true }
   try {
     const response = await single(settings).generate({
       model: settings.model,
@@ -61,13 +66,9 @@ async function callProvider(execution: ExecutionRow): Promise<Outcome> {
     outcome.responseId = response.responseId
     if (response.outcome !== 'completed' || response.text === null)
       return { ...outcome, cause: response.outcome }
-    let result: unknown = null
-    try {
-      result = JSON.parse(response.text)
-    } catch {
-      // Handled below with any other result that is not a JSON value.
-    }
-    return result === null
+    // Only a result that matches the response schema reaches the receiver.
+    const result = parseResult(response.text, responseSchema.schema)
+    return result === undefined
       ? { ...outcome, cause: 'format' }
       : { ...outcome, result }
   } catch (error) {
@@ -103,17 +104,20 @@ function settlementOf(execution: ExecutionRow, outcome: Outcome): Settlement {
         : null,
     usage: outcome.usage,
     responseId: outcome.responseId,
-    error: outcome.cause,
   }
 }
 
 /** Ends the attempt and requests the next one of the same operation. */
-async function retry(execution: ExecutionRow, settlement: Settlement) {
+async function retry(
+  execution: ExecutionRow,
+  settlement: Settlement,
+  cause: string | null,
+) {
   await transaction(async () => {
     await settleAttempt(execution.id, settlement)
     await finishExecution(execution.id, {
       state: 'retried',
-      cause: settlement.error,
+      cause,
     })
     await admitExecutions(
       [
@@ -203,7 +207,7 @@ export async function runExecution(executionId: string): Promise<void> {
     const settlement = settlementOf(execution, outcome)
     if (outcome.retry && execution.attempt.number < maxAttempts) {
       await delay(outcome.retryAfterMs)
-      await retry(execution, settlement)
+      await retry(execution, settlement, outcome.cause)
       return
     }
     await transaction(() =>

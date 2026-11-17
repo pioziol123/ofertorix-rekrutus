@@ -162,17 +162,19 @@ export async function insertExecution(execution: NewExecution) {
       throw new AiRequestError('operation_busy')
     throw error
   }
-  // General attempts carry their own operation type, so the paths that
-  // still read attempts by Profile, Matching or Companies never pick them.
+  // The attempt is the settlement record only. Its state is the settlement
+  // status ('open', then 'settled' or 'unknown'), never the execution's
+  // stage, which lives in the execution's state and cause alone. General
+  // attempts carry their own operation type, so the paths that still read
+  // attempts by Profile, Matching or Companies never pick them.
   await db().query(
     `INSERT INTO ai_attempts(id,import_id,text_revision,month,attempt,generation,operation_type,state,reserved_pln,configuration,execution_id)
-     VALUES($1,NULL,0,$2,$3,$4,'execution',$5,$6,$7,$8)`,
+     VALUES($1,NULL,0,$2,$3,$4,'execution','open',$5,$6,$7)`,
     [
       execution.attempt.id,
       execution.attempt.funding?.month ?? null,
       execution.attempt.number,
       execution.attempt.generation,
-      state,
       execution.attempt.funding?.reserved ?? '0',
       execution.snapshot.settings,
       execution.id,
@@ -192,7 +194,7 @@ export async function fundExecution(
   )
   if (!funded.rowCount) return false
   await db().query(
-    "UPDATE ai_attempts SET state='queued',month=$2,reserved_pln=$3 WHERE execution_id=$1",
+    'UPDATE ai_attempts SET month=$2,reserved_pln=$3 WHERE execution_id=$1',
     [executionId, funding.month, funding.reserved],
   )
   return true
@@ -207,12 +209,7 @@ export async function claimExecution(executionId: string) {
     "UPDATE ai_executions SET state='running',revision=revision+1 WHERE id=$1 AND state='queued' RETURNING id",
     [executionId],
   )
-  if (!claimed.rowCount) return null
-  await db().query(
-    "UPDATE ai_attempts SET state='running' WHERE execution_id=$1",
-    [executionId],
-  )
-  return readExecutionRow(executionId)
+  return claimed.rowCount ? readExecutionRow(executionId) : null
 }
 
 export type Settlement = {
@@ -220,11 +217,9 @@ export type Settlement = {
   actual: string | null
   usage: ModelUsage
   responseId: string | null
-  error: string | null
 }
 
-const attemptOutcome =
-  'actual_pln=$2,usage=$3,response_id=$4,error=$5,finished_at=now()'
+const attemptOutcome = 'actual_pln=$2,usage=$3,response_id=$4,finished_at=now()'
 function attemptValues(executionId: string, settlement: Settlement) {
   return [
     executionId,
@@ -234,7 +229,6 @@ function attemptValues(executionId: string, settlement: Settlement) {
       output_tokens: settlement.usage.outputTokens,
     },
     settlement.responseId,
-    settlement.error,
   ]
 }
 

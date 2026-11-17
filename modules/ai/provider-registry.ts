@@ -20,11 +20,14 @@ export function providerAdapter(provider: string): ProviderAdapter | undefined {
 }
 
 /**
- * Whether an adapter of the provider declares the mode. A request in a
- * mode that no adapter declares is refused before anything is reserved.
+ * Whether an adapter of the provider runs the mode. The adapter contract
+ * defines a handler only for the modes the coordination can run, so a mode
+ * is accepted only when it can be carried out; a request in any other mode
+ * is refused before anything is reserved. Batch and agent handlers come with
+ * their adapters in task oferty-pracy-0mq.17.
  */
 export function supportsMode(provider: string, mode: ExecutionMode): boolean {
   const modes: Partial<Record<ExecutionMode, unknown>> =
     adapters.get(provider)?.modes ?? {}
-  return modes[mode] !== undefined
+  return typeof modes[mode] === 'function'
 }
