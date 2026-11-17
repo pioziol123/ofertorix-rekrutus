@@ -2,7 +2,15 @@ import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { request } from 'node:http'
 import { Pool } from 'pg'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
 import { companyRoles } from '../lib/companies/model.ts'
 import {
@@ -15,6 +23,26 @@ import {
   readCompany,
 } from '../lib/companies/store.ts'
 import { readOffer } from '../modules/offers/index.ts'
+
+// A change of the ad injected right after linking reads its current version,
+// before the link is saved.
+const injected = vi.hoisted(() => ({
+  afterCurrentVersions: null as null | (() => Promise<void>),
+}))
+vi.mock('../modules/sources/index.ts', async (importOriginal) => {
+  const sources =
+    await importOriginal<typeof import('../modules/sources/index.ts')>()
+  return {
+    ...sources,
+    readCurrentAdVersions: async (ids: readonly string[]) => {
+      const versions = await sources.readCurrentAdVersions(ids)
+      const change = injected.afterCurrentVersions
+      injected.afterCurrentVersions = null
+      if (change) await change()
+      return versions
+    },
+  }
+})
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -321,6 +349,44 @@ integration('company profiles in isolated PostgreSQL', () => {
       ]),
     )
     expect(await readOffer(adId)).toMatchObject({ title: 'New role' })
+  })
+  it('links the version read when the ad changes before the link is saved (A6-R05, ASM-1)', async () => {
+    const company = await create(),
+      next = randomUUID()
+    injected.afterCurrentVersions = async () => {
+      await pool.query(
+        'INSERT INTO source_ad_revisions(id,source_ad_id,content_hash,payload) VALUES($1,$2,$3,$4)',
+        [next, adId, randomUUID(), { title: 'Changed role' }],
+      )
+      await pool.query(
+        'UPDATE source_ads SET current_revision_id=$2 WHERE id=$1',
+        [adId, next],
+      )
+    }
+    await changeCompanyLink(pool, company.id, link())
+    expect(injected.afterCurrentVersions).toBeNull()
+    expect(
+      (
+        await pool.query(
+          'SELECT current_revision_id FROM source_ads WHERE id=$1',
+          [adId],
+        )
+      ).rows[0].current_revision_id,
+    ).toBe(next)
+    expect(
+      (
+        await pool.query(
+          'SELECT revision_id FROM company_ad_links WHERE ad_id=$1',
+          [adId],
+        )
+      ).rows,
+    ).toEqual([{ revision_id: revisionId }])
+    const detail = await readCompany(pool, company.id)
+    expect(detail!.history).toEqual([
+      expect.objectContaining({ revisionId, title: 'PHP role' }),
+    ])
+    expect(detail!.offers[0]!.title).toBe('Changed role')
+    expect(detail!.offers[0]!.revisions).toEqual([])
   })
   it('rejects nonexistent targets and invalid commands without receipts or history', async () => {
     const company = await create()

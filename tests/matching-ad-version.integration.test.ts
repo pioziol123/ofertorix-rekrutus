@@ -20,23 +20,43 @@ import {
   RatingConflict,
   saveManualRating,
 } from '../lib/matching/ratings.ts'
-import { enqueueMatching, readMatching } from '../lib/matching/store.ts'
+import {
+  BatchClient,
+  type Batch,
+  type BatchLine,
+} from '../lib/matching/batch.ts'
+import {
+  enqueueMatching,
+  executeMatching,
+  readMatching,
+} from '../lib/matching/store.ts'
 import { defaultWeights } from '../lib/matching/weights.ts'
 import { emptyProfile } from '../lib/profile/model.ts'
 
 // A change of the ad injected between reading its current version and
-// reading that version's content, the window an assessment must survive.
+// reading that version's content, the window an assessment must survive
+// (`change`), or right after the read of the current versions that a
+// published AI result relies on (`afterCurrentVersions`).
 const injected = vi.hoisted(() => ({
   change: null as null | (() => Promise<void>),
+  afterCurrentVersions: null as null | (() => Promise<void>),
 }))
 vi.mock('../modules/sources/index.ts', async (importOriginal) => {
   const sources =
     await importOriginal<typeof import('../modules/sources/index.ts')>()
   return {
     ...sources,
+    readCurrentAdVersions: async (ids: readonly string[]) => {
+      const versions = await sources.readCurrentAdVersions(ids)
+      const change = injected.afterCurrentVersions
+      injected.afterCurrentVersions = null
+      if (change) await change()
+      return versions
+    },
     readAdVersions: async (ids: readonly string[]) => {
       const change = injected.change
       injected.change = null
+      injected.afterCurrentVersions = null
       if (change) await change()
       return sources.readAdVersions(ids)
     },
@@ -168,6 +188,69 @@ integration(
       })),
     })
 
+    /** A batch provider that answers every request with unknown criteria. */
+    class Provider extends BatchClient {
+      constructor() {
+        super('test', async () => {
+          throw new Error('No external calls allowed')
+        })
+      }
+      override async upload() {
+        return 'file_input'
+      }
+      override async create() {
+        return {
+          id: 'batch_test',
+          input_file_id: 'file_input',
+          status: 'in_progress',
+        } satisfies Batch
+      }
+      override async retrieve() {
+        return {
+          id: 'batch_test',
+          input_file_id: 'file_input',
+          output_file_id: 'file_output',
+          status: 'completed',
+        } satisfies Batch
+      }
+      override async results(_batch: Batch, expected: string[]) {
+        const id = expected[0]!
+        const { input } = (
+          await pool.query('SELECT input FROM matching_requests WHERE id=$1', [
+            id,
+          ])
+        ).rows[0]
+        return new Map<string, BatchLine>([
+          [
+            id,
+            {
+              custom_id: id,
+              response: {
+                status_code: 200,
+                body: {
+                  id: 'resp_test',
+                  status: 'completed',
+                  usage: { input_tokens: 100, output_tokens: 20 },
+                  output: [
+                    {
+                      type: 'message',
+                      content: [
+                        {
+                          type: 'output_text',
+                          text: JSON.stringify(unknownResult(input)),
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        ])
+      }
+      override async remove() {}
+    }
+
     it('saves the AI assessment for the version whose content it assessed', async () => {
       injected.change = changeAd
       const request = await enqueueMatching(pool, boss, ad)
@@ -206,6 +289,32 @@ integration(
       expect(rating.input.offer).toContain('Assessed PHP')
       const view = await readMatching(pool, ad)
       expect(view.current).toMatchObject({
+        ad_revision_id: assessed,
+        stale: true,
+      })
+    })
+
+    it('publishes an AI result for the version assessed when the ad changes after the run read its current version (ASM-1)', async () => {
+      const request = await enqueueMatching(pool, boss, ad)
+      // The run reads the current version before it takes its connection;
+      // the ad changes right after that read, before the result is saved.
+      injected.afterCurrentVersions = changeAd
+      await executeMatching(pool, boss, request.id, new Provider())
+      expect(injected.afterCurrentVersions).toBeNull()
+      expect((await currentAdVersions([ad])).get(ad)).toBe(changed)
+      const rating = (
+        await pool.query(
+          'SELECT ad_revision_id,input FROM matching_rating_revisions WHERE request_id=$1',
+          [request.id],
+        )
+      ).rows[0]
+      expect(rating.ad_revision_id).toBe(assessed)
+      expect(rating.input.offer).toContain('Assessed PHP')
+      // Only promotion relied on the earlier read: the result became the
+      // current assessment, and it shows as stale against the changed ad.
+      const view = await readMatching(pool, ad)
+      expect(view.current).toMatchObject({
+        request_id: request.id,
         ad_revision_id: assessed,
         stale: true,
       })

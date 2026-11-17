@@ -224,7 +224,7 @@ export async function readCompany(pool: Pool, id: string) {
   )
   const offers = new Map<
     string,
-    Omit<SourceAd, 'versionId'> & { roles: CompanyRole[] }
+    Omit<SourceAd, 'versionId'> & { revisions: never[]; roles: CompanyRole[] }
   >()
   for (const link of [...links].sort(
     (a, b) =>
@@ -235,7 +235,8 @@ export async function readCompany(pool: Pool, id: string) {
     if (!ad) continue
     if (!offers.has(ad.id)) {
       const { versionId: _current, ...content } = ad
-      offers.set(ad.id, { ...content, roles: [] })
+      // The response keeps the empty version history it always had.
+      offers.set(ad.id, { ...content, revisions: [], roles: [] })
     }
     offers.get(ad.id)!.roles.push(link.role)
   }
