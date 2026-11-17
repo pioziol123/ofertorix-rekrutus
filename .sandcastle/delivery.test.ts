@@ -69,7 +69,7 @@ describe('uuk.3: delivery with a changing exchange point', () => {
     assert.match(w.logs.join('\n'), /retry 1 of 5/)
   })
 
-  it('returns the task with git\'s message when a push fails and main on GitHub did not change', async () => {
+  it('U3-R04: returns the task with git\'s message when a push fails and main on GitHub did not change', async () => {
     w = world(agent(() => void onExchangePush(w, 'echo "declined by the exchange point" >&2; exit 1')))
     await cycle(w.runner)
     assert.match(commentsOf('t-1'), /Delivery failed:[\s\S]*declined by the exchange point/)
