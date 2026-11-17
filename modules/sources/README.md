@@ -1,75 +1,75 @@
-# Źródła ofert
+# Offer sources
 
-Moduł Źródła ofert odpowiada za pozyskiwanie ogłoszeń z zewnętrznych źródeł oraz zachowanie ich treści, pochodzenia, historii zmian i informacji o dostępności. Dostarcza pozostałym częściom systemu dane do przeglądania ofert i ich oceny. Poniższy opis określa odpowiedzialności modułu i zasady interpretowania pobranych wyników.
+The Offer sources module is responsible for obtaining ads from external sources and keeping their content, origin, change history and availability information. It provides the other parts of the system with data for browsing and assessing offers. The description below sets out the module's responsibilities and the rules for interpreting fetched results.
 
-## Co obejmuje moduł
+## What the module covers
 
-Podstawowym obiektem jest **ogłoszenie źródłowe**, czyli konkretny wpis opublikowany w jednym źródle. Ta sama rekrutacja może być ogłaszana w kilku miejscach. Każde z tych ogłoszeń ma własną treść, link, historię i dostępność; zmiana jednego nie przesądza o stanie pozostałych.
+The basic object is the **source ad**, i.e. a specific entry published in one source. The same recruitment may be advertised in several places. Each of these ads has its own content, link, history and availability; a change to one does not settle the state of the others.
 
-Moduł udostępnia katalog obsługiwanych źródeł, pozwala zlecić pobranie ogłoszeń oraz sprawdzić jego postęp i wynik. Przechowuje znalezione ogłoszenia i umożliwia odczyt ich aktualnej treści oraz wcześniejszych wersji.
+The module provides a catalogue of supported sources, lets you request a fetch of ads and check its progress and result. It stores the ads found and allows reading their current content and earlier versions.
 
-Powiązanie kilku ogłoszeń z jedną ofertą pracy i prezentacja tej oferty należą do modułu Oferty. Moduł Dopasowanie korzysta z treści ogłoszeń przy ocenie zgodności z profilem zawodowym, a moduł Firmy przy wiązaniu ogłoszeń z organizacjami. Źródła ofert dostarczają im informacje o publikacjach; nie rozstrzygają za nie oceny oferty ani tożsamości pracodawcy.
+Linking several ads to one job offer and presenting that offer belong to the Offers module. The Matching module uses the ad content when assessing the fit with the professional profile, and the Companies module when linking ads with organisations. Offer sources provide them with information about publications; it does not decide for them the assessment of an offer or the identity of the employer.
 
-## Jak przebiega pobieranie
+## How fetching works
 
-Pobieranie dotyczy wybranego źródła i ustalonego **zakresu**. Zakres określa, jakie ogłoszenia mają zostać sprawdzone, na przykład przez wybór technologii, poziomu doświadczenia i ograniczeń liczby wyników. Jest ustalany dla danego uruchomienia, tak aby jego wynik można było odnieść do tego, co rzeczywiście miało zostać pobrane.
+Fetching concerns a chosen source and a set **scope**. The scope defines which ads are to be checked, for example through a choice of technology, experience level and limits on the number of results. It is set for a given run, so that its result can be related to what was actually meant to be fetched.
 
-**Przebieg synchronizacji** to jedno wykonanie takiego pobierania. Wyniki mogą przychodzić w wielu porcjach. Moduł zachowuje poprawne ogłoszenia w miarę ich otrzymywania, dlatego późniejszy błąd nie przekreśla już zebranych danych.
+A **sync run** is one execution of such a fetch. Results may arrive in many portions. The module keeps valid ads as they are received, so a later error does not wipe out the data already collected.
 
-| Stan przebiegu | Znaczenie |
+| Run state | Meaning |
 | --- | --- |
-| Oczekujący | Pobranie zostało zlecone i czeka na rozpoczęcie. |
-| W trakcie | Trwa pobieranie i zapisywanie wyników. |
-| Kompletny | Sprawdzono cały ustalony zakres. |
-| Częściowy | Uzyskano użyteczne wyniki, ale nie sprawdzono całego zakresu lub nie udało się potwierdzić kompletności. |
-| Nieudany | Nie udało się uzyskać użytecznych wyników. |
+| Pending | The fetch has been requested and is waiting to start. |
+| In progress | Fetching and saving of results is under way. |
+| Complete | The whole set scope was checked. |
+| Partial | Useful results were obtained, but the whole scope was not checked or completeness could not be confirmed. |
+| Failed | No useful results could be obtained. |
 
-Kompletny przebieg nie musi oznaczać pobrania wszystkich ogłoszeń istniejących w danym źródle. Kompletność odnosi się do ustalonego zakresu, a nie do całego rynku ofert. Wynik ograniczonego wyszukiwania może być kompletny, lecz nadal nie wystarczać do ustalenia, że inne ogłoszenie zostało usunięte.
+A complete run does not have to mean that all ads existing in a given source were fetched. Completeness refers to the set scope, not to the whole offer market. The result of a limited search may be complete and still not be enough to establish that another ad was removed.
 
-Źródła różnią się sposobem udostępniania danych i informacjami, które przekazują. Moduł uwzględnia te różnice podczas pobierania, ale udostępnia ogłoszenia w spójnej postaci, zachowując ich pochodzenie. Jeśli źródło nie dostarcza jakiejś informacji, jej brak pozostaje niewiadomą.
+Sources differ in how they provide data and in the information they pass on. The module takes these differences into account when fetching, but provides the ads in a consistent form, keeping their origin. If a source does not provide some information, its absence stays an unknown.
 
-## Tożsamość i historia ogłoszenia
+## Ad identity and history
 
-Ogłoszenie rozpoznawane jest na podstawie źródła i identyfikatora nadanego mu w tym źródle. Ponowne pobranie tego samego ogłoszenia, także w innym zakresie wyszukiwania, aktualizuje istniejący zapis.
+An ad is recognised by its source and the ID given to it in that source. Fetching the same ad again, also in a different search scope, updates the existing record.
 
-Gdy zmienia się treść ogłoszenia, moduł zachowuje nową wersję, nie usuwając poprzednich. Ponowne pobranie identycznej treści nie tworzy kolejnej wersji. Dzięki temu historia pokazuje zmiany publikacji, a nie samą częstotliwość pobierania.
+When an ad's content changes, the module keeps the new version without deleting the previous ones. Fetching identical content again does not create another version. This way the history shows changes to the publication, not just the fetch frequency.
 
-Niezależnie od zmian treści zapisywana jest **obserwacja**: informacja, że konkretne ogłoszenie zostało znalezione w danym przebiegu. Ogłoszenie może więc zostać ponownie zaobserwowane bez powstania nowej wersji. Obserwacje pozwalają później ustalić, które znane ogłoszenia pojawiły się w wynikach synchronizacji.
+Regardless of content changes, an **observation** is recorded: the information that a specific ad was found in a given run. An ad can therefore be observed again without a new version being created. Observations later make it possible to establish which known ads appeared in the sync results.
 
-## Jak ustalana jest dostępność
+## How availability is established
 
-Dostępność dotyczy konkretnego ogłoszenia w jego źródle. Ustalamy ją na podstawie informacji o znalezionym ogłoszeniu albo, pod określonymi warunkami, jego braku w wynikach. Te dwie sytuacje wymagają różnych podstaw do podjęcia decyzji.
+Availability concerns a specific ad in its source. We establish it based on information about an ad that was found or, under specific conditions, on its absence from the results. These two situations require different grounds for a decision.
 
-### Informacja o znalezionym ogłoszeniu
+### Information about an ad that was found
 
-Znalezienie ogłoszenia w wynikach aktywnych ofert pozwala potwierdzić jego dostępność już podczas pobierania, również gdy cały przebieg zakończy się częściowo. Nie trzeba czekać na pozostałe ogłoszenia, aby wykorzystać informację, którą źródło już przekazało.
+Finding an ad in the results of active offers makes it possible to confirm its availability already during the fetch, also when the whole run ends as partial. There is no need to wait for the other ads to use information the source has already passed on.
 
-Samo zwrócenie treści przez źródło nie zawsze oznacza jednak, że ogłoszenie jest nadal aktywne. Źródło może udostępniać również publikacje zamknięte albo takie, których termin ważności już minął. Dlatego wraz z obserwacją trzeba uwzględniać podany status i datę ważności. Obecność ogłoszenia w odpowiedzi nie unieważnia informacji o jego wygaśnięciu.
+However, the source returning the content does not always mean that the ad is still active. A source may also provide closed publications or ones whose validity date has already passed. That is why the given status and validity date must be taken into account together with the observation. The presence of an ad in the response does not cancel the information that it has expired.
 
-Informacje odnoszące się bezpośrednio do konkretnego ogłoszenia nie wymagają kompletnej synchronizacji. Jeżeli źródło podaje termin ważności, jego upływ pozwala stwierdzić wygaśnięcie. Jeżeli nie podaje ani terminu, ani statusu zamknięcia, nie należy dopowiadać tych informacji.
+Information that refers directly to a specific ad does not require a complete sync. If the source gives a validity date, its passing makes it possible to state expiry. If it gives neither a date nor a closed status, this information must not be filled in by guesswork.
 
-### Brak ogłoszenia w wynikach
+### Ad missing from the results
 
-Nieznalezienie ogłoszenia nie jest samo w sobie dowodem niedostępności. Mogło ono znajdować się w niepobranej części wyników, poza zakresem wyszukiwania albo poza limitem odpowiedzi źródła.
+Not finding an ad is not by itself evidence that it is unavailable. It may have been in the part of the results that was not fetched, outside the search scope or beyond the source's response limit.
 
-Dla źródeł, które pozwalają wyciągać wnioski z nieobecności ogłoszenia, moduł wykonuje osobną ocenę po zakończeniu pobierania. Oznaczenie ogłoszenia jako niedostępnego wymaga łącznie:
+For sources that allow conclusions to be drawn from an ad's absence, the module makes a separate assessment after the fetch ends. Marking an ad as unavailable requires all of the following:
 
-- potwierdzenia kompletności przebiegu;
-- możliwości wnioskowania o niedostępności z braku w wynikach danego źródła;
-- porównania ogłoszeń i obserwacji dotyczących tego samego źródła oraz zakresu.
+- confirmation that the run was complete;
+- the possibility of inferring unavailability from absence in the results of the given source;
+- a comparison of the ads and observations concerning the same source and scope.
 
-O tym, czy ogłoszenie należało do zakresu, decyduje historia jego obserwacji w przebiegach tego zakresu, a nie zakres, w którym widziano je ostatnio. Ogłoszenie widziane wcześniej w zakresie, a nieobecne w kompletnym przebiegu tego zakresu, staje się niedostępne. Późniejsza obserwacja w dowolnym zakresie przywraca jego dostępność.
+Whether an ad belonged to the scope is decided by the history of its observations in runs of that scope, not by the scope in which it was last seen. An ad seen earlier in the scope and absent from a complete run of that scope becomes unavailable. A later observation in any scope restores its availability.
 
-Jeżeli którykolwiek z tych warunków nie jest spełniony, brak obserwacji pozostawia dotychczasową dostępność ogłoszenia bez zmian. Dotyczy to zarówno częściowego pobrania, jak i kompletnego wyszukiwania, którego wyniki nie są podstawą do wykrywania usuniętych ogłoszeń.
+If any of these conditions is not met, a missing observation leaves the ad's current availability unchanged. This applies both to a partial fetch and to a complete search whose results are not a basis for detecting removed ads.
 
-### Przykład: przerwane pobieranie
+### Example: an interrupted fetch
 
-Załóżmy, że ogłoszenie A było wcześniej niedostępne, a ogłoszenie B dostępne. Podczas kolejnego pobierania źródło zwróciło A jako aktywne, lecz pobieranie przerwało się przed dotarciem do wszystkich wyników.
+Suppose ad A was previously unavailable and ad B available. During the next fetch the source returned A as active, but the fetch was interrupted before it reached all the results.
 
-A może ponownie zostać oznaczone jako dostępne: mamy nową informację o jego obecności. B zachowuje dotychczasowy stan, ponieważ nie wiemy, czy zniknęło, czy znajdowało się w niepobranej części. Dopiero pełne sprawdzenie odpowiedniego zakresu, dla źródła dopuszczającego takie wnioskowanie, pozwala uznać brak B za podstawę niedostępności.
+A can be marked as available again: we have new information about its presence. B keeps its current state, because we do not know whether it disappeared or was in the part that was not fetched. Only a full check of the relevant scope, for a source that allows such inference, makes it possible to treat B's absence as grounds for unavailability.
 
-## Jak interpretować wynik
+## How to interpret the result
 
-Moduł dostarcza treść ogłoszeń wraz z ich historią oraz informacją o tym, co udało się sprawdzić. Wyniki częściowego pobierania pozostają użyteczne, ale nie pozwalają wnioskować o losie ogłoszeń, których nie znaleziono.
+The module provides the ad content together with its history and information about what could be checked. The results of a partial fetch stay useful, but do not allow conclusions about the fate of the ads that were not found.
 
-Niedostępność w źródle, wygaśnięcie ogłoszenia i zakończenie rekrutacji to odrębne informacje. Usunięcie lub wygaśnięcie jednej publikacji nie przesądza o stanie innych ogłoszeń tej samej oferty ani o zakończeniu aplikacji użytkownika. Historia ogłoszenia pozostaje dostępna również wtedy, gdy sama publikacja przestaje być aktywna.
+Unavailability at the source, expiry of an ad and the end of a recruitment are separate pieces of information. The removal or expiry of one publication does not settle the state of the other ads of the same offer or the end of the user's application. An ad's history stays available even when the publication itself is no longer active.

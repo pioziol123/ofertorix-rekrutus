@@ -1,11 +1,11 @@
-# Zagraniczne oferty zdalne — wymagania
+# Foreign remote offers — requirements
 
-Właściciel zatwierdził 2026-11-02 pobieranie ofert zdalnych z zagranicznych rynków. Zastępuje to blokadę geograficzną R-S03 poprzedniej funkcjonalności w tym zakresie. PHP/senior pozostają wymaganiami; brak danych pozostaje niewiadomą.
+On 2026-11-02 the owner approved fetching remote offers from foreign markets. In this respect this replaces the geographic block R-S03 of the previous feature. PHP/senior remain requirements; missing data remains an unknown.
 
-- R-R01: Glassdoor, ZipRecruiter, Naukri, BDJobs i HelloWork można aktywować ręcznie w trybie zdalnym, z jawnym rynkiem wyszukiwania właściwym dla adaptera. Brak harmonogramu.
-- R-R02: kraj ogłoszenia lub siedziby nie dowodzi ograniczenia miejsca wykonywania pracy. Zagraniczne rekordy zdalne są zachowane; wynik filtra źródła nie dowodzi pełnej zdalności.
-- R-R03: osobna ocena możliwości pracy z Polski: allowed / excluded / unknown, uzasadnienie i fragment dowodowy. Jednoznaczne ograniczenie do innego kraju oznacza niezgodność; worldwide/Europa/UE/Polska oznacza zgodność tylko w kontekście miejsca wykonywania pracy. Sprzeczność daje unknown z komunikatem. Brak dowodu nie powoduje odrzucenia.
-- R-R04: ocena widoczna na liście i w szczegółach, bez automatycznego ukrywania niezgodnych rekordów. Zachowujemy rekord źródłowy, historię, braki i diagnostykę.
-- R-R05: limity HTTP i procesu nadal obowiązują. Pilot raportuje prawdziwy wynik; brak dostępu lub awaria nie są pustym sukcesem. LinkedIn i Indeed pozostają wyłączone zgodnie z dotychczasowymi decyzjami.
+- R-R01: Glassdoor, ZipRecruiter, Naukri, BDJobs and HelloWork can be activated manually in remote mode, with an explicit search market appropriate to the adapter. No schedule.
+- R-R02: the country of the ad or of the company's seat does not prove a restriction on the place where work is performed. Foreign remote records are kept; the result of the source's filter does not prove full remoteness.
+- R-R03: a separate assessment of whether work from Poland is possible: allowed / excluded / unknown, a justification and an evidence excerpt. An unambiguous restriction to another country means incompatibility; worldwide/Europe/EU/Poland means compatibility only in the context of the place where work is performed. A contradiction gives unknown with a message. Missing evidence does not cause rejection.
+- R-R04: the assessment is visible in the list and in the details, without automatically hiding incompatible records. We keep the source record, history, gaps and diagnostics.
+- R-R05: HTTP and process limits still apply. The pilot reports the true result; lack of access or a failure is not an empty success. LinkedIn and Indeed stay disabled in line with the earlier decisions.
 
-Odbiór: testy parametrów i kraju BDJobs, źródłowego remote, zachowania zagranicznych i nieznanych lokalizacji, dowodów pozytywnych/negatywnych/sprzecznych, reguł UI oraz limity/izolacja istniejących testów.
+Acceptance: tests of the BDJobs parameters and country, the source's remote flag, keeping foreign and unknown locations, positive/negative/contradictory evidence, UI rules, and the limits/isolation of existing tests.

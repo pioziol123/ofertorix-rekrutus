@@ -1,48 +1,48 @@
-# Zarządzanie rekrutacjami — projekt rozwiązania
+# Managing recruitments — solution design
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **roboczy szkic — do dopracowania przed realizacją tej funkcjonalności**, 2026-10-31. Uzasadnienie: [wymagania tej funkcjonalności](requirements.md) → [PRD](../../PRD.md). Pokrycie: R-22/AC-22, R-23/AC-23.
+Status: **working draft — to be refined before this feature is implemented**, 2026-10-31. Rationale: [this feature's requirements](requirements.md) → [PRD](../../PRD.md). Coverage: R-22/AC-22, R-23/AC-23.
 
-## Granice i decyzje
+## Boundaries and decisions
 
-Potwierdzone wybory D-01–D-06 i proponowane D-07–D-08 są utrzymywane we [wspólnej architekturze](../../architecture.md). Pozostałe mechanizmy w tym pliku są **propozycjami SD**, a nie zatwierdzonymi decyzjami właściciela. Nazwy encji i komend opisują plan, nie istniejący kod. Wspólna semantyka null, wersji i komend obowiązuje przez odnośnik, nie przez kopię.
+The confirmed choices D-01–D-06 and the proposed D-07–D-08 are maintained in the [shared architecture](../../architecture.md). The other mechanisms in this file are **SD proposals**, not approved owner's decisions. Entity and command names describe the plan, not existing code. The shared semantics of null, versions and commands apply by reference, not by copy.
 
-## Własność danych i kontrakty
+## Data ownership and contracts
 
-| Encja / grupa | Istotne pola i niezmienniki |
+| Entity / group | Relevant fields and invariants |
 | --- | --- |
-| Application / Interview / Task / Contact / Note / Tag | Oferta, numer podejścia, kanał, stan i wynik; rozmowy/zadania/terminy, kontakty/notatki z pochodzeniem. Historia nie zależy od stanu ogłoszenia. |
+| Application / Interview / Task / Contact / Note / Tag | Offer, attempt number, channel, state and outcome; interviews/tasks/dates, contacts/notes with provenance. History does not depend on the state of the ad. |
 
-## Proces aplikacji
+## Application process
 
-Propozycja SD: Application wskazuje logiczną ofertę, numer podejścia i kanał wysłania. Jednocześnie jeden bieżący proces tej samej rekrutacji; jawnie wskazane przez właściciela odrębne rekrutacje nie mogą zostać utracone przez połączenie ofert; nowe podejście po zamknięciu nie nadpisuje poprzedniego. Etapy i wyniki zakończenia potwierdzono w Q14 i utrzymuje je R-22. Propozycja SD: oddzielne pola stage oraz nullable outcome; ręczna zmiana etapu i zakończenie zapisują zdarzenie, bez wymuszania przejść po wszystkich etapach. Rozmowy i zadania nie są wartościami enum etapu, tylko odrębnymi rekordami.
+SD proposal: an Application points to the logical offer, the attempt number and the sending channel. At any time one current process of the same recruitment; separate recruitments explicitly indicated by the owner must not be lost through an offer merge; a new attempt after closing does not overwrite the previous one. Stages and closing outcomes were confirmed in Q14 and are maintained by R-22. SD proposal: separate fields stage and a nullable outcome; a manual stage change and closing record an event, without forcing transitions through all stages. Interviews and tasks are not stage enum values but separate records.
 
-Zmiana etapu, terminu lub treści notatki zapisuje dane oraz zdarzenie historii w jednej transakcji, z kontrolą expected version. Moduł nie nasłuchuje zmiany ratingu ani wygaśnięcia jako polecenia zamknięcia aplikacji. Łączenie/rozdzielanie ofert korzysta z jego walidacji przypisań, zwłaszcza gdy istnieją dwa aktywne procesy (potwierdzone Q12). Regułę decyzji i zachowania danych utrzymuje [SD ofert](../oferty/solution-design.md#łączenie-i-rozdzielanie); reprezentacja powiązań wymaga wspólnego przeglądu obu modeli.
+A change of stage, date or note content saves the data and a history event in one transaction, with an expected version check. The module does not listen to a rating change or expiry as a command to close the application. Offer merge/split uses its assignment validation, especially when two active processes exist (confirmed Q12). The decision and data preservation rule is maintained by the [offers SD](../oferty/solution-design.md#merging-and-splitting); the representation of the links requires a joint review of both models.
 
-## Rozmowy, kontakty i zadania
+## Interviews, contacts and tasks
 
-Propozycja SD: Interview i Task mają własne identyfikatory oraz wiele rekordów na aplikację. Terminy mają strefę i jednoznaczny czas; brak terminu jest dopuszczalnym stanem zadania, nie datą zerową. Kontakty i notatki zawierają pochodzenie informacji i historię korekt. **Potwierdzone Q15:** archiwizacja ofert/procesów i poprawki z historią, bez trwałego kasowania w v1. Propozycja SD: archived_at jest odrębne od etapu i outcome; archiwizacja nie usuwa rekordów ani nie kończy automatycznie rekrutacji. Odczyty mogą uwzględniać archiwalne rekordy, a historię zachowujemy niezależnie od ich widoczności w bieżącym widoku.
+SD proposal: Interview and Task have their own identifiers and multiple records per application. Dates have a time zone and an unambiguous time; no date is an allowed state of a task, not a zero date. Contacts and notes contain the provenance of the information and a history of corrections. **Confirmed Q15:** archiving offers/processes and corrections with history, no permanent deletion in v1. SD proposal: archived_at is separate from stage and outcome; archiving does not remove records and does not automatically end the recruitment. Reads may include archived records, and we keep history regardless of their visibility in the current view.
 
-Własna decyzja przy ofercie jest osobnym polem od ratingu oraz etapu aplikacji. Komenda oceny AI nie ma uprawnień do jej zmiany. Przygotowanie do rozmowy odsyła do Preparation modułu firm/researchu zamiast kopiować raport.
+The own decision on an offer is a field separate from the rating and from the application stage. The AI assessment command has no permission to change it. Interview preparation refers to the Preparation of the companies/research module instead of copying the report.
 
 
-## Komendy
+## Commands
 
-Nazwy logiczne, nie zamrożone endpointy. Wspólny kontrakt walidacji/wersji/odpowiedzi: [architektura](../../architecture.md#wspólny-kontrakt-komend).
+Logical names, not frozen endpoints. Shared validation/version/response contract: [architecture](../../architecture.md#shared-command-contract).
 
-| Komenda | Wejście i skutek |
+| Command | Input and effect |
 | --- | --- |
-| SaveRecruitmentInfo | Identyfikator aplikacji, typ informacji, dane, provenance, expected version; historia zmiany. |
+| SaveRecruitmentInfo | Application identifier, information type, data, provenance, expected version; change history. |
 
-## Integracja z pozostałymi funkcjonalnościami
+## Integration with other features
 
-[oferty](../oferty/requirements.md), [firmy-research](../firmy-research/requirements.md). Status wykonania, rezerwacje i ponowienia zapewnia [kontrakt operacji](../operacje/solution-design.md); prywatny dostęp i trwałe uruchomienie określa [uruchomienie](../uruchomienie/solution-design.md). Zależności te są kontraktami, nie listą kolejności ticketów implementacyjnych.
+[offers](../oferty/requirements.md), [companies-research](../firmy-research/requirements.md). Execution status, reservations and retries are provided by the [operations contract](../operacje/solution-design.md); private access and durable launch are set by [launch](../uruchomienie/solution-design.md). These dependencies are contracts, not a list of the order of implementation tickets.
 
-## Weryfikacja funkcjonalności
+## Feature verification
 
-Dwie rozmowy, zadanie, kontakt i korekta notatki, zakończenie oraz drugie podejście. Sprawdzić historię po restarcie, konflikty edycji, brak zmiany etapu po zmianie ratingu/wygaśnięciu. Pokrycie obejmuje wszystkie R/AC wskazane na początku dokumentu. [Odbiór integracyjny](../odbior/solution-design.md) sprawdza współpracę modułów; nie zastępuje ich kryteriów. Testów produktu jeszcze nie wykonano.
+Two interviews, a task, a contact and a note correction, closing and a second attempt. Check the history after a restart, edit conflicts, and that the stage does not change after a rating change/expiry. Coverage includes all R/ACs listed at the start of the document. [Integration acceptance](../odbior/solution-design.md) checks how the modules work together; it does not replace their criteria. No product tests have been run yet.
 
-## Otwarte decyzje i gotowość
+## Open decisions and readiness
 
-O-03, O-07 — [rejestr i skutki](../../open-decisions.md). Przed oznaczeniem tej pary jako gotowej należy rozstrzygnąć dotyczące jej kontrakty i przejrzeć zgodność z wymaganiami. Samo utworzenie dokumentów nie zatwierdza propozycji.
+O-03, O-07 — [register and consequences](../../open-decisions.md). Before marking this pair as ready, settle the contracts that concern it and review conformance with the requirements. Creating the documents alone does not approve the proposals.

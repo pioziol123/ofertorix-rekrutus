@@ -1,42 +1,42 @@
-# Przeglądanie ofert i firm — wymagania
+# Browsing offers and companies — requirements
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **bieżący wycinek listy zrealizowany; reszta szkic**, 2026-10-31. Funkcjonalność pod wspólnym [PRD](../../PRD.md). Źródła i decyzje właściciela: [PRD](../../PRD.md#źródła-i-odpowiedzialność-dokumentów). Projekt techniczny: [solution-design.md](solution-design.md). Terminologia: [słownik](../../../../../GLOSSARY.md).
+Status: **current list slice implemented; the rest is a draft**, 2026-10-31. A feature under the shared [PRD](../../PRD.md). Sources and owner's decisions: [PRD](../../PRD.md#sources-and-document-responsibilities). Technical design: [solution-design.md](solution-design.md). Terminology: [glossary](../../../../../GLOSSARY.md).
 
-## Zakres i zależności
+## Scope and dependencies
 
-Ten dokument jest właścicielem wymagań R-20, R-21 i odpowiadających im AC. Powiązania: [oferty](../oferty/requirements.md), [firmy-research](../firmy-research/requirements.md), [dopasowanie](../dopasowanie/requirements.md), [rekrutacje](../rekrutacje/requirements.md). Nie przejmuje reguł innych funkcjonalności. Aktorem jest właściciel; scenariusze są przyszłymi kryteriami, nie wynikiem testów.
+This document owns requirements R-20, R-21 and their ACs. Related: [offers](../oferty/requirements.md), [companies-research](../firmy-research/requirements.md), [matching](../dopasowanie/requirements.md), [recruitments](../rekrutacje/requirements.md). It does not take over the rules of other features. The actor is the owner; the scenarios are future criteria, not test results.
 
-## Bieżący etap po importerze — 2026-10-31
+## Current stage after the importer — 2026-10-31
 
-Potwierdzona kolejność właściciela: setup → pobieranie → lista. Teraz tabela ogłoszeń źródłowych i panel aktualnych szczegółów, bez ratingu, researchu, firm i rekrutacji. Pełne R-20/R-21 poniżej pozostają docelowym zakresem, nie deklaracją wykonania wszystkich modułów.
+The owner's confirmed order: setup → fetching → list. Now a table of source ads and a panel of current details, without rating, research, companies and recruitments. The full R-20/R-21 below remain the target scope, not a statement that all modules are implemented.
 
-AC bieżącego wycinka:
+ACs of the current slice:
 
-- Lista prezentuje tytuł, firmę ze źródła, technologie, widełki z walutą/okresem/kontraktem, lokalizację/tryb i dostępność; brak danych oznacza „Brak danych”.
-- Otwarcie oferty pokazuje aktualny opis, wymagane i opcjonalne technologie, warunki, link źródłowy, daty odczytu/publikacji/wygaśnięcia i historię dat zmian. Dawna treść nie jest wyświetlana. Nie tworzymy jeszcze logicznych połączeń ofert ani profilu firmy.
-- Wyszukiwanie po tytule/firmie/technologii oraz filtry: technologia any/all/excluded (wymagane/opcjonalne/wszystkie), lokalizacja, tryb pracy, kontrakt, wymiar pracy, seniority, dostępność i oferty bez widełek. Sort: najnowsze/najstarsze wykrycie, publikacja, tytuł i firma, z id przy remisie. Paginacja 20 wpisów. Jawne filtry warunków wybierają znane pasujące wartości; brak pola nie pasuje do wskazanej wartości. Nie zmienia to reguły importu zachowującej niewiadome. Wyjątek płacy opisany niżej. Zmiana filtrów wraca do strony 1.
-- Minimum płacy sprawdza górną granicę co najmniej jednego wariantu (częściowe pokrycie ma komunikat), wyłącznie przy wskazaniu waluty i okresu, opcjonalnie kontraktu. Nie przeliczamy brutto/netto, walut ani okresów. Nieznana górna granica pozostaje niepewna i widoczna przy włączonym uwzględnianiu nieznanych płac (domyślnie włączone).
-- Filtry, strona, sort i wybrana oferta są w URL. Powrót i odświeżenie zachowują kontekst. Brak wyników, błąd i ładowanie mają czytelne stany, pusty wynik nie kasuje filtrów.
-- Decyzja właściciela 2026-10-31: bez logowania; UI i API dostępne lokalnie przez loopback. Widok działa również na małym ekranie; opis źródłowy nie wykonuje HTML/skryptów.
+- The list presents the title, the company from the source, technologies, the salary range with currency/period/contract, location/mode and availability; missing data shows "Brak danych" ("No data").
+- Opening an offer shows the current description, required and optional technologies, conditions, the source link, the read/publication/expiry dates and the history of change dates. Past content is not displayed. We do not yet create logical offer links or a company profile.
+- Search by title/company/technology, and filters: technology any/all/excluded (required/optional/all), location, work mode, contract, working hours, seniority, availability and offers without a salary range. Sort: newest/oldest detection, publication, title and company, with id on a tie. Pagination of 20 entries. Explicit condition filters select known matching values; a missing field does not match the indicated value. This does not change the import rule that keeps unknowns. The pay exception is described below. Changing the filters returns to page 1.
+- The pay minimum checks the upper bound of at least one variant (partial coverage has a message), only when a currency and period are given, optionally a contract. We do not convert gross/net, currencies or periods. An unknown upper bound stays uncertain and visible when including unknown pay is turned on (on by default).
+- The filters, page, sort and selected offer are in the URL. Going back and refreshing keep the context. No results, an error and loading have clear states; an empty result does not clear the filters.
+- The owner's decision of 2026-10-31: no login; UI and API available locally through loopback. The view also works on a small screen; the source description does not execute HTML/scripts.
 
-### R-20 — widoki ofert i firm
+### R-20 — offer and company views
 
-Tabela ofert z panelem szczegółów (A) oraz widok firm (C) są kierunkiem UI. Szczegóły oferty obejmują warunki, źródła/rozbieżności, ocenę, własną decyzję, rekrutację, research i historię. Profil firmy pokazuje jej informacje, raporty, technologie ogólne i per oferta oraz powiązane oferty.
+The offer table with a details panel (A) and the company view (C) are the UI direction. Offer details cover conditions, sources/discrepancies, assessment, the own decision, recruitment, research and history. The company profile shows its information, reports, general and per-offer technologies and related offers.
 
-**AC-20:** przejście oferta → firma → inna oferta zachowuje właściwe powiązania. Lista pozwala przeglądać również odrzucone, wygasłe i zarchiwizowane oferty; archiwizacja jest odrębna od dostępności w źródle i etapu rekrutacji. Niewiadome i nieaktualne oceny są widoczne. Oferta z dopasowaniem opartym na jednym ze sprzecznych wariantów ma na liście znacznik rozbieżności; w szczegółach widoczne są warianty, ich źródła i podstawa uznania wymagania za spełnione. Nie wymaga się tablicy etapów B. Prototyp to materiał kierunkowy, nie komplet ekranów produkcyjnych.
+**AC-20:** going offer → company → another offer keeps the right links. The list also allows browsing rejected, expired and archived offers; archiving is separate from availability at the source and from the recruitment stage. Unknowns and stale assessments are visible. An offer whose match is based on one of the conflicting variants has a discrepancy marker on the list; the details show the variants, their sources and the basis for considering the requirement met. A stage board B is not required. The prototype is directional material, not a complete set of production screens.
 
-### R-21 — filtrowanie i sortowanie
+### R-21 — filtering and sorting
 
-Dostępne wymiary: technologie (dowolna/wszystkie/wykluczone, wymagane/opcjonalne), widełki z walutą/okresem/podstawą, lokalizacja i dostępność z Polski, kontrakt, godziny, seniority, tryb i dni biurowe, specjalizacja, język, strefy/godziny wspólne/dyżury, typ firmy/projektu/branża, publikacja/pierwsze wykrycie/dostępność, rating/składowe/kompletność, decyzja, etap, stan researchu, firma, źródło i własne tagi. Lista jest sortowalna co najmniej po ratingu, kompletności i dacie pierwszego wykrycia.
+Available dimensions: technologies (any/all/excluded, required/optional), salary range with currency/period/basis, location and availability from Poland, contract, hours, seniority, mode and office days, specialisation, language, time zones/overlapping hours/on-call duty, company/project type/industry, publication/first detection/availability, rating/components/completeness, decision, stage, research state, company, source and own tags. The list can be sorted at least by rating, completeness and the date of first detection.
 
-**AC-21:** dla kontrolnych ofert działają kombinacje filtrów oraz reguły any/all/excluded; wymagania opcjonalne są odróżnialne. Nie porównuje się bez wyjaśnienia UoP brutto z B2B netto ani kwot różnych okresów/walut. Właściciel może włączyć/wyłączyć oferty bez widełek w widoku; nie jest to domyślna reguła odrzucenia podczas importu. Przy kwalifikacji wynagrodzenia pokazujemy także częściowe pokrycie oczekiwanego minimum zgodnie z [R-13](../dopasowanie/requirements.md#r-13--rating-i-kompletność), bez sugerowania gwarancji kwoty. Dokładna semantyka ręcznie ustawianych filtrów zakresu pozostaje do przeglądu technicznego; decyzja o kwalifikacji nie oznacza dowolnego przeliczenia walut/podstaw.
+**AC-21:** for control offers, filter combinations and the any/all/excluded rules work; optional requirements are distinguishable. UoP gross is not compared with B2B net, nor amounts of different periods/currencies, without an explanation. The owner can turn offers without a salary range on/off in the view; this is not a default rejection rule during import. When qualifying pay we also show partial coverage of the expected minimum in line with [R-13](../dopasowanie/requirements.md#r-13--rating-and-completeness), without suggesting the amount is guaranteed. The exact semantics of manually set range filters remain for technical review; the qualification decision does not mean arbitrary conversion of currencies/bases.
 
-## Otwarte kwestie
+## Open questions
 
-Powiązane: O-02. Szczegóły, konsekwencje i sposób zamknięcia: [wspólny rejestr](../../open-decisions.md). Otwarte kwestie rozpatrujemy przy podejmowaniu tej funkcjonalności; sam szkic nie oznacza gotowości implementacji.
+Related: O-02. Details, consequences and how to close them: [shared register](../../open-decisions.md). We consider open questions when taking up this feature; the draft alone does not mean the implementation is ready.
 
-### Korekta filtrów płacy — 2026-11-01
+### Pay filter correction — 2026-11-01
 
-Filtr wynagrodzenia jest jawnie opcjonalny. Wyłączenie przełącznika pomija minimum, walutę, okres i ustawienie nieznanych widełek, również jeśli formularz zachował poprzednie wartości. Pozostałe filtry można zastosować bez waluty i okresu. Po włączeniu porównania minimum nadal wymagane są waluta oraz okres. Aktywne warunki płacy z URL przywracają włączony przełącznik.
+The pay filter is explicitly optional. Turning the switch off skips the minimum, currency, period and the unknown salary range setting, even if the form kept the previous values. The other filters can be applied without a currency and period. When the minimum comparison is turned on, currency and period are still required. Active pay conditions from the URL restore the switch to on.

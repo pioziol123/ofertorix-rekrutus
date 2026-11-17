@@ -1,47 +1,47 @@
-# Panel zarządzania zadaniami — Requirements
+# Task management panel — Requirements
 
-Status: **zakres zatwierdzony, specyfikacja po przeglądzie gotowa do implementacji**, 2026-11-05. Beads: `oferty-pracy-334.15`. Potwierdzono potrzebę panelu oraz ręczne sprawdzanie, zatrzymanie i pominięcie zadania. Właściciel potwierdził zakres i reguły działań poniżej; szczegóły techniczne SD i kontraktów runtime trzeba zweryfikować podczas implementacji. Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md).
+Status: **scope approved, specification after review ready for implementation**, 2026-11-05. Beads: `oferty-pracy-334.15`. The need for the panel and for manual checking, stopping and skipping of a task was confirmed. The owner confirmed the scope and the action rules below; the technical details of the SD and the runtime contracts must be verified during implementation. Basis: [PRD](../../PRD.md), [cross-cutting requirements](../../requirements.md).
 
-## Potwierdzony zakres
+## Confirmed scope
 
-Pierwszy zakres: zadania AI profilu, ocen i researchu, również z grupami lokalnymi do 20 i OpenAI Batch. Synchronizacje źródeł i pozostałe zadania w tle są poza pierwszym zakresem; nie tworzymy interfejsu ogólnego sterowania dowolnymi jobami pg-boss. Panel w istniejącej aplikacji, z obecnym prywatnym dostępem.
+First scope: AI tasks of profile, assessments and research, also with local groups of up to 20 and OpenAI Batch. Source syncs and other background jobs are outside the first scope; we do not create an interface for generic control of arbitrary pg-boss jobs. The panel is in the existing application, with the current private access.
 
-## Wymagania i kryteria
+## Requirements and criteria
 
-| ID | Reguła | Obserwowalny warunek akceptacji |
+| ID | Rule | Observable acceptance condition |
 | --- | --- | --- |
-| PZ-01 | Lista i szczegóły operacji | Widoczne typ, przedmiot, grupa, dostawca/model, stan aplikacji, ostatni znany stan runtime, data ostatniego potwierdzenia i aktualny błąd. Brak kontaktu nie oznacza zatrzymania. |
-| PZ-02 | Sprawdź teraz | Żądanie wymusza próbę aktualizacji istniejącej operacji/sesji, bez tworzenia nowej inferencji lub sesji. Niedostępny runtime daje informację o nieudanym sprawdzeniu i zachowuje ostatnią obserwację z datą. |
-| PZ-03 | Zatrzymaj | Oczekujące zadanie nie startuje; działające otrzymuje żądanie zatrzymania i blokadę publikacji. Zakończenie procesu potwierdza adapter, nie sam klik. Brak potwierdzenia pozostaje niepewny. |
-| PZ-04 | Pomiń | Zadanie zostaje wyłączone z dalszego przetwarzania i publikacji bez udawania, że runtime został zatrzymany. Ukończone wyniki innych pozycji pozostają. Późny wynik jest zachowany diagnostycznie, ale nie staje się aktywną oceną/raportem. |
-| PZ-05 | Stan logiczny i faktyczne wykonanie | Pominięte zadanie może nadal mieć runtime running/unknown; użytkownik widzi to i nadal może żądać sprawdzenia/zatrzymania. Pominięcie nie zeruje kosztu ani nie oznacza sukcesu. |
-| PZ-06 | Jawne ponowienie | Nowe wykonanie ma własny identyfikator i wskazanie poprzedniego. Nie nadpisuje historii. Jawne ponowienie jest dozwolone także przy running/unknown. Poprzednie wykonanie traci prawo publikacji, otrzymuje próbę zatrzymania, a jego ewentualna późniejsza odpowiedź pozostaje dostępna do wglądu bez publikacji. |
-| PZ-07 | Obsługa grup | Działanie wskazuje pojedyncze zadanie AI: pozycję albo grupę do 20; bez akcji na całym zleceniu nadrzędnym. Liczniki sukces/błąd/anulowane/pominięte/nieznane są osobne. Akcja grupowa nie zmienia ukończonych pozycji. |
-| PZ-08 | Historia poleceń i wyścigi | Powtórzenie tego samego polecenia nie tworzy podwójnego efektu. Zatrzymanie/pominięcie atomowo rozstrzyga wyścig z publikacją; jeśli wynik już opublikowano, panel pokazuje ten fakt zamiast go wycofać. Wszystkie polecenia i skutki są zachowane bezterminowo. |
+| PZ-01 | List and details of operations | Visible: type, subject, group, provider/model, application state, last known runtime state, date of the last confirmation and the current error. Lack of contact does not mean stopped. |
+| PZ-02 | "Sprawdź teraz" (Check now) | The request forces an attempt to update the existing operation/session, without creating a new inference or session. An unavailable runtime gives information about the failed check and keeps the last observation with its date. |
+| PZ-03 | "Zatrzymaj" (Stop) | A pending task does not start; a running one receives a stop request and a publication block. The adapter confirms that the process has ended, not the click itself. Lack of confirmation stays uncertain. |
+| PZ-04 | "Pomiń" (Skip) | The task is excluded from further processing and publication without pretending that the runtime has been stopped. Completed results of other items stay. A late result is kept for diagnostics, but does not become an active assessment/report. |
+| PZ-05 | Logical state and actual execution | A skipped task can still have a runtime running/unknown; the user sees this and can still request a check/stop. Skipping does not zero the cost and does not mean success. |
+| PZ-06 | Explicit retry | A new execution has its own identifier and a reference to the previous one. It does not overwrite history. An explicit retry is allowed also while running/unknown. The previous execution loses the right to publish, receives a stop attempt, and any later response from it stays available for viewing without publication. |
+| PZ-07 | Handling groups | An action targets a single AI task: an item or a group of up to 20; no action on the whole parent request. The success/error/cancelled/skipped/unknown counters are separate. A group action does not change completed items. |
+| PZ-08 | Command history and races | Repeating the same command does not create a double effect. Stop/skip atomically resolves the race with publication; if the result was already published, the panel shows this fact instead of withdrawing it. All commands and their effects are kept indefinitely. |
 
-## Rozstrzygnięcia PZ-O1–PZ-O6 — 2026-11-05
+## Resolution of PZ-O1–PZ-O6 — 2026-11-05
 
-- PZ-O1 zamknięte: pierwszy zakres tylko AI.
-- PZ-O2 zamknięte: pominięcie blokuje publikację i pozwala kontynuować grupę, bez kasowania historii.
-- PZ-O3 zamknięte: użytkownik może jawnie ponowić running/unknown. Stare wykonanie jest zatrzymywane, jeśli się da, i zawsze traci uprawnienie do publikacji. Odpowiedź przechowujemy do wglądu.
-- PZ-O4 zamknięte: pominięcie działającego zadania obejmuje próbę zatrzymania, bez utożsamiania braku potwierdzenia z zatrzymaniem.
-- PZ-O5 pozostaje szczegółem technicznym: check direct Ollama bez ID wykonania pokazuje brak możliwości potwierdzenia; nie generuje odpowiedzi kontrolnej.
-- PZ-O6 zamknięte: w Batch blokada publikacji jednej pozycji nie wymaga anulowania całej partii. Zdalne zatrzymanie partii stosować tylko przy akcji na odpowiadającym jej zadaniu grupowym, z widocznym zakresem. Historycznych grup >20 nie dzielimy; sposób odczytu starych rekordów wymaga zgodności.
+- PZ-O1 closed: the first scope is AI only.
+- PZ-O2 closed: skipping blocks publication and lets the group continue, without deleting history.
+- PZ-O3 closed: the user can explicitly retry running/unknown. The old execution is stopped if possible, and always loses the permission to publish. We store its response for viewing.
+- PZ-O4 closed: skipping a running task includes a stop attempt, without treating a lack of confirmation as stopped.
+- PZ-O5 stays a technical detail: a check of direct Ollama without an execution ID shows that confirmation is not possible; it does not generate a control response.
+- PZ-O6 closed: in Batch, blocking publication of one item does not require cancelling the whole batch. Apply remote stopping of a batch only for an action on its corresponding group task, with a visible scope. We do not split historical groups >20; reading old records requires compatibility.
 
-Potwierdzono również: ukończonej publikacji nie cofamy kliknięciem stop/skip; flow Google przez dedykowaną przeglądarkę i oczekiwanie na działanie użytkownika przy blokadzie są przyjęte. Szczegóły ponownego uruchomienia po interwencji i weryfikacji stanu są kontraktem technicznym [SD](solution-design.md). Nie oznacza to zgody na rozpoczęcie implementacji całej inicjatywy.
+Also confirmed: a completed publication is not withdrawn by clicking stop/skip; the Google flow through a dedicated browser and waiting for user action on a block are accepted. The details of restarting after an intervention and of state verification are a technical contract of the [SD](solution-design.md). This does not mean approval to start implementing the whole initiative.
 
-## Kolejka i interwencja — potwierdzone 2026-11-05
+## Queue and intervention — confirmed 2026-11-05
 
-Dla wszystkich lokalnych prac AI obowiązują [LA-11–LA-15](../../requirements.md). Panel pokazuje oczekiwanie w kolejce i wykonanie, które blokuje następne, również gdy jest pominięte, anulowane logicznie lub ma stan unknown. Jawne retry jest nadal dozwolone i odcina starą publikację, ale nowe wykonanie czeka na potwierdzony koniec poprzedniego agenta. Zastępuje to wcześniejszą możliwość natychmiastowego startu bez potwierdzenia abort. Stop/skip nie oznacza zwolnienia zasobów.
+[LA-11–LA-15](../../requirements.md) apply to all local AI work. The panel shows waiting in the queue and the execution that blocks the next one, also when it is skipped, logically cancelled or in the unknown state. An explicit retry is still allowed and cuts off the old publication, but the new execution waits for the confirmed end of the previous agent. This replaces the earlier possibility of an immediate start without abort confirmation. Stop/skip does not mean that resources are released.
 
-Przycisk „Wznów” po interwencji kontynuuje to samo wykonanie/sesję, bez utworzenia nowego. Niedostępny lub utracony stan przeglądarki daje jawny błąd zamiast udawanej kontynuacji. PZ-01/03/04/06/08 obejmują te zachowania; PZ-08 obejmuje także idempotentne wznowienie. Nie dodajemy w tym zakresie automatycznego logowania ani edycji priorytetów kolejki.
+The "Wznów" (Resume) button after an intervention continues the same execution/session, without creating a new one. An unavailable or lost browser state gives an explicit error instead of a pretended continuation. PZ-01/03/04/06/08 cover these behaviours; PZ-08 also covers idempotent resumption. In this scope we do not add automatic login or editing of queue priorities.
 
-## Uzgodnienie panelu po grill-me
+## Panel agreement after grill-me
 
-LA-11 i LA-16–18: panel jest wymagany we wspólnym wdrożeniu całego epiku. Oczekiwanie i blokujący execution ID dotyczą jednej wspólnej kolejki lokalnego profilu, ocen i researchu. Stop/check/retry są kontrolą zadania, nie naprawą usług; nie dodawać automatycznego restartu infrastruktury ani przycisku pomijającego niepewność runtime.
+LA-11 and LA-16–18: the panel is required in the shared deployment of the whole epic. Waiting and the blocking execution ID concern one shared queue of local profile, assessments and research. Stop/check/retry are task control, not service repair; do not add an automatic infrastructure restart or a button that skips runtime uncertainty.
 
-PZ-06 wymaga kopii starego wejścia/instrukcji/schematu/modelu/parametrów przy ręcznym retry, nawet po zmianie profilu i `.env`. Nowe dane wymagają nowego zlecenia. Błąd formatu/dowodu/raportu jest widoczny i nie uruchamia automatycznej generacji naprawczej. PZ-01/05/08 obejmują mieszane lokalne zadania i trwałe rozstrzygnięcie po ręcznej obsłudze awarii według instrukcji. Logowanie i parkowanie sesji z przejściem do kolejnych zadań pozostają w backlogu281; obecne resume dotyczy tylko interwencji w publicznym dostępie.
+PZ-06 requires a copy of the old input/instructions/schema/model/parameters on a manual retry, even after a change of profile and `.env`. New data requires a new request. A format/evidence/report error is visible and does not start an automatic repair generation. PZ-01/05/08 cover mixed local tasks and a durable resolution after manual handling of a failure according to the instructions. Login and parking of sessions with moving on to further tasks stay in backlog item 281; the current resume concerns only an intervention in public access.
 
-## Wynik przeglądu wykonawczego
+## Execution review result
 
-2026-11-05, zadanie 334.20: rozstrzygnięto item/group, revision, legacy guard, paginację/capabilities i odczyt artefaktów w SD oraz runtime. Do realizacji wymagane etapy 6/8. Headless Chrome ma prywatny podgląd DevTools i ręczną interwencję w tej samej sesji; nie zmienia to PZ-01–08. Brak otwartej decyzji produktowej panelu; kryteria wymagają implementacji i dowodów.
+2026-11-05, task 334.20: item/group, revision, legacy guard, pagination/capabilities and reading of artefacts were resolved in the SD and runtime. Stages 6/8 are required for implementation. Headless Chrome has a private DevTools preview and manual intervention in the same session; this does not change PZ-01–08. There is no open product decision for the panel; the criteria require implementation and evidence.

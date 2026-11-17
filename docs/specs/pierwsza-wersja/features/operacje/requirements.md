@@ -1,37 +1,37 @@
-# Operacje w tle i kontrola kosztów — wymagania
+# Background operations and cost control — requirements
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **roboczy szkic — do dopracowania przed realizacją tej funkcjonalności**, 2026-10-31. Funkcjonalność pod wspólnym [PRD](../../PRD.md). Źródła i decyzje właściciela: [PRD](../../PRD.md#źródła-i-odpowiedzialność-dokumentów). Projekt techniczny: [solution-design.md](solution-design.md). Terminologia: [słownik](../../../../../GLOSSARY.md).
+Status: **working draft — to be refined before this feature is implemented**, 2026-10-31. A feature under the shared [PRD](../../PRD.md). Sources and owner's decisions: [PRD](../../PRD.md#sources-and-document-responsibilities). Technical design: [solution-design.md](solution-design.md). Terminology: [glossary](../../../../../GLOSSARY.md).
 
-## Zakres i zależności
+## Scope and dependencies
 
-Ten dokument jest właścicielem wymagań R-24, R-25, R-26, R-29 i odpowiadających im AC. Powiązania: [uruchomienie](../uruchomienie/requirements.md). Nie przejmuje reguł innych funkcjonalności. Aktorem jest właściciel; scenariusze są przyszłymi kryteriami, nie wynikiem testów.
+This document owns requirements R-24, R-25, R-26, R-29 and their ACs. Related: [launch](../uruchomienie/requirements.md). It does not take over the rules of other features. The actor is the owner; the scenarios are future criteria, not test results.
 
-### R-24 — podsumowanie i stany operacji
+### R-24 — summary and operation states
 
-W aplikacji widoczne są nowe oferty, najlepsze dopasowania, zakończony research, nadchodzące rozmowy, błędy i stany operacji. Ukończone etapy pozostają dostępne po przerwaniu. Powiadomienia poza aplikacją są poza zakresem.
+The application shows new offers, the best matches, completed research, upcoming interviews, errors and operation states. Completed stages remain available after an interruption. Notifications outside the application are out of scope.
 
-**AC-24:** błąd oceny nie ukrywa poprawnie pobranej oferty; błąd przygotowania nie usuwa wcześniejszego researchu. Dla nieudanej operacji widoczny etap, powód, historia prób i ręczne ponowienie. Informacja o zakończonym researchu prowadzi do właściwego raportu.
+**AC-24:** an assessment error does not hide a correctly fetched offer; a preparation error does not remove earlier research. For a failed operation the stage, the reason, the attempt history and a manual retry are visible. The information about completed research leads to the right report.
 
-### R-25 — budżet
+### R-25 — budget
 
-Startowy limit 100 PLN na AI i search odnawia się co miesiąc kalendarzowy w Europe/Warsaw, bez przenoszenia wolnego salda. Widoczne: wydane, zarezerwowane, dostępne. Przed każdą płatną próbą wymagana rezerwacja ograniczonego kosztu. Niepewny koszt pozostaje do ustalenia z zachowaną rezerwacją.
+The starting limit of 100 PLN for AI and search renews every calendar month in Europe/Warsaw, with no carry-over of the free balance. Visible: spent, reserved, available. Before each paid attempt a reservation of a bounded cost is required. An uncertain cost remains to be determined, with the reservation kept.
 
-**AC-25:** równoczesne próby nie mogą zarezerwować łącznie więcej dostępnych środków. Brak środków zatrzymuje płatną pracę bez blokowania bezpłatnego pobierania i przeglądania. Można wznowić po zwiększeniu/odnowieniu limitu. Timeout po możliwym przyjęciu wywołania nie jest liczony jako 0 PLN. Zmiana limitu nie kupuje kredytów. Próba jest rozliczana w miesiącu rezerwacji, nawet jeśli zakończy się w kolejnym miesiącu. Niepewny koszt i rezerwacja pozostają przypisane do pierwotnego miesiąca do wyjaśnienia. Ponowienie w nowym miesiącu wymaga nowej rezerwacji z nowego limitu. Odnowienie limitu nie usuwa starych wydatków ani rezerwacji. Test granicy miesiąca potwierdza brak podwójnego odjęcia tego samego kosztu i brak skasowania nierozliczonej próby.
+**AC-25:** concurrent attempts cannot together reserve more than the available funds. No funds stops paid work without blocking free fetching and browsing. Work can resume after the limit is increased/renewed. A timeout after the call may have been accepted is not counted as 0 PLN. Changing the limit does not buy credits. An attempt is settled in the reservation month, even if it ends in the following month. An uncertain cost and the reservation stay assigned to the original month until clarified. A retry in a new month requires a new reservation from the new limit. Renewing the limit does not remove old spending or reservations. A month boundary test confirms that the same cost is not deducted twice and that an unsettled attempt is not erased.
 
-### R-26 — retry i priorytet
+### R-26 — retry and priority
 
-Po błędzie przejściowym jedno automatyczne ponowienie, następnie „wymaga uwagi” i ręczne ponowienie. Każda płatna próba podlega budżetowi. Ręczne zlecenia mają pierwszeństwo przed oczekującym automatycznym researchem, bez przerywania aktywnej pracy.
+After a transient error, one automatic retry, then "needs attention" and a manual retry. Every paid attempt is subject to the budget. Manual requests take priority over pending automatic research, without interrupting active work.
 
-**AC-26:** dwa kolejne błędy przejściowe nie tworzą trzeciej automatycznej płatnej próby. Praca ukończona nie jest powtarzana tylko z powodu awarii późniejszego etapu. Ręczne zadanie czekające wraz z automatycznym researchem rozpoczyna się wcześniej po zwolnieniu wykonawcy, o ile ma środki. Nie gwarantuje się dokładnie jednokrotnego naliczenia opłaty przez dostawcę.
+**AC-26:** two consecutive transient errors do not create a third automatic paid attempt. Completed work is not repeated only because a later stage failed. A manual task waiting together with automatic research starts earlier once the executor is free, provided it has funds. Exactly-once charging by the provider is not guaranteed.
 
-### R-29 — niezawodność zapisu
+### R-29 — reliability of saving
 
-Trwałe wyniki, historia, budżet i postęp etapów są niezależne od technicznej historii kolejki. Ponowienie nie może duplikować skutków domenowych, a stara próba nie nadpisuje nowszych danych jako aktualnych.
+Durable results, history, budget and stage progress are independent of the queue's technical history. A retry must not duplicate domain effects, and an old attempt does not overwrite newer data as current.
 
-**AC-29:** po restarcie workera ukończony etap jest odczytywalny, ponowne dostarczenie tego samego zadania nie tworzy drugiej oceny/raportu o tym samym kluczu wykonania. Późny wynik starego wejścia nie zastępuje aktualnej wersji. Oczyszczanie technicznej kolejki nie usuwa historii domenowej ani rozliczeń.
+**AC-29:** after a worker restart a completed stage is readable; redelivering the same job does not create a second assessment/report with the same execution key. A late result of an old input does not replace the current version. Cleaning up the technical queue does not remove domain history or settlements.
 
-## Otwarte kwestie
+## Open questions
 
-Powiązane: O-04, O-06. Szczegóły, konsekwencje i sposób zamknięcia: [wspólny rejestr](../../open-decisions.md). Otwarte kwestie rozpatrujemy przy podejmowaniu tej funkcjonalności; sam szkic nie oznacza gotowości implementacji.
+Related: O-04, O-06. Details, consequences and how to close them: [shared register](../../open-decisions.md). We consider open questions when taking up this feature; the draft alone does not mean the implementation is ready.

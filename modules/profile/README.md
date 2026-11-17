@@ -1,45 +1,45 @@
-# Profil zawodowy
+# Professional profile
 
-Docelowa architektura modułu `modules/profile/`. Moduł odpowiada za import CV, przygotowanie propozycji danych z CV, edycję szkicu oraz zatwierdzanie i odczyt wersji profilu zawodowego. [Słownik domenowy](../../GLOSSARY.md) · [Mapa modułów](../../docs/architecture/moduly.md)
+Target architecture of the `modules/profile/` module. The module is responsible for the CV import, preparing a proposal of data from the CV, editing the draft, and confirming and reading professional profile versions. [Domain glossary](../../GLOSSARY.md) · [Module map](../../docs/architecture/moduly.md)
 
-## Dane profilu
+## Profile data
 
-- **Doświadczenie i umiejętności** opisują dotychczasową pracę właściciela. Dane przyjęte z CV mogą wskazywać import, rewizję tekstu i cytat, z którego pochodzą.
-- **Kierunek zawodowy** określa poszukiwane role, poziom stanowiska, technologie do rozwoju i oczekiwany rodzaj pracy.
-- **Oczekiwania i wykluczenia** opisują warunki przyszłej pracy, np. tryb pracy, minimalne wynagrodzenie lub wykluczone branże. Podane oczekiwanie może być wymaganiem koniecznym albo preferencją. Brak informacji pozostaje niewiadomą. Właściciel może też jawnie wskazać brak preferencji.
+- **Experience and skills** describe the owner's work so far. Data accepted from a CV may point to the import, the text revision and the quote it comes from.
+- **Career direction** sets the roles sought, the position level, the technologies to develop in and the expected kind of work.
+- **Expectations and exclusions** describe the conditions of a future job, e.g. work mode, minimum salary or excluded industries. A given expectation can be a must-have requirement or a preference. Missing information stays an unknown. The owner can also explicitly state that there is no preference.
 
-Dopasowanie pobiera aktywną wersję profilu wraz z jej identyfikatorem i stosuje własne reguły oceny. Zakres pobierania ogłoszeń określają Źródła ofert, a filtry przeglądania zapisanych ofert należą do Ofert.
+Matching fetches the active profile version together with its ID and applies its own assessment rules. The scope of fetching ads is set by the Offer sources module, and the filters for browsing saved offers belong to the Offers module.
 
-## Publiczne operacje
+## Public operations
 
-| Operacja | Kontrakt |
+| Operation | Contract |
 | --- | --- |
-| Import CV | Przyjmuje dokument lub wklejony tekst. Zwraca identyfikator importu i stan przygotowania tekstu. |
-| Odczyt importu | Udostępnia stan importu, tekst do przejrzenia, stan i wynik przygotowania propozycji oraz oryginalny plik, jeśli został przesłany. |
-| Zlecenie przygotowania propozycji | Przyjmuje wybrany tekst i oczekiwaną rewizję importu. Zapisuje rewizję tekstu używaną do przygotowania propozycji i zleca wykonanie. |
-| Zastosowanie propozycji | Przyjmuje identyfikator importu, rewizję tekstu, wybór elementów i oczekiwaną rewizję szkicu. Dodaje wybrane pozycje lub zastępuje pozycje wskazane przez właściciela. |
-| Odczyt i zapis szkicu | Udostępnia edytowalne dane z identyfikatorem rewizji. Zapis sprawdza oczekiwaną rewizję, żeby wykryć zmianę od czasu odczytu. |
-| Zatwierdzenie profilu | Przyjmuje oczekiwaną rewizję szkicu i identyfikator dotychczasowej wersji aktywnej. Tworzy niezmienną wersję i aktywuje ją w jednej operacji. |
-| Odczyt zatwierdzonych wersji | Udostępnia aktywną wersję wraz z jej identyfikatorem, informację o braku aktywnej wersji, historię oraz odczyt wskazanej wersji. |
+| CV import | Takes a document or pasted text. Returns the import ID and the state of text preparation. |
+| Import read | Exposes the import state, the text for review, the state and result of the proposal preparation and the original file, if one was uploaded. |
+| Proposal preparation request | Takes the selected text and the expected import revision. Saves the text revision used to prepare the proposal and requests the execution. |
+| Proposal application | Takes the import ID, the text revision, the choice of elements and the expected draft revision. Adds the selected items or replaces the items the owner indicates. |
+| Draft read and write | Exposes the editable data with a revision ID. The write checks the expected revision to detect a change since the read. |
+| Profile confirmation | Takes the expected draft revision and the ID of the current active version. Creates an immutable version and activates it in one operation. |
+| Confirmed versions read | Exposes the active version together with its ID, information that there is no active version, the history and a read of a given version. |
 
-## Od CV do aktywnego profilu
+## From CV to active profile
 
-1. **Import i wydobycie tekstu.** Przy imporcie dokumentu moduł zachowuje oryginał i wydobywa tekst do przejrzenia. Jeśli wydobycie się nie powiedzie, właściciel może podać tekst ręcznie. Wklejony tekst od razu jest dostępny do przejrzenia.
-2. **Wybór tekstu do analizy.** Właściciel przegląda i może poprawić tekst, po czym zleca przygotowanie propozycji. Moduł usuwa rozpoznane dane kontaktowe i zapisuje rewizję oczyszczonego tekstu. To ta rewizja jest wejściem do analizy i podstawą późniejszej weryfikacji cytatów.
-3. **Przygotowanie propozycji.** AI zwraca ustrukturyzowane podsumowanie, umiejętności i doświadczenie. Profil sprawdza zgodność wyniku z kontraktem i obecność cytatów dla umiejętności i doświadczenia w zapisanej rewizji tekstu. Poprawna propozycja jest zapisywana przy tej rewizji. Wynik dla starszej rewizji nie zastępuje propozycji dla nowszego tekstu.
-4. **Przegląd i edycja szkicu.** Właściciel ocenia, czy cytaty uzasadniają wnioski, wybiera pozycje do zastosowania i może dopisać lub skorygować dane ręcznie. Zastosowanie propozycji zmienia wyłącznie szkic. Kierunek zawodowy, oczekiwania i wykluczenia właściciel uzupełnia osobno.
-5. **Zatwierdzenie.** Właściciel zatwierdza szkic osobną operacją. Nowa wersja staje się aktywna dla Dopasowania, a wcześniejsze wersje pozostają dostępne w historii.
+1. **Import and text extraction.** On a document import the module keeps the original and extracts the text for review. If extraction fails, the owner can enter the text by hand. Pasted text is available for review at once.
+2. **Choosing the text for analysis.** The owner reviews and may correct the text, then requests the proposal preparation. The module removes recognised contact data and saves a revision of the cleaned text. This revision is the input to the analysis and the basis for the later verification of quotes.
+3. **Proposal preparation.** AI returns a structured summary, skills and experience. The Profile module checks that the result matches the contract and that quotes for skills and experience are present in the saved text revision. A valid proposal is saved with this revision. A result for an older revision does not replace a proposal for newer text.
+4. **Draft review and editing.** The owner judges whether the quotes justify the conclusions, chooses the items to apply and can add or correct data by hand. Applying the proposal changes only the draft. The owner fills in the career direction, expectations and exclusions separately.
+5. **Confirmation.** The owner confirms the draft with a separate operation. The new version becomes active for Matching, and earlier versions stay available in the history.
 
-## Podział odpowiedzialności z AI
+## Division of responsibility with AI
 
-| Część | Odpowiedzialność |
+| Part | Responsibility |
 | --- | --- |
-| Profil zawodowy | Przygotowuje i zapisuje wybrany przez właściciela tekst, zleca przygotowanie propozycji, wiąże wykonanie z rewizją tekstu, sprawdza cytaty, zapisuje wynik i stosuje wybrane zmiany do szkicu. |
-| Warstwa integrująca | Przekłada zlecenie na instrukcję i schemat odpowiedzi oraz przekazuje Profilowi identyfikator wykonania, ujednolicony stan i wynik w ustalonym formacie. |
-| AI | Wybiera dostawcę i model, obsługuje komunikację i kolejkę, koordynuje współdzielone wykonanie lokalne, odzyskuje przerwane wykonania i odpowiada za ponowienia, budżet oraz rozliczenie. |
+| Professional profile | Prepares and saves the text chosen by the owner, requests the proposal preparation, ties the execution to the text revision, checks the quotes, saves the result and applies the selected changes to the draft. |
+| Integration layer | Translates the request into an instruction and a response schema and passes the Profile module the execution ID, a unified state and the result in an agreed format. |
+| AI | Chooses the provider and model, handles communication and the queue, coordinates the shared local execution, recovers interrupted executions and is responsible for retries, the budget and settlement. |
 
-Profil korzysta z jednego interfejsu przygotowania propozycji. Wybór dostawcy i sposób wykonania należą do modułu AI.
+The Profile module uses one interface for proposal preparation. The choice of provider and the execution mode belong to the AI module.
 
-## Refaktoryzacja
+## Refactoring
 
-Wydzielenie wykonania propozycji za interfejs modułu AI opisuje zadanie Beads `oferty-pracy-0mq.9` w epiku **Poprawki architektury kodu**.
+Extracting the proposal execution behind the AI module's interface is described by the Beads task `oferty-pracy-0mq.9` in the epic **Code architecture fixes** (Poprawki architektury kodu).

@@ -1,41 +1,41 @@
-# Ponowny przegląd po rozstrzygnięciach Q1–Q15
+# Re-review after the Q1–Q15 resolutions
 
-Status: **historyczny przegląd; zalecenie globalnego dopracowywania SD zastąpione pracą per funkcjonalność**. Zapis decyzji Q1–Q15 pozostaje aktualny. Obowiązuje [nowy cykl pracy](README.md#cykl-pracy-nad-funkcjonalnością).
+Status: **historical review; the recommendation to refine SDs globally was replaced by per-feature work**. The record of decisions Q1–Q15 remains current. The [new work cycle](README.md#feature-work-cycle) applies.
 
-Pierwotny zakres: przegląd zgodności dokumentacji z ostatnimi decyzjami właściciela; nie odbiór produktu ani potwierdzenie gotowości całej implementacji. Podstawa: potwierdzenia Q1–Q15 oraz korekta rozbieżności Q7–Q8 w rozmowie. Status pracy: `bd show oferty-pracy-boe`.
+Original scope: a review of the documentation's consistency with the owner's latest decisions; not acceptance of the product or confirmation that the whole implementation is ready. Basis: the confirmations of Q1–Q15 and the correction of the Q7–Q8 discrepancy in the conversation. Work status: `bd show oferty-pracy-boe`.
 
-## Przeniesione decyzje
+## Moved decisions
 
-| Decyzje | Miejsce utrzymania reguł | Wynik uzgodnienia |
+| Decisions | Where the rules are maintained | Outcome of the agreement |
 | --- | --- | --- |
-| Q1–Q5 | [Profil, R-01](features/profil/requirements.md#r-01--profil-zawodowy) | Tekstowy PDF/DOCX lub wklejenie, bez OCR, propozycja do zatwierdzenia. Ponowny import zachowuje profil/preferencje; osobny formularz oczekiwań, pomijanie pytań i późniejszy powrót. |
-| Q6–Q10 | [Dopasowanie, R-03 i R-13](features/dopasowanie/requirements.md) | Ważona i częściowa kompletność, bez zer za niewiadome. Pasujący wariant spełnia kryterium z komunikatem rozbieżności. Minimum osiągalne w części widełek kwalifikuje ofertę, bez gwarancji płacy. |
-| Q11 | [Firmy/research, R-15](features/firmy-research/requirements.md#r-15--tożsamość-i-role-organizacji) | Research dostępnej marki/agencji mimo nieznanego pracodawcy/klienta, bez zgadywania tożsamości i przenoszenia zakresu. |
-| Q12 | [Oferty, R-09](features/oferty/requirements.md#r-09--odwracalne-połączenie) | Właściciel rozstrzyga tożsamość aktywnych procesów przed połączeniem; odrębne aplikacje i ich dane nie giną. |
-| Q13 | [Operacje, R-25](features/operacje/requirements.md#r-25--budżet) | Miesiąc rezerwacji jest miesiącem kosztu próby; niepewna rezerwa nie znika, nowe retry ma nową rezerwację. |
-| Q14–Q15 | [Rekrutacje, R-22–R-23](features/rekrutacje/requirements.md) | Jawne etapy/wyniki, ręczna zmiana, rozmowy/zadania osobno; archiwizacja zamiast trwałego kasowania w v1. |
+| Q1–Q5 | [Profile, R-01](features/profil/requirements.md#r-01--professional-profile) | Text PDF/DOCX or pasting, no OCR, a proposal to approve. A re-import keeps the profile/preferences; a separate expectations form, skipping questions and coming back later. |
+| Q6–Q10 | [Matching, R-03 and R-13](features/dopasowanie/requirements.md) | Weighted and partial completeness, no zeros for unknowns. A matching variant meets the criterion, with a discrepancy message. A minimum reachable within part of the salary range qualifies the offer, without a pay guarantee. |
+| Q11 | [Companies/research, R-15](features/firmy-research/requirements.md#r-15--identity-and-roles-of-organisations) | Research of the available brand/agency even when the employer/client is unknown, without guessing the identity or carrying the scope over. |
+| Q12 | [Offers, R-09](features/oferty/requirements.md#r-09--reversible-merge) | The owner settles the identity of active processes before a merge; separate applications and their data are not lost. |
+| Q13 | [Operations, R-25](features/operacje/requirements.md#r-25--budget) | The reservation month is the cost month of the attempt; an uncertain reservation does not disappear, a new retry has a new reservation. |
+| Q14–Q15 | [Recruitments, R-22–R-23](features/rekrutacje/requirements.md) | Explicit stages/outcomes, manual change, interviews/tasks separately; archiving instead of permanent deletion in v1. |
 
-## Naprawiona spójność między dokumentami
+## Consistency fixed between documents
 
-- Usunięto nieaktualną propozycję traktowania sprzecznych wariantów jako niewiadomej; kwalifikacja i komunikacja UI wskazują teraz tę samą regułę.
-- Uzupełniono badanie marki/agencji i deduplikację po typowanym celu raportu, zamiast wymagania zawsze rozpoznanej organizacji.
-- Uzgodniono dokumenty ofert i rekrutacji: połączenie nie może usuwać odrębnej aktywnej aplikacji przez założenie „zawsze jeden proces na ofertę”.
-- Zastąpiono otwarte zapisy o granicy miesiąca i etapach potwierdzonymi regułami.
-- Archiwizacja jest odrębna od dostępności źródła, wygaśnięcia i wyniku rekrutacji. Zakres PRD oraz widoki uwzględniają archiwum bez trwałego kasowania.
-- Zachowano jeden PRD i 10 par requirements/solution-design. Nie przywrócono zbiorczej pary, nie zmieniono identyfikatorów R/AC.
+- Removed the outdated proposal to treat conflicting variants as an unknown; qualification and UI messaging now point to the same rule.
+- Added research of a brand/agency and deduplication by the typed report target, instead of requiring an always-recognised organisation.
+- Aligned the offer and recruitment documents: a merge must not remove a separate active application by assuming "always one process per offer".
+- Replaced the open statements about the month boundary and stages with confirmed rules.
+- Archiving is separate from source availability, expiry and the recruitment outcome. The PRD scope and the views account for the archive without permanent deletion.
+- Kept one PRD and 10 requirements/solution-design pairs. The combined pair was not restored and the R/AC identifiers were not changed.
 
-## Pozostałe luki projektu rozwiązania
+## Remaining gaps in the solution design
 
-| Obszar | Stan i konsekwencja |
+| Area | State and consequence |
 | --- | --- |
-| Dokładny kalkulator i filtry (O-02) | Reguły produktowe potwierdzone. Przed implementacją kalkulatora należy dopisać jednoznaczne jednostki kryteriów, wagi wewnętrzne, zachowanie „bez znaczenia”, przykłady liczbowe oraz współzależne warianty. Obecny opis SD jest propozycją, nie kompletnym kontraktem algorytmu. |
-| Relacje ofert/aplikacji oraz celu raportu (O-03) | Reguły zachowania danych potwierdzone. Schemat i komendy muszą precyzyjnie obsłużyć odrębne rekrutacje i odwracalne powiązania, a raport wskazywać organizację lub markę. Wymaga dopracowania SD, bez zmiany zaakceptowanego zachowania. |
-| Przelicznik i limit płatnego wywołania (O-04/O-06) | Miesiąc kosztu potwierdzony. Pozostaje techniczny dobór wersjonowanego przelicznika i twardych limitów wejścia/wyjścia/narzędzi. Estymacja średniego kosztu nie dowodzi górnej granicy. |
-| Konfiguracja właściciela (O-05) | Konkretne wartości profilu i zakresu oraz godzina pobrania do ustawienia przed startem; progi automatycznego researchu po próbce ocen. Nie trzeba wymyślać tych wartości przy projektowaniu formularza. |
-| Weryfikacja techniczna (O-06) | Wersje, biblioteki ekstrakcji, migracje, timeouty i retencja kolejki do dobrania i sprawdzenia. Dostęp, koszty i jakość AI nadal niezmierzone. |
+| Exact calculator and filters (O-02) | Product rules confirmed. Before implementing the calculator, add unambiguous criterion units, internal weights, the behaviour of "does not matter", numerical examples and interdependent variants. The current SD description is a proposal, not a complete algorithm contract. |
+| Offer/application relations and the report target (O-03) | Data preservation rules confirmed. The schema and commands must handle separate recruitments and reversible links precisely, and a report must point to an organisation or a brand. Requires refining the SD, without changing the accepted behaviour. |
+| Conversion rate and paid call limit (O-04/O-06) | Cost month confirmed. What remains is the technical choice of a versioned conversion rate and hard input/output/tool limits. An estimate of the average cost does not prove an upper bound. |
+| Owner's configuration (O-05) | Specific profile and scope values and the fetch time to be set before launch; automatic research thresholds after a sample of assessments. These values need not be invented when designing the form. |
+| Technical verification (O-06) | Versions, extraction libraries, migrations, timeouts and queue retention to be chosen and checked. AI access, costs and quality still unmeasured. |
 
-To są kolejne prace nad dokumentacją/projektem, a nie zatwierdzone zadania implementacyjne. Zgodnie z późniejszą decyzją właściciela wracamy do tych kontraktów dopiero przy wyborze właściwej funkcjonalności. Przegląd jej wymagań i SD poprzedza kod, lecz nie wymaga wcześniejszego ukończenia całego pakietu.
+These are further documentation/design work, not approved implementation tasks. In line with the owner's later decision we return to these contracts only when the relevant feature is chosen. A review of its requirements and SD precedes code, but does not require the whole package to be completed first.
 
-## Granice weryfikacji
+## Verification boundaries
 
-Sprawdzono lokalne odnośniki i kotwice, pojedynczą własność 30 wymagań/AC oraz wskazanie ich we właściwych SD. Kryteria pozostają planem przyszłych testów. Nie wykonano testów aplikacji, płatnych wywołań, wdrożenia, commitu ani push.
+Checked: local links and anchors, single ownership of the 30 requirements/ACs and their mention in the correct SDs. The criteria remain a plan for future tests. No application tests, paid calls, deployment, commit or push were made.

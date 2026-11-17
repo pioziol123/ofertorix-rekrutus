@@ -1,70 +1,70 @@
-# Oferty pracy
+# Job offers
 
-Prywatne, lokalne narzędzie do pobierania i przeglądania ofert pracy, oceniania ich względem profilu zawodowego oraz prowadzenia researchu firm.
+A private, local tool for fetching and browsing job offers, assessing them against a professional profile and doing company research.
 
-## Technologie
+## Technologies
 
-| Obszar | Technologie i zastosowanie |
+| Area | Technologies and their use |
 | --- | --- |
-| Aplikacja | Nuxt i TypeScript dla interfejsu oraz API. Widoki korzystają z Vue i Nuxt UI. Dane wejściowe walidujemy za pomocą Zod. |
-| Dane | PostgreSQL. Do zapytań używamy `pg` i parametryzowanego SQL, a schemat bazy zmieniamy przez `node-pg-migrate`. |
-| Zadania w tle | Osobny worker TypeScript wykonuje zadania z kolejki pg-boss działającej na PostgreSQL. |
-| Integracje źródeł | Wybrane kolektory ogłoszeń korzystają z Pythona. |
-| Integracje AI | Modele zewnętrzne wywołujemy przez OpenAI Responses API, bezpośrednio lub asynchronicznie przez Batch API. Lokalne wykonanie korzysta z Ollamy. Płatne wywołania korzystają ze wspólnego budżetu. |
-| Środowisko lokalne | Docker Compose uruchamia bazę, migracje, aplikację i workera. Zależności JavaScript instalujemy przez pnpm według `pnpm-lock.yaml`. |
-| Sprawdzanie kodu | ESLint sprawdza kod, Prettier formatuje, a Vitest uruchamia testy. Polecenie `pnpm check` łączy lint, kontrolę typów i testy. |
+| Application | Nuxt and TypeScript for the interface and the API. Views use Vue and Nuxt UI. We validate input data with Zod. |
+| Data | PostgreSQL. We query with `pg` and parameterised SQL, and change the database schema with `node-pg-migrate`. |
+| Background jobs | A separate TypeScript worker runs jobs from a pg-boss queue that runs on PostgreSQL. |
+| Source integrations | Some ad collectors use Python. |
+| AI integrations | We call external models through the OpenAI Responses API, directly or asynchronously through the Batch API. Local execution uses Ollama. Paid calls use a shared budget. |
+| Local environment | Docker Compose runs the database, migrations, the application and the worker. We install JavaScript dependencies with pnpm according to `pnpm-lock.yaml`. |
+| Code checks | ESLint checks the code, Prettier formats it and Vitest runs the tests. The `pnpm check` command combines lint, type checking and tests. |
 
-Wersje i konfigurację środowiska określają [package.json](package.json), [Dockerfile](Dockerfile) i [compose.yaml](compose.yaml). Zobacz też [zależności i migracje](#zależności-i-migracje).
+Versions and environment configuration are set by [package.json](package.json), [Dockerfile](Dockerfile) and [compose.yaml](compose.yaml). See also [dependencies and migrations](#dependencies-and-migrations).
 
-## Jak rozwijamy projekt
+## How we develop the project
 
-1. Wymagania produktu i decyzje projektowe opisujemy w dokumentacji. [Specyfikacje funkcjonalności](docs/specs/pierwsza-wersja/README.md)
-2. Zmianę wprowadzamy w module odpowiedzialnym za daną funkcjonalność. Korzystamy z istniejących narzędzi i zależności. [Mapa modułów](docs/architecture/moduly.md) · [Zasady architektury i pisania kodu](docs/architecture/moduly-i-zasady-kodu.md)
-3. Zmianę sprawdzamy w lokalnym środowisku Compose. Uruchamiamy `pnpm check` i kontrolę formatowania, a przy zmianach w bazie lub kolejce korzystamy również z testów integracyjnych. Szczegóły są w sekcjach [Uruchomienie](#uruchomienie) i [Polecenia developerskie](#polecenia-developerskie).
+1. We describe product requirements and design decisions in the documentation. [Feature specifications](docs/specs/pierwsza-wersja/README.md)
+2. We make a change in the module responsible for the feature. We use the existing tools and dependencies. [Module map](docs/architecture/moduly.md) · [Architecture and coding rules](docs/architecture/moduly-i-zasady-kodu.md)
+3. We check the change in the local Compose environment. We run `pnpm check` and the formatting check, and for changes in the database or the queue we also use the integration tests. Details are in the sections [Getting started](#getting-started) and [Developer commands](#developer-commands).
 
-## Uruchomienie
+## Getting started
 
-Wymagany działający Docker z Compose v2. Narzędzia aplikacji działają w kontenerach; nie trzeba globalnie aktualizować Node ani pnpm. Lokalne Node służy tylko do wygenerowania pliku konfiguracyjnego:
+You need a running Docker with Compose v2. The application tools run in containers; you do not need to update Node or pnpm globally. Local Node is used only to generate the configuration file:
 
 ```sh
 node scripts/setup-env.mjs
 docker compose up --build -d --wait
 ```
 
-Otwórz [aplikację lokalną](http://127.0.0.1:3100). `WEB_PORT` w `.env` zmienia port hosta. `.env` jest lokalny, ignorowany przez Git; generator nie nadpisuje istniejącego pliku. Nie zmieniaj hasła istniejącej bazy przez samą edycję `.env` — inicjalizacyjne zmienne PostgreSQL dotyczą nowego wolumenu.
+Open the [local application](http://127.0.0.1:3100). `WEB_PORT` in `.env` changes the host port. `.env` is local and ignored by Git; the generator does not overwrite an existing file. Do not change the password of an existing database just by editing `.env` — the PostgreSQL initialisation variables apply to a new volume.
 
-Compose uruchamia `db`, jednorazowe `migrate`, `web` oraz `worker`. WWW i worker czekają na migracje, a migracje na gotową bazę. PostgreSQL nie publikuje portu na hoście. WWW jest dostępne wyłącznie na loopback. Zmiany źródeł Nuxt są widoczne bez przebudowy; po zmianie workera wykonaj `docker compose restart worker`.
+Compose runs `db`, the one-off `migrate`, `web` and `worker`. The web server and the worker wait for the migrations, and the migrations wait for the database to be ready. PostgreSQL does not publish a port on the host. The web server is available only on loopback. Changes to Nuxt sources are visible without a rebuild; after changing the worker, run `docker compose restart worker`.
 
-Strona /offers pokazuje dane importera, bez integracji AI. Zgodnie z decyzją właściciela aplikacja działa bez logowania; prywatny dostęp zapewnia loopback (na przyszłym VPS tunel SSH). Ten setup nie jest wdrożeniem VPS ani docelową konfiguracją produkcyjną.
+The /offers page shows the importer's data, without the AI integration. By owner's decision the application works without login; loopback provides private access (an SSH tunnel on a future VPS). This setup is not a VPS deployment or the target production configuration.
 
-## Pobieranie ofert
+## Fetching offers
 
-Worker pobiera dział IT z filtrami `Developer`, `PHP`, `Senior` według klasyfikacji SOLID.Jobs. Nie dodaje ograniczeń wynagrodzenia ani lokalizacji. Zachowuje dane źródła, w tym brakujące/nieznane wartości, linki i HTML jako dane do późniejszej bezpiecznej prezentacji. Import nie korzysta z AI.
+The worker fetches the IT category with the filters `Developer`, `PHP`, `Senior` according to the SOLID.Jobs classification. It adds no salary or location restrictions. It keeps the source data, including missing/unknown values, links and HTML, as data for later safe presentation. The import does not use AI.
 
 ```sh
-# Ręczne zlecenie, opcjonalnie oczekiwanie do 2 minut
+# Manual request, optionally waiting up to 2 minutes
 docker compose run --rm tools pnpm source:sync --wait
-# Ostatni przebieg i ostatnia pełna synchronizacja
+# Last run and last complete sync
 docker compose run --rm tools pnpm source:status
-# Konkretny przebieg
+# A specific run
 docker compose run --rm tools pnpm source:status <run-uuid>
 ```
 
-Komenda bez `--wait` zwraca od razu identyfikator przebiegu. Równoczesne zlecenia zwracają ten sam aktywny przebieg. `--wait` kończy się kodem 1 przy błędzie/częściowym wyniku, 2 gdy upłynie czas oczekiwania; zadanie nadal może działać. Status zawiera liczbę stron, unikalnych wpisów i nowych rewizji oraz bezpieczną przyczynę błędu.
+Without `--wait` the command returns the run ID at once. Concurrent requests return the same active run. `--wait` exits with code 1 on an error or a partial result, and with 2 when the wait time runs out; the job may still be running. The status contains the number of pages, unique entries and new revisions, and a safe error cause.
 
-Domyślny import codziennie o **08:00 Europe/Warsaw**. Zmienna `SOURCE_SYNC_TIME=HH:mm` w `.env` zmienia godzinę; zastosuj przez `docker compose up -d --force-recreate worker`. Worker sprawdza zaległość przy starcie i co minutę. Po kilku dniach przerwy tworzy jeden import. Ręczny import również pokrywa aktualny termin harmonogramu. Nieudany przebieg nie tworzy pętli automatycznych zleceń tego samego dnia; można go ponowić ręcznie. Pojedyncze żądanie API ma jedno ponowienie błędu sieci/429/5xx, ograniczony timeout i odstęp żądań.
+The default import runs every day at **08:00 Europe/Warsaw**. The variable `SOURCE_SYNC_TIME=HH:mm` in `.env` changes the time; apply it with `docker compose up -d --force-recreate worker`. The worker checks for an overdue import at start and every minute. After a break of several days it creates one import. A manual import also covers the current scheduled slot. A failed run does not create a loop of automatic requests on the same day; you can retry it manually. A single API request has one retry on a network error/429/5xx, a limited timeout and spacing between requests.
 
-Baza przechowuje ogłoszenia źródłowe (`source_ads`), kolejne zmienione payloady (`source_ad_revisions`), wersje zakresu i historię przebiegów. Identyczny import nie tworzy nowych rewizji. Po błędzie zachowujemy poprawnie zapisane strony. Tylko pełny import tego samego zakresu może oznaczyć brakującą ofertę jako niedostępną; częściowy nie zmienia dostępności niewidzianych wpisów. `valid_to` źródła pozostaje osobną informacją od dostępności. Żaden z tych stanów nie oznacza zakończenia procesu rekrutacji.
+The database stores source ads (`source_ads`), successive changed payloads (`source_ad_revisions`), scope versions and the run history. An identical import creates no new revisions. After an error we keep the pages that were saved correctly. Only a complete import of the same scope can mark a missing offer as unavailable; a partial one does not change the availability of entries it did not see. The source's `valid_to` stays separate information from availability. None of these states means the recruitment process has ended.
 
-Importer wykrywa zmiany liczników i duplikaty między stronami, ale API nie gwarantuje atomowego obrazu wielu stron. Przerwanie workera pozostawia zapisane dane; po zwolnieniu blokady kolejny worker oznacza porzucony przebieg jako częściowy/nieudany. Gdy zakończy się także dostarczenie zadania kolejki, można zlecić nowy import. Lista i panel szczegółów korzystają z lokalnego API; dawnych treści na razie nie wyświetlamy.
+The importer detects changes in counters and duplicates between pages, but the API does not guarantee an atomic snapshot of many pages. Interrupting the worker leaves the saved data in place; after the lock is released, the next worker marks the abandoned run as partial/failed. Once the delivery of the queue job has also ended, a new import can be requested. The list and the details panel use the local API; we do not display earlier content for now.
 
-## Przeglądanie ofert
+## Browsing offers
 
-[Lista ofert](http://127.0.0.1:3100/offers) otwiera się bez logowania. Tabela, panel aktualnych szczegółów i daty historii zmian korzystają z PostgreSQL. Filtry i wybór oferty zapisują się w URL; nie zmieniają zakresu importu ani profilu zawodowego. Dostępne są wyszukiwanie, technologie any/all/excluded i wymagane/opcjonalne, lokalizacja/tryb, kontrakt, wymiar pracy, seniority, dostępność i płaca. Sortowanie obejmuje datę wykrycia/publikacji, tytuł i firmę; strona ma 20 pozycji.
+The [offer list](http://127.0.0.1:3100/offers) opens without login. The table, the current details panel and the change history dates use PostgreSQL. Filters and the selected offer are saved in the URL; they do not change the import scope or the professional profile. Available are search, technologies any/all/excluded and required/optional, location/work mode, contract, working time, seniority, availability and pay. Sorting covers the detection/publication date, title and company; a page has 20 items.
 
-Filtr minimum płacy wymaga waluty i okresu; sprawdza górną granicę zgodnego wariantu i oznacza częściowe pokrycie. Nie przelicza walut, brutto/netto ani okresów. Oferty z nieznanymi widełkami domyślnie zostają w wynikach; można je ukryć. Inne jawne filtry wybierają znane pasujące wartości. Opis źródłowy prezentujemy jako tekst. Nazwy firm ze źródeł pozostają odrębne od profili firm: przypisanie publikującego, pracodawcy lub klienta wymaga jawnego potwierdzenia przy ofercie.
+The minimum pay filter requires a currency and a period; it checks the upper bound of a matching variant and marks partial coverage. It does not convert currencies, gross/net or periods. Offers with an unknown salary range stay in the results by default; you can hide them. Other explicit filters select known matching values. We present the source description as text. Company names from sources stay separate from company profiles: assigning the publishing company, the employer or the client requires explicit confirmation on the offer.
 
-## Polecenia developerskie
+## Developer commands
 
 ```sh
 docker compose run --rm tools pnpm check
@@ -76,85 +76,85 @@ docker compose logs --tail=100 web worker migrate
 docker compose down
 ```
 
-`check` uruchamia ESLint, kontrolę typów Nuxt i workera oraz Vitest. Testy integracyjne wymagają działających `web` i `worker` (`up --wait` wcześniej); `smoke` zleca zadanie, które oddzielny worker zapisuje w PostgreSQL. Powstające rekordy `system_checks` są technicznym potwierdzeniem, nie danymi ofert.
+`check` runs ESLint, the Nuxt and worker type checks and Vitest. Integration tests require running `web` and `worker` (`up --wait` first); `smoke` requests a job that the separate worker writes to PostgreSQL. The resulting `system_checks` records are technical confirmation, not offer data.
 
-Health: `/api/health/live` sprawdza działanie HTTP, `/api/health/ready` dostęp do zmigrowanej bazy. Health workera sprawdza jego zapisany heartbeat; test zadania kolejki dodatkowo sprawdza wykonanie pracy.
+Health: `/api/health/live` checks that HTTP works, `/api/health/ready` checks access to the migrated database. The worker's health checks its saved heartbeat; the queue job test also checks that work gets done.
 
-Formatowanie: `docker compose run --rm tools pnpm format`. Dokumentacja projektowa i pliki narzędzi agentowych są wyłączone z formatowania/lintowania aplikacji.
+Formatting: `docker compose run --rm tools pnpm format`. Design documentation and agent tool files are excluded from the application's formatting/linting.
 
-## Zależności i migracje
+## Dependencies and migrations
 
-Wersje bazowe: Node 24.15.0, pnpm 10.34.9, PostgreSQL 18.6. Zależności JS rozstrzyga `pnpm-lock.yaml`; build używa `--frozen-lockfile`. Node na hoście może mieć inną wersję, bo cały zestaw narzędzi uruchamia Compose.
+Base versions: Node 24.15.0, pnpm 10.34.9, PostgreSQL 18.6. `pnpm-lock.yaml` decides the JS dependencies; the build uses `--frozen-lockfile`. Node on the host may have a different version, because Compose runs the whole tool set.
 
-Po zmianie `package.json` aktualizuj lockfile i zależności w kontenerze, następnie przebuduj obraz. Wolumen `dependencies` przechowuje zależności developerskie; po przebudowie uruchom `docker compose run --rm tools pnpm install --frozen-lockfile` przed uruchomieniem usług z nowymi zależnościami. Nie usuwaj przy tym wolumenu bazy.
+After changing `package.json`, update the lockfile and dependencies in the container, then rebuild the image. The `dependencies` volume holds the development dependencies; after the rebuild run `docker compose run --rm tools pnpm install --frozen-lockfile` before starting services with the new dependencies. Do not delete the database volume while doing this.
 
-Migracje aplikacji prowadzi `node-pg-migrate`, a jednorazowa usługa inicjalizuje też schemat pg-boss. WWW/worker nie uruchamiają równoległych migratorów. Nie stosujemy ORM ani migracji cofających, które kasują dane setupu.
+`node-pg-migrate` runs the application migrations, and the one-off service also initialises the pg-boss schema. The web server/worker do not run parallel migrators. We use no ORM and no down migrations that delete setup data.
 
-## Trwałość i bezpieczeństwo
+## Durability and security
 
-`database` jest nazwanym wolumenem PostgreSQL, `dependencies` osobnym wolumenem narzędzi. Zwykłe `docker compose down` i odtworzenie kontenerów zachowują dane. Nie używaj opcji usuwającej wolumeny do codziennego restartu.
+`database` is a named PostgreSQL volume, `dependencies` a separate tools volume. A plain `docker compose down` and recreating the containers keep the data. Do not use the option that deletes volumes for a daily restart.
 
-Kopie zapasowe wykonuje zewnętrzna usługa; aplikacja nie zawiera mechanizmu backupów. Zachowanie wolumenu po restarcie nie jest backupem. Autostart po zalogowaniu zależy od ustawienia runtime Docker na Macu; `restart: unless-stopped` nie uruchamia samego Dockera ani usług jawnie zatrzymanych przez `compose down`.
+An external service makes backups; the application contains no backup mechanism. Keeping the volume across a restart is not a backup. Autostart after login depends on the Docker runtime setting on the Mac; `restart: unless-stopped` does not start Docker itself or services explicitly stopped by `compose down`.
 
-Nie zapisuj sekretów w kodzie, obrazach, dokumentacji i publicznej konfiguracji Nuxt. `docker compose config` może wypisać rozwinięte sekrety — nie wklejaj jego pełnego wyniku do raportów.
+Do not store secrets in code, images, documentation or the public Nuxt configuration. `docker compose config` can print expanded secrets — do not paste its full output into reports.
 
-## Dokumentacja projektu
+## Project documentation
 
-[Architektura w modelu C4](docs/architecture/README.md) obejmuje kontekst systemu, kontenery, komponenty i kod przygotowania propozycji profilu.
+[Architecture in the C4 model](docs/architecture/README.md) covers the system context, containers, components and the code that prepares a profile proposal.
 
-[PRD i szkice funkcjonalności](docs/specs/pierwsza-wersja/README.md). Requirements i solution-design dopracowujemy przed konkretną funkcjonalnością. Kolejność: setup → pobieranie → lista → kolejne funkcjonalności.
+[PRD and feature drafts](docs/specs/pierwsza-wersja/README.md). We refine the requirements and solution design before a specific feature. Order: setup → fetching → list → further features.
 
-## Profil zawodowy
+## Professional profile
 
-[Profil](http://127.0.0.1:3100/profile) pozwala ręcznie uzupełnić doświadczenie, umiejętności, kierunek i oczekiwania. Zapis szkicu nie aktywuje zmian; zatwierdzenie tworzy zachowaną wersję. Braki pozostają niewiadomymi. Jedno minimum płacy dotyczy jednego kontraktu.
+The [profile](http://127.0.0.1:3100/profile) lets you fill in experience, skills, direction and expectations by hand. Saving a draft does not activate the changes; confirming creates a kept version. Missing data stays as unknowns. One minimum pay applies to one contract.
 
-PDF z tekstem lub DOCX do 10 MiB odczytuje lokalny worker (PDF do 30 stron). Można też wkleić tekst. Oryginały pozostają w nazwanym wolumenie `documents`, poza publicznym katalogiem; zewnętrzny backup powinien obejmować ten wolumen i bazę. Nie ma OCR. Import nie zmienia samoczynnie profilu ani preferencji.
+A local worker reads a text PDF or a DOCX of up to 10 MiB (a PDF of up to 30 pages). You can also paste text. The originals stay in the named volume `documents`, outside the public directory; the external backup should cover this volume and the database. There is no OCR. The import does not change the profile or the preferences on its own.
 
-AI jest domyślnie nieaktywne. `OPENAI_API_KEY` i `AI_PROFILE_PRICING_JSON` są wyłącznie serwerowe; sam klucz nie wystarcza. Konfiguracja JSON wymaga model, version, inputUsdPerMillion, outputUsdPerMillion, usdPln, fxVersion, maxInputTokens oraz maxOutputTokens. Kwoty podaje się jako teksty dziesiętne; limity tokenów jako liczby. Stawki muszą obejmować najdroższy dopuszczony wariant, a maxInputTokens pełen kontekst rzeczywiście używanego modelu. Nie dodawaj przykładowych niskich stawek do realnej konfiguracji.
+AI is inactive by default. `OPENAI_API_KEY` and `AI_PROFILE_PRICING_JSON` are server-only; the key alone is not enough. The JSON configuration requires model, version, inputUsdPerMillion, outputUsdPerMillion, usdPln, fxVersion, maxInputTokens and maxOutputTokens. Amounts are given as decimal strings; token limits as numbers. The rates must cover the most expensive allowed variant, and maxInputTokens the full context of the model actually used. Do not add sample low rates to a real configuration.
 
-Lokalny profil ma osobną konfigurację `AI_PROFILE_EXECUTION_JSON` i rejestr adresów `AI_ENDPOINTS_JSON`. Przykład dla `gpt-oss:20b` jest zakomentowany w [.env.example](.env.example). Wybierz okno kontekstu dla swojej instancji i zachowaj starsze wersje adresów, dopóki korzystają z nich oczekujące zlecenia. Połączenie z kontenera i model sprawdź przez listę modeli przed włączeniem lokalnej ścieżki. Pusta lub wadliwa konfiguracja daje błąd, a brak zmiennej zachowuje obsługę OpenAI. [API listy modeli Ollamy](https://docs.ollama.com/api/tags)
+The local profile has a separate configuration `AI_PROFILE_EXECUTION_JSON` and an address registry `AI_ENDPOINTS_JSON`. An example for `gpt-oss:20b` is commented out in [.env.example](.env.example). Choose the context window for your instance and keep older address versions as long as pending requests use them. Check the connection from the container and the model through the model list before enabling the local path. An empty or faulty configuration gives an error, and a missing variable keeps the OpenAI handling. [Ollama model list API](https://docs.ollama.com/api/tags)
 
-Utrata połączenia podczas lokalnej generacji pozostawia slot zajęty, dopóki koniec pracy nie zostanie potwierdzony. Obsługa tego stanu przez operatora i polecenia panelu są częścią odbioru całego epiku. [Kontrakty runtime](docs/specs/lokalne-ai/kontrakty-runtime.md)
+Losing the connection during local generation leaves the slot occupied until the end of the work is confirmed. Operator handling of this state and the panel commands are part of the acceptance of the whole epic. [Runtime contracts](docs/specs/lokalne-ai/kontrakty-runtime.md)
 
-Kontrolowana próba prawdziwego API z fikcyjnym CV przeszła 2026-11-01: GPT-6 Luna, poprawny schemat i dowody z tekstu, rozliczenie usage. AI uruchomiono lokalnie po weryfikacji konfiguracji. Testy automatyczne nadal używają odpowiedzi kontrolnych, bez płatnych wywołań. Wspólny limit to 100 PLN miesięcznie w Europe/Warsaw; nieznany koszt pozostaje zarezerwowany i jest uwzględniony w budżecie widocznym w profilu. Rozliczenie z usage jest konserwatywnym szacunkiem księgowym. Ręczne wyjaśnianie nieznanych kosztów odłożono decyzją właściciela do osobnego zadania `oferty-pracy-qld`; nie blokuje korzystania z AI.
+A controlled trial of the real API with a fictional CV passed on 2026-11-01: GPT-6 Luna, a valid schema and evidence from the text, usage settlement. AI was started locally after the configuration was verified. Automated tests still use control responses, with no paid calls. The shared limit is 100 PLN per month in Europe/Warsaw; an unknown cost stays reserved and is included in the budget shown in the profile. Settlement from usage is a conservative accounting estimate. By owner's decision, manual clarification of unknown costs was deferred to a separate task `oferty-pracy-qld`; it does not block using AI.
 
-Po zmianie klucza lub konfiguracji w `.env` odtwórz procesy: `docker compose up -d --no-deps --force-recreate web worker`. Samo zapisanie pliku nie aktualizuje środowiska działających kontenerów. Import CV korzysta z bezpośredniego Responses API; Batch API jest przewidziane dla przyszłych ocen i dopasowań ofert.
+After changing the key or the configuration in `.env`, recreate the processes: `docker compose up -d --no-deps --force-recreate web worker`. Saving the file alone does not update the environment of running containers. The CV import uses the direct Responses API; the Batch API is intended for future offer assessments and matches.
 
-Testy HTTP profilu wymagają świeżego `pnpm build`; uruchamiają własny serwer, schematy i katalog plików, bez modyfikowania profilu użytkownika.
+The profile HTTP tests require a fresh `pnpm build`; they start their own server, schemas and file directory, without modifying the user's profile.
 
-## Integracja JobSpy (wyłączona domyślnie)
+## JobSpy integration (disabled by default)
 
-Worker zawiera przypiętą paczkę forka, zależności Pythona oraz osobną kolejkę ręcznych importów Indeed. Nie ma automatycznego harmonogramu JobSpy. `JOBSPY_ENABLED=false` blokuje zlecanie i wykonanie pobierania; włączenie wymaga `JOBSPY_ENABLED=true` w `.env` i odtworzenia usług web i worker.
+The worker contains a pinned package of the fork, Python dependencies and a separate queue of manual Indeed imports. There is no automatic JobSpy schedule. `JOBSPY_ENABLED=false` blocks requesting and running a fetch; enabling it requires `JOBSPY_ENABLED=true` in `.env` and recreating the web and worker services.
 
-Status: `docker compose exec worker pnpm jobspy:status` albo GET `/api/sources/jobspy`. Po aktywacji ręczny import uruchamia `docker compose exec worker pnpm jobspy:sync --wait`. Indeed używa GraphQL i współdzielonego limitu z LinkedIn. Ograniczenie liczby wyników oznacza niepełny przebieg; CLI zwraca wtedy kod 1 mimo zapisu poprawnych ofert. Stan JobSpy jest odrębny od importu SOLID.Jobs. Oferty zachowują pochodzenie płacy; szacunki nie potwierdzają spełnienia minimum finansowego, a brak ogłoszenia w ograniczonym zapytaniu nie zmienia jego dostępności.
+Status: `docker compose exec worker pnpm jobspy:status` or GET `/api/sources/jobspy`. After activation, `docker compose exec worker pnpm jobspy:sync --wait` starts a manual import. Indeed uses GraphQL and a limit shared with LinkedIn. Limiting the number of results means an incomplete run; the CLI then returns code 1 even though valid offers were saved. The JobSpy state is separate from the SOLID.Jobs import. Offers keep the origin of the pay; estimates do not confirm that the financial minimum is met, and an ad missing from a limited query does not change its availability.
 
-Kod i dokładna wersja: [manifest paczki](integrations/jobspy/manifest.json). [Instrukcja utrzymania](integrations/jobspy/README.md), [projekt integracji](docs/specs/jobspy/features/integracja-aplikacji/solution-design.md), [projekt importu Indeed](docs/specs/jobspy/features/indeed-graphql/solution-design.md).
+Code and exact version: [package manifest](integrations/jobspy/manifest.json). [Maintenance guide](integrations/jobspy/README.md), [integration design](docs/specs/jobspy/features/integracja-aplikacji/solution-design.md), [Indeed import design](docs/specs/jobspy/features/indeed-graphql/solution-design.md).
 
-## Himalayas — ręczny pilot
+## Himalayas — manual pilot
 
 ```sh
 docker compose exec -T worker pnpm himalayas:sync
 ```
 
-Bezpośrednie API TypeScript, bez klucza i bez JobSpy/Python. Polecenie czeka na zakończenie i wypisuje identyfikator, status, liczniki oraz diagnostykę zapisanego przebiegu. Kod wyjścia 1 oznacza błąd lub niepełny import. Import obejmuje zapytanie PHP/Senior/PL, maksymalnie 5 stron po 20 kandydatów. Brak harmonogramu, kolejki i automatycznych ponowień w tym pilocie; ponowny przebieg uruchamia się ręcznie. Równoległy import jest odrzucany przed odczytem portalu. Przerwany przebieg jest rozliczany przy kolejnym ręcznym uruchomieniu.
+A direct TypeScript API, with no key and without JobSpy/Python. The command waits for completion and prints the ID, status, counters and diagnostics of the saved run. Exit code 1 means an error or an incomplete import. The import covers the PHP/Senior/PL query, at most 5 pages of 20 candidates. This pilot has no schedule, no queue and no automatic retries; you start another run manually. A parallel import is rejected before the portal is read. An interrupted run is settled at the next manual start.
 
-Ogłoszenia są widoczne na wspólnej liście ze źródłem **Himalayas**, niezmienionym linkiem źródłowym i ostrzeżeniem o niepotwierdzonej kwalifikacji PHP/senior. Wyszukiwarka obejmuje też przypadkowe wzmianki w opisach. Nie utożsamiamy jej wyników z dopasowaniem profilu. Data aktualizacji źródła nie udaje publikacji, płace nie otrzymują zgadywanego kontraktu ani podstawy. Zniknięcie z wyszukiwania nie zamyka zapisanej oferty. Pilot nie uruchamia AI.
+Ads are visible in the shared list with the source **Himalayas**, the unchanged source link and a warning that the PHP/senior qualification is unconfirmed. The search also covers incidental mentions in descriptions. We do not treat its results as a profile match. The source's update date does not pretend to be the publication date, and pay does not get a guessed contract or basis. Disappearing from the search does not close a saved offer. The pilot does not run AI.
 
-[Zakres i rozwiązanie pilota](docs/specs/jobspy/features/himalayas/requirements.md). Źródło wymaga atrybucji i użycia `applicationLink`; nie służy do dalszego publikowania bazy w innych agregatorach.
+[Pilot scope and solution](docs/specs/jobspy/features/himalayas/requirements.md). The source requires attribution and the use of `applicationLink`; it may not be used to republish the database in other aggregators.
 
-## Polskie serwisy: Bulldogjob, theprotocol.it, Just Join IT, No Fluff Jobs
+## Polish portals: Bulldogjob, theprotocol.it, Just Join IT, No Fluff Jobs
 
-Cztery źródła są dostępne w `/offers` w sekcji „Polskie serwisy — pobieranie ofert”. Podaj technologię i poziom, następnie wybierz „Pobierz oferty” przy źródle. Import jest ręczny; jego kryteria nie zmieniają filtrów przeglądania zapisanych ofert. Formularz rozpoczyna od PHP/Senior, ale można podać np. Go albo pozostawić technologię i poziom puste. Brak danych o spełnieniu kryterium nie odrzuca oferty i jest komunikowany w szczegółach. Jawnie inny znany poziom jest pomijany.
+The four sources are available in `/offers` in the section "Polskie serwisy — pobieranie ofert" ("Polish portals — fetching offers"). Enter a technology and a level, then choose "Pobierz oferty" ("Fetch offers") next to the source. The import is manual; its criteria do not change the filters for browsing saved offers. The form starts with PHP/Senior, but you can enter e.g. Go or leave the technology and level empty. Missing data on whether a criterion is met does not reject an offer and is reported in the details. An explicitly different known level is skipped.
 
-Connectory używają istniejącego w obrazie workera Python/curl_cffi, profilu Chrome i HTTP/2. Nie wymagają cookies użytkownika ani logowania. Bulldogjob i theprotocol korzystają z HTML i osadzonego `__NEXT_DATA__`. Just Join IT korzysta z JSON API z kursorem, a No Fluff Jobs z POST wyszukiwania i JSON szczegółów. W NFJ wyłączono salary-match i respektujemy zadeklarowane strony zamiast zakładać, że rozmiar strony wynosi 20. Są niezależne od kontraktu forka JobSpy. Płace, kontrakty, opisy, technologie i surowe rekordy listy/szczegółu trafiają do wspólnego modelu oraz historii rewizji. Bulldogjob nie oznacza tagów jako obowiązkowe; theprotocol zachowuje podział wymagane/opcjonalne.
+The connectors use the Python/curl_cffi already in the worker image, a Chrome profile and HTTP/2. They do not need the user's cookies or a login. Bulldogjob and theprotocol use HTML and the embedded `__NEXT_DATA__`. Just Join IT uses a JSON API with a cursor, and No Fluff Jobs a search POST and a details JSON. In NFJ we turned off salary-match and respect the declared pages instead of assuming that the page size is 20. They are independent of the JobSpy fork contract. Pay, contracts, descriptions, technologies and the raw list/detail records go into the shared model and the revision history. Bulldogjob does not mark tags as mandatory; theprotocol keeps the required/optional split.
 
 ```sh
-# Po aktualizacji działającego środowiska: utworzenie nowych kolejek i restart
-# Przy czystym docker compose up --build wykonuje to już usługa migrate.
+# After updating a running environment: create the new queues and restart
+# With a clean docker compose up --build the migrate service already does this.
 docker compose exec worker pnpm exec tsx scripts/init-queue.ts
 docker compose up -d --no-deps worker web
 
-# Ręczne importy; all oznacza brak danego kryterium
+# Manual imports; all means no such criterion
 docker compose exec worker pnpm polish:sync --source bulldogjob --technology PHP --seniority senior --wait
 docker compose exec worker pnpm polish:sync --source theprotocol --technology Go --seniority all --wait
 docker compose exec worker pnpm polish:sync --source justjoinit --technology PHP --seniority senior --wait
@@ -162,48 +162,48 @@ docker compose exec worker pnpm polish:sync --source nofluffjobs --technology PH
 docker compose exec worker pnpm polish:status
 docker compose exec worker pnpm polish:status bulldogjob <run-uuid>
 
-# Offline: parsery/transport z syntetycznymi próbkami, bez żądań do portali
+# Offline: parsers/transport with synthetic samples, no requests to the portals
 docker compose exec worker /opt/jobspy/bin/python -m unittest discover -s tests -p 'test_polish*.py'
 ```
 
-Domyślny przebieg ma limit 50 ofert, 5 stron, 60 żądań i 150 sekund. CLI pozwala zmienić `--max-offers` (1–200), `--max-pages` (1–100) i `--max-requests` (1–250). Nadal obowiązuje limit czasu. Żądania do każdego źródła są rozdzielone co najmniej 2 sekundami; nie ma ukrytych redirectów, ponowień, proxy ani solverów. Identyfikator szczegółu musi zgadzać się z listą, a adres należy do konkretnego portalu. Odpowiedź HTML jest ograniczona do 8 MiB, zapisany pakiet rekordów do 6 MiB, a proces do 180 s.
+The default run has a limit of 50 offers, 5 pages, 60 requests and 150 seconds. The CLI lets you change `--max-offers` (1–200), `--max-pages` (1–100) and `--max-requests` (1–250). The time limit still applies. Requests to each source are at least 2 seconds apart; there are no hidden redirects, retries, proxies or solvers. The detail ID must match the list, and the address must belong to the specific portal. An HTML response is limited to 8 MiB, the saved record bundle to 6 MiB and the process to 180 s.
 
-Osiągnięcie limitu, zmiana paginacji, challenge/403/429, błędny rekord lub brak opisu skutkują niepełnym przebiegiem. Poprawnie pobrane rekordy są zachowywane, a nieobecne oferty **nie są automatycznie oznaczane jako niedostępne**, także po pustym wyniku. Nie gwarantujemy atomowego snapshotu portalu ani pokrycia rynku. Równoczesne zlecenia dla tego samego źródła zwracają aktywny przebieg, nawet jeżeli mają inne kryteria — po jego zakończeniu można rozpocząć nowy. Restart odzyskuje stan porzuconych zadań.
+Reaching a limit, a pagination change, a challenge/403/429, a faulty record or a missing description result in an incomplete run. Correctly fetched records are kept, and absent offers **are not automatically marked as unavailable**, also after an empty result. We do not guarantee an atomic snapshot of the portal or market coverage. Concurrent requests for the same source return the active run, even if they have other criteria — after it ends you can start a new one. A restart recovers the state of abandoned jobs.
 
-`POLISH_SOURCES=bulldogjob,theprotocol,justjoinit,nofluffjobs` włącza ręczne przyciski i CLI czterech źródeł; `POLISH_SOURCES=none` je wyłącza. Nie dodano harmonogramu. Żądanie aplikacji to `POST /api/sources/polish` z JSON zgodnym z formularzem, status to `GET /api/sources/polish`; POST wymaga tego samego Origin co aplikacja. Bezpośredni proces Python nie otrzymuje kluczy AI, hasła bazy ani konfiguracji proxy aplikacji.
+`POLISH_SOURCES=bulldogjob,theprotocol,justjoinit,nofluffjobs` enables the manual buttons and the CLI for the four sources; `POLISH_SOURCES=none` disables them. No schedule was added. The application request is `POST /api/sources/polish` with JSON matching the form, the status is `GET /api/sources/polish`; the POST requires the same Origin as the application. The direct Python process does not receive the AI keys, the database password or the application's proxy configuration.
 
-Just Join IT wyszukuje technologię przez `skills`, `keywords` i `keywordType=skill`; nie ograniczamy jej do jednej głównej kategorii. Dla obsługiwanych poziomów źródło dostaje `experienceLevels`; pozostałe są sprawdzane lokalnie. Kursor pochodzi z `meta.next.cursor`, a przy osiągnięciu obserwowanej granicy 10000 wynik pozostaje niepełny. Nie przedstawiamy przeliczeń walut źródła jako kolejnych kontraktów: normalizowane są tylko płace `currencySource=original`, wszystkie warianty pozostają w raw.
+Just Join IT searches for the technology through `skills`, `keywords` and `keywordType=skill`; we do not limit it to one main category. For supported levels the source gets `experienceLevels`; the others are checked locally. The cursor comes from `meta.next.cursor`, and when the observed boundary of 10000 is reached the result stays incomplete. We do not present the source's currency conversions as further contracts: only pay with `currencySource=original` is normalised, and all variants stay in raw.
 
-NFJ identyfikuje regionalne warianty tej samej publikacji przez zgodne `reference` listy i szczegółu, a przy braku tego dowodu wymaga zgodności ID (bez różnicy wielkości liter). Zapisuje kanoniczny `defaultUrl` i pobiera szczegół raz dla danej publikacji. Liczniki paginacji nadal dotyczą regionalnych kart, nie liczby zapisanych ofert. Zachowuje musts/nices, oryginalne zakresy płac per kontrakt i raw. Znacznik `posted` odczytujemy jako milisekundy; data wygaśnięcia bez strefy pozostaje w raw, a znormalizowana data pozostaje niewiadomą. Nazwa technologii lub poziom nie są wyprowadzane z samego tytułu. Nieznany poziom nie odrzuca oferty.
+NFJ identifies regional variants of the same publication by matching `reference` values in the list and the details, and without this evidence requires matching IDs (case-insensitive). It saves the canonical `defaultUrl` and fetches the details once per publication. Pagination counters still refer to regional cards, not to the number of saved offers. It keeps musts/nices, the original pay ranges per contract and raw. We read the `posted` timestamp as milliseconds; an expiry date without a time zone stays in raw, and the normalised date stays unknown. The technology name or the level is not derived from the title alone. An unknown level does not reject an offer.
 
-### Oceny ofert przez Batch API
+### Offer assessments through the Batch API
 
-W szczegółach oferty sekcja „Dopasowanie do profilu” pozwala zlecić ocenę na podstawie zatwierdzonej wersji profilu. Widać rating, oddzielną kompletność, cztery składowe, dowody oraz historię. Wynik dla starszego profilu/ogłoszenia pozostaje w historii z oznaczeniem nieaktualności. Ten etap nie uruchamia ocen automatycznie ani researchu.
+In the offer details, the section "Dopasowanie do profilu" ("Match to profile") lets you request an assessment based on a confirmed profile version. It shows the rating, a separate completeness, four components, evidence and the history. A result for an older profile/ad stays in the history, marked as stale. This stage does not run assessments or research automatically.
 
-Ustaw `AI_MATCHING_PRICING_JSON` w `.env` i odtwórz usługi web/worker. Format jak `AI_PROFILE_PRICING_JSON`: `model`, `version`, `inputUsdPerMillion`, `outputUsdPerMillion`, `usdPln`, `fxVersion`, `maxInputTokens`, `maxOutputTokens`. Stawki muszą być cenami **Batch** dla wybranego modelu, a `version` identyfikuje ich migawkę. Nie używaj niezweryfikowanego cennika CV. Kwoty i kurs zapisuj jako tekst dziesiętny. Brak konfiguracji wyłącza zlecanie; nie zmienia konfiguracji CV. Limit wejścia jest konserwatywnie kontrolowany liczbą bajtów UTF-8 całego żądania, w tym instrukcji i schematu.
+Set `AI_MATCHING_PRICING_JSON` in `.env` and recreate the web/worker services. The format is like `AI_PROFILE_PRICING_JSON`: `model`, `version`, `inputUsdPerMillion`, `outputUsdPerMillion`, `usdPln`, `fxVersion`, `maxInputTokens`, `maxOutputTokens`. The rates must be **Batch** prices for the chosen model, and `version` identifies their snapshot. Do not use the unverified CV price list. Write amounts and the exchange rate as decimal text. A missing configuration disables requests; it does not change the CV configuration. The input limit is conservatively checked by the number of UTF-8 bytes of the whole request, including the instructions and the schema.
 
-Po migracji `pnpm migrate` tworzy kolejkę `offer-matching`. Worker odtwarza dostarczenie co minutę. Zlecenie zużywa wspólny budżet AI, czeka na środki i może oczekiwać na wynik Batch do24h. Nie przełącza się na Responses w trybie natychmiastowym. Ocena z przycisku w szczegółach tworzy osobną partię; zaznaczone na liście oferty tworzą wspólną partię z osobnymi wynikami i rozliczeniem.
+After the migration, `pnpm migrate` creates the `offer-matching` queue. The worker restores delivery every minute. A request uses the shared AI budget, waits for funds and may wait up to 24h for the Batch result. It does not switch to Responses in immediate mode. An assessment from the button in the details creates a separate batch; offers selected in the list create a shared batch with separate results and settlement.
 
-Niepewny stan utworzenia partii ma status „Wysyłka lub koszt wymagają sprawdzenia” i zachowuje rezerwację; brak automatycznej ponownej wysyłki. Zidentyfikowane partie można sprawdzić w panelu dostawcy. Po zakończonym odbiorze pliki są usuwane; błędy sprzątania ponawiane. Nie usuwamy pliku przy nieznanym wyniku utworzenia potencjalnie aktywnej partii: wejście ma48h retencji dostawcy; pliki wynikowe7dni. W takim przypadku należy ustalić zdalny stan przed nowym zleceniem, które może wygenerować kolejny koszt.
+An uncertain batch creation state has the status "Wysyłka lub koszt wymagają sprawdzenia" ("Submission or cost need checking") and keeps the reservation; there is no automatic resubmission. Identified batches can be checked in the provider's panel. After a completed retrieval the files are deleted; cleanup errors are retried. We do not delete a file when the creation result of a potentially active batch is unknown: the provider keeps input for 48h; result files for 7 days. In such a case, determine the remote state before a new request, which may generate another cost.
 
-Wymagania konieczne bez jednoznacznych danych są do sprawdzenia. Kontrola lokalna porównuje znany tryb pracy i pełne warianty płac (waluta/okres/umowa/podstawa). Tekstowe wykluczenia i pozostałe wymagania nie otrzymują zgadywanego potwierdzenia. Sama ocena AI nie zastępuje ich weryfikacji.
+Must-have requirements without unambiguous data need checking. The local check compares a known work mode and full pay variants (currency/period/contract/basis). Text exclusions and the other requirements get no guessed confirmation. The AI assessment alone does not replace verifying them.
 
-Na żądanie właściciela pełną treść partii zachowujemy lokalnie w PostgreSQL (`matching_batch_artifacts`, migracja12): dokładny wysłany JSONL, surowe pliki wyników i błędów, kolejne metadane Batch oraz sumy SHA-256. Wejście zapisujemy przed uploadem, wszystkie dostępne pliki wynikowe przed parsowaniem i sprzątaniem zdalnym. Błąd zapisu archiwum podczas odbioru pozostawia pliki do ponownego odczytu, bez ponownego płatnego zlecenia. Archiwum zawiera zawodowe dane profilu i pełną odpowiedź modelu; nie zawiera klucza API ani nagłówków autoryzacji. Nie trafia do logów ani repozytorium i nie ma automatycznego terminu usunięcia.
+At the owner's request we keep the full batch content locally in PostgreSQL (`matching_batch_artifacts`, migration 12): the exact JSONL sent, the raw result and error files, successive Batch metadata and SHA-256 sums. We save the input before the upload, and all available result files before parsing and remote cleanup. An archive write error during retrieval leaves the files for another read, without another paid request. The archive contains professional profile data and the full model response; it does not contain the API key or authorisation headers. It does not go into logs or the repository and has no automatic deletion date.
 
-W szczegółach oferty → „Historia zleceń AI” → „Pobierz archiwum całej partii (JSON)” pobierzesz lokalne artefakty; w grupie jest to pełna partia wszystkich objętych nią ofert. Pobranie nie odpytuje OpenAI. Dla starych lub jeszcze niewysłanych zleceń pole `reconstructedInput` może zawierać wejście odtworzone z zapisanych żądań; nie udaje ono oryginalnego pliku. Usuniętych wcześniej wyników nie odtwarzamy. W trakcie pracy archiwum zawiera tylko dotychczas otrzymane artefakty.
+In the offer details → "Historia zleceń AI" ("AI request history") → "Pobierz archiwum całej partii (JSON)" ("Download the archive of the whole batch (JSON)") you download the local artefacts; in a group this is the full batch of all the offers it covers. The download does not query OpenAI. For old or not yet submitted requests the `reconstructedInput` field may contain input reconstructed from the saved requests; it does not pretend to be the original file. We do not reconstruct results deleted earlier. While work is in progress, the archive contains only the artefacts received so far.
 
-Na liście kolumna „Dopasowanie” pokazuje rating, kompletność, składowe i aktualność oraz stan ostatniego zlecenia. W „Więcej filtrów” można ustawić minimalny rating, kompletność i cztery składowe, a także stan oceny. Sortowanie „Najlepsze dopasowanie” pokazuje aktualne znane oceny przed nieaktualnymi i bez ratingu. Progi nie traktują niewiadomych jak zera; nieaktualne wyniki przechodzą je tylko po jawnym wybraniu stanu „Nieaktualna ocena”.
+In the list, the "Dopasowanie" ("Match") column shows the rating, completeness, components and staleness, and the state of the last request. In "Więcej filtrów" ("More filters") you can set a minimum rating, completeness and the four components, and also the assessment state. The sort "Najlepsze dopasowanie" ("Best match") shows current known assessments before stale ones and those without a rating. The thresholds do not treat unknowns as zero; stale results pass them only when the state "Nieaktualna ocena" ("Stale assessment") is explicitly selected.
 
-Zaznaczenie nagłówka dotyczy bieżącej strony. Można zachować wybór przy przejściu na następną stronę; zmiana filtrów czyści zaznaczenie. Limit100ofert i2MiBplikuJSONL. „Oceń zaznaczone” pokazuje łączną maksymalną rezerwację. Oferty już oczekujące są wykorzystywane ponownie, wykluczone lokalnie nie generują kosztu. Przy niewystarczającym budżecie cała nowa grupa czeka bez częściowej rezerwacji. Identyfikator komendy chroni przed ponownym zleceniem po utracie odpowiedziHTTP; ponowne kliknięcie z niezmienionym wyborem odczytuje istniejące zlecenie.
+Selecting the header applies to the current page. You can keep the selection when moving to the next page; changing filters clears the selection. The limit is 100 offers and 2 MiB of JSONL file. "Oceń zaznaczone" ("Assess selected") shows the total maximum reservation. Offers already pending are reused, and ones excluded locally generate no cost. When the budget is insufficient, the whole new group waits without a partial reservation. A command ID protects against a repeated request after an HTTP response is lost; clicking again with an unchanged selection reads the existing request.
 
-Migracja8 tworzy `matching_groups` oraz kolejkę `offer-matching-group`; po migracji uruchom ponownie worker. Testy korzystają z podstawionego transportu, bez płatnych analiz.
+Migration 8 creates `matching_groups` and the `offer-matching-group` queue; after the migration, restart the worker. Tests use a substituted transport, with no paid analyses.
 
-## Firmy i research podstawowy
+## Companies and basic research
 
-W zakładce `/companies` można tworzyć profile organizacji, marek i firm o nieustalonej tożsamości. W szczegółach ogłoszenia wybierz „Przypisz lub utwórz profil firmy”, a następnie rolę i uzasadnienie. Zgodna nazwa/domena nie scala profili. Technologie z ofert są pokazane oddzielnie od ustaleń researchu.
+In the `/companies` tab you can create profiles of organisations, brands and companies of unestablished identity. In the ad details choose "Przypisz lub utwórz profil firmy" ("Assign or create a company profile"), then a role and a justification. A matching name/domain does not merge profiles. Technologies from offers are shown separately from research findings.
 
-Na profilu firmy przycisk „Uruchom research podstawowy” zleca zebranie źródeł i syntezę. Raport obejmuje działalność, projekty, metody pracy, technologie i ryzyka. Ustalenia mają typ, zakres oraz klikalne źródła i daty. Wyszukiwane deklaracje nie stanowią automatycznego potwierdzenia stanu faktycznego. Bez źródeł model powinien wskazać niewiadomą. Raport jest własną syntezą; nie zapisujemy pełnych stron ani cytatów wydawców.
+On a company profile, the button "Uruchom research podstawowy" ("Run basic research") requests collecting sources and a synthesis. The report covers the business, projects, working methods, technologies and risks. Findings have a type, a scope and clickable sources and dates. Searched claims are not automatic confirmation of the facts. Without sources the model should state an unknown. The report is our own synthesis; we do not save full pages or publishers' quotes.
 
-`AI_RESEARCH_PRICING_JSON` ma format konfiguracji profilu, ale używa cen **standardowych**, nie Batch. Startowo `gpt-6-luna`, maksymalne wejście co najmniej 500000 i wyjście 4000–6000 tokenów, `reasoning:low`; model porównawczy `gpt-4.1-mini` wymaga co najmniej 100000 wejścia. Rezerwacja wspólnego miesięcznego budżetu obejmuje dwa przebiegi i trzy wyszukiwania po 0.01 USD. UI pokazuje limit przed zleceniem. Konfigurację i klucz czyta tylko serwer; zmiana `.env` wymaga odtworzenia web/worker. Przykład w `.env.example` jest migawką cen, wymagającą aktualizacji wraz z cennikiem.
+`AI_RESEARCH_PRICING_JSON` has the format of the profile configuration, but uses **standard** prices, not Batch. Initially `gpt-6-luna`, maximum input at least 500000 and output 4000–6000 tokens, `reasoning:low`; the comparison model `gpt-4.1-mini` requires at least 100000 input. The reservation of the shared monthly budget covers two runs and three searches at 0.01 USD each. The UI shows the limit before the request. Only the server reads the configuration and the key; changing `.env` requires recreating web/worker. The example in `.env.example` is a price snapshot that needs updating along with the price list.
 
-Gotowy raport jest używany ponownie bez TTL. „Odśwież research — nowy koszt” tworzy nową wersję, poprzednie pozostają do wglądu. Równoczesne zlecenia nie dublują kosztu. Brak budżetu daje stan oczekiwania. Niepewne przerwanie zachowuje rezerwację i wymaga uwagi; płatna próba nie jest ponawiana automatycznie. Błąd nie usuwa poprzedniego raportu. Progi automatycznego uruchamiania oraz research pogłębiony pozostają kolejnymi etapami.
+A finished report is reused with no TTL. "Odśwież research — nowy koszt" ("Refresh research — new cost") creates a new version; the previous ones stay available to view. Concurrent requests do not duplicate the cost. A missing budget gives a waiting state. An uncertain interruption keeps the reservation and needs attention; a paid attempt is not retried automatically. An error does not delete the previous report. Thresholds for automatic starts and deep research remain later stages.

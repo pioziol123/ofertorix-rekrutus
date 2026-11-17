@@ -1,32 +1,32 @@
-# Etap 4: Research niezależny od wykonawcy OpenAI — Requirements
+# Stage 4: Research independent of the OpenAI executor — Requirements
 
-Status: **przegląd wykonany, specyfikacja gotowa do implementacji**, 2026-11-05. Etap 4 z dziewięciu; przegląd w ramach `oferty-pracy-334.20`, bez implementacji i testów aplikacji. Beads: `oferty-pracy-334.5`.
+Status: **review done, specification ready for implementation**, 2026-11-05. Stage 4 of nine; review as part of `oferty-pracy-334.20`, without implementation or application tests. Beads: `oferty-pracy-334.5`.
 
-Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md), [plan](../../README.md). Potwierdzone: lokalnie `gpt-oss:20b`, OpenCode dla agenta i brak kwot Ollamy. Kontrakty SD są decyzjami technicznymi do realizacji w zatwierdzonym zakresie; weryfikacja działania pozostaje częścią implementacji.
+Basis: [PRD](../../PRD.md), [cross-cutting requirements](../../requirements.md), [plan](../../README.md). Confirmed: `gpt-oss:20b` locally, OpenCode for the agent and no Ollama charges. The SD contracts are technical decisions to be implemented within the approved scope; verifying that they work remains part of the implementation.
 
-## Cel i granice
+## Goal and boundaries
 
-Wydzielenie wykonawcy istniejącego ręcznego researchu podstawowego. Zachowanie wyszukiwania OpenAI i syntezy jako jednego zgodnego wykonawcy. Bez OpenCode i nowych narzędzi.
+Extract the executor of the existing manual basic research. Keep OpenAI search and synthesis as one compatible executor. No OpenCode and no new tools.
 
-Pokrycie przekrojowe: LA-02, LA-03; fundament LA-07. Aktorzy: właściciel zlecający lub przeglądający operację oraz worker wykonujący jej zapisany zakres; mechanizm dostępu pozostaje zgodny z istniejącą prywatną aplikacją.
+Cross-cutting coverage: LA-02, LA-03; foundation for LA-07. Actors: the owner who requests or reviews an operation, and the worker that executes its recorded scope; the access mechanism stays consistent with the existing private application.
 
-## Warunki wejścia
+## Entry conditions
 
-Etap 1. Należy przeczytać aktualny kod i istniejące niezacommitowane zmiany przed realizacją.
+Stage 1. Read the current code and the existing uncommitted changes before implementation.
 
-## Wymagania i kryteria akceptacji
+## Requirements and acceptance criteria
 
-Identyfikatory w wierszu łączą wymaganie z jego obserwowalnym kryterium. Oba pozostają stabilne przy kolejnych przeglądach.
+The identifiers in each row link a requirement to its observable criterion. Both stay stable across later reviews.
 
-| Wymaganie / kryterium | Zachowanie | Warunek akceptacji |
+| Requirement / criterion | Behaviour | Acceptance condition |
 | --- | --- | --- |
-| E04-R01 / E04-AC01 | Zachowane zlecenie i reuse | Ta sama komenda nie tworzy kolejnej operacji; istniejący raport jest ponownie używany zgodnie z obecną regułą, a jawny refresh może utworzyć nową wersję. |
-| E04-R02 / E04-AC02 | Publikacja tylko po walidacji | Raport z nieznanym źródłem, błędnym cytatem albo bez wymaganego pokrycia jest odrzucany. Poprzednia wersja pozostaje dostępna. |
-| E04-R03 / E04-AC03 | Zachowane koszty obu kroków | Błąd syntezy po poprawnym wyszukiwaniu nie zeruje kosztu wykonanego wyszukiwania; brak potwierdzenia kosztu pozostaje nieznany. |
-| E04-R04 / E04-AC04 | Zgodne awarie i recovery | Restart przy nieznanym skutku płatnej pracy nie uruchamia automatycznie nowego wyszukiwania. Wynik i historia kończą się tak jak przed refaktorem. |
+| E04-R01 / E04-AC01 | Request and reuse preserved | The same command does not create another operation; an existing report is reused according to the current rule, and an explicit refresh can create a new version. |
+| E04-R02 / E04-AC02 | Publication only after validation | A report with an unknown source, an incorrect quote or without the required coverage is rejected. The previous version stays available. |
+| E04-R03 / E04-AC03 | Costs of both steps preserved | A synthesis error after a successful search does not zero the cost of the search that was carried out; an unconfirmed cost stays unknown. |
+| E04-R04 / E04-AC04 | Consistent failures and recovery | A restart with an unknown outcome of paid work does not automatically start a new search. The result and history end as they did before the refactor. |
 
-## Zależności i gotowość
+## Dependencies and readiness
 
-Kontrakt accounting przy sukcesie i błędzie doprecyzowano w SD. Nie wymaga nowej decyzji produktowej ani wyboru wyszukiwarki OpenCode (O-L2).
+The accounting contract on success and on error was clarified in the SD. It does not require a new product decision or the choice of the OpenCode search engine (O-L2).
 
-Rozwiązanie i mapowanie weryfikacji: [SD](solution-design.md). Reguły LA zachowują jedno miejsce utrzymania w wymaganiach przekrojowych; ta para określa ich zakres dla etapu. Nie zmienia reguł domenowych poza jawnym zakresem.
+Solution and verification mapping: [SD](solution-design.md). The LA rules keep a single place of maintenance in the cross-cutting requirements; this pair defines their scope for the stage. It does not change domain rules outside its explicit scope.

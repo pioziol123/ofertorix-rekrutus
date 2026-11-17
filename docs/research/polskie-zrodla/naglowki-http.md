@@ -1,24 +1,24 @@
-# Porównanie nagłówków HTTP — 2026-11-03
+# HTTP header comparison — 2026-11-03
 
-33 pojedyncze żądania z kontenera worker, Python requests, bez proxy środowiskowego (`trust_env=False`), bez przekierowań, limit połączenia 8 s / odczytu 15 s, odstęp co najmniej 2 s. Każda próba używa nowej sesji; nie przenoszono cookies ani tokenów użytkownika. Nie zapisano treści odpowiedzi ani ofert w bazie. Materiał przeglądarkowy dostarczył właściciel: NFJ HTML i API, Bulldogjob .pl, theprotocol /praca — wszystkie HTTP 200. Nie kopiowano danych sesji z załączników.
+33 single requests from the worker container, Python requests, without an environment proxy (`trust_env=False`), without redirects, connection timeout 8 s / read timeout 15 s, a gap of at least 2 s. Each trial uses a new session; no user cookies or tokens were carried over. No response content or offers were saved in the database. The owner supplied the browser material: NFJ HTML and API, Bulldogjob .pl, theprotocol /praca — all HTTP 200. Session data from the attachments was not copied.
 
-## Wyniki
+## Results
 
-- **NFJ HTML i API:** bazowy klient 403, zmiana tylko User-Agent na Chrome 156 daje 200, powrót do bazowego klienta ponownie 403. Próby zmiany tylko Accept albo Accept-Language pozostają 403. Dla API także sam Content-Type, Origin lub Referer pozostaje 403. Zestaw nagłówków przeglądarkowych daje 200. W tej próbce User-Agent jest wystarczającą zmianą; nie ustalono reguły serwera ani trwałości zachowania. Nie jest konieczny pełny zestaw nagłówków ani cookies użytkownika.
-- **NFJ Content-Type:** API zwróciło 200 i JSON także przy application/json z samym User-Agent Chrome. Podejrzenie, że konieczny jest application/infiniteSearch+json, nie potwierdziło się. Przy domyślnym User-Agent oba typy dostały 403. JSON miał m.in. postings, criteriaSearch, totalCount, totalPages. Nie weryfikowano kompletności ani semantyki filtrowania wyników.
-- **Bulldogjob .pl:** wszystkie sześć prób 403; odpowiedzi zawierają cf-mitigated: challenge. Zmiana nagłówków w zbadanym zakresie nie wystarcza.
-- **Bulldogjob .com:** wszystkie sześć prób 200, HTML zawiera __NEXT_DATA__, brak wykrytych znaczników challenge. Obecny wynik różni się od wcześniejszego 403. Nie potwierdzono równoważności zbioru ofert z domeną .pl ani przyczyny zmienności w czasie.
-- **theprotocol /praca:** wszystkie sześć prób 403 i cf-mitigated: challenge. Sama zmiana User-Agent, Accept, języka ani ich zestawu z Sec-CH-UA/Sec-Fetch-* nie wystarcza.
+- **NFJ HTML and API:** the base client gets 403, changing only the User-Agent to Chrome 156 gives 200, returning to the base client gives 403 again. Trials changing only Accept or Accept-Language remain 403. For the API, Content-Type, Origin or Referer alone also remain 403. The browser header set gives 200. In this sample the User-Agent is a sufficient change; neither the server rule nor how lasting the behaviour is was established. A full header set or user cookies are not necessary.
+- **NFJ Content-Type:** the API returned 200 and JSON also with application/json and just the Chrome User-Agent. The suspicion that application/infiniteSearch+json is required was not confirmed. With the default User-Agent both types got 403. The JSON had, among others, postings, criteriaSearch, totalCount, totalPages. The completeness and filtering semantics of the results were not verified.
+- **Bulldogjob .pl:** all six trials 403; the responses contain cf-mitigated: challenge. Changing headers within the examined range is not enough.
+- **Bulldogjob .com:** all six trials 200, the HTML contains __NEXT_DATA__, no challenge markers detected. The current result differs from the earlier 403. Neither the equivalence of the offer set with the .pl domain nor the cause of the variation over time was confirmed.
+- **theprotocol /praca:** all six trials 403 and cf-mitigated: challenge. Changing only the User-Agent, Accept, language, or their set with Sec-CH-UA/Sec-Fetch-*, is not enough.
 
-Nie testowano kopiowania cookies, rozwiązywania challenge, TLS fingerprintu, HTTP/2, proxy, zmian adresu wyjściowego ani innych sposobów uzyskania sesji. IP, czas, stan sesji i transport pozostają potencjalnymi czynnikami; nie wskazano żadnego jako udowodnionej przyczyny. Próby nie były randomizowane i nie są gwarancją przyszłej dostępności. Zestaw combined nie odtwarza całej przeglądarki: zachowuje kompresję obsługiwaną domyślnie przez requests, pomija cookies, tokeny i analityczny nfj-global-context. Nie testowano osobno każdego nagłówka Sec-* ani kompresji.
+Not tested: copying cookies, solving the challenge, TLS fingerprint, HTTP/2, proxies, changes of the outgoing address or other ways of obtaining a session. IP, time, session state and transport remain potential factors; none was identified as a proven cause. The trials were not randomised and are no guarantee of future availability. The combined set does not reproduce the whole browser: it keeps the compression supported by default by requests, and omits cookies, tokens and the analytical nfj-global-context. Each Sec-* header and compression were not tested separately.
 
-## Odtwarzanie
+## Reproduction
 
-Skrypt: [naglowki-http-probe.py](naglowki-http-probe.py). Uruchomienie w aktualnym kontenerze: `docker compose exec -T worker /opt/jobspy/bin/python - < docs/research/polskie-zrodla/naglowki-http-probe.py`. Skrypt wysyła 33 żądania i wypisuje wyłącznie metadane; ponowne uruchomienie to nowy test sieciowy. [Wyniki JSONL](naglowki-http-wyniki.jsonl) zawierają czas UTC, URL, zmienione nagłówki, status, rozmiar/hash odpowiedzi i wybrane niepoufne nagłówki. Dla API użyto parametrów i body od właściciela; PHP jest wyłącznie wartością próby, nie stałym zakresem adaptera.
+Script: [naglowki-http-probe.py](naglowki-http-probe.py). Running in the current container: `docker compose exec -T worker /opt/jobspy/bin/python - < docs/research/polskie-zrodla/naglowki-http-probe.py`. The script sends 33 requests and prints only metadata; running it again is a new network test. [JSONL results](naglowki-http-wyniki.jsonl) contain the UTC time, URL, changed headers, status, response size/hash and selected non-confidential headers. For the API the parameters and body from the owner were used; PHP is only a trial value, not a fixed scope of the adapter.
 
-## Macierz prób
+## Trial matrix
 
-| Cel | Próba | HTTP | Cloudflare challenge | Dane aplikacji |
+| Target | Trial | HTTP | Cloudflare challenge | Application data |
 | --- | --- | --- | --- | --- |
 | nfj-html | baseline | 403 | — | — |
 | nfj-html | ua | 200 | — | serverApp-state |

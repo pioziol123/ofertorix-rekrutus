@@ -1,25 +1,25 @@
-# Indeed Polska — stan weryfikacji HTML
+# Indeed Poland — state of HTML verification
 
-2026-11-02, zakres Senior PHP, Polska. Zgoda i limit wcześniej potwierdzone przez właściciela.
+2026-11-02, scope Senior PHP, Poland. Consent and limit previously confirmed by the owner.
 
-## Obserwacja live
+## Live observation
 
-Wykonano jedno żądanie GET `https://pl.indeed.com/jobs?q=Senior+PHP&l=Polska`, timeout 20 s, przekierowania wyłączone. Wynik: HTTP **403**, strona o tytule „Blocked - Indeed.com”, markery blokady Cloudflare/CAPTCHA. Nie wykonywano ponowień, logowania, CAPTCHA ani zmiany infrastruktury. Nie zapisano żadnych ofert z Indeed. Pełna odpowiedź nie jest fixture ani częścią repozytorium.
+One GET request was made to `https://pl.indeed.com/jobs?q=Senior+PHP&l=Polska`, timeout 20 s, redirects disabled. Result: HTTP **403**, a page titled "Blocked - Indeed.com", Cloudflare/CAPTCHA block markers. No retries, logging in, CAPTCHA or infrastructure changes were made. No offers from Indeed were saved. The full response is not a fixture and not part of the repository.
 
-To wstępna próba dostępu do HTML, nie udany pilot nowego adaptera ani potwierdzenie poprawności selektorów względem aktualnych udanych odpowiedzi portalu. Dalszy pilot end-to-end pozostaje zadaniem `oferty-pracy-y81.5`; aktualne `JOBSPY_ENABLED=false`.
+This is a preliminary attempt to access HTML, not a successful pilot of the new adapter nor a confirmation that the selectors are correct against current successful portal responses. A further end-to-end pilot remains task `oferty-pracy-y81.5`; currently `JOBSPY_ENABLED=false`.
 
-## Implementacja i ograniczenia
+## Implementation and limitations
 
-Osobna funkcja `collect_indeed_html` wykorzystuje DOM i JSON-LD, istniejący kontrakt, limiter HTTP i wspólną blokadę runnera. Nie wykonuje JS ani nie korzysta z GraphQL. Wersja paczki: `1.4.1+oferty.4`. Kolejny pilot powinien użyć paczki w workerze oraz zwykłej kolejki; dopiero po udanym odczycie ocenić dodatkowe oferty, kwalifikację PHP senior i braki danych.
+A separate function `collect_indeed_html` uses the DOM and JSON-LD, the existing contract, the HTTP limiter and the shared runner lock. It does not execute JS and does not use GraphQL. Package version: `1.4.1+oferty.4`. The next pilot should use the package in the worker and the ordinary queue; only after a successful read should it assess additional offers, the senior PHP qualification and data gaps.
 
-Testy offline korzystają wyłącznie z syntetycznego HTML i podstawionego transportu, z rzeczywistą logiką limitów. Osobny tester sprawdził parser, pochodzenie płac, paginację, częściowe wyniki, blokady, zgody i 429. Wyniki końcowych kontroli zapisano w zadaniu Beads. Przejście tych testów nie usuwa blokady dostępu.
+Offline tests use only synthetic HTML and a substituted transport, with the real limit logic. A separate tester checked the parser, salary origin, pagination, partial results, blocks, consent pages and 429. The results of the final checks were recorded in the Beads task. Passing these tests does not remove the access block.
 
-## Kontrole końcowe
+## Final checks
 
-Tester dodał 23 testy HTML oraz regresję wyboru adaptera w runnerze. Pełny zestaw forka: 77 testów; runner: 5 testów. Obejmują także zachowanie kart po błędnej paginacji i usunięcie nieaktualnych kwot po błędnej płacy w szczegółach. Kontrole aplikacji: 67 testów JobSpy, typecheck i lint. Wheel porównano bajtowo z 40 modułami lokalnego kodu i sprawdzono obecność licencji. Zmiany pozostają lokalne, bez commit/push.
+The tester added 23 HTML tests and a regression test for adapter selection in the runner. Full fork suite: 77 tests; runner: 5 tests. They also cover keeping cards after faulty pagination and removing stale amounts after a faulty salary in the details. Application checks: 67 JobSpy tests, typecheck and lint. The wheel was compared byte by byte with 40 modules of the local code, and the presence of the licence was checked. The changes stay local, with no commit/push.
 
-## Eksperyment transportu z jobsniffer — 2026-11-03
+## Transport experiment with jobsniffer — 2026-11-03
 
-W działającym workerze sprawdzono `curl_cffi 0.17.0`, `impersonate="chrome"`, bez proxy środowiskowego, automatycznych przekierowań i ponowień. Jeden GET wyszukiwania Senior PHP/Polska, timeout 20 s, wykonano pod wspólną blokadą `serialized_import` runnera, z odstępem co najmniej 1 s po przejęciu blokady. Wynik: **HTTP 403**, markery blokady obecne, brak `mosaic-provider-jobcards` i `data-jk`. Nie wykonano żądań szczegółów ani fallbacku GraphQL i nie zapisano ofert. Zapisano wyłącznie metadane diagnozy; odpowiedź nie weszła do repozytorium.
+In the running worker we checked `curl_cffi 0.17.0`, `impersonate="chrome"`, without an environment proxy, automatic redirects or retries. One GET of the Senior PHP/Poland search, timeout 20 s, was made under the runner's shared `serialized_import` lock, with a gap of at least 1 s after taking the lock. Result: **HTTP 403**, block markers present, no `mosaic-provider-jobcards` and no `data-jk`. No detail requests or GraphQL fallback were made and no offers were saved. Only diagnostic metadata was saved; the response did not enter the repository.
 
-Zmiana fingerprintu TLS nie rozwiązała blokady w tym środowisku. Nie zmieniono produkcyjnego transportu ani paczki; źródło pozostaje wyłączone. Eksperyment `oferty-pracy-y81.15` zakończony, ale udany pilot adaptera i kryterium AC7 w `oferty-pracy-y81.8` nadal nie są spełnione.
+Changing the TLS fingerprint did not resolve the block in this environment. The production transport and the package were not changed; the source stays disabled. Experiment `oferty-pracy-y81.15` is finished, but a successful adapter pilot and criterion AC7 in `oferty-pracy-y81.8` are still not met.

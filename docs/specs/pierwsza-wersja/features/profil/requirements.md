@@ -1,74 +1,74 @@
-# Profil zawodowy i kryteria — wymagania
+# Professional profile and criteria — requirements
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **dopracowany zakres bieżącego etapu do przeglądu**, 2026-11-01. Funkcjonalność pod wspólnym [PRD](../../PRD.md). Źródła i decyzje właściciela: [PRD](../../PRD.md#źródła-i-odpowiedzialność-dokumentów). Projekt techniczny: [solution-design.md](solution-design.md). Terminologia: [słownik](../../../../../GLOSSARY.md).
+Status: **refined scope of the current stage, for review**, 2026-11-01. A feature under the shared [PRD](../../PRD.md). Sources and owner's decisions: [PRD](../../PRD.md#sources-and-document-responsibilities). Technical design: [solution-design.md](solution-design.md). Terminology: [glossary](../../../../../GLOSSARY.md).
 
-## Zakres i zależności
+## Scope and dependencies
 
-Ten dokument jest właścicielem wymagań R-01, R-02 i odpowiadających im AC. Powiązania: [dopasowanie](../dopasowanie/requirements.md), [pobieranie](../pobieranie/requirements.md). Nie przejmuje reguł innych funkcjonalności. Aktorem jest właściciel; scenariusze są przyszłymi kryteriami, nie wynikiem testów.
+This document owns requirements R-01, R-02 and their ACs. Related: [matching](../dopasowanie/requirements.md), [fetching](../pobieranie/requirements.md). It does not take over the rules of other features. The actor is the owner; the scenarios are future criteria, not test results.
 
-### R-01 — profil zawodowy
+### R-01 — professional profile
 
-Profil powstaje na podstawie CV, można go uzupełniać i poprawiać. Oddziela posiadane umiejętności/doświadczenie od kierunku zawodowego, preferencji i wymagań koniecznych. Zachowuje wersje użyte do ocen. Właściciel może wgrać CV w PDF lub DOCX albo wkleić tekst. System tworzy propozycję profilu, którą właściciel przegląda, poprawia i zatwierdza przed pierwszą oceną ofert. Preferencje i kierunek rozwoju uzupełnia osobno.
+The profile is created based on the CV and can be completed and corrected. It separates the skills/experience the owner has from the career direction, preferences and must-have requirements. It keeps the versions used for assessments. The owner can upload a CV as PDF or DOCX, or paste text. The system creates a profile proposal, which the owner reviews, corrects and approves before the first assessment of offers. Preferences and the development direction are completed separately.
 
-**AC-01:** po poprawieniu profilu nowa ocena wskazuje nową wersję, a poprzednia nadal wskazuje swój stan wejściowy. Brak technologii w CV jest niewiadomą, nie potwierdzeniem nieznajomości. Właściciel może na żądanie ponownie ocenić zapisane oferty. Import PDF, DOCX i wklejenie tekstu prowadzą do edytowalnej propozycji profilu. Przed jej zatwierdzeniem automatyczny triage nie startuje; po zatwierdzeniu używa wskazanej wersji. Umiejętności i doświadczenie nie są utożsamiane z preferencjami. Na start obsługiwane są PDF-y z warstwą tekstową oraz DOCX, bez OCR skanów. Gdy tekstu nie uda się odczytać, aplikacja komunikuje problem i umożliwia jego wklejenie. Ponowny import tworzy propozycję zmian do porównania i zatwierdzenia, zachowując dotychczasowy aktywny profil i ręcznie wpisane preferencje; samo wgranie nie nadpisuje aktywnej wersji.
+**AC-01:** after the profile is corrected, a new assessment points to the new version, and the previous one still points to its input state. A technology missing from the CV is an unknown, not a confirmation of not knowing it. The owner can reassess saved offers on demand. PDF import, DOCX import and pasting text lead to an editable profile proposal. Before it is approved automatic triage does not start; after approval it uses the indicated version. Skills and experience are not equated with preferences. At the start PDFs with a text layer and DOCX are supported, with no OCR of scans. When the text cannot be read, the application reports the problem and allows pasting it. A re-import creates a proposal of changes to compare and approve, keeping the current active profile and the manually entered preferences; the upload alone does not overwrite the active version.
 
 
-#### Formularz uzupełniający profil (Q5)
+#### Form for completing the profile (Q5)
 
-Niezależnie od CV właściciel przechodzi formularz sekcjami:
+Regardless of the CV, the owner goes through the form section by section:
 
-- Cel poszukiwań: stanowiska, kierunek rozwoju, technologie do nauki, typ firmy i projektu.
-- Warunki: wynagrodzenie z walutą i podstawą, umowa, lokalizacja, tryb pracy i dni w biurze, wymiar godzin, język, strefa czasowa i dyżury.
-- Znaczenie oczekiwań: konieczne, preferowane albo bez znaczenia, oraz jawne wykluczenia.
-- Uzupełnienie doświadczenia: umiejętności i projekty pominięte w CV.
+- Search goal: positions, development direction, technologies to learn, type of company and project.
+- Conditions: pay with currency and basis, contract, location, work mode and days in the office, working hours, language, time zone and on-call duty.
+- Importance of expectations: must-have, preferred or does not matter, and explicit exclusions.
+- Supplementing experience: skills and projects left out of the CV.
 
-Pytanie można pominąć i wrócić do niego później. Pominięte pole jest niewiadomą; jawne „bez znaczenia” jest świadomym brakiem ograniczenia. System nie wyprowadza wymagań, np. oczekiwanej płacy, z dotychczasowej pracy. Wszystkie sekcje są edytowalne; przed zatwierdzeniem dostępne jest podsumowanie.
+A question can be skipped and returned to later. A skipped field is an unknown; an explicit "does not matter" is a deliberate absence of a constraint. The system does not derive requirements, e.g. expected pay, from the current job. All sections are editable; a summary is available before approval.
 
-**Dodatkowe warunki AC-01:** właściciel może uzupełnić oczekiwania, których nie ma w CV, odróżnić konieczność od preferencji i zapisać wykluczenie. Pominięcie pytania nie wpisuje domyślnej odpowiedzi ani nie blokuje późniejszego uzupełnienia. Podsumowanie pokazuje świadomie wybrane oczekiwania i niewiadome osobno. Ponowny import CV nie usuwa ich ani nie aktywuje niezatwierdzonych zmian.
+**Additional AC-01 conditions:** the owner can add expectations that are not in the CV, distinguish must-haves from preferences and record an exclusion. Skipping a question does not enter a default answer and does not block completing it later. The summary shows deliberately chosen expectations and unknowns separately. A re-import of the CV does not remove them and does not activate unapproved changes.
 
-### R-02 — trzy rodzaje kryteriów
+### R-02 — three kinds of criteria
 
-Wymagania podstawowe określają zakres pobierania; preferencje i wymagania konieczne służą dopasowaniu; filtry widoku dotyczą zapisanej bazy. Filtry źródłowe wolno stosować tylko przy zgodnym znaczeniu, pozostałe sprawdza się lokalnie.
+Baseline requirements set the fetch scope; preferences and must-have requirements serve matching; view filters apply to the saved database. Source filters may be used only when their meaning matches; the others are checked locally.
 
-**AC-02:** zmiana filtra tabeli nie zmienia zakresu importu ani profilu. Jeśli API nie wyraża danego kryterium bez utraty ofert z nieznaną wartością, lokalna kwalifikacja zachowuje takie oferty i oznacza niewiadomą. Zmiana zakresu nie stanowi dowodu niedostępności wcześniej zapisanych ogłoszeń.
+**AC-02:** changing a table filter does not change the import scope or the profile. If the API cannot express a given criterion without losing offers with an unknown value, local qualification keeps such offers and marks the unknown. A scope change is not evidence that previously saved ads are unavailable.
 
-## Otwarte kwestie
+## Open questions
 
-O-01 rozstrzygnięte produktowo (Q1–Q5). Pozostają konfiguracja wartości O-05 oraz techniczny dobór ekstrakcji/limitów w O-06. Szczegóły, konsekwencje i sposób zamknięcia: [wspólny rejestr](../../open-decisions.md). Otwarte kwestie rozpatrujemy przy podejmowaniu tej funkcjonalności; sam szkic nie oznacza gotowości implementacji.
+O-01 settled for the product (Q1–Q5). What remains is the configuration of values in O-05 and the technical choice of extraction/limits in O-06. Details, consequences and how to close them: [shared register](../../open-decisions.md). We consider open questions when taking up this feature; the draft alone does not mean the implementation is ready.
 
-## Bieżący etap: profil przed ocenami — 2026-11-01
+## Current stage: profile before assessments — 2026-11-01
 
-Właściciel wybrał profil jako następny etap po importerze i liście. Powyższe potwierdzone decyzje pozostają aktualne. Dopracowanie tego wycinka nie uruchamia jeszcze triage, researchu ani zmiany zakresu PHP Senior w importerze.
+The owner chose the profile as the next stage after the importer and the list. The confirmed decisions above remain current. Refining this slice does not yet start triage, research or a change of the PHP Senior scope in the importer.
 
-Proponowany przepływ ekranu: dane zawodowe → oczekiwania → podsumowanie i zatwierdzenie. Dane można zapisać roboczo i uzupełniać etapami. Aktywna zatwierdzona wersja pozostaje odrębna od szkicu. Pierwszy profil można uzupełnić ręcznie; import CV jest sposobem przygotowania propozycji tych samych danych, a nie warunkiem posiadania CV ze wszystkimi odpowiedziami.
+Proposed screen flow: professional data → expectations → summary and approval. Data can be saved as a draft and completed in stages. The active approved version stays separate from the draft. The first profile can be completed manually; CV import is a way of preparing a proposal of the same data, not a condition of having a CV with all the answers.
 
-Podział informacji do projektu formularza:
+Split of information for the form design:
 
-| Część | Zawartość |
+| Part | Content |
 | --- | --- |
-| Doświadczenie | Role, okresy, zakres odpowiedzialności, projekty i osiągnięcia; technologie w kontekście ich wykorzystania. |
-| Umiejętności | Technologie z opcjonalnym poziomem znajomości, przybliżonym czasem doświadczenia, ostatnim użyciem i opisem zastosowania (potwierdzone 2026-11-01). |
-| Kierunek | Poszukiwane role i seniority, technologie do rozwijania, preferowany typ pracy/projektu; nie zmieniają posiadanego doświadczenia. |
-| Warunki i wykluczenia | Płaca, kontrakt, lokalizacja, tryb i wymiar pracy oraz pozostałe ustalone kryteria; każde może być konieczne, preferowane, obojętne lub nieuzupełnione. |
-| Podsumowanie | Propozycje z CV, poprawki właściciela, znane oczekiwania i niewiadome, zapis szkicu oraz jawne zatwierdzenie. |
+| Experience | Roles, periods, scope of responsibility, projects and achievements; technologies in the context of how they were used. |
+| Skills | Technologies with an optional proficiency level, approximate length of experience, last use and a description of how they were applied (confirmed 2026-11-01). |
+| Direction | Sought roles and seniority, technologies to develop, preferred type of work/project; they do not change the experience the owner has. |
+| Conditions and exclusions | Pay, contract, location, work mode and hours and the other agreed criteria; each can be must-have, preferred, indifferent or not filled in. |
+| Summary | Proposals from the CV, the owner's corrections, known expectations and unknowns, saving the draft and explicit approval. |
 
-### Potwierdzone doprecyzowania — 2026-11-01
+### Confirmed clarifications — 2026-11-01
 
-- Każda technologia ma nazwę oraz opcjonalne: poziom znajomości, przybliżony czas doświadczenia, ostatnie użycie i krótki opis zastosowania. Samej obecności technologii w CV nie interpretujemy jako poziomu biegłości. Czas doświadczenia nie jest automatycznie sumą nakładających się projektów.
-- Oczekiwanie finansowe ma **jedno minimum dla wybranego kontraktu**, z jawną walutą, okresem i podstawą kwoty. Nie tworzymy osobnych równoczesnych minimów B2B/UoP. To wybór dotyczący profilu; oferta nadal może zawierać kilka wariantów wynagrodzenia i jest porównywana z właściwym wariantem.
+- Each technology has a name and, optionally: proficiency level, approximate length of experience, last use and a short description of how it was applied. We do not interpret the mere presence of a technology in the CV as a level of proficiency. Length of experience is not automatically the sum of overlapping projects.
+- The financial expectation has **one minimum for the chosen contract**, with an explicit currency, period and amount basis. We do not create separate concurrent B2B/UoP minimums. This is a choice about the profile; an offer can still contain several pay variants and is compared with the right variant.
 
-Dodatkowe AC-01: można zapisać samą nazwę technologii bez wymuszonego poziomu/stażu. Zatwierdzona wersja zachowuje jedno wskazane minimum i kontrakt; zmiana kontraktu wymaga przeglądu powiązanych warunków kwoty, bez automatycznej konwersji netto/brutto.
+Additional AC-01: a technology name alone can be saved without a forced level/years. The approved version keeps the one indicated minimum and contract; a contract change requires reviewing the related amount conditions, without automatic net/gross conversion.
 
-Szczegóły importu, przechowywania i granic wywołania AI opisano w bieżącym solution-design; konfiguracja i kontrolna próba dostawcy pozostają warunkiem aktywacji płatnej pracy. Właściciel potwierdził 2026-11-01 zachowanie oryginalnego pliku CV lokalnie. Plik jest powiązany z importem i można do niego wrócić; ponowny import nie zastępuje poprzedniego pliku. Zatwierdzone wersje profilu zachowują wskazanie importu źródłowego, jeśli powstały z CV. Dla wklejonego tekstu zachowujemy tekst wejściowy zamiast pliku.
+The details of import, storage and the boundaries of the AI call are described in the current solution design; the configuration and a control trial of the provider remain a condition for activating paid work. On 2026-11-01 the owner confirmed keeping the original CV file locally. The file is linked to the import and can be returned to; a re-import does not replace the previous file. Approved profile versions keep a pointer to the source import if they were created from a CV. For pasted text we keep the input text instead of a file.
 
-Dodatkowe AC-01 dotyczące CV: po imporcie można pobrać niezmieniony oryginał; odtworzenie kontenerów z zachowaniem wolumenów nie usuwa CV. Import kolejnego pliku zachowuje wcześniejszy dokument i powiązania wersji profilu. Błąd odczytu nie nadpisuje aktywnego profilu; użytkownik może wrócić do źródła i skorzystać z wklejenia tekstu.
+Additional AC-01 about the CV: after an import the unchanged original can be downloaded; recreating the containers while keeping the volumes does not remove the CV. Importing another file keeps the earlier document and the links of profile versions. A read error does not overwrite the active profile; the user can go back to the source and use pasting the text.
 
-## Zachowanie przy braku konfiguracji i błędach
+## Behaviour with missing configuration and on errors
 
-Bez skonfigurowanego AI można uzupełnić i zatwierdzić profil ręcznie oraz lokalnie odczytać i pobrać CV. Przygotowanie propozycji komunikuje brak konfiguracji/środków albo błąd; nie udaje przygotowanego profilu. Błąd importu i nieukończona odpowiedź modelu nie zmieniają aktywnej wersji. Ponowny import nie usuwa danych, których model nie odnalazł; właściciel wybiera zmiany po porównaniu propozycji z istniejącymi danymi. Stary wynik nie nadpisuje późniejszych ręcznych poprawek.
+Without configured AI the profile can be completed and approved manually, and the CV can be read and downloaded locally. Preparing a proposal reports missing configuration/funds or an error; it does not pretend a profile was prepared. An import error and an incomplete model response do not change the active version. A re-import does not remove data the model did not find; the owner chooses the changes after comparing the proposal with the existing data. An old result does not overwrite later manual corrections.
 
-Niepełny profil można zatwierdzić z jawnymi niewiadomymi. Formularz nie wymusza odpowiedzi na wszystkie pytania; sprawdza natomiast spójność wpisanych wartości (np. kwota z kontraktem/walutą/okresem/podstawą). Dwie karty nie mogą bez komunikatu nadpisać nowszego zapisu. Kolejne zatwierdzenie tej samej operacji nie tworzy podwójnej wersji.
+An incomplete profile can be approved with explicit unknowns. The form does not force answers to all questions; it does check the consistency of the values entered (e.g. an amount with a contract/currency/period/basis). Two tabs cannot overwrite a newer save without a message. A repeated approval of the same operation does not create a duplicate version.
 
-Minimalne uruchomienie importu AI wymaga kontroli kosztów zgodnej z R-25; to zależność tego etapu, bez wdrażania teraz całego researchu i ocen. Limity pliku/czasu odczytu określa solution-design; ich przekroczenie ma czytelny komunikat i możliwość ręcznego uzupełnienia, bez cichego obcięcia wejścia.
+A minimal launch of the AI import requires cost control in line with R-25; this is a dependency of this stage, without building the whole research and assessments now. The file size/read time limits are set by the solution design; exceeding them gives a clear message and the option to complete manually, without silently truncating the input.

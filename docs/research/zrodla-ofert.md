@@ -1,44 +1,44 @@
-# Dostępność danych źródeł ofert dla polskiego rynku
+# Data availability of offer sources for the Polish market
 
-Data weryfikacji: **2026-10-30**. Kontekst: `bd show oferty-pracy-v4t.1`; wymagania: [ustalenia produktu](../product/ustalenia.md). To materiał do wyboru źródła, nie decyzja właściciela ani wdrożenie pobierania.
+Verification date: **2026-10-30**. Context: `bd show oferty-pracy-v4t.1`; requirements: [product decisions](../product/ustalenia.md). This is material for choosing a source, not an owner's decision or an implementation of fetching.
 
-## Wniosek
+## Conclusion
 
-**Rekomendowany kandydat na pierwsze źródło: SOLID.Jobs.** Jako jedyny z pięciu ma w tym badaniu potwierdzony oficjalny, opisany interfejs odczytu przeznaczony także dla agregatorów i asystentów AI. Dokumentacja mówi o bezpłatnym dostępie bez konta, klucza i OAuth; wymagany jest własny identyfikator `campaign`. Wprost dopuszcza prezentowanie ofert w aplikacji i budowanie agregatora. [Oficjalna strona API](https://solid.jobs/api-ofert-pracy).
+**Recommended candidate for the first source: SOLID.Jobs.** It is the only one of the five that, in this study, has a confirmed official, documented read interface intended also for aggregators and AI assistants. The documentation speaks of free access without an account, key or OAuth; your own `campaign` identifier is required. It explicitly allows presenting offers in an application and building an aggregator. [Official API page](https://solid.jobs/api-ofert-pracy).
 
-Rekomendacja dotyczy prostoty i jawnych zasad integracji. Nie dowodzi najlepszego pokrycia rynku ani liczby pasujących ofert dla właściciela: wartości wymagań podstawowych pozostają nieustalone. Pozostałe portale mogą być użyteczne później, po uzyskaniu odpowiedniego dostępu lub wyjaśnieniu warunków.
+The recommendation concerns simplicity and explicit integration rules. It does not prove the best market coverage or the number of matching offers for the owner: the values of the baseline requirements remain undecided. The other portals may be useful later, after obtaining appropriate access or clarifying the terms.
 
-## Metoda i siła dowodów
+## Method and strength of evidence
 
-Sprawdzono oficjalne strony, dokumentację podlinkowaną przez operatora, regulaminy i przykładowe ogłoszenia. Wyszukiwania nazw portali wraz z `API`, `RSS` i integracjami nie ujawniły potwierdzonego publicznego interfejsu odczytu dla czterech konkurentów. **„Nie potwierdzono” nie oznacza „nie istnieje”.** Dokumentacja dostawcy ATS, płatnego scrapera lub agregatora zewnętrznego nie potwierdza oferty API operatora portalu. Interfejs publikowania ogłoszeń dla pracodawców nie stanowi dostępu do całej listy ofert.
+Official pages, documentation linked by the operator, terms of service and sample ads were checked. Searches for portal names together with `API`, `RSS` and integrations did not reveal a confirmed public read interface for the four competitors. **"Not confirmed" does not mean "does not exist".** The documentation of an ATS vendor, a paid scraper or a third-party aggregator does not confirm an API offering by the portal operator. An interface for employers to publish ads is not access to the whole list of offers.
 
-Wykonano jeden udany GET SOLID.Jobs z `pageSize=1`; nie pobierano całej bazy ani nie testowano limitów. Część stron theprotocol.it zwracała 403; nie obchodzono ograniczeń. Wskazana data oznacza datę sprawdzenia; treść wyszukiwarki może pochodzić z cache. Dlatego nie porównuje się liczników widocznych na stronach jako dokładnych aktualnych wielkości rynku.
+One successful SOLID.Jobs GET with `pageSize=1` was made; the whole database was not fetched and limits were not tested. Some theprotocol.it pages returned 403; restrictions were not bypassed. The stated date is the date of the check; search engine content may come from a cache. So the counters visible on the pages are not compared as exact current market sizes.
 
-## Porównanie
+## Comparison
 
-| Źródło | Oficjalny odczyt API / RSS ofert | Dane i praca z Polski | Warunki / ograniczenia | Ocena na start |
+| Source | Official API / RSS read of offers | Data and work from Poland | Terms / restrictions | Assessment for the start |
 | --- | --- | --- | --- | --- |
-| **SOLID.Jobs** | Potwierdzone publiczne REST API i oficjalne kanały RSS ofert: ogólny, IT oraz specjalizacje. [Katalog RSS](https://solid.jobs/about/rss). | Próbka API ma lokalizację Kraków, warunki B2B, technologie, opis i daty. Dział IT obejmuje również role inne niż programowanie. | Bezpłatne; `campaign`; 300 żądań/min/IP, kolejka 10, cache 1 h; strona API dozwala agregatory. [Dokumentacja](https://solid.jobs/api-ofert-pracy). | Najmniej niepewności integracyjnych; kandydat rekomendowany. |
-| **Just Join IT** | Nie potwierdzono oficjalnego publicznego API odczytu ani RSS ofert. Próba starego `/api/offers` przez narzędzie WWW zakończyła się 404; to nie dowód braku innego API. | Wyszukiwarka ma polskie miasta, remote, technologie, seniority, umowy, wymiar pracy, języki i filtr ofert z widełkami. [Wyszukiwarka](https://justjoin.it/). | Regulamin użytkownika 14.07.2026 pkt 11.2–11.3 ogranicza kopiowanie/pobieranie treści; automatyczna ekstrakcja wymaga wyraźnej pisemnej zgody. [Regulamin z oficjalnej strony](https://s3.eu-west-1.amazonaws.com/public.justjoin.com/regulations/jjit-users-terms-of-service/jjit__regulamin_uzytkownika_justjoinit_14072026). | Nie uruchamiać planowego importu bez odpowiedniego uzgodnienia. |
-| **No Fluff Jobs** | Nie potwierdzono oficjalnego publicznego API odczytu ani RSS ofert. | Filtry: technologie, seniority, lokalizacja, tryb, umowa, język i widełki; są oferty w Polsce. [Wyszukiwarka](https://nofluffjobs.com/). | Regulamin 15.10.2026 §2 ust. 8–9 ogranicza istotną część bazy oraz powtarzające/systematyczne pobieranie; robots wyłącza `/api/`. [Regulamin](https://nofluffjobs.com/static/No_Fluff_Jobs_Terms_and_Conditions.pdf), [robots](https://nofluffjobs.com/robots.txt). | Najpierw wyjaśnić dostęp i warunki; sam nieoficjalny endpoint nie wystarcza. |
-| **Bulldogjob** | Nie potwierdzono oficjalnego publicznego API odczytu ani RSS ofert. | Lista ma polskie i zagraniczne lokalizacje, remote, technologie, doświadczenie, wymiar współpracy i widełki. [Lista ofert](https://bulldogjob.pl/companies/jobs). | Regulamin §16 ust. 3 ogranicza kopiowanie, reprodukcję, dystrybucję i pobieranie treści w całości/części. [Regulamin](https://bulldogjob.pl/terms/general). | Nie wybierać do automatycznego importu bez uzgodnienia dostępu. |
-| **theprotocol.it** | Nie potwierdzono oficjalnego publicznego API odczytu ani RSS ofert. | Operator opisuje polski rynek IT, filtry technologii MUST/NICE/NOT, lokalizację, zarobki, umowy i doświadczenie. [O serwisie](https://theprotocol.it/o-nas). | Strona wskazuje regulamin obowiązujący od 12.10.2026, ale pełnego dokumentu nie udało się zweryfikować w tym badaniu; część adresów zwraca 403. [Strona regulaminu](https://theprotocol.it/regulamin). | Dostęp techniczny i dopuszczalność integracji pozostają niewiadome. |
+| **SOLID.Jobs** | Confirmed public REST API and official RSS feeds of offers: general, IT and specialisations. [RSS catalogue](https://solid.jobs/about/rss). | The API sample has the location Kraków, B2B terms, technologies, description and dates. The IT division also includes roles other than programming. | Free; `campaign`; 300 requests/min/IP, queue of 10, cache of 1 h; the API page allows aggregators. [Documentation](https://solid.jobs/api-ofert-pracy). | The fewest integration uncertainties; recommended candidate. |
+| **Just Join IT** | No official public read API or RSS of offers confirmed. An attempt at the old `/api/offers` through the web tool ended with 404; this is not proof that no other API exists. | The search has Polish cities, remote, technologies, seniority, contracts, working time, languages and a filter for offers with salary ranges. [Search](https://justjoin.it/). | The user terms of 14.07.2026, points 11.2–11.3, restrict copying/downloading content; automated extraction requires explicit written consent. [Terms from the official site](https://s3.eu-west-1.amazonaws.com/public.justjoin.com/regulations/jjit-users-terms-of-service/jjit__regulamin_uzytkownika_justjoinit_14072026). | Do not start a scheduled import without an appropriate agreement. |
+| **No Fluff Jobs** | No official public read API or RSS of offers confirmed. | Filters: technologies, seniority, location, mode, contract, language and salary ranges; there are offers in Poland. [Search](https://nofluffjobs.com/). | The terms of 15.10.2026 §2 sections 8–9 restrict a substantial part of the database and repeated/systematic downloading; robots excludes `/api/`. [Terms](https://nofluffjobs.com/static/No_Fluff_Jobs_Terms_and_Conditions.pdf), [robots](https://nofluffjobs.com/robots.txt). | First clarify access and terms; an unofficial endpoint alone is not enough. |
+| **Bulldogjob** | No official public read API or RSS of offers confirmed. | The list has Polish and foreign locations, remote, technologies, experience, working arrangement and salary ranges. [Offer list](https://bulldogjob.pl/companies/jobs). | Terms §16 section 3 restrict copying, reproduction, distribution and downloading of content in whole or in part. [Terms](https://bulldogjob.pl/terms/general). | Do not choose for automated import without an access agreement. |
+| **theprotocol.it** | No official public read API or RSS of offers confirmed. | The operator describes the Polish IT market, MUST/NICE/NOT technology filters, location, earnings, contracts and experience. [About the site](https://theprotocol.it/o-nas). | The site points to terms in force from 12.10.2026, but the full document could not be verified in this study; some addresses return 403. [Terms page](https://theprotocol.it/regulamin). | Technical access and the permissibility of integration remain unknown. |
 
-Nie ustalono dla czterech ostatnich źródeł publicznego kontraktu paginacji, limitów żądań, gwarantowanej kompletności, historycznego eksportu ani interfejsu statusu zamknięcia. Funkcje widoczne w przeglądarce nie są gwarancją dostępności tych pól przez API. `robots.txt` opisuje oczekiwania crawlerów; nie zastępuje regulaminu ani licencji.
+For the last four sources, the following were not established: a public pagination contract, request limits, guaranteed completeness, a historical export or a closure status interface. Features visible in the browser are no guarantee that these fields are available through an API. `robots.txt` describes expectations for crawlers; it does not replace terms of service or a licence.
 
-## SOLID.Jobs: API, RSS i rzeczywista próbka
+## SOLID.Jobs: API, RSS and an actual sample
 
-Oficjalny katalog RSS podaje kanał wszystkich nowych ofert `https://solid.jobs/rss/job-offers`, kanał IT `https://solid.jobs/rss/job-offers/division/IT` oraz kanały specjalizacji programistycznych, np. Python, Java i .NET. Potwierdzono istnienie i przeznaczenie kanałów na stronie operatora; odczyt kanału IT narzędziem WWW zatrzymał się na nieobsługiwanym typie `application/rss+xml`, więc nie zweryfikowano treści XML ani nie wykonano audytu kompletności lub retencji RSS. Nie ustalono gwarancji historii, paginacji, aktualizacji i sygnalizowania zamknięcia przez RSS. Dla pełnego importu i synchronizacji rekomendowane pozostaje opisane API. [Katalog kanałów RSS](https://solid.jobs/about/rss).
+The official RSS catalogue lists the feed of all new offers `https://solid.jobs/rss/job-offers`, the IT feed `https://solid.jobs/rss/job-offers/division/IT` and feeds for programming specialisations, e.g. Python, Java and .NET. The existence and purpose of the feeds were confirmed on the operator's page; reading the IT feed with the web tool stopped at the unsupported type `application/rss+xml`, so the XML content was not verified and no audit of RSS completeness or retention was done. Guarantees of history, pagination, updates and signalling closure through RSS were not established. For full import and sync, the documented API remains the recommendation. [RSS feed catalogue](https://solid.jobs/about/rss).
 
-Oficjalny klient opisuje `GET /public-api/offers/{division}`, wersję `X-Api-Version: 1.0`, indeksowanie stron od zera, domyślnie 30 i maksymalnie 500 rekordów na stronę. Odpowiedź zawiera `jobs`, `pageIndex`, `pageSize`, `totalCount`, `totalPages`. Są filtry miast, kategorii/specjalizacji, doświadczenia, frazy i minimalnej pensji oraz sortowanie m.in. po `validFrom`, `validTo` i wynagrodzeniu. [README operatora](https://github.com/solid-company/solid-jobs-client#main-endpoint).
+The official client describes `GET /public-api/offers/{division}`, version `X-Api-Version: 1.0`, page indexing from zero, 30 records per page by default and at most 500. The response contains `jobs`, `pageIndex`, `pageSize`, `totalCount`, `totalPages`. There are filters for cities, categories/specialisations, experience, phrase and minimum salary, and sorting by, among others, `validFrom`, `validTo` and salary. [Operator README](https://github.com/solid-company/solid-jobs-client#main-endpoint).
 
-Zapytanie kontrolne, bez filtrów merytorycznych:
+Control query, without content filters:
 
 ```text
 GET https://solid.jobs/public-api/offers/IT?campaign=osobisty-asystent-research&pageSize=1&pageIndex=0
 ```
 
-Wynik: **HTTP 200**, `pageIndex=0`, `pageSize=1`, `totalCount=1525`, `totalPages=1525`. Licznik dotyczy działu IT w chwili odczytu, nie samych programistów ani całej historii. Skrócony zapis faktycznie odczytanych pól (pominięto pełny opis i listy):
+Result: **HTTP 200**, `pageIndex=0`, `pageSize=1`, `totalCount=1525`, `totalPages=1525`. The counter applies to the IT division at the time of reading, not to developers alone or to the whole history. A shortened record of the fields actually read (the full description and lists are omitted):
 
 ```json
 {
@@ -63,35 +63,35 @@ Wynik: **HTTP 200**, `pageIndex=0`, `pageSize=1`, `totalCount=1525`, `totalPages
 }
 ```
 
-Źródło próbki: [publiczny endpoint operatora](https://solid.jobs/public-api/offers/IT?campaign=osobisty-asystent-research&pageSize=1&pageIndex=0), odczyt 2026-10-30. Jeden rekord nie potwierdza kompletności ani zachowania całej bazy.
+Sample source: [the operator's public endpoint](https://solid.jobs/public-api/offers/IT?campaign=osobisty-asystent-research&pageSize=1&pageIndex=0), read on 2026-10-30. One record confirms neither completeness nor the behaviour of the whole database.
 
-Próbka zawierała również `companyLogoUrl`, `benefits`, `skills` z nazwą i poziomem, `languages` z nazwą i poziomem, pełny `description` w HTML oraz adres `url` zawierający identyfikator kampanii. Opis ujawniał pośrednika rekrutacyjnego, nienazwanego klienta i sześć dni miesięcznie w biurze. To przykład danych wymagających odczytu tekstu: pojedyncze `company` nie rozdziela ról firmy publikującej, zatrudniającej i klienta; samo `isHybrid` nie określa liczby dni biurowych.
+The sample also contained `companyLogoUrl`, `benefits`, `skills` with name and level, `languages` with name and level, the full `description` in HTML and a `url` address containing the campaign identifier. The description revealed a recruitment intermediary, an unnamed client and six days a month in the office. This is an example of data that needs the text to be read: a single `company` does not separate the roles of the publishing company, the employing company and the client; `isHybrid` alone does not specify the number of office days.
 
-### Przydatność i braki dla produktu
+### Usefulness and gaps for the product
 
-| Wymaganie | Dowód / konsekwencja |
+| Requirement | Evidence / consequence |
 | --- | --- |
-| Stabilna tożsamość w źródle | Jest `jobOfferKey`; używać wraz z identyfikatorem źródła, nie samego tytułu ani URL kampanii. To rekomendacja projektowa na podstawie próbki. |
-| Wynagrodzenie | Próbka potwierdza kwotę, walutę, okres i umowę. Dokumentacja przewiduje także `secondarySalary`; granice kwot mogą być `null`. Nie zakładać obecności drugich widełek. [Opis pól](https://github.com/solid-company/solid-jobs-client#example-response). |
-| Wymagane / opcjonalne technologie | Dokumentacja pokazuje poziom `NiceToHave`; zachować oryginalny poziom zamiast usuwać to rozróżnienie. [Przykład operatora](https://github.com/solid-company/solid-jobs-client#example-response). |
-| Z Polski | Polski adres jest mocnym sygnałem, lecz `isRemote=true` sam nie dowodzi dopuszczenia rezydencji w Polsce, wymaganego zezwolenia, strefy ani godzin pracy. Te dane pozostają niewiadome, jeśli opis ich nie podaje. |
-| Historia | Nie potwierdzono eksportu historii pojedynczych ogłoszeń ani wersji zmian. Statystyki rynkowe nie zastępują historii oferty. Własne snapshoty są potrzebą projektu. |
-| Zamknięcie | Są `validTo` i daty zmian; nie potwierdzono osobnego statusu `closed`, tombstone, webhooka lub gwarantowanego odczytu wycofanej oferty. Nieobecność na częściowej stronie nie wystarcza. |
-| Aktualizacja | Cache 1 h oznacza, że częstsze odpytywanie nie daje gwarancji świeższych danych. Nie ustalono SLA ani atomowego snapshotu wielu stron. [Strona API](https://solid.jobs/api-ofert-pracy). |
+| Stable identity at the source | There is `jobOfferKey`; use it together with the source identifier, not the title or the campaign URL alone. This is a design recommendation based on the sample. |
+| Salary | The sample confirms the amount, currency, period and contract. The documentation also provides for `secondarySalary`; amount bounds may be `null`. Do not assume a second salary range is present. [Field description](https://github.com/solid-company/solid-jobs-client#example-response). |
+| Required / optional technologies | The documentation shows a `NiceToHave` level; keep the original level instead of dropping this distinction. [Operator example](https://github.com/solid-company/solid-jobs-client#example-response). |
+| From Poland | A Polish address is a strong signal, but `isRemote=true` alone does not prove that residence in Poland is accepted, nor the required permit, time zone or working hours. These data remain unknown if the description does not state them. |
+| History | An export of the history of individual ads or of change versions was not confirmed. Market statistics do not replace an offer's history. Our own snapshots are a project need. |
+| Closure | There are `validTo` and change dates; a separate `closed` status, tombstone, webhook or guaranteed read of a withdrawn offer was not confirmed. Absence from a partial page is not enough. |
+| Updates | A 1 h cache means that more frequent polling does not guarantee fresher data. No SLA or atomic snapshot of many pages was established. [API page](https://solid.jobs/api-ofert-pracy). |
 
-## Granice rekomendowanego pierwszego adaptera
+## Boundaries of the recommended first adapter
 
-Poniższe są **wnioskami projektowymi**, a nie dodatkowymi gwarancjami operatora:
+The following are **design conclusions**, not additional guarantees from the operator:
 
-- Pobierać dział IT albo uzgodniony szeroki zakres, a dopiero po określeniu profilu ustalić granice filtrowania. Nie używać próbki PM jako dowodu jakości dopasowania dla programisty.
-- Rozpoczynać od jednego przebiegu dziennie i ręcznego odświeżenia, z sekwencyjną paginacją, obsługą 429/backoff oraz błędu całego przebiegu. Limit 300/min jest granicą, nie zalecaną częstotliwością.
-- Zachowywać klucz źródła, pełny opis, oryginalne pola, datę pobrania oraz URL zwracany przez API wraz z kampanią; wyświetlać źródło i odsyłacz. Nie stwierdzono osobnego obowiązku konkretnego logo lub tekstu atrybucji — to nie jest potwierdzona licencja do dowolnego dalszego obrotu danymi.
-- Zachowywać notatki i historię lokalnie po zniknięciu ogłoszenia. Pojedynczy błąd, niepełny przebieg albo zmiana filtrów nie może oznaczać wygaśnięcia; regułę potwierdzania zamknięcia należy doprecyzować przy projekcie synchronizacji.
-- Przed implementacją sprawdzić kilka ofert programistycznych z wybranego zakresu, stabilność klucza i pól opcjonalnych. Nie wymaga to badania obciążeniowego ani obchodzenia ograniczeń innych źródeł.
+- Fetch the IT division or an agreed broad scope, and set the filtering boundaries only after the profile is defined. Do not use the PM sample as evidence of match quality for a developer.
+- Start with one run a day and a manual refresh, with sequential pagination, 429/backoff handling and handling of a failure of the whole run. The limit of 300/min is a ceiling, not a recommended frequency.
+- Keep the source key, the full description, the original fields, the fetch date and the URL returned by the API together with the campaign; display the source and a link back. No separate obligation to use a specific logo or attribution text was found — this is not a confirmed licence for any further trading of the data.
+- Keep notes and history locally after an ad disappears. A single error, an incomplete run or a change of filters must not mean expiry; the rule for confirming closure needs clarification when designing the sync.
+- Before implementation, check several programming offers from the chosen scope, and the stability of the key and of optional fields. This does not require load testing or bypassing the restrictions of other sources.
 
-## Korekta wcześniejszych założeń
+## Correction of earlier assumptions
 
-1. **SOLID.Jobs jako sensowny punkt startu — potwierdzone**, obecnie oficjalnym API oraz udanym odczytem, nie samą wcześniejszą rozmową.
-2. **„Pozostałe polskie portale mają API do pobierania” — niepotwierdzone.** Nie należy przedstawiać endpointów frontendowych lub ofert firm trzecich jako oficjalnego dostępu integracyjnego.
-3. **„Brak API” lub „brak RSS” — zbyt mocne.** SOLID.Jobs ma potwierdzone API i oficjalny katalog RSS. Dla czterech pozostałych źródeł nie znaleziono i nie zweryfikowano publicznego kontraktu odczytu/kanału ofert.
-4. **„Publicznie widoczne = wolno systematycznie pobierać” — niewłaściwa podstawa projektu.** JJIT, NFJ i Bulldogjob mają opisane wyżej ograniczenia regulaminowe. Dla theprotocol.it szczegółowe warunki pozostają niewiadome; nie przenosić postanowień innych serwisów Grupy Pracuj automatycznie na ten portal.
+1. **SOLID.Jobs as a sensible starting point — confirmed**, now by the official API and a successful read, not only by an earlier conversation.
+2. **"The other Polish portals have an API for fetching" — not confirmed.** Frontend endpoints or third-party offerings must not be presented as official integration access.
+3. **"No API" or "no RSS" — too strong.** SOLID.Jobs has a confirmed API and an official RSS catalogue. For the other four sources, no public read contract/offer feed was found or verified.
+4. **"Publicly visible = allowed to fetch systematically" — an inappropriate basis for the project.** JJIT, NFJ and Bulldogjob have the terms-of-service restrictions described above. For theprotocol.it the detailed terms remain unknown; do not carry over the provisions of other Grupa Pracuj services to this portal automatically.

@@ -1,103 +1,103 @@
-# Uzgodnione wymagania produktu
+# Agreed product requirements
 
-> **Materiał historyczny z początkowego wywiadu.** Późniejsze decyzje właściciela zastąpiły m.in. otwarte zapisy o stosie, budżecie i kopiach zapasowych. Aktualny szkic specyfikacji: [PRD → wymagania → projekt rozwiązania](../specs/pierwsza-wersja/README.md). Nie interpretować poniższych dawnych pytań jako ponownego otwarcia zamkniętych decyzji. Kopie wykonuje zewnętrzna usługa, nie aplikacja.
+> **Historical material from the initial interview.** Later owner's decisions replaced, among other things, the open entries about the stack, the budget and backups. Current specification draft: [PRD → requirements → solution design](../specs/pierwsza-wersja/README.md). Do not read the old questions below as reopening closed decisions. An external service makes the backups, not the application.
 
-Dokument zapisuje wymagania potwierdzone podczas wywiadu projektowego. Właściciel potwierdził zakres produktu i przejście do specyfikacji oraz projektu technicznego. Dokument nie stanowi jeszcze kompletnej specyfikacji ani wyboru architektury technicznej.
+The document records the requirements confirmed during the design interview. The owner confirmed the product scope and the move to the specification and technical design. The document is not yet a complete specification or a choice of technical architecture.
 
-## Przeznaczenie
+## Purpose
 
-System służy wyłącznie właścicielowi, bez obsługi innych użytkowników. Pomaga wyszukiwać pracę, zarządzać ofertami i rekrutacjami oraz przygotowywać się do rozmów.
+The system serves only the owner, with no support for other users. It helps to search for work, manage offers and recruitments and prepare for interviews.
 
-Dane są przechowywane na komputerze właściciela lub jego VPS. Wybór miejsca uruchomienia pozostaje otwarty. Dopuszczalne jest przesyłanie potrzebnych fragmentów profilu, ofert i informacji o firmach do zewnętrznego AI, bez danych kontaktowych z CV i z kontrolą kosztów.
+The data is stored on the owner's computer or their VPS. The choice of where it runs remains open. Sending the needed parts of the profile, the offers and company information to an external AI is allowed, without the contact data from the CV and with cost control.
 
-## Profil i zbieranie ofert
+## Profile and offer collection
 
-Profil powstaje na podstawie CV, uzupełnionego o preferencje i kryteria wykluczające. Posiadane umiejętności i kierunek poszukiwań są odrębnymi informacjami.
+The profile is built from the CV, extended with preferences and exclusion criteria. The skills held and the direction of the search are separate pieces of information.
 
-Proces obejmuje pobranie wszystkich ofert spełniających szerokie wymagania podstawowe, triage względem preferencji, a następnie dwa etapy researchu. Szczegółowe dopasowanie technologii ocenia triage. Brak informacji jest niewiadomą.
+The process covers fetching all offers that meet broad baseline requirements, triage against the preferences, and then two stages of research. Triage assesses the detailed technology match. Missing information is an unknown.
 
-Potwierdzone wymiary filtrowania to technologie, widełki wynagrodzenia, lokalizacje, rodzaje kontraktu, wymiar godzin oraz poziom seniority. Konkretne wartości filtrów nie zostały jeszcze podane. Wcześniejsze ustalenia obejmują również tryb pracy jako kryterium podstawowe.
+The confirmed filtering dimensions are technologies, salary ranges, locations, contract types, working hours and seniority level. The specific filter values have not been given yet. Earlier findings also include the work mode as a baseline criterion.
 
-## Filtry i reguły dopasowania
+## Filters and matching rules
 
-Kryteria pobierania ofert, preferencje do oceny dopasowania i filtry przeglądania zapisanych danych są rozdzielone. Zmiana filtra widoku nie zmienia zakresu pobierania. Kryterium profilu może być wymaganiem koniecznym albo preferencją.
+The criteria for fetching offers, the preferences for match assessment and the filters for browsing saved data are separate. Changing a view filter does not change the fetch scope. A profile criterion can be a must-have requirement or a preference.
 
-Oprócz podstawowych wymiarów system uwzględnia:
+Besides the basic dimensions, the system takes into account:
 
-- Tryb pracy, w tym liczbę dni w biurze.
-- Dostępność geograficzną, w tym możliwość pracy z Polski i wymagane pozwolenie na pracę.
-- Specjalizację, np. backend, frontend, fullstack, platform lub data.
-- Język pracy i wymagany poziom.
-- Strefę czasową, wymagane godziny wspólnej pracy i dyżury.
-- Typ firmy i projektu oraz preferowane lub wykluczone branże.
-- Aktualność: datę publikacji, pierwszego wykrycia i stan aktywna/wygasła.
+- Work mode, including the number of days in the office.
+- Geographic availability, including the possibility of working from Poland and the required work permit.
+- Specialisation, e.g. backend, frontend, fullstack, platform or data.
+- Working language and the required level.
+- Time zone, required overlap hours and on-call duty.
+- Company and project type, and preferred or excluded industries.
+- Freshness: publication date, first detection date and the active/expired state.
 
-Lista zapisanych ofert umożliwia filtrowanie po ratingu i jego składowych, statusie decyzji właściciela, etapie rekrutacji, stanie researchu, firmie, źródle i własnych tagach.
+The list of saved offers allows filtering by rating and its components, the status of the owner's decision, the recruitment stage, the research state, company, source and own tags.
 
-Filtry technologii obsługują dowolną z wybranych, wszystkie wybrane oraz technologie wykluczone. Technologie wymagane w ofercie są odróżniane od opcjonalnych.
+Technology filters support any of the selected, all of the selected and excluded technologies. Technologies required in an offer are distinguished from optional ones.
 
-Wynagrodzenia uwzględniają walutę, okres rozliczenia i podstawę kwoty, np. brutto UoP albo netto B2B. Właściciel decyduje, czy uwzględniać oferty bez widełek.
+Salaries take into account the currency, the settlement period and the basis of the amount, e.g. gross on an employment contract (UoP) or net on B2B. The owner decides whether to include offers without a salary range.
 
 ## Triage
 
-AI proponuje ocenę 0–100, uzasadnienie, mocne strony, braki i niewiadome. Właściciel może korygować rekomendację. Jego decyzja jest zapisywana osobno od oceny AI.
+AI proposes a 0–100 score, a justification, strengths, gaps and unknowns. The owner can correct the recommendation. The owner's decision is saved separately from the AI assessment.
 
-Wszystkie pobrane oferty pozostają dostępne niezależnie od wyniku triage. Oceny można łatwo przeglądać, sortować i filtrować.
+All fetched offers stay available regardless of the triage result. Assessments can easily be browsed, sorted and filtered.
 
-Ocena łączna ma jawne składowe: technologie, doświadczenie, warunki i preferencje. Właściciel może zmieniać ich znaczenie. Kompletność danych jest pokazywana osobno; brak danych nie jest utożsamiany z niespełnieniem wymagania.
+The overall score has explicit components: technologies, experience, conditions and preferences. The owner can change their weight. Data completeness is shown separately; missing data is not equated with failing to meet a requirement.
 
 ## Research
 
-Research podstawowy uruchamia się automatycznie dla ofert zakwalifikowanych po triage. Próg kwalifikacji zostanie określony po obejrzeniu pierwszych ocen. Research pogłębiony jest uruchamiany na żądanie. Oba etapy można uruchamiać ręcznie dla dowolnej firmy lub oferty.
+Basic research starts automatically for offers that qualify after triage. The qualification threshold will be set after looking at the first assessments. Deep research is started on demand. Both stages can be started manually for any company or offer.
 
-Research obejmuje działalność firmy, produkty i projekty, warunki i metody pracy, technologie oraz sygnały ryzyka. Zawiera źródła, daty oraz rozróżnienie faktów, opinii i niewiadomych. Informacje o firmie są wykorzystywane ponownie przy jej kolejnych ofertach.
+Research covers the company's business, products and projects, working conditions and methods, technologies and risk signals. It contains sources, dates and a distinction between facts, opinions and unknowns. Information about a company is reused for its later offers.
 
-Przygotowanie do rozmowy odnosi się do konkretnego stanowiska oraz zespołu lub projektu, jeśli są znane. Wskazuje tematy do przećwiczenia i pytania do rekrutera, z uzasadnieniem rekomendacji.
+Interview preparation refers to a specific position and to the team or project, if they are known. It points to topics to practise and questions for the recruiter, with a justification for the recommendation.
 
-Wynik pogłębionego researchu obejmuje opis firmy i projektu, mapę technologii, priorytetową listę tematów do powtórzenia, propozycje pytań technicznych do ćwiczeń oraz pytania do firmy. Propozycje pytań mają uzasadniony związek ze stanowiskiem i nie są przedstawiane jako znane pytania z rzeczywistej rozmowy. Właściciel może uzupełniać przygotowanie informacjami od rekrutera.
+The result of deep research covers a description of the company and the project, a technology map, a prioritised list of topics to revise, suggested technical questions to practise and questions for the company. The suggested questions have a justified link to the position and are not presented as known questions from a real interview. The owner can add information from the recruiter to the preparation.
 
-## Oferty i firmy
+## Offers and companies
 
-System udostępnia pełną listę ofert z sortowaniem i filtrowaniem, listę firm, szczegóły oferty oraz szczegóły firmy. Firma pokazuje powiązane oferty, research i technologie ogólnie oraz per oferta.
+The system provides a full list of offers with sorting and filtering, a list of companies, offer details and company details. A company shows linked offers, research and technologies, in general and per offer.
 
-Firma publikująca, firma zatrudniająca i klient są odrębnymi rolami, o ile dane pozwalają je ustalić. Technologii klienta nie przypisuje się pośrednikowi jako jego własnych.
+The publishing company, the employing company and the client are separate roles, as far as the data allows them to be established. A client's technologies are not attributed to an intermediary as its own.
 
-Technologie wskazują źródło i zakres: konkretna oferta, inny projekt firmy lub przypuszczenie do potwierdzenia. Technologia z innej oferty nie staje się automatycznie wymaganiem dla rozpatrywanego stanowiska.
+Technologies indicate their source and scope: a specific offer, another project of the company or a guess to be confirmed. A technology from another offer does not automatically become a requirement for the position under consideration.
 
-## Zarządzanie rekrutacjami
+## Recruitment management
 
-System obejmuje etapy od nowej oferty, rozważania i planowania aplikacji przez wysłanie aplikacji i kolejne rozmowy do decyzji, z możliwością odrzucenia lub wycofania na każdym etapie. Obsługuje notatki, terminy, kontakty do rekruterów i historię zmian. Rekrutacja może obejmować wiele rozmów i zadanie rekrutacyjne.
+The system covers the stages from a new offer, considering and planning an application, through sending the application and successive interviews, to a decision, with the option of rejection or withdrawal at every stage. It handles notes, deadlines, recruiter contacts and the change history. A recruitment may include many interviews and a recruitment assignment.
 
-## Obsługa i automatyzacja
+## Operation and automation
 
-Głównym interfejsem jest aplikacja w przeglądarce, uruchamiana na komputerze właściciela albo VPS. Udostępnia tabele, filtry, szczegóły i zarządzanie rekrutacjami.
+The main interface is a browser application, run on the owner's computer or a VPS. It provides tables, filters, details and recruitment management.
 
-Pobieranie ofert i triage działają według harmonogramu, domyślnie raz dziennie, oraz na żądanie. Uruchomienie na komputerze zależy od jego dostępności; VPS umożliwia pracę niezależną od komputera właściciela.
+Fetching offers and triage run on a schedule, by default once a day, and on demand. Running on the computer depends on its availability; a VPS allows work independent of the owner's computer.
 
-Na start podsumowanie jest dostępne w aplikacji: nowe oferty, najlepsze dopasowania, zakończony research, nadchodzące rozmowy i błędy pobierania. Powiadomienia poza aplikacją są poza zakresem pierwszej wersji.
+At the start, a summary is available in the application: new offers, the best matches, finished research, upcoming interviews and fetch errors. Notifications outside the application are outside the scope of the first version.
 
-## Tożsamość i historia ofert
+## Offer identity and history
 
-Ta sama oferta z kilku portali jest prezentowana jako jedna pozycja z wieloma źródłami. Niepewne podobieństwa pozostają osobnymi ofertami. Wygasłe ogłoszenia zachowują historię i notatki. Chwilowy błąd pobierania nie oznacza wygaśnięcia.
+The same offer from several portals is presented as one item with many sources. Uncertain similarities stay separate offers. Expired ads keep their history and notes. A temporary fetch error does not mean expiry.
 
-Po zmianie profilu można na żądanie ponownie ocenić pobrane oferty. Historia ocen i własne decyzje pozostają zachowane.
+After the profile changes, the fetched offers can be reassessed on demand. The assessment history and own decisions are kept.
 
-## Budżet
+## Budget
 
-System ma ustawiany limit wydatków na AI i research. Po jego osiągnięciu płatne operacje są wstrzymywane, natomiast pobieranie dostępnych bezpłatnie ofert i przeglądanie bazy nadal działają. Oczekujące operacje można wznowić po zwiększeniu lub odnowieniu budżetu. Kwota zostanie ustalona przed podłączeniem płatnych usług.
+The system has a configurable spending limit for AI and research. Once it is reached, paid operations are paused, while fetching offers available for free and browsing the database keep working. Pending operations can be resumed after the budget is increased or renewed. The amount will be set before paid services are connected.
 
-## Prywatność i kopie zapasowe
+## Privacy and backups
 
-Aplikacja jest dostępna wyłącznie właścicielowi, również w wariancie na VPS. Automatyczne kopie obejmują oferty, profil, research i historię rekrutacji. Miejsce przechowywania kopii zostanie wybrane przy ustalaniu hostingu.
+The application is available only to the owner, also in the VPS variant. Automatic backups cover offers, the profile, research and the recruitment history. The backup storage location will be chosen when hosting is decided.
 
-## Zakres pierwszej wersji
+## Scope of the first version
 
-Pierwsza działająca wersja obsługuje jedno źródło i cały proces od pobrania oferty do przygotowania do rozmowy. Kolejne źródła są dodawane pojedynczo po uruchomieniu działającego systemu.
+The first working version supports one source and the whole process from fetching an offer to interview preparation. Further sources are added one at a time after the working system is running.
 
-Wywiad nie ustalił jeszcze konkretnego pierwszego źródła, wartości filtrów profilu, miejsca uruchomienia, miejsca kopii, kwot i okresów budżetowych ani szczegółowych wag oceny. Wybór stosu technicznego pozostaje otwarty.
+The interview has not yet settled the specific first source, the profile filter values, where it runs, the backup location, the budget amounts and periods or the detailed assessment weights. The choice of technical stack remains open.
 
-## Ograniczenia przyjęte na początku wayfindingu
+## Constraints adopted at the start of wayfinding
 
-Pierwsze źródło ma dostarczać przede wszystkim oferty dostępne dla osób pracujących z Polski, również zdalnie. Pierwsze uruchomienie odbędzie się na komputerze właściciela, z możliwością późniejszego przeniesienia aplikacji i danych na VPS. Wybór konkretnego stosu technicznego nie jest narzucony; kryterium stanowi prostota utrzymania.
+The first source should deliver mainly offers available to people working from Poland, including remotely. The first run will take place on the owner's computer, with the option of moving the application and data to a VPS later. The choice of a specific technical stack is not imposed; the criterion is ease of maintenance.
 
-Roboczy limit projektowy wynosi 100 zł miesięcznie na AI i usługi researchu, niezależnie od ewentualnego kosztu VPS. Wymaga sprawdzenia wykonalności i nie stanowi zgody na zakup usług. Nie zostały jeszcze ustalone szczegółowe wagi ocen, wartości filtrów ani miejsce przechowywania kopii.
+The working design limit is 100 PLN per month for AI and research services, independent of any VPS cost. It needs a feasibility check and is not approval to buy services. The detailed assessment weights, the filter values and the backup storage location have not been settled yet.

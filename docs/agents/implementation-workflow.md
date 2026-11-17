@@ -21,7 +21,7 @@ Each document stays at its own level:
 - **Requirements**: business and functional decisions and requirements, more detailed than the PRD. No technical details: no library protocols, function names, file names or directories. Each criterion says how it is checked in the same terms (an automated test, a check of the running application, a review).
 - **Solution design**: every technical decision, the requirements restated in precise technical language. It names libraries, mechanisms and data semantics, but not concrete paths, file names or function names; the implementer chooses those. Each decision lists the options the owner discarded, each with the owner's reason, the verified fact that ruled it out, or none.
 
-Specifications are written in Polish and call the unit of work *zadanie*.
+Specifications are written in English and call the unit of work a *task*.
 
 An epic's documents live in `docs/specs/<epic>-<slug>/`, where `<epic>` is the epic's bd id without the project prefix, for example `docs/specs/0mq-architektura-modulow/` for `oferty-pracy-0mq`. Specifications written before this rule keep their directories.
 

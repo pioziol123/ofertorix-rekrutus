@@ -1,33 +1,33 @@
-# Etap 3: Oceny oddzielone od OpenAI Batch — Requirements
+# Stage 3: Assessments separated from OpenAI Batch — Requirements
 
-Status: **przegląd wykonany, specyfikacja gotowa do implementacji**, 2026-11-05. Etap 3 z dziewięciu; przegląd w ramach `oferty-pracy-334.20`, bez implementacji i testów aplikacji. Beads: `oferty-pracy-334.4`.
+Status: **review done, specification ready for implementation**, 2026-11-05. Stage 3 of nine; review as part of `oferty-pracy-334.20`, without implementation or application tests. Beads: `oferty-pracy-334.4`.
 
-Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md), [plan](../../README.md). Potwierdzone: lokalnie `gpt-oss:20b`, OpenCode dla agenta i brak kwot Ollamy. Kontrakty SD są decyzjami technicznymi do realizacji w zatwierdzonym zakresie; weryfikacja działania pozostaje częścią implementacji.
+Basis: [PRD](../../PRD.md), [cross-cutting requirements](../../requirements.md), [plan](../../README.md). Confirmed: `gpt-oss:20b` locally, OpenCode for the agent and no Ollama charges. The SD contracts are technical decisions to be implemented within the approved scope; verifying that they work remains part of the implementation.
 
-## Cel i granice
+## Goal and boundaries
 
-Rozdzielenie przygotowania i publikacji oceny od protokołu OpenAI Batch. Zachowanie działających ocen pojedynczych/grupowych, ich archiwizacji i kosztów. Bez lokalnego wykonania.
+Separate the preparation and publication of an assessment from the OpenAI Batch protocol. Keep the working single/group assessments, their archiving and costs. No local execution.
 
-Pokrycie przekrojowe: LA-02, LA-03; fundament LA-05. Aktorzy: właściciel zlecający lub przeglądający operację oraz worker wykonujący jej zapisany zakres; mechanizm dostępu pozostaje zgodny z istniejącą prywatną aplikacją.
+Cross-cutting coverage: LA-02, LA-03; foundation for LA-05. Actors: the owner who requests or reviews an operation, and the worker that executes its recorded scope; the access mechanism stays consistent with the existing private application.
 
-## Warunki wejścia
+## Entry conditions
 
-Etap 1. Kontrakt modelu z etapu 2 nie jest wymagany do samego wydzielenia Batch. Należy przeczytać aktualny kod i istniejące niezacommitowane zmiany przed realizacją.
+Stage 1. The model contract from stage 2 is not required for the Batch extraction itself. Read the current code and the existing uncommitted changes before implementation.
 
-## Wymagania i kryteria akceptacji
+## Requirements and acceptance criteria
 
-Identyfikatory w wierszu łączą wymaganie z jego obserwowalnym kryterium. Oba pozostają stabilne przy kolejnych przeglądach.
+The identifiers in each row link a requirement to its observable criterion. Both stay stable across later reviews.
 
-| Wymaganie / kryterium | Zachowanie | Warunek akceptacji |
+| Requirement / criterion | Behaviour | Acceptance condition |
 | --- | --- | --- |
-| E03-R01 / E03-AC01 | Niezmieniona treść oceny | Te same wejścia i wersje profilu/ogłoszenia prowadzą do tych samych instrukcji i schematu; walidatory odrzucają brak lub powtórzenie kryterium i niepotwierdzone dowody. |
-| E03-R02 / E03-AC02 | Zgodny cykl Batch | Istniejące partie można wysłać, odpytać, odebrać i posprzątać, z zachowaniem custom_id i archiwum diagnostycznego; brak pliku wynikowego jest odróżniony od poprawnego wyniku. |
-| E03-R03 / E03-AC03 | Niezależne wyniki grupy | Wyniki poza kolejnością trafiają do właściwych pozycji; błąd jednej pozycji nie usuwa poprawnych. Finansowanie płatnej grupy pozostaje atomowe. |
-| E03-R04 / E03-AC04 | Jedna publikacja i aktualność | Powtórny wynik nie publikuje drugiej rewizji. Wynik dla starszej wersji wejść nie wypiera aktualnej oceny; komenda grupowa z tym samym ID zachowuje idempotencję. |
-| E03-R05 / E03-AC05 | Jawny nieznany skutek wysłania | Awaria po wysłaniu create i przed zapisem ID nie uruchamia ślepo kolejnej płatnej partii. Koszt oraz stan niepewny pozostają widoczne. |
+| E03-R01 / E03-AC01 | Unchanged assessment content | The same inputs and profile/ad versions lead to the same instructions and schema; the validators reject a missing or repeated criterion and unconfirmed evidence. |
+| E03-R02 / E03-AC02 | Consistent Batch cycle | Existing batches can be submitted, polled, collected and cleaned up, keeping custom_id and the diagnostic archive; a missing output file is distinguished from a valid result. |
+| E03-R03 / E03-AC03 | Independent group results | Out-of-order results reach the correct items; an error in one item does not remove the valid ones. Funding of a paid group stays atomic. |
+| E03-R04 / E03-AC04 | Single publication and currency | A repeated result does not publish a second revision. A result for an older version of the inputs does not displace the current assessment; a group command with the same ID stays idempotent. |
+| E03-R05 / E03-AC05 | Explicit unknown outcome of submission | A failure after sending create and before recording the ID does not blindly start another paid batch. The cost and the uncertain state stay visible. |
 
-## Zależności i gotowość
+## Dependencies and readiness
 
-Przegląd aktualnego kodu wykonano 2026-11-05. Neutralny wynik, transakcję publikacji i zgodność archiwum określa SD. Lokalny wariant AC-B1/AC-G4–G7 jest zakresem etapu 6. Wymagana implementacja etapu 1; brak otwartej decyzji produktowej.
+The review of the current code was done on 2026-11-05. The SD defines the neutral result, the publication transaction and archive compatibility. The local variant of AC-B1/AC-G4–G7 is the scope of stage 6. Implementation of stage 1 is required; there is no open product decision.
 
-Rozwiązanie i mapowanie weryfikacji: [SD](solution-design.md). Reguły LA zachowują jedno miejsce utrzymania w wymaganiach przekrojowych; ta para określa ich zakres dla etapu. Nie zmienia reguł domenowych poza jawnym zakresem.
+Solution and verification mapping: [SD](solution-design.md). The LA rules keep a single place of maintenance in the cross-cutting requirements; this pair defines their scope for the stage. It does not change domain rules outside its explicit scope.

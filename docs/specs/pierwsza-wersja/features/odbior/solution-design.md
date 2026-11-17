@@ -1,52 +1,52 @@
-# Odbiór całego przepływu — projekt rozwiązania
+# Acceptance of the whole flow — solution design
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **roboczy szkic — do dopracowania przed realizacją tej funkcjonalności**, 2026-10-31. Uzasadnienie: [wymagania tej funkcjonalności](requirements.md) → [PRD](../../PRD.md). Pokrycie: R-30/AC-30.
+Status: **working draft — to be refined before this feature is implemented**, 2026-10-31. Rationale: [this feature's requirements](requirements.md) → [PRD](../../PRD.md). Coverage: R-30/AC-30.
 
-## Granice i decyzje
+## Boundaries and decisions
 
-Potwierdzone wybory D-01–D-06 i proponowane D-07–D-08 są utrzymywane we [wspólnej architekturze](../../architecture.md). Pozostałe mechanizmy w tym pliku są **propozycjami SD**, a nie zatwierdzonymi decyzjami właściciela. Nazwy encji i komend opisują plan, nie istniejący kod. Wspólna semantyka null, wersji i komend obowiązuje przez odnośnik, nie przez kopię.
+The confirmed choices D-01–D-06 and the proposed D-07–D-08 are maintained in the [shared architecture](../../architecture.md). The other mechanisms in this file are **SD proposals**, not approved owner's decisions. Entity and command names describe the plan, not existing code. The shared semantics of null, versions and commands apply by reference, not by copy.
 
-## Plan integracyjny
+## Integration plan
 
-Wszystkie poniższe sprawdzenia są planem; wykonano wyłącznie ręczne próby jednorazowej makiety, opisane w [README prototypu](../../../../prototypes/przeglad/README.md).
+All the checks below are a plan; only manual trials of a one-off mock-up were run, described in the [prototype README](../../../../prototypes/przeglad/README.md).
 
-| Scenariusz / metoda | Pokrycie | Obserwowany dowód |
+| Scenario / method | Coverage | Observed evidence |
 | --- | --- | --- |
-| Profil z kontrolnymi kontaktami, korekta i nowe wejście oceny | R-01, R-02, R-27 | Wersje profilu; brak kontaktów w requestach AI/logach; filtry widoku nie zmieniają pobierania. |
-| Mapper i fixture braków/sprzeczności, test reguł lokalnych | R-03, R-04, R-21 | Brak widełek ≠ zero, nieznana dostępność ≠ wykluczenie; waluty/podstawy nie mieszają się. |
-| Rzeczywiste SOLID.Jobs + kontrolne wielostronicowe API | R-04–R-08 | Zapis wszystkich stron, jeden rekord na klucz, częściowy błąd bez fałszywego zniknięcia. |
-| Zmiana zakresu, 429, zmieniająca się paginacja, powrót ogłoszenia | R-05–R-07 | Pełność/niepełność i last full poprawne, brak nieuzasadnionej aktualizacji dostępności. |
-| Merge/split/rozbieżności na bazie z aplikacjami | R-08–R-10, R-22 | Zachowane źródła, notatki, wszystkie aplikacje i historia, ręcznie wybrana wartość nie znika. |
-| Istotna zmiana vs zmiana HTML; późny wynik starej próby | R-11, R-14, R-29 | Nowa wersja, brak zbędnego AI, stary wynik nie staje się bieżący. |
-| Kalkulator na ustalonych przykładach z niewiadomymi | R-12–R-14 | Powtarzalność, poprawne wagi/kompletność/null; przeliczenie bez sieci, historia ocen. |
-| Dwie spółki o wspólnej domenie, agencja, nieznany klient | R-15, R-18 | Brak scalenia nazwą; zachowany zakres i role, brak przenoszenia technologii klienta. |
-| Dwie równoległe kwalifikacje firmy, nowa oferta, ręczne refresh | R-16–R-18 | Jedna operacja auto, brak TTL, osobne wersje basic/deep, dowody przy twierdzeniach. |
-| Ręczny przegląd researchu i przygotowania | R-18, R-19 | Źródła otwierają właściwy materiał; hipotezy/opinie jawne, tematy wynikają z oferty/profilu. |
-| Przeglądarka: oferta → firma → inna oferta, notatki i dwie rozmowy | R-20–R-24 | Poprawne identyfikatory, historia, terminy i dane po odświeżeniu oraz restarcie. |
-| Dwie rezerwacje na ostatnie środki, timeout, retry, zmiana miesiąca | R-25, R-26 | Atomowy limit, zachowana niepewna rezerwa, najwyżej 2 auto próby, poprawny miesiąc. |
-| Ręczne zadanie przed oczekującym automatycznym researchem | R-26 | Kolejność startu po zakończeniu aktywnego zadania, brak obejścia budżetu. |
-| Lokalny dostęp bez logowania, sieć Compose, przegląd logów i bundle | R-27, R-28 | UI/API dostępne na loopback, brak publicznej bazy i sekretów, działający autostart. |
-| Kill workera w punktach przed/po wywołaniu i przed/po commit | R-24–R-26, R-29 | Checkpointy, brak podwójnego wyniku, stan kosztu do ustalenia bez fikcyjnego zera. |
-| Odtworzenie kontenerów z zachowaniem wolumenu, długa przerwa | R-05, R-28, R-29 | Wszystkie dane i rezerwacje zachowane, jedno zaległe pobranie, brak zależności od karty. |
-| Wspólny odbiór całego przepływu i 20 zróżnicowanych ocen | R-30 i całość | Raport z identyfikatorami wejść, kosztami, błędami i decyzją właściciela. |
+| Profile with control contacts, a correction and a new assessment input | R-01, R-02, R-27 | Profile versions; no contacts in AI requests/logs; view filters do not change fetching. |
+| Mapper and a fixture of gaps/conflicts, a test of local rules | R-03, R-04, R-21 | No salary range ≠ zero, unknown availability ≠ exclusion; currencies/bases do not mix. |
+| Real SOLID.Jobs + a controlled multi-page API | R-04–R-08 | All pages saved, one record per key, a partial error without a false disappearance. |
+| Scope change, 429, changing pagination, an ad coming back | R-05–R-07 | Completeness/incompleteness and last full correct, no unjustified availability update. |
+| Merge/split/discrepancies on a database with applications | R-08–R-10, R-22 | Sources, notes, all applications and history kept, a manually chosen value does not disappear. |
+| A material change vs an HTML change; a late result of an old attempt | R-11, R-14, R-29 | A new version, no unnecessary AI, the old result does not become current. |
+| Calculator on fixed examples with unknowns | R-12–R-14 | Repeatability, correct weights/completeness/null; recalculation without network, assessment history. |
+| Two companies with a shared domain, an agency, an unknown client | R-15, R-18 | No merge by name; scope and roles kept, no carrying over of the client's technologies. |
+| Two concurrent company qualifications, a new offer, a manual refresh | R-16–R-18 | One auto operation, no TTL, separate basic/deep versions, evidence with claims. |
+| Manual review of research and preparation | R-18, R-19 | Sources open the right material; hypotheses/opinions explicit, topics follow from the offer/profile. |
+| Browser: offer → company → another offer, notes and two interviews | R-20–R-24 | Correct identifiers, history, dates and data after a refresh and a restart. |
+| Two reservations for the last funds, a timeout, a retry, a month change | R-25, R-26 | Atomic limit, uncertain reservation kept, at most 2 auto attempts, correct month. |
+| A manual task before pending automatic research | R-26 | Start order after the active task ends, no bypassing the budget. |
+| Local access without login, Compose network, a review of logs and the bundle | R-27, R-28 | UI/API available on loopback, no public database and no secrets, working autostart. |
+| Killing the worker at points before/after the call and before/after commit | R-24–R-26, R-29 | Checkpoints, no double result, cost state to be determined without a fictitious zero. |
+| Recreating containers while keeping the volume, a long break | R-05, R-28, R-29 | All data and reservations kept, one overdue fetch, no dependency on the tab. |
+| Joint acceptance of the whole flow and 20 varied assessments | R-30 and the whole | A report with input identifiers, costs, errors and the owner's decision. |
 
-## Raport i granice odbioru
+## Report and acceptance boundaries
 
-Propozycja SD: raport odbioru odnosi wyniki do stałych identyfikatorów R/AC, zapisuje wersje danych/modelu/promptu, rzeczywiste koszty, odchylenia i ocenę właściciela dla 20 ofert. Testy funkcjonalności są podstawą, a scenariusze integracyjne sprawdzają ich współpracę. Nie przyjmujemy, że sama liczba przejrzanych ofert dowodzi poprawności wszystkich reguł.
+SD proposal: the acceptance report relates the results to the fixed R/AC identifiers and records the data/model/prompt versions, real costs, deviations and the owner's assessment for 20 offers. Feature tests are the basis, and the integration scenarios check how they work together. We do not accept that the number of reviewed offers alone proves the correctness of all rules.
 
-Wdrożenie VPS, konfiguracja zewnętrznej usługi kopii i test odtworzenia jej backupu pozostają poza odbiorem aplikacji. Odtworzenie kontenerów na zachowanym wolumenie sprawdza trwałość uruchomienia, nie backup. Nie wpisujemy sukcesu testu, którego jeszcze nie wykonano.
+VPS deployment, configuration of the external backup service and the restore test of its backup remain outside the application's acceptance. Recreating containers on a kept volume checks the durability of the launch, not the backup. We do not record success for a test that has not been run yet.
 
 
-## Integracja z pozostałymi funkcjonalnościami
+## Integration with other features
 
-[profil](../profil/requirements.md), [pobieranie](../pobieranie/requirements.md), [oferty](../oferty/requirements.md), [dopasowanie](../dopasowanie/requirements.md), [firmy-research](../firmy-research/requirements.md), [przeglad](../przeglad/requirements.md), [rekrutacje](../rekrutacje/requirements.md), [operacje](../operacje/requirements.md), [uruchomienie](../uruchomienie/requirements.md). Status wykonania, rezerwacje i ponowienia zapewnia [kontrakt operacji](../operacje/solution-design.md); prywatny dostęp i trwałe uruchomienie określa [uruchomienie](../uruchomienie/solution-design.md). Zależności te są kontraktami, nie listą kolejności ticketów implementacyjnych.
+[profile](../profil/requirements.md), [fetching](../pobieranie/requirements.md), [offers](../oferty/requirements.md), [matching](../dopasowanie/requirements.md), [companies-research](../firmy-research/requirements.md), [browsing](../przeglad/requirements.md), [recruitments](../rekrutacje/requirements.md), [operations](../operacje/requirements.md), [launch](../uruchomienie/requirements.md). Execution status, reservations and retries are provided by the [operations contract](../operacje/solution-design.md); private access and durable launch are set by [launch](../uruchomienie/solution-design.md). These dependencies are contracts, not a list of the order of implementation tickets.
 
-## Weryfikacja funkcjonalności
+## Feature verification
 
-Przejść wszystkie scenariusze integracyjne i zebrać decyzję właściciela oraz zidentyfikowane odchylenia. Przegląd 20 ofert obejmuje dobre, słabe i niepewne dopasowania. Pokrycie obejmuje wszystkie R/AC wskazane na początku dokumentu. Ten plan integracyjny sprawdza współpracę modułów; nie zastępuje ich kryteriów. Testów produktu jeszcze nie wykonano.
+Go through all the integration scenarios and collect the owner's decision and the identified deviations. The review of 20 offers covers good, weak and uncertain matches. Coverage includes all R/ACs listed at the start of the document. This integration plan checks how the modules work together; it does not replace their criteria. No product tests have been run yet.
 
-## Otwarte decyzje i gotowość
+## Open decisions and readiness
 
-O-01, O-02, O-03, O-04, O-05, O-06, O-07 — [rejestr i skutki](../../open-decisions.md). Przed oznaczeniem tej pary jako gotowej należy rozstrzygnąć dotyczące jej kontrakty i przejrzeć zgodność z wymaganiami. Samo utworzenie dokumentów nie zatwierdza propozycji.
+O-01, O-02, O-03, O-04, O-05, O-06, O-07 — [register and consequences](../../open-decisions.md). Before marking this pair as ready, settle the contracts that concern it and review conformance with the requirements. Creating the documents alone does not approve the proposals.

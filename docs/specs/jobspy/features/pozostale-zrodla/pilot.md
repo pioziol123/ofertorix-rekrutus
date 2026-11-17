@@ -1,11 +1,11 @@
-# Próba Bayt — 2026-11-02
+# Bayt trial — 2026-11-02
 
-Run: `fd84a21e-5c0c-42a7-bfc9-df5e63a20eb6`, rzeczywista usługa worker, zainstalowany wheel `1.4.1+oferty.2`.
+Run: `fd84a21e-5c0c-42a7-bfc9-df5e63a20eb6`, the real worker service, installed wheel `1.4.1+oferty.2`.
 
-Zapytanie: Senior PHP, Poland, maksymalnie 50 wyników. 10 żądań w około 21 sekund; zatrzymanie `request_limit`, status `partial`. Zapisano 12 ofert i 12 pierwszych rewizji. Trzy oferty bez opisów. Zero odrzuceń domeny/tożsamości/kraju i duplikatów w tej próbie.
+Query: Senior PHP, Poland, at most 50 results. 10 requests in about 21 seconds; stop `request_limit`, status `partial`. 12 offers and 12 first revisions were saved. Three offers without descriptions. Zero domain/identity/country rejections and zero duplicates in this trial.
 
-Wszystkie rekordy zawierają lokalizację Poland. Wyniki są jednak luźno związane z frazą: obejmują m.in. Java, Ruby, Staff i Principal. Nie potwierdzono 12 dopasowań do Senior PHP. Aplikacja jawnie przechowuje kwalifikację PHP/senior jako niewiadomą; ranking i późniejsza kwalifikacja nie mogą uznać frazy wyszukiwania za dowód dopasowania. Zachowujemy oryginalne rekordy dla dalszej oceny. Nie wykonano kolejnego pobrania tylko po to, by zwiększyć liczbę ofert.
+All records contain the location Poland. However, the results are only loosely related to the phrase: they include, among others, Java, Ruby, Staff and Principal. 12 matches to Senior PHP were not confirmed. The application explicitly stores the PHP/senior qualification as an unknown; ranking and later qualification must not treat the search phrase as evidence of a match. We keep the original records for further assessment. No further fetch was made just to increase the number of offers.
 
-LinkedIn nie był odpytywany: jego [robots.txt](https://www.linkedin.com/robots.txt) wymaga wyraźnej zgody na automatyczny dostęp; podaje `whitelist-crawl@linkedin.com`. Bayt: sprawdzono [robots.txt](https://www.bayt.com/robots.txt) i [warunki](https://www.bayt.com/en/pages/terms/); próba dotyczyła publicznego wyszukiwania ofert, bez kont, danych kandydatów i proxy.
+LinkedIn was not queried: its [robots.txt](https://www.linkedin.com/robots.txt) requires explicit consent for automated access; it gives `whitelist-crawl@linkedin.com`. Bayt: we checked [robots.txt](https://www.bayt.com/robots.txt) and the [terms](https://www.bayt.com/en/pages/terms/); the trial concerned the public offer search, without accounts, candidate data or proxies.
 
-Pozostałe adaptery nie były odpytywane: Glassdoor bez domeny Polski, ZipRecruiter USA/Kanada, Naukri Indie, BDJobs Bangladesz, HelloWork Francja. Google Jobs oznaczone jako niedostępne przez JobSpy. Indeed pozostaje odłożone na koniec. Testy offline potwierdzają routing, nie dostępność tych portali na żywo.
+The other adapters were not queried: Glassdoor without a Poland domain, ZipRecruiter USA/Canada, Naukri India, BDJobs Bangladesh, HelloWork France. Google Jobs is marked as unavailable by JobSpy. Indeed stays postponed to the end. Offline tests confirm routing, not the live availability of these portals.

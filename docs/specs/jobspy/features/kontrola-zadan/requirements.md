@@ -1,18 +1,18 @@
-# Kontrola żądań Indeed — requirements
+# Indeed request control — requirements
 
-Wybrane 2026-11-02, [PRD](../../PRD.md). Zakres: nowe wejście integracji Indeed, bez zmiany zachowania pozostałych źródeł.
+Selected 2026-11-02, [PRD](../../PRD.md). Scope: a new Indeed integration entry point, without changing the behaviour of the other sources.
 
-- **R-H01:** wywołujący określa skończone limity liczby prób HTTP, czasu przebiegu, czasu pojedynczego żądania i ponowień oraz minimalny odstęp. Niepoprawne i nieograniczone wartości są odrzucane przed siecią.
-- **R-H02:** każda próba, również ponowienie, zużywa wspólny limit. Po osiągnięciu limitu lub czasu nie rozpoczyna się następne żądanie. Zapisane wyniki pozostają dostępne z oznaczeniem ograniczenia. Oczekiwanie nie przedłuża celowo przebiegu ponad budżet.
-- **R-H03:** ponawiane są jedynie timeouty/błędy połączenia oraz odpowiedzi 429/500/502/503/504. Inne błędy, w tym 403, nie wywołują automatycznej rotacji IP ani pętli ponowień. Maksymalna liczba prób obejmuje pierwsze żądanie.
-- **R-H04:** poprawne Retry-After (sekundy lub data HTTP) jest respektowane. Jeśli oczekiwanie nie mieści się w pozostałym budżecie, przebieg kończy się z jawnym powodem; nie ignorujemy nagłówka. Brak lub niepoprawny nagłówek uruchamia ograniczony backoff.
-- **R-H05:** wynik wskazuje liczbę wykonanych prób i powód zatrzymania. Transport nie dodaje sekretów ani treści wyjątku do wyniku. Testy zegara i transportu nie wykonują rzeczywistych opóźnień ani połączeń.
+- **R-H01:** the caller sets finite limits on the number of HTTP attempts, the run time, the time of a single request and retries, and a minimum gap. Invalid and unbounded values are rejected before the network.
+- **R-H02:** every attempt, retries included, consumes the shared limit. After the limit or the time is reached, no further request starts. Saved results stay available with the limitation marked. Waiting does not deliberately extend the run beyond the budget.
+- **R-H03:** only timeouts/connection errors and 429/500/502/503/504 responses are retried. Other errors, including 403, do not trigger automatic IP rotation or retry loops. The maximum number of attempts includes the first request.
+- **R-H04:** a valid Retry-After (seconds or an HTTP date) is respected. If the wait does not fit in the remaining budget, the run ends with an explicit reason; we do not ignore the header. A missing or invalid header triggers a bounded backoff.
+- **R-H05:** the output shows the number of attempts made and the reason for stopping. The transport does not add secrets or exception content to the output. Clock and transport tests make no real delays or connections.
 
-Limit czasu jest kontrolą kooperacyjną: żądania dostają timeout ograniczony pozostałym budżetem. Twarde zakończenie procesu przy zawieszonym DNS/systemie będzie odpowiedzialnością późniejszego adaptera aplikacji. Nie obiecujemy takiej gwarancji na poziomie pojedynczej sesji bibliotecznej.
+The time limit is a cooperative control: requests get a timeout bounded by the remaining budget. Hard termination of the process when DNS/the system hangs will be the responsibility of the later application adapter. We do not promise such a guarantee at the level of a single library session.
 
-## Potwierdzona zgoda i limit — 2026-11-02
+## Confirmed consent and limit — 2026-11-02
 
-Właściciel potwierdził uzyskanie zgody na scraping LinkedIn i Indeed z limitem jednego query na sekundę. Jest to deklaracja właściciela, bez kopii warunków w repo. Konserwatywnie limit obejmuje wszystkie żądania HTTP: wyszukiwanie, strony wyników, szczegóły i ponowienia, łącznie dla obu portali.
+The owner confirmed obtaining consent to scraping LinkedIn and Indeed with a limit of one query per second. This is the owner's declaration, without a copy of the terms in the repo. Conservatively, the limit covers all HTTP requests: search, result pages, details and retries, for both portals together.
 
-- **R-H06:** aplikacja serializuje wszystkie przebiegi JobSpy na jednym współdzielonym wolumenie. W przebiegu zachowuje odstęp co najmniej 2 s; między przebiegami co najmniej 1 s, także po błędzie lub zabiciu poprzedniego procesu. Brak dostępu do blokady uniemożliwia połączenia.
-- **R-H07:** LinkedIn można aktywować ręcznie po zapisaniu potwierdzenia. Zgoda na scraping Indeed odblokowuje planowany adapter HTML; nie aktywuje obecnego GraphQL. Brak harmonogramu pozostaje bez zmian.
+- **R-H06:** the application serialises all JobSpy runs on one shared volume. Within a run it keeps a gap of at least 2 s; between runs at least 1 s, also after an error or after the previous process was killed. No access to the lock prevents connections.
+- **R-H07:** LinkedIn can be activated manually after the confirmation is recorded. Consent to scraping Indeed unblocks the planned HTML adapter; it does not activate the current GraphQL one. The absence of a schedule stays unchanged.

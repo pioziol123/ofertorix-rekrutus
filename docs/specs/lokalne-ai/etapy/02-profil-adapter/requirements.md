@@ -1,32 +1,32 @@
-# Etap 2: Profil niezależny od protokołu OpenAI — Requirements
+# Stage 2: Profile independent of the OpenAI protocol — Requirements
 
-Status: **przegląd wykonany, specyfikacja gotowa do implementacji**, 2026-11-05. Etap 2 z dziewięciu; przegląd w ramach `oferty-pracy-334.20`, bez implementacji i testów aplikacji. Beads: `oferty-pracy-334.3`.
+Status: **review done, specification ready for implementation**, 2026-11-05. Stage 2 of nine; review as part of `oferty-pracy-334.20`, without implementation or application tests. Beads: `oferty-pracy-334.3`.
 
-Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md), [plan](../../README.md). Potwierdzone: lokalnie `gpt-oss:20b`, OpenCode dla agenta i brak kwot Ollamy. Kontrakty SD są decyzjami technicznymi do realizacji w zatwierdzonym zakresie; weryfikacja działania pozostaje częścią implementacji.
+Basis: [PRD](../../PRD.md), [cross-cutting requirements](../../requirements.md), [plan](../../README.md). Confirmed: `gpt-oss:20b` locally, OpenCode for the agent and no Ollama charges. The SD contracts are technical decisions to be implemented within the approved scope; verifying that they work remains part of the implementation.
 
-## Cel i granice
+## Goal and boundaries
 
-Wydzielenie transportu pojedynczego wywołania OpenAI. Dotyczy istniejącej propozycji profilu; nie zmienia modelu, cennika, reguł zatwierdzania ani lokalnego parsera CV.
+Extract the transport of a single OpenAI call. It concerns the existing profile proposal; it does not change the model, the price list, the approval rules or the local CV parser.
 
-Pokrycie przekrojowe: LA-02, LA-03; fundament LA-04. Aktorzy: właściciel zlecający lub przeglądający operację oraz worker wykonujący jej zapisany zakres; mechanizm dostępu pozostaje zgodny z istniejącą prywatną aplikacją.
+Cross-cutting coverage: LA-02, LA-03; foundation for LA-04. Actors: the owner who requests or reviews an operation, and the worker that executes its recorded scope; the access mechanism stays consistent with the existing private application.
 
-## Warunki wejścia
+## Entry conditions
 
-Etap 1. Należy przeczytać aktualny kod i istniejące niezacommitowane zmiany przed realizacją.
+Stage 1. Read the current code and the existing uncommitted changes before implementation.
 
-## Wymagania i kryteria akceptacji
+## Requirements and acceptance criteria
 
-Identyfikatory w wierszu łączą wymaganie z jego obserwowalnym kryterium. Oba pozostają stabilne przy kolejnych przeglądach.
+The identifiers in each row link a requirement to its observable criterion. Both stay stable across later reviews.
 
-| Wymaganie / kryterium | Zachowanie | Warunek akceptacji |
+| Requirement / criterion | Behaviour | Acceptance condition |
 | --- | --- | --- |
-| E02-R01 / E02-AC01 | Ten sam materiał i propozycja | Dla zapisanego tekstu importu przygotowane instrukcje i schemat opisują ten sam zakres; dane kontaktowe pozostają usunięte zgodnie z obecną regułą. |
-| E02-R02 / E02-AC02 | Niezależna walidacja profilu | Odpowiedź zgodna syntaktycznie, ale z niepotwierdzonym cytatem, jest odrzucana. Odpowiedź poprawna daje propozycję; aktywny profil zmienia dopiero zatwierdzenie właściciela. |
-| E02-R03 / E02-AC03 | Jawne niepowodzenie modelu | Odmowa, odpowiedź niepełna, błędny JSON, brak lub wiele treści końcowych oraz awaria sieci nie publikują propozycji jako poprawnej; komunikat nie ujawnia treści CV ani sekretów. |
-| E02-R04 / E02-AC04 | Zgodne próby i rozliczenie | Dotychczasowe retry i recovery pozostają zgodne. Utrata telemetrii nie jest traktowana jako zerowe zużycie; nie powstaje podwójny efekt po powtórnym dostarczeniu zadania. |
+| E02-R01 / E02-AC01 | Same material and proposal | For the stored import text, the prepared instructions and schema describe the same scope; contact details stay removed according to the current rule. |
+| E02-R02 / E02-AC02 | Independent profile validation | A syntactically valid response with an unconfirmed quote is rejected. A valid response gives a proposal; the active profile changes only on the owner's approval. |
+| E02-R03 / E02-AC03 | Explicit model failure | A refusal, an incomplete response, invalid JSON, no final content or several final contents, and a network failure do not publish the proposal as valid; the message does not reveal CV content or secrets. |
+| E02-R04 / E02-AC04 | Consistent attempts and settlement | The existing retry and recovery stay consistent. Lost telemetry is not treated as zero usage; no double effect arises when the job is delivered again. |
 
-## Zależności i gotowość
+## Dependencies and readiness
 
-Kontrakt StructuredModel, normalizacja i typowane błędy zostały rozstrzygnięte w SD po przeglądzie kodu. Wymagana implementacja etapu 1; brak otwartej decyzji produktowej.
+The StructuredModel contract, normalisation and typed errors were resolved in the SD after the code review. Implementation of stage 1 is required; there is no open product decision.
 
-Rozwiązanie i mapowanie weryfikacji: [SD](solution-design.md). Reguły LA zachowują jedno miejsce utrzymania w wymaganiach przekrojowych; ta para określa ich zakres dla etapu. Nie zmienia reguł domenowych poza jawnym zakresem.
+Solution and verification mapping: [SD](solution-design.md). The LA rules keep a single place of maintenance in the cross-cutting requirements; this pair defines their scope for the stage. It does not change domain rules outside its explicit scope.

@@ -1,4 +1,4 @@
-> Aktualizacja ustalenia F8: moduł Oferty odpowiada za grupowanie ogłoszeń tej samej rekrutacji w jedną ofertę. Wdrożenie grupowania jest poza zakresem obecnego refaktoru. Poniższy historyczny zrzut zadania `.8`, nazywający ten model kierunkiem rozwoju, nie określa już aktualnego ustalenia.
+> Update to finding F8: the Offers module is responsible for grouping ads of the same recruitment into one offer. Implementing grouping is outside the scope of the current refactor. The historical snapshot of task `.8` below, which calls this model a direction of development, no longer states the current finding.
 
 # Architecture refactoring review input
 
@@ -10,32 +10,32 @@ Snapshot: 2026-11-13. Beads remains the source of task state.
 ### Source: docs/architecture/README.md
 
 
-# Architektura Ofert pracy w modelu C4
+# Job offers architecture in the C4 model
 
-Oferty pracy to prywatny system jednego właściciela. Zbiera ogłoszenia źródłowe, umożliwia ich przeglądanie i ocenę dopasowania do profilu zawodowego oraz gromadzi informacje o firmach. Diagramy opisują bieżący kod i konfigurację lokalnego Compose, odczytane 11 listopada 2026. Linie przerywane oznaczają ścieżki dostępne po dodatkowej konfiguracji. Strzałki wskazują inicjatora interakcji. [Model C4](https://c4model.com/diagrams)
+Oferty pracy (Job offers) is a private system with a single owner. It collects source ads, lets the owner browse them and assess how they match the professional profile, and gathers information about companies. The diagrams describe the current code and the local Compose configuration, as read on 11 November 2026. Dashed lines mark paths available after extra configuration. Arrows point from the initiator of an interaction. [C4 model](https://c4model.com/diagrams)
 
-- [C1 — kontekst systemu](#c1-kontekst-systemu)
-- [C2 — kontenery](#c2-kontenery)
-- [C3 — komponenty web i workera](#c3-komponenty)
-- [C4 — kod przygotowania propozycji profilu](#c4-kod-przygotowanie-propozycji-profilu)
-- [Stan lokalnego AI](#stan-lokalnego-ai)
+- [C1 — system context](#c1-kontekst-systemu)
+- [C2 — containers](#c2-kontenery)
+- [C3 — web and worker components](#c3-komponenty)
+- [C4 — profile proposal preparation code](#c4-kod-przygotowanie-propozycji-profilu)
+- [State of local AI](#stan-lokalnego-ai)
 
 <a id="c1-kontekst-systemu"></a>
 
-## C1 — kontekst systemu
+## C1 — system context
 
 ```mermaid
 flowchart LR
-  Owner(["Właściciel<br/>[Osoba]"])
-  System["Oferty pracy<br/>[System]<br/>Gromadzi ogłoszenia, profil zawodowy,<br/>oceny dopasowania i research pracodawców"]
-  Boards["Portale z ofertami pracy<br/>[Systemy zewnętrzne]"]
-  OpenAI["OpenAI<br/>[System zewnętrzny]"]
-  Ollama["Ollama<br/>[System zewnętrzny wobec aplikacji]"]
+  Owner(["Owner<br/>[Person]"])
+  System["Oferty pracy<br/>[System]<br/>Collects ads, the professional profile,<br/>match assessments and employer research"]
+  Boards["Job boards<br/>[External systems]"]
+  OpenAI["OpenAI<br/>[External system]"]
+  Ollama["Ollama<br/>[System external to the application]"]
 
-  Owner -->|"Przegląda oferty i firmy, zarządza profilem, zleca operacje"| System
-  System -->|"Pobiera listy i szczegóły ogłoszeń"| Boards
-  System -.->|"Zleca propozycje profilu, oceny i research"| OpenAI
-  System -.->|"Sprawdza dostępność modelu i generuje propozycję profilu"| Ollama
+  Owner -->|"Browses offers and companies, manages the profile, requests operations"| System
+  System -->|"Fetches ad lists and details"| Boards
+  System -.->|"Requests profile proposals, assessments and research"| OpenAI
+  System -.->|"Checks model availability and generates the profile proposal"| Ollama
 
   classDef internal fill:#dbeafe,stroke:#2563eb,color:#172554
   classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
@@ -43,39 +43,39 @@ flowchart LR
   class Owner,Boards,OpenAI,Ollama external
 ```
 
-Wspólna granica portali obejmuje SOLID.Jobs, Bulldogjob, theprotocol.it, Just Join IT, No Fluff Jobs, portale obsługiwane przez JobSpy oraz osobny pilot Himalayas. Zakres importu i sposób uruchomienia zależą od adaptera. Research podstawowy korzysta z wyszukiwania WWW przez OpenAI. Wynik trafia do profilu firmy ze źródłami. [Katalog JobSpy](../../lib/sources/jobspy-catalog.ts) · [Katalog polskich źródeł](../../lib/sources/polish-catalog.ts) · [Pilot Himalayas](../../scripts/himalayas-sync.ts) · [Dostawca researchu](../../lib/companies/research-provider.ts)
+The shared boundary of the job boards covers SOLID.Jobs, Bulldogjob, theprotocol.it, Just Join IT, No Fluff Jobs, the boards supported by JobSpy and the separate Himalayas pilot. The import scope and the way it is started depend on the adapter. Basic research uses web search through OpenAI. The result goes into the company profile with its sources. [JobSpy catalogue](../../lib/sources/jobspy-catalog.ts) · [Polish sources catalogue](../../lib/sources/polish-catalog.ts) · [Himalayas pilot](../../scripts/himalayas-sync.ts) · [Research provider](../../lib/companies/research-provider.ts)
 
 <a id="c2-kontenery"></a>
 
-## C2 — kontenery
+## C2 — containers
 
 ```mermaid
 flowchart LR
-  Owner(["Właściciel<br/>[Osoba]"])
-  Boards["Portale z ofertami<br/>[Systemy zewnętrzne]"]
-  OpenAI["OpenAI<br/>[System zewnętrzny]"]
-  Ollama["Ollama<br/>[System zewnętrzny]"]
+  Owner(["Owner<br/>[Person]"])
+  Boards["Job boards<br/>[External systems]"]
+  OpenAI["OpenAI<br/>[External system]"]
+  Ollama["Ollama<br/>[External system]"]
 
   subgraph System["Oferty pracy"]
-    Web["Aplikacja webowa<br/>[Nuxt / Vue / Nitro, TypeScript]<br/>Dostarcza UI i HTTP API"]
-    Worker["Worker<br/>[Node.js, TypeScript, Python]<br/>Obsługuje zadania i harmonogram"]
-    CLI["Narzędzia CLI<br/>[Node.js, TypeScript]<br/>Ręczne importy i odczyt statusu"]
-    DB[("PostgreSQL<br/>[Magazyn danych]<br/>Dane aplikacji i kolejki pg-boss")]
-    Files[("Dokumenty CV<br/>[Wolumen plików]<br/>Oryginały PDF / DOCX")]
+    Web["Web application<br/>[Nuxt / Vue / Nitro, TypeScript]<br/>Provides the UI and HTTP API"]
+    Worker["Worker<br/>[Node.js, TypeScript, Python]<br/>Handles jobs and the schedule"]
+    CLI["CLI tools<br/>[Node.js, TypeScript]<br/>Manual imports and status reads"]
+    DB[("PostgreSQL<br/>[Data store]<br/>Application data and pg-boss queues")]
+    Files[("CV documents<br/>[File volume]<br/>Original PDF / DOCX")]
   end
 
-  Owner -->|"Korzysta z UI przez przeglądarkę, HTTP na loopback"| Web
-  Owner -->|"Uruchamia polecenia pnpm przez Compose"| CLI
-  Web -->|"Czyta i zapisuje dane, zleca zadania przez pg-boss"| DB
-  Worker -->|"Odbiera zadania przez pg-boss i zapisuje wyniki"| DB
-  CLI -->|"Zleca importy, czyta statusy, zapisuje wyniki pilota"| DB
-  Web -->|"Zapisuje i udostępnia oryginały CV"| Files
-  Worker -->|"Czyta pliki do ekstrakcji tekstu"| Files
-  Worker -->|"Pobiera ogłoszenia przez HTTP(S)"| Boards
-  CLI -->|"Pobiera oferty Himalayas przez HTTPS"| Boards
-  Worker -.->|"Wywołuje Responses, Files i Batch API przez HTTPS"| OpenAI
-  Web -.->|"Sprawdza model przez HTTP(S)"| Ollama
-  Worker -.->|"Generuje propozycję profilu przez HTTP(S)"| Ollama
+  Owner -->|"Uses the UI in a browser, HTTP on loopback"| Web
+  Owner -->|"Runs pnpm commands through Compose"| CLI
+  Web -->|"Reads and writes data, enqueues jobs through pg-boss"| DB
+  Worker -->|"Receives jobs through pg-boss and saves results"| DB
+  CLI -->|"Requests imports, reads statuses, saves pilot results"| DB
+  Web -->|"Stores and serves original CVs"| Files
+  Worker -->|"Reads files for text extraction"| Files
+  Worker -->|"Fetches ads over HTTP(S)"| Boards
+  CLI -->|"Fetches Himalayas offers over HTTPS"| Boards
+  Worker -.->|"Calls the Responses, Files and Batch APIs over HTTPS"| OpenAI
+  Web -.->|"Checks the model over HTTP(S)"| Ollama
+  Worker -.->|"Generates the profile proposal over HTTP(S)"| Ollama
 
   classDef internal fill:#dbeafe,stroke:#2563eb,color:#172554
   classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
@@ -83,42 +83,42 @@ flowchart LR
   class Owner,Boards,OpenAI,Ollama external
 ```
 
-Nuxt dostarcza kod Vue uruchamiany w przeglądarce i obsługuje trasy Nitro w tej samej aplikacji webowej. Compose publikuje jej port na `127.0.0.1`. PostgreSQL działa w sieci Compose. Biblioteki `pg` i `pg-boss` korzystają z PostgreSQL, a zadania pg-boss mają domyślny schemat `pgboss`. Osobna usługa `migrate` przy starcie przygotowuje schemat aplikacji i kolejki przed uruchomieniem web i workera. [Compose](../../compose.yaml) · [Konfiguracja Nuxt](../../nuxt.config.ts) · [Połączenie z bazą](../../lib/db.ts) · [Kolejka](../../lib/queue.ts) · [Inicjalizacja kolejek](../../scripts/init-queue.ts)
+Nuxt delivers the Vue code that runs in the browser and handles Nitro routes in the same web application. Compose publishes its port on `127.0.0.1`. PostgreSQL runs in the Compose network. The `pg` and `pg-boss` libraries use PostgreSQL, and pg-boss jobs use the default schema `pgboss`. A separate `migrate` service prepares the application and queue schema at startup, before web and worker start. [Compose](../../compose.yaml) · [Nuxt configuration](../../nuxt.config.ts) · [Database connection](../../lib/db.ts) · [Queue](../../lib/queue.ts) · [Queue initialisation](../../scripts/init-queue.ts)
 
-Wolumen `documents` jest współdzielony przez web i workera pod `/data/documents`. Baza przechowuje metadane importu, wydobyty tekst, wersje profilu i wyniki operacji. Podprocesy Python służą jako adaptery uruchamiane przez workera. Skrypt Himalayas wykonuje import bezpośrednio z CLI. [Import CV](../../lib/profile/imports.ts) · [Obraz workera](../../Dockerfile) · [Polecenia](../../package.json)
+The `documents` volume is shared by web and worker under `/data/documents`. The database stores import metadata, extracted text, profile versions and operation results. Python subprocesses serve as adapters started by the worker. The Himalayas script runs the import directly from the CLI. [CV import](../../lib/profile/imports.ts) · [Worker image](../../Dockerfile) · [Commands](../../package.json)
 
 <a id="c3-komponenty"></a>
 
-## C3 — komponenty
+## C3 — components
 
-### Aplikacja webowa
+### Web application
 
 ```mermaid
 flowchart TB
-  Owner(["Właściciel<br/>[Osoba]"])
-  DB[("PostgreSQL<br/>[Kontener]")]
-  Files[("Dokumenty CV<br/>[Kontener]")]
-  Ollama["Ollama<br/>[System zewnętrzny]"]
+  Owner(["Owner<br/>[Person]"])
+  DB[("PostgreSQL<br/>[Container]")]
+  Files[("CV documents<br/>[Container]")]
+  Ollama["Ollama<br/>[External system]"]
 
-  subgraph Web["Aplikacja webowa · Nuxt"]
-    UI["Widoki Vue<br/>[Vue / Nuxt UI]<br/>Oferty, profil i firmy"]
-    Offers["Oferty i dopasowanie<br/>[Trasy Nitro + moduły TypeScript]<br/>Lista, filtry, historia ocen, zlecenia"]
-    Profile["Profil zawodowy<br/>[Trasy Nitro + moduły TypeScript]<br/>Szkic, wersje, import CV, propozycja AI"]
-    Companies["Firmy i research<br/>[Trasy Nitro + moduły TypeScript]<br/>Profile firm, role przy ofertach, raporty"]
-    Sources["Obsługa źródeł<br/>[Trasy Nitro + moduły TypeScript]<br/>Status importów i ręczne zlecenia polskich źródeł"]
+  subgraph Web["Web application · Nuxt"]
+    UI["Vue views<br/>[Vue / Nuxt UI]<br/>Offers, profile and companies"]
+    Offers["Offers and matching<br/>[Nitro routes + TypeScript modules]<br/>List, filters, assessment history, requests"]
+    Profile["Professional profile<br/>[Nitro routes + TypeScript modules]<br/>Draft, versions, CV import, AI proposal"]
+    Companies["Companies and research<br/>[Nitro routes + TypeScript modules]<br/>Company profiles, roles on offers, reports"]
+    Sources["Source handling<br/>[Nitro routes + TypeScript modules]<br/>Import status and manual requests for Polish sources"]
   end
 
-  Owner -->|"Otwiera widoki przez HTTP"| UI
-  UI -->|"Czyta oferty i składa dyspozycje, HTTP/JSON"| Offers
-  UI -->|"Zarządza profilem i przesyła CV, HTTP"| Profile
-  UI -->|"Edytuje powiązania i zleca research, HTTP/JSON"| Companies
-  UI -->|"Odczytuje status lub zleca import, HTTP/JSON"| Sources
-  Offers -->|"Czyta oferty, zapisuje oceny i zleca dopasowanie"| DB
-  Profile -->|"Zapisuje wersje i zleca ekstrakcję lub propozycję"| DB
-  Companies -->|"Zapisuje profile firm i zleca research"| DB
-  Sources -->|"Odczytuje i zleca przebiegi"| DB
-  Profile -->|"Zapisuje i udostępnia PDF / DOCX"| Files
-  Profile -.->|"Sprawdza model przed zleceniem"| Ollama
+  Owner -->|"Opens views over HTTP"| UI
+  UI -->|"Reads offers and submits decisions, HTTP/JSON"| Offers
+  UI -->|"Manages the profile and uploads the CV, HTTP"| Profile
+  UI -->|"Edits links and requests research, HTTP/JSON"| Companies
+  UI -->|"Reads status or requests an import, HTTP/JSON"| Sources
+  Offers -->|"Reads offers, saves assessments and requests matching"| DB
+  Profile -->|"Saves versions and requests extraction or a proposal"| DB
+  Companies -->|"Saves company profiles and requests research"| DB
+  Sources -->|"Reads and requests runs"| DB
+  Profile -->|"Stores and serves PDF / DOCX"| Files
+  Profile -.->|"Checks the model before the request"| Ollama
 
   classDef internal fill:#dbeafe,stroke:#2563eb,color:#172554
   classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
@@ -126,50 +126,50 @@ flowchart TB
   class Owner,DB,Files,Ollama external
 ```
 
-| Komponent | Punkty wejścia i implementacja |
+| Component | Entry points and implementation |
 | --- | --- |
-| Widoki Vue | [Lista ofert](../../app/pages/offers.vue), [profil zawodowy](../../app/pages/profile.vue), [szczegóły firmy](../../app/pages/companies/%5Bid%5D.vue) |
-| Oferty i dopasowanie | [Lista ofert API](../../server/api/offers/index.get.ts), [zapytania ofert](../../lib/offers.ts), [dane ocen na liście](../../lib/matching/list.ts), [zlecenie grupy ocen](../../server/api/matching/index.post.ts) |
-| Profil zawodowy | [Potwierdzenie wersji](../../server/api/profile/confirm.post.ts), [import CV](../../server/api/profile/imports/index.post.ts), [zlecenie propozycji](../../server/api/profile/imports/%5Bid%5D/prepare.post.ts), [zapis profilu](../../lib/profile/store.ts) |
-| Firmy i research | [Lista firm API](../../server/api/companies/index.get.ts), [powiązania z ofertą](../../server/api/companies/%5Bid%5D/links.post.ts), [zlecenie researchu](../../server/api/companies/%5Bid%5D/research.post.ts), [zapis profilu firmy](../../lib/companies/store.ts) |
-| Obsługa źródeł | [Zlecenie importu](../../server/api/sources/polish.post.ts), [status polskich źródeł](../../server/api/sources/polish.get.ts), [status JobSpy](../../server/api/sources/jobspy.get.ts) |
+| Vue views | [Offer list](../../app/pages/offers.vue), [professional profile](../../app/pages/profile.vue), [company details](../../app/pages/companies/%5Bid%5D.vue) |
+| Offers and matching | [Offer list API](../../server/api/offers/index.get.ts), [offer queries](../../lib/offers.ts), [assessment data on the list](../../lib/matching/list.ts), [assessment group request](../../server/api/matching/index.post.ts) |
+| Professional profile | [Version confirmation](../../server/api/profile/confirm.post.ts), [CV import](../../server/api/profile/imports/index.post.ts), [proposal request](../../server/api/profile/imports/%5Bid%5D/prepare.post.ts), [profile store](../../lib/profile/store.ts) |
+| Companies and research | [Company list API](../../server/api/companies/index.get.ts), [links to an offer](../../server/api/companies/%5Bid%5D/links.post.ts), [research request](../../server/api/companies/%5Bid%5D/research.post.ts), [company profile store](../../lib/companies/store.ts) |
+| Source handling | [Import request](../../server/api/sources/polish.post.ts), [Polish sources status](../../server/api/sources/polish.get.ts), [JobSpy status](../../server/api/sources/jobspy.get.ts) |
 
 ### Worker
 
 ```mermaid
 flowchart TB
-  DB[("PostgreSQL<br/>[Kontener]")]
-  Files[("Dokumenty CV<br/>[Kontener]")]
-  Boards["Portale z ofertami<br/>[Systemy zewnętrzne]"]
-  OpenAI["OpenAI<br/>[System zewnętrzny]"]
-  Ollama["Ollama<br/>[System zewnętrzny]"]
+  DB[("PostgreSQL<br/>[Container]")]
+  Files[("CV documents<br/>[Container]")]
+  Boards["Job boards<br/>[External systems]"]
+  OpenAI["OpenAI<br/>[External system]"]
+  Ollama["Ollama<br/>[External system]"]
 
   subgraph Worker["Worker · Node.js"]
-    Runtime["Obsługa kolejek i harmonogram<br/>[TypeScript / pg-boss]<br/>Rejestracja zadań, odzyskiwanie, heartbeat"]
-    Import["Import ogłoszeń<br/>[TypeScript / Python]<br/>SOLID.Jobs, polskie źródła i JobSpy"]
-    Parse["Ekstrakcja CV<br/>[pdfjs-dist / mammoth]<br/>Odczyt tekstu z PDF lub DOCX"]
-    Profile["Propozycja profilu<br/>[TypeScript]<br/>Przygotowanie i walidacja danych zawodowych"]
-    Matching["Oceny dopasowania<br/>[TypeScript]<br/>Partie pojedyncze i grupowe, publikacja ocen"]
-    Research["Research podstawowy<br/>[TypeScript]<br/>Zebranie źródeł i synteza raportu"]
+    Runtime["Queue handling and schedule<br/>[TypeScript / pg-boss]<br/>Job registration, recovery, heartbeat"]
+    Import["Ad import<br/>[TypeScript / Python]<br/>SOLID.Jobs, Polish sources and JobSpy"]
+    Parse["CV extraction<br/>[pdfjs-dist / mammoth]<br/>Reading text from PDF or DOCX"]
+    Profile["Profile proposal<br/>[TypeScript]<br/>Preparing and validating professional data"]
+    Matching["Match assessments<br/>[TypeScript]<br/>Single and group batches, assessment publication"]
+    Research["Basic research<br/>[TypeScript]<br/>Gathering sources and synthesising the report"]
   end
 
-  Runtime -->|"Odbiera zadania i zapisuje heartbeat"| DB
-  Runtime -->|"Uruchamia przebieg importu"| Import
-  Runtime -->|"Przekazuje identyfikator importu CV"| Parse
-  Runtime -->|"Przekazuje identyfikator próby AI"| Profile
-  Runtime -->|"Przekazuje identyfikator zlecenia lub grupy"| Matching
-  Runtime -->|"Przekazuje identyfikator operacji researchu"| Research
-  Import -->|"Pobiera ogłoszenia przez HTTP(S)"| Boards
-  Import -->|"Zapisuje ogłoszenia, rewizje i statusy"| DB
-  Parse -->|"Odczytuje oryginał CV"| Files
-  Parse -->|"Zapisuje tekst i status ekstrakcji"| DB
-  Profile -->|"Zapisuje propozycję i stan próby"| DB
-  Matching -->|"Zapisuje oceny, historię i artefakty partii"| DB
-  Research -->|"Zapisuje wersję raportu i stan próby"| DB
-  Profile -.->|"Generuje propozycję przez Responses API"| OpenAI
-  Profile -.->|"Generuje propozycję przez Ollama API"| Ollama
-  Matching -.->|"Wysyła partie i odbiera wyniki przez Files / Batch API"| OpenAI
-  Research -.->|"Wyszukuje źródła i syntetyzuje raport przez Responses API"| OpenAI
+  Runtime -->|"Receives jobs and saves the heartbeat"| DB
+  Runtime -->|"Starts an import run"| Import
+  Runtime -->|"Passes the CV import identifier"| Parse
+  Runtime -->|"Passes the AI attempt identifier"| Profile
+  Runtime -->|"Passes the request or group identifier"| Matching
+  Runtime -->|"Passes the research operation identifier"| Research
+  Import -->|"Fetches ads over HTTP(S)"| Boards
+  Import -->|"Saves ads, revisions and statuses"| DB
+  Parse -->|"Reads the original CV"| Files
+  Parse -->|"Saves the text and extraction status"| DB
+  Profile -->|"Saves the proposal and attempt state"| DB
+  Matching -->|"Saves assessments, history and batch artefacts"| DB
+  Research -->|"Saves the report version and attempt state"| DB
+  Profile -.->|"Generates the proposal through the Responses API"| OpenAI
+  Profile -.->|"Generates the proposal through the Ollama API"| Ollama
+  Matching -.->|"Sends batches and receives results through the Files / Batch API"| OpenAI
+  Research -.->|"Searches sources and synthesises the report through the Responses API"| OpenAI
 
   classDef internal fill:#dbeafe,stroke:#2563eb,color:#172554
   classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
@@ -177,51 +177,51 @@ flowchart TB
   class DB,Files,Boards,OpenAI,Ollama external
 ```
 
-| Komponent | Punkty wejścia i implementacja |
+| Component | Entry points and implementation |
 | --- | --- |
-| Obsługa kolejek i harmonogram | [Punkt wejścia workera](../../worker/index.ts). Przy starcie i co minutę sprawdza zaległości. Harmonogram zleca import SOLID.Jobs. |
-| Import ogłoszeń | [SOLID.Jobs](../../lib/sources/sync.ts), [polskie źródła](../../lib/sources/polish-sync.ts), [JobSpy](../../lib/sources/jobspy-sync.ts), [zapis ogłoszeń i rewizji](../../lib/sources/store.ts). |
-| Ekstrakcja CV | [`extractImport`](../../lib/profile/imports.ts) obsługuje `profile-parse`. |
-| Propozycja profilu | [`executeAi`](../../lib/profile/ai.ts) obsługuje `profile-ai`. Płatna ścieżka korzysta z [budżetu AI](../../lib/ai/budget.ts). |
-| Oceny dopasowania | [Pojedyncze zlecenie](../../lib/matching/store.ts) i [grupa](../../lib/matching/groups.ts) używają [klienta Batch](../../lib/matching/batch.ts) oraz [archiwum partii](../../lib/matching/archive.ts). |
-| Research podstawowy | [`executeCompanyResearch`](../../lib/companies/research.ts) wykonuje `company-research` i używa [dostawcy OpenAI](../../lib/companies/research-provider.ts). |
+| Queue handling and schedule | [Worker entry point](../../worker/index.ts). Checks for backlog at startup and every minute. The schedule requests the SOLID.Jobs import. |
+| Ad import | [SOLID.Jobs](../../lib/sources/sync.ts), [Polish sources](../../lib/sources/polish-sync.ts), [JobSpy](../../lib/sources/jobspy-sync.ts), [saving ads and revisions](../../lib/sources/store.ts). |
+| CV extraction | [`extractImport`](../../lib/profile/imports.ts) handles `profile-parse`. |
+| Profile proposal | [`executeAi`](../../lib/profile/ai.ts) handles `profile-ai`. The paid path uses the [AI budget](../../lib/ai/budget.ts). |
+| Match assessments | The [single request](../../lib/matching/store.ts) and the [group](../../lib/matching/groups.ts) use the [Batch client](../../lib/matching/batch.ts) and the [batch archive](../../lib/matching/archive.ts). |
+| Basic research | [`executeCompanyResearch`](../../lib/companies/research.ts) runs `company-research` and uses the [OpenAI provider](../../lib/companies/research-provider.ts). |
 
 <a id="c4-kod-przygotowanie-propozycji-profilu"></a>
 
-## C4 — kod przygotowania propozycji profilu
+## C4 — profile proposal preparation code
 
-Widok pokazuje wywołania w komponencie propozycji profilu i jego punkty wejścia. Wybór wykonawcy opiera się na konfiguracji zapisanej z próbą. Wcześniejsza ekstrakcja tekstu należy do osobnego komponentu workera.
+The view shows the calls within the profile proposal component and its entry points. The choice of executor is based on the configuration saved with the attempt. The earlier text extraction belongs to a separate worker component.
 
 ```mermaid
 flowchart TB
-  Prepare["prepare.post.ts<br/>[Trasa Nitro]"]
-  Worker["worker/index.ts<br/>[Handler kolejki profile-ai]"]
+  Prepare["prepare.post.ts<br/>[Nitro route]"]
+  Worker["worker/index.ts<br/>[profile-ai queue handler]"]
 
-  subgraph Proposal["Kod przygotowania propozycji profilu"]
-    Enqueue["prepareProposal<br/>[Funkcja · ai.ts]"]
-    Config["profileConfiguration<br/>[Funkcja · ai-configuration.ts]"]
-    LocalQueue["enqueueLocalProfile<br/>[Funkcja · local-ai.ts]"]
-    Dispatch["executeAi<br/>[Funkcja · ai.ts]"]
-    Paid["executePaidProfile<br/>[Funkcja · ai.ts]"]
-    Local["executeLocalProfile<br/>[Funkcja · local-ai.ts]"]
-    OpenAI["OpenAiAdapter<br/>[Klasa · models/openai.ts]"]
-    Ollama["OllamaAdapter<br/>[Klasa · models/ollama.ts]"]
-    Result["readAiProposal<br/>[Funkcja · ai-result.ts]"]
-    Slot["claimLocal<br/>[Funkcja · operations/local.ts]"]
+  subgraph Proposal["Profile proposal preparation code"]
+    Enqueue["prepareProposal<br/>[Function · ai.ts]"]
+    Config["profileConfiguration<br/>[Function · ai-configuration.ts]"]
+    LocalQueue["enqueueLocalProfile<br/>[Function · local-ai.ts]"]
+    Dispatch["executeAi<br/>[Function · ai.ts]"]
+    Paid["executePaidProfile<br/>[Function · ai.ts]"]
+    Local["executeLocalProfile<br/>[Function · local-ai.ts]"]
+    OpenAI["OpenAiAdapter<br/>[Class · models/openai.ts]"]
+    Ollama["OllamaAdapter<br/>[Class · models/ollama.ts]"]
+    Result["readAiProposal<br/>[Function · ai-result.ts]"]
+    Slot["claimLocal<br/>[Function · operations/local.ts]"]
   end
 
-  Prepare -->|"Waliduje żądanie i przekazuje tekst oraz rewizję"| Enqueue
-  Enqueue -->|"Odczytuje konfigurację i tworzy migawkę wykonania"| Config
-  Config -.->|"Sprawdza dostępność wybranego modelu"| Ollama
-  Enqueue -.->|"Zapisuje lokalną próbę i zleca dostarczenie"| LocalQueue
-  Worker -->|"Przekazuje identyfikator próby"| Dispatch
-  Dispatch -->|"Dla OpenAI przekazuje fabrykę adaptera ścieżce płatnej"| Paid
-  Dispatch -.->|"Dla zapisanej migawki Ollama uruchamia ścieżkę lokalną"| Local
-  Paid -->|"Generuje propozycję na podstawie danych zawodowych"| OpenAI
-  Paid -->|"Waliduje wynik modelu"| Result
-  Local -->|"Przejmuje wspólny slot lokalny"| Slot
-  Local -->|"Zleca generację na podstawie migawki"| Ollama
-  Local -->|"Waliduje wynik modelu"| Result
+  Prepare -->|"Validates the request and passes the text and revision"| Enqueue
+  Enqueue -->|"Reads the configuration and creates the execution snapshot"| Config
+  Config -.->|"Checks availability of the chosen model"| Ollama
+  Enqueue -.->|"Saves the local attempt and requests delivery"| LocalQueue
+  Worker -->|"Passes the attempt identifier"| Dispatch
+  Dispatch -->|"For OpenAI passes the adapter factory to the paid path"| Paid
+  Dispatch -.->|"For a saved Ollama snapshot starts the local path"| Local
+  Paid -->|"Generates the proposal from professional data"| OpenAI
+  Paid -->|"Validates the model result"| Result
+  Local -->|"Takes the shared local slot"| Slot
+  Local -->|"Requests generation from the snapshot"| Ollama
+  Local -->|"Validates the model result"| Result
 
   classDef internal fill:#dbeafe,stroke:#2563eb,color:#172554
   classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
@@ -229,144 +229,144 @@ flowchart TB
   class Prepare,Worker external
 ```
 
-`prepareProposal` usuwa dane kontaktowe z przekazanego tekstu i zapisuje jego rewizję. Dla OpenAI tworzy próbę z rezerwacją budżetu i zleca pracę po uzyskaniu środków. Dla Ollama zapisuje lokalną operację i zleca dostarczenie przez tę samą kolejkę pg-boss. Worker odczytuje zapisaną konfigurację. Po walidacji zapisuje propozycję przy imporcie, a zastosowanie propozycji jest osobną operacją właściciela. [Punkt wejścia HTTP](../../server/api/profile/imports/%5Bid%5D/prepare.post.ts) · [Orkiestracja i rozliczenie](../../lib/profile/ai.ts) · [Konfiguracja profilu](../../lib/profile/ai-configuration.ts) · [Wykonanie lokalne](../../lib/profile/local-ai.ts) · [Walidacja propozycji](../../lib/profile/ai-result.ts) · [Zastosowanie propozycji](../../server/api/profile/imports/%5Bid%5D/apply.post.ts)
+`prepareProposal` removes contact details from the passed text and saves its revision. For OpenAI it creates an attempt with a budget reservation and requests the work once funds are secured. For Ollama it saves a local operation and requests delivery through the same pg-boss queue. The worker reads the saved configuration. After validation it saves the proposal on the import; applying the proposal is a separate owner operation. [HTTP entry point](../../server/api/profile/imports/%5Bid%5D/prepare.post.ts) · [Orchestration and settlement](../../lib/profile/ai.ts) · [Profile configuration](../../lib/profile/ai-configuration.ts) · [Local execution](../../lib/profile/local-ai.ts) · [Proposal validation](../../lib/profile/ai-result.ts) · [Applying the proposal](../../server/api/profile/imports/%5Bid%5D/apply.post.ts)
 
 <a id="stan-lokalnego-ai"></a>
 
-## Stan lokalnego AI
+## State of local AI
 
-| Obszar | Stan w bieżącym kodzie |
+| Area | State in the current code |
 | --- | --- |
-| Profil zawodowy | Trasa przygotowania i handler `profile-ai` prowadzą do lokalnego wykonawcy przy migawce Ollama. [Compose](../../compose.yaml) przekazuje `AI_PROFILE_EXECUTION_JSON` i `AI_ENDPOINTS_JSON` do web i workera. Przykład konfiguracji znajduje się w [pliku środowiskowym](../../.env.example). Dostępność modelu i łączność z kontenerów wymagają osobnej weryfikacji. |
-| Lokalna kolejka i odzyskiwanie | [Migracja lokalnego AI](../../migrations/1770000000013_local_ai.cjs) dodaje dane operacji, kolejki i slotu. [Moduł lokalnego profilu](../../lib/profile/local-ai.ts) budzi oczekujące zadania po potwierdzonym zakończeniu generacji. [Worker](../../worker/index.ts) wywołuje `recoverLocalProfiles` przy starcie i w cyklu harmonogramu. |
-| Dopasowanie ofert | Podpięty worker używa OpenAI Batch. Lokalna ścieżka ocen jest opisana w [projekcie rozwiązania](../specs/lokalne-ai/solution-design.md). |
-| Research pracodawcy | Podpięty research podstawowy korzysta z OpenAI Responses i wyszukiwania WWW. OpenCode i przeglądarka dla lokalnego researchu są opisane w [projekcie rozwiązania](../specs/lokalne-ai/solution-design.md). |
+| Professional profile | The preparation route and the `profile-ai` handler lead to the local executor when the snapshot is for Ollama. [Compose](../../compose.yaml) passes `AI_PROFILE_EXECUTION_JSON` and `AI_ENDPOINTS_JSON` to web and worker. An example configuration is in the [environment file](../../.env.example). Model availability and connectivity from the containers need separate verification. |
+| Local queue and recovery | The [local AI migration](../../migrations/1770000000013_local_ai.cjs) adds operation, queue and slot data. The [local profile module](../../lib/profile/local-ai.ts) wakes waiting jobs after generation has confirmed its end. The [worker](../../worker/index.ts) calls `recoverLocalProfiles` at startup and in the schedule cycle. |
+| Offer matching | The wired worker uses OpenAI Batch. The local assessment path is described in the [solution design](../specs/lokalne-ai/solution-design.md). |
+| Employer research | The wired basic research uses OpenAI Responses and web search. OpenCode and the browser for local research are described in the [solution design](../specs/lokalne-ai/solution-design.md). |
 
-Po zmianie punktu wejścia, magazynu danych lub integracji zewnętrznej zaktualizuj odpowiedni widok razem z odnośnikami do kodu.
+After changing an entry point, a data store or an external integration, update the relevant view together with its links to the code.
 
 
 ### Source: docs/architecture/moduly-i-zasady-kodu.md
 
 
-# Zasady architektury i pisania kodu
+# Architecture and coding rules
 
-Punkty wejścia aplikacji przekazują polecenia i zapytania do modułów przez ich publiczne operacje.
+Application entry points pass commands and queries to modules through their public operations.
 
-## Reguły zależności
+## Dependency rules
 
-1. **Tylko moduł będący właścicielem danych wykonuje operacje na tych danych.** Inne moduły, API, CLI i worker przekazują zapytanie lub polecenie przez publiczny interfejs właściciela. Właściciel odczytuje dane, sprawdza reguły, wykonuje operację i zwraca wynik albo zdefiniowany błąd. Zapytania do tabel, w tym złączenia, repozytoria, adaptery i schemat zapisu są wewnętrzne. W TypeScripcie publiczne operacje i ich kontrakty eksportujemy jawnie z `modules/<moduł>/index.ts`.
+1. **Only the module that owns the data performs operations on that data.** Other modules, the API, the CLI and the worker pass a query or command through the owner's public interface. The owner reads the data, checks the rules, performs the operation and returns a result or a defined error. Table queries, including joins, repositories, adapters and the storage schema, are internal. In TypeScript we export public operations and their contracts explicitly from `modules/<module>/index.ts`.
 
-   - **Operacje są domyślnie wewnętrzne.** Przed dodaniem publicznej operacji wskazujemy konkretnego klienta spoza modułu i przypadek użycia, którego istniejący kontrakt nie obsługuje. Operacja wyraża cel klienta i udostępnia tylko potrzebne dane. Dopasowanie może odczytać aktywną zatwierdzoną wersję profilu wraz z jej identyfikatorem przez publiczny serwis Profilu. [Kontrakt Profilu zawodowego](../../modules/profile/README.md#publiczne-operacje)
-   - **Każda publiczna operacja chroni niezmienniki modułu.** Moduł sprawdza dopuszczalność polecenia w aktualnym stanie i zabezpiecza sprawdzenie oraz zapis przed równoległą zmianą. Gdy polecenie opiera się na stanie odczytanym wcześniej przez klienta, podaje oczekiwaną rewizję. Jeśli warunki przestały być spełnione, moduł zwraca konflikt bez częściowego zapisu. Przy zatwierdzeniu profilu Profil sprawdza rewizję szkicu, tworzy zatwierdzoną wersję i ustawia ją jako aktywną w jednej transakcji.
+   - **Operations are internal by default.** Before adding a public operation we name a concrete client outside the module and the use case that the existing contract does not support. The operation expresses the client's goal and exposes only the data it needs. Matching may read the active confirmed profile version together with its identifier through the public Profile service. [Professional profile contract](../../modules/profile/README.md#publiczne-operacje)
+   - **Every public operation protects the module's invariants.** The module checks whether the command is allowed in the current state and protects the check and the save against concurrent change. When a command relies on state the client read earlier, it gives the expected revision. If the conditions no longer hold, the module returns a conflict without a partial save. When confirming a profile, Profile checks the draft revision, creates the confirmed version and sets it as active in one transaction.
 
-2. **Widoki składają dane przez publiczne operacje odczytu.** Każdy moduł udostępnia dane potrzebne do konkretnego widoku i sam wylicza wartości wynikające z jego reguł. Widok łączy odpowiedzi po identyfikatorach oraz odpowiada za prezentację, filtrowanie i sortowanie. Lista Ofert przekazuje identyfikatory ogłoszeń do zbiorczego odczytu Dopasowania. Dopasowanie zwraca rating, kompletność i aktualność oceny, a Oferty korzystają z ratingu przed sortowaniem i paginacją.
+2. **Views assemble data through public read operations.** Each module exposes the data a specific view needs and computes the values that follow from its own rules. The view joins the responses by identifier and is responsible for presentation, filtering and sorting. The Offers list passes ad identifiers to a bulk read in Matching. Matching returns the rating, completeness and currency of the assessment, and Offers use the rating before sorting and pagination.
 
-3. **Przypadek użycia wyznacza granicę transakcji.** Operacja realizująca przypadek użycia określa, które zmiany muszą zostać zatwierdzone albo wycofane razem, i koordynuje transakcję. Jeśli uczestniczy w niej kilka modułów, każdy zapisuje własne dane przez publiczną operację w tym samym kontekście transakcji. Mechanizm transakcji należy do wspólnej infrastruktury. [Martin Fowler, Service Layer](https://martinfowler.com/eaaCatalog/serviceLayer.html) · [Unit of Work](https://martinfowler.com/eaaCatalog/unitOfWork.html)
+3. **The use case sets the transaction boundary.** The operation that carries out a use case decides which changes must be committed or rolled back together, and coordinates the transaction. If several modules take part, each saves its own data through a public operation in the same transaction context. The transaction mechanism belongs to shared infrastructure. [Martin Fowler, Service Layer](https://martinfowler.com/eaaCatalog/serviceLayer.html) · [Unit of Work](https://martinfowler.com/eaaCatalog/unitOfWork.html)
 
-## Reguły struktury kodu
+## Code structure rules
 
-### Katalog modułu
+### Module directory
 
-Najmniejszy moduł ma opis odpowiedzialności, publiczne wejście i plik z implementacją operacji. Nazwa pliku mówi, co można zrobić, np. `read-active-profile.ts`.
+The smallest module has a description of its responsibility, a public entry and a file with the operation's implementation. The file name says what can be done, e.g. `read-active-profile.ts`.
 
 ```text
-modules/<moduł>/
+modules/<module>/
 ├── README.md
 ├── index.ts
-└── <nazwa-operacji>.ts
+└── <operation-name>.ts
 ```
 
-- **`README.md`** opisuje główny cel modułu i dane, za które odpowiada. Istotne warunki użycia publicznych operacji opisujemy przy ich kontraktach.
-- **`index.ts`** jawnie eksportuje operacje i typy potrzebne klientom modułu. Klienci importują stąd, a kod wewnętrzny korzysta bezpośrednio z plików implementacji. Typy wejścia i wyniku trzymamy przy operacji lub w osobnym pliku, jeśli korzysta z nich kilka operacji.
-- **Plik operacji** prowadzi przypadek użycia od przyjęcia polecenia lub zapytania do wyniku. Określa też, które zmiany muszą zostać zapisane razem. Powiązane operacje mogą współdzielić plik nazwany według ich odpowiedzialności.
+- **`README.md`** describes the module's main purpose and the data it is responsible for. Significant conditions of use for public operations are described next to their contracts.
+- **`index.ts`** explicitly exports the operations and types the module's clients need. Clients import from here, and internal code uses the implementation files directly. Input and result types are kept next to the operation, or in a separate file if several operations use them.
+- **The operation file** drives the use case from accepting the command or query to the result. It also decides which changes must be saved together. Related operations may share a file named after their responsibility.
 
-Podkatalog dodajemy, gdy jest co w nim zebrać i można jasno nazwać jego odpowiedzialność.
+We add a subdirectory when there is something to collect in it and its responsibility can be named clearly.
 
-| Katalog | Kiedy pomaga | Przykład |
+| Directory | When it helps | Example |
 | --- | --- | --- |
-| `operations/` | Moduł ma kilka przypadków użycia i warto zebrać ich punkty wejścia w jednym miejscu. | `confirm-profile.ts`, `apply-cv-proposal.ts` |
-| `domain/` | Moduł ma reguły, które można wyrazić na podstawie przekazanych danych, bez odczytu bazy lub wywołania usługi. | Obliczenie ratingu z ocen i wag, sprawdzenie poprawności widełek wynagrodzenia |
+| `operations/` | The module has several use cases and it is worth collecting their entry points in one place. | `confirm-profile.ts`, `apply-cv-proposal.ts` |
+| `domain/` | The module has rules that can be expressed from the passed data, without reading the database or calling a service. | Computing the rating from assessments and weights, checking that a salary range is valid |
 
-`infrastructure/` zawiera kod, który łączy operacje modułu z bazą danych, usługami zewnętrznymi i mechanizmami uruchamiania. Dodajemy podkatalogi odpowiadające temu, czego moduł używa.
+`infrastructure/` holds the code that connects the module's operations with the database, external services and startup mechanisms. We add subdirectories matching what the module uses.
 
 ```text
 infrastructure/
-├── persistence/   # zapytania, zapis i mapowanie danych z bazy
-├── adapters/      # integracje i implementacje portów
-├── http/          # kontrolery HTTP
-├── worker/        # obsługa zadań z kolejki
-└── cli/           # polecenia CLI
+├── persistence/   # queries, saving and mapping data from the database
+├── adapters/      # integrations and port implementations
+├── http/          # HTTP controllers
+├── worker/        # handling jobs from the queue
+└── cli/           # CLI commands
 ```
 
-Operacja łączy odczyt, reguły domeny i zapis. Reguły domeny pracują na przekazanych danych. Kod w `persistence/` zna schemat danych własnego modułu. Adapter tłumaczy dane na kontrakt zdefiniowany przy operacji, która z niego korzysta.
+An operation combines reading, domain rules and saving. Domain rules work on the passed data. Code in `persistence/` knows the data schema of its own module. An adapter translates data into the contract defined next to the operation that uses it.
 
-Kontroler, handler workera lub polecenie CLI przekazuje dane do publicznej operacji modułu i obsługuje jej wynik. Gdy kilka modułów zapisuje dane w jednej transakcji, operacja koordynująca przekazuje wspólny kontekst ich publicznym operacjom. Każdy moduł wykonuje własny zapis.
+A controller, worker handler or CLI command passes data to the module's public operation and handles its result. When several modules save data in one transaction, the coordinating operation passes a shared context to their public operations. Each module performs its own save.
 
-### Operacja modułu prowadzi cały przypadek użycia
+### A module operation drives the whole use case
 
-Publiczna operacja odpowiada za pełny przebieg konkretnego polecenia. Odczytuje potrzebne dane, sprawdza warunki, wykonuje zmianę i zwraca wynik. Punkt wejścia aplikacji tłumaczy żądanie na polecenie i wynik na odpowiedź.
+A public operation is responsible for the full flow of a specific command. It reads the needed data, checks the conditions, makes the change and returns the result. The application entry point translates the request into a command and the result into a response.
 
-Przy zastosowaniu propozycji z CV trasa przekazuje wybór pozycji i oczekiwaną rewizję szkicu. Profil odczytuje propozycję, sprawdza rewizje i zapisuje szkic w ramach jednej operacji. Dzięki temu każdy punkt wejścia stosuje te same reguły. [Service Layer](https://martinfowler.com/eaaCatalog/serviceLayer.html)
+When applying a CV proposal, the route passes the choice of items and the expected draft revision. Profile reads the proposal, checks the revisions and saves the draft within one operation. This way every entry point applies the same rules. [Service Layer](https://martinfowler.com/eaaCatalog/serviceLayer.html)
 
-### Wymienni wykonawcy korzystają ze wspólnego kontraktu
+### Interchangeable executors use a shared contract
 
-Port opisuje, czego potrzebuje przypadek użycia. Adapter realizuje ten kontrakt przy pomocy konkretnej technologii. Implementację adaptera wybieramy w miejscu, które składa zależności. Kod przypadku użycia korzysta z kontraktu portu.
+A port describes what the use case needs. An adapter fulfils this contract with a specific technology. We choose the adapter implementation in the place that assembles dependencies. The use case code uses the port contract.
 
-W Źródłach port konektora przyjmuje zakres i dostarcza ogłoszenia oraz informację o kompletności pobrania. Adapter obsługuje szczegóły portalu, a operacja wykonania przebiegu używa tego samego portu do pobrania danych i ustalenia końcowego stanu. [Ports and Adapters](https://alistair.cockburn.us/hexagonal-architecture) · [The Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
+In Sources, the connector port accepts a scope and delivers ads plus information about fetch completeness. The adapter handles the board's details, and the operation that executes a run uses the same port to fetch data and to set the final state. [Ports and Adapters](https://alistair.cockburn.us/hexagonal-architecture) · [The Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
 
-### Dane zewnętrzne tłumaczymy przy integracji
+### We translate external data at the integration
 
-Warstwa antykorupcyjna zamienia model zewnętrznego systemu na pojęcia używane w aplikacji. Przy integracji portalu tłumaczenie należy do konektora. Kontrakt Źródeł określa znaczenie pól, a odbiorcy korzystają z tych znaczeń przy stosowaniu własnych reguł.
+An anti-corruption layer turns the external system's model into the concepts used in the application. For a board integration, the translation belongs to the connector. The Sources contract defines the meaning of the fields, and recipients use these meanings when applying their own rules.
 
-Jeśli portal odróżnia widełki pracodawcy od własnego szacunku, konektor przekazuje kwotę wraz z pochodzeniem. Dopasowanie stosuje jedną regułę porównania wynagrodzenia na podstawie pochodzenia kwoty. Zmiana pola w odpowiedzi portalu dotyczy wtedy kodu tłumaczenia w konektorze. [Eric Evans, Domain-Driven Design Reference, s. 34](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
+If a board distinguishes the employer's salary range from its own estimate, the connector passes the amount together with its origin. Matching applies one salary comparison rule based on the origin of the amount. A change of a field in the board's response then concerns the translation code in the connector. [Eric Evans, Domain-Driven Design Reference, p. 34](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
 
-### Obiekt wartości grupuje dane, które mają wspólne znaczenie
+### A value object groups data that share a meaning
 
-Obiekt wartości reprezentuje pojęcie przez jego dane i reguły. Dwie takie wartości są równe, jeśli mają te same istotne cechy. Poprawność sprawdzamy przy tworzeniu wartości, a zmiana tworzy nową wartość.
+A value object represents a concept through its data and rules. Two such values are equal if they have the same significant attributes. Validity is checked when the value is created, and a change creates a new value.
 
-Widełki wynagrodzenia obejmują granice kwoty, walutę, okres, podstawę i rodzaj kontraktu. Reguła tworzenia widełek sprawdza między innymi kolejność granic, jeśli podano obie. Kod porównujący wynagrodzenia otrzymuje całe widełki, dzięki czemu może sprawdzić ich porównywalność. [Eric Evans, Domain-Driven Design Reference, s. 12](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
+A salary range covers the amount bounds, currency, period, basis and contract type. The rule that creates a salary range checks, among other things, the order of the bounds if both are given. Code that compares salaries receives the whole range, so it can check whether ranges are comparable. [Eric Evans, Domain-Driven Design Reference, p. 12](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
 
-### Agregat chroni stan, który musi zmieniać się razem
+### An aggregate protects state that must change together
 
-Agregat grupuje dane, dla których określone warunki muszą być spełnione po każdej zmianie. Zmiany przechodzą przez główny obiekt agregatu, który pilnuje tych warunków. Zakres agregatu wyznacza stan potrzebny do sprawdzenia reguł i wykonania zmiany. Pełną historię można pobierać osobno.
+An aggregate groups data for which certain conditions must hold after every change. Changes go through the aggregate's root object, which enforces these conditions. The aggregate's scope is the state needed to check the rules and make the change. The full history can be fetched separately.
 
-Przy zatwierdzaniu profilu nowa wersja i wskazanie jej jako aktywnej są częścią jednej zmiany. Operacja zatwierdzenia sprawdza oczekiwaną rewizję szkicu i zapisuje oba elementy atomowo. [Eric Evans, Domain-Driven Design Reference, s. 16](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
+When a profile is confirmed, the new version and marking it as active are part of one change. The confirmation operation checks the expected draft revision and saves both elements atomically. [Eric Evans, Domain-Driven Design Reference, p. 16](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
 
-### Reguły obliczeniowe oddzielamy od odczytu i zapisu
+### We separate computational rules from reading and saving
 
-Funkcja obliczeniowa otrzymuje dane potrzebne do podjęcia decyzji i zwraca wynik. Kod realizujący przypadek użycia pobiera wejście, wywołuje tę funkcję i decyduje o zapisie. To podział znany jako funkcyjny rdzeń i imperatywna otoczka.
+A computational function receives the data needed to make a decision and returns a result. The code that carries out the use case fetches the input, calls this function and decides on the save. This split is known as functional core, imperative shell.
 
-Funkcja licząca rating przyjmuje oceny kryteriów i wagi. Zwraca rating i kompletność, które można sprawdzić na przekazanych danych. Operacja zapisująca ocenę odpowiada za odczyt wag i utrwalenie wyniku. [Functional Core, Imperative Shell](https://www.destroyallsoftware.com/screencasts/catalog/functional-core-imperative-shell)
+The function that computes the rating accepts criterion assessments and weights. It returns the rating and completeness, which can be checked against the passed data. The operation that saves the assessment is responsible for reading the weights and persisting the result. [Functional Core, Imperative Shell](https://www.destroyallsoftware.com/screencasts/catalog/functional-core-imperative-shell)
 
-### Funkcja opisuje kroki na jednym poziomie szczegółowości
+### A function describes steps at one level of detail
 
-W funkcji prowadzącej przypadek użycia widać kolejność działań istotnych dla jego wyniku. Szczegół wydzielamy, gdy nazwana operacja pozwala zrozumieć krok bez czytania jej implementacji.
+In a function that drives a use case, you can see the order of the actions that matter for its result. We extract a detail when a named operation lets the reader understand the step without reading its implementation.
 
-Zatwierdzenie profilu można opisać jako sprawdzenie rewizji, zapis zatwierdzonej wersji i jej aktywację. Instrukcje SQL i mapowanie wierszy należą do kodu wykonującego te kroki. [Clean Code, rozdział Functions](https://www.informit.com/store/clean-code-a-handbook-of-agile-software-craftsmanship-9780132639408)
+Confirming a profile can be described as checking the revision, saving the confirmed version and activating it. SQL statements and row mapping belong to the code that performs these steps. [Clean Code, chapter Functions](https://www.informit.com/store/clean-code-a-handbook-of-agile-software-craftsmanship-9780132639408)
 
-## Zasady pisania kodu
+## Coding rules
 
-- **Nazwy opisują operację i przedmiot.** `enqueueMatching`, `publishAiRating` i `readRatings` wskazują, które wywołanie zleca pracę, zapisuje wynik lub czyta historię. Nazwy typów i statusów opieramy na pojęciach ze [słownika domeny](../../GLOSSARY.md).
-- **Dane wejściowe walidujemy przy wejściu.** Trasa sprawdza kształt żądania HTTP, adapter sprawdza odpowiedź zewnętrzną, moduł pilnuje reguł domeny. Po walidacji przekazujemy typowany wynik. Na przykład poprawny JSON oceny nadal wymaga sprawdzenia dowodów względem zapisanej wersji profilu i rewizji ogłoszenia.
-- **Diagnostyka zawiera tylko dane potrzebne do ustalenia, co się stało.** Zapisujemy stan, przyczynę i identyfikatory pozwalające powiązać zdarzenia. Komunikaty diagnostyczne i logi pomijają dane wrażliwe i sekrety. [OWASP, Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html#data-to-exclude)
-- **Nowa warstwa ma określoną odpowiedzialność.** Wydzielamy ją, jeśli ukrywa regułę lub szczegóły wykonania, które mogą się różnić między wykonawcami.
+- **Names describe the operation and its subject.** `enqueueMatching`, `publishAiRating` and `readRatings` show which call requests work, saves a result or reads history. Type and status names are based on concepts from the [domain glossary](../../GLOSSARY.md).
+- **We validate input at the entry.** The route checks the shape of the HTTP request, the adapter checks the external response, the module enforces domain rules. After validation we pass a typed result. For example, valid assessment JSON still needs its evidence checked against the saved profile version and the ad revision.
+- **Diagnostics contain only the data needed to establish what happened.** We record the state, the cause and the identifiers that link events. Diagnostic messages and logs leave out sensitive data and secrets. [OWASP, Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html#data-to-exclude)
+- **A new layer has a defined responsibility.** We extract it if it hides a rule or execution details that may differ between executors.
 
 
 ### Source: docs/architecture/moduly.md
 
 
-# Mapa modułów
+# Module map
 
-**Ogłoszenie** to wpis opublikowany na portalu. **Oferta pracy** może łączyć kilka ogłoszeń dotyczących tej samej rekrutacji.
+An **ad** is an entry published on a job board. A **job offer** may combine several ads that concern the same recruitment.
 
-| Moduł | Główny cel | Docelowy katalog |
+| Module | Main purpose | Target directory |
 | --- | --- | --- |
-| [Źródła ofert](../../modules/sources/README.md) | Pobiera ogłoszenia z portali i śledzi zmiany ich treści oraz dostępności. | `modules/sources/` |
-| Oferty | Umożliwia przeglądanie ofert pracy i grupuje ogłoszenia dotyczące tej samej rekrutacji. | `modules/offers/` |
-| [Profil zawodowy](../../modules/profile/README.md) | Pozwala opracować i zatwierdzić opis doświadczenia, umiejętności i oczekiwań wobec przyszłej pracy. | `modules/profile/` |
-| Dopasowanie | Ocenia, na ile ogłoszenie pasuje do zatwierdzonego profilu zawodowego, i uzasadnia wynik. | `modules/matching/` |
-| Firmy | Gromadzi informacje o firmach i zapisuje ich role w rekrutacjach. | `modules/companies/` |
-| [AI](../../modules/ai/README.md) | Wykonuje zadania AI na zlecenie innych modułów, zwraca wyniki i rozlicza koszty. | `modules/ai/` |
+| [Offer sources](../../modules/sources/README.md) | Fetches ads from job boards and tracks changes to their content and availability. | `modules/sources/` |
+| Offers | Lets the owner browse job offers and groups ads that concern the same recruitment. | `modules/offers/` |
+| [Professional profile](../../modules/profile/README.md) | Lets the owner draft and confirm a description of experience, skills and expectations for a future job. | `modules/profile/` |
+| Matching | Assesses how well an ad fits the confirmed professional profile and justifies the result. | `modules/matching/` |
+| Companies | Collects information about companies and records their roles in recruitments. | `modules/companies/` |
+| [AI](../../modules/ai/README.md) | Runs AI tasks on request from other modules, returns results and settles costs. | `modules/ai/` |
 
 
 
@@ -376,31 +376,31 @@ Zatwierdzenie profilu można opisać jako sprawdzenie rewizji, zapis zatwierdzon
 ### oferty-pracy-0mq
 
 
-○ oferty-pracy-0mq [EPIC] · Poprawki architektury kodu   [P2 · OPEN]
+○ oferty-pracy-0mq [EPIC] · Code architecture fixes   [P2 · OPEN]
 Created by: Piotr Ziółkowski · Type: epic
 Created: 2026-11-12 · Updated: 2026-11-12
 
 DESCRIPTION
 
-  Porządkowanie architektury aplikacji według uzgodnionego podziału na moduły.
-  Każde podzadanie opisuje jeden konkretny punkt do naprawienia i ma własne   
-  kryteria odbioru. Mapa modułów: docs/architecture/moduly-i-zasady-kodu.md.  
+  Tidying the application architecture according to the agreed split into
+  modules. Each subtask describes one specific point to fix and has its own
+  acceptance criteria. Module map: docs/architecture/moduly-i-zasady-kodu.md.
 
 
 
 CHILDREN
-  ↳ ○ oferty-pracy-0mq.5: Wydzielić serwis uruchamiania kolektora P2
-  ↳ ○ oferty-pracy-0mq.2: Dodać ConnectorProvider i rejestr konektorów źródeł ofert P2
-  ↳ ○ oferty-pracy-0mq.4: Wydzielić serwis zapisu wyników pobierania P2
-  ↳ ○ oferty-pracy-0mq.10: Udostępnić publiczny serwis odczytu Profilu zawodowego P2
-  ↳ ○ oferty-pracy-0mq.7: Wydzielić wspólną regułę dostępności ogłoszeń po pełnym przebiegu P2
-  ↳ ○ oferty-pracy-0mq.8: Zebrać moduł Oferty w katalogu modules/offers P2
-  ↳ ○ oferty-pracy-0mq.12: Dostosować struktury katalogów i plików modułów P2
-  ↳ ○ oferty-pracy-0mq.9: Przenieść wykonanie propozycji profilu za interfejs modułu AI P2
-  ↳ ○ oferty-pracy-0mq.6: Udostępnić wspólny interfejs odczytu ogłoszeń źródłowych P1
-  ↳ ○ oferty-pracy-0mq.3: Wydzielić serwis zapisu metadanych przebiegu pobierania P2
-  ↳ ○ oferty-pracy-0mq.11: Usunąć pozostałe obejścia publicznych interfejsów modułów P2
-  ↳ ○ oferty-pracy-0mq.1: Ujednolicić interfejs konektorów źródeł ofert P2
+  ↳ ○ oferty-pracy-0mq.5: Extract the collector run service P2
+  ↳ ○ oferty-pracy-0mq.2: Add ConnectorProvider and the offer source connector registry P2
+  ↳ ○ oferty-pracy-0mq.4: Extract the fetch results save service P2
+  ↳ ○ oferty-pracy-0mq.10: Expose a public read service for the Professional profile P2
+  ↳ ○ oferty-pracy-0mq.7: Extract a shared ad availability rule after a complete run P2
+  ↳ ○ oferty-pracy-0mq.8: Gather the Offers module in the modules/offers directory P2
+  ↳ ○ oferty-pracy-0mq.12: Adjust module directory and file structures P2
+  ↳ ○ oferty-pracy-0mq.9: Move profile proposal execution behind the AI module interface P2
+  ↳ ○ oferty-pracy-0mq.6: Expose a shared read interface for source ads P1
+  ↳ ○ oferty-pracy-0mq.3: Extract the fetch run metadata save service P2
+  ↳ ○ oferty-pracy-0mq.11: Remove the remaining workarounds of module public interfaces P2
+  ↳ ○ oferty-pracy-0mq.1: Unify the offer source connector interface P2
   ◐ 0/12 complete (0%)
 
 
@@ -410,527 +410,527 @@ CHILDREN
 ### oferty-pracy-0mq.1
 
 
-○ oferty-pracy-0mq.1 · Ujednolicić interfejs konektorów źródeł ofert   [P2 · OPEN]
+○ oferty-pracy-0mq.1 · Unify the offer source connector interface   [P2 · OPEN]
 Created by: Piotr Ziółkowski · Type: task
 Created: 2026-11-12 · Updated: 2026-11-12
 
 DESCRIPTION
 
-  Cel: moduł Źródła ofert uruchamia każdy kolektor przez ten sam interfejs,   
-  niezależnie od tego, czy kolektor parsuje HTML, wywołuje API, korzysta z    
-  paginacji lub uruchamia proces Python.                                      
-                                                                              
-  Kryteria odbioru:                                                           
-                                                                              
-  1. Każdy istniejący kolektor udostępnia implementację wspólnego interfejsu  
-  konektora. Interfejs przyjmuje zakres pobierania i przekazuje ujednolicone  
-  ogłoszenia źródłowe w jednej lub wielu porcjach oraz informację o tym, czy  
-  cały zakres został sprawdzony.                                              
-  2. Każdy konkretny kolektor ma własny podkatalog pod                        
-  modules/sources/infrastructure/adapters/connectors/. Wspólny interfejs jest 
-  dostępny poza podkatalogami konkretnych kolektorów.                         
-  3. Moduł Źródła ofert używa wspólnego interfejsu. Szczegóły transportu,     
-  paginacji i pobierania treści pozostają w kolektorze. Moduł odpowiada za    
-  zapis ogłoszeń i rewizji oraz reguły dostępności.                           
-  4. Zachowane są zapis przyrostowy tam, gdzie działa obecnie, wyniki         
-  częściowe oraz dotychczasowe reguły aktualizacji dostępności po             
-  synchronizacji.                                                             
+  Goal: the Offer sources module runs every collector through the same
+  interface, regardless of whether the collector parses HTML, calls an API,
+  uses pagination or starts a Python process.
+
+  Acceptance criteria:
+
+  1. Every existing collector provides an implementation of the shared
+  connector interface. The interface accepts a fetch scope and passes unified
+  source ads in one or more chunks, plus information about whether the
+  whole scope was checked.
+  2. Each concrete collector has its own subdirectory under
+  modules/sources/infrastructure/adapters/connectors/. The shared interface is
+  available outside the subdirectories of concrete collectors.
+  3. The Offer sources module uses the shared interface. Details of transport,
+  pagination and content fetching stay in the collector. The module is
+  responsible for saving ads and revisions and for the availability rules.
+  4. Incremental saving where it works today, partial results, and the
+  existing rules for updating availability after a sync are
+  preserved.
 
 
 
 PARENT
-  ↑ ○ oferty-pracy-0mq: (EPIC) Poprawki architektury kodu P2
+  ↑ ○ oferty-pracy-0mq: (EPIC) Code architecture fixes P2
 
 BLOCKS
-  ← ○ oferty-pracy-0mq.2: Dodać ConnectorProvider i rejestr konektorów źródeł ofert P2
+  ← ○ oferty-pracy-0mq.2: Add ConnectorProvider and the offer source connector registry P2
 
 
 
 ### oferty-pracy-0mq.2
 
 
-○ oferty-pracy-0mq.2 · Dodać ConnectorProvider i rejestr konektorów źródeł ofert   [P2 · OPEN]
+○ oferty-pracy-0mq.2 · Add ConnectorProvider and the offer source connector registry   [P2 · OPEN]
 Created by: Piotr Ziółkowski · Type: task
 Created: 2026-11-12 · Updated: 2026-11-12
 
 DESCRIPTION
 
-  Cel: kod uruchamiający pobieranie odnajduje konektor po jego stałej nazwie  
-  przez ConnectorProvider i korzysta ze wspólnego interfejsu konektora.       
-                                                                              
-  Kryteria odbioru:                                                           
-                                                                              
-  1. Rejestracja konkretnych konektorów odbywa się w jednym miejscu w module  
-  Źródła ofert. Każdy konektor ma unikalną, stałą nazwę, niezależną od ścieżki
-  pliku. Istniejące identyfikatory źródeł zachowują znaczenie.                
-  2. ConnectorProvider pozwala pobrać konektor po nazwie i wylistować         
-  zarejestrowane nazwy. Rozwiązany konektor udostępnia wspólny interfejs z    
-  oferty-pracy-0mq.1. Nieznana nazwa i podwójna rejestracja mają jawne        
-  zachowanie.                                                                 
-  3. Kod wywołujący pobieranie odwołuje się do ConnectorProvider i wspólnego  
-  interfejsu. Importy implementacji konkretnych kolektorów są skupione w      
-  miejscu rejestracji.                                                        
-  4. Dodanie konektora polega na utworzeniu jego podkatalogu, implementacji   
-  interfejsu i rejestracji pod stałą nazwą. Istniejące miejsca wywołujące     
-  korzystają z niego przez tę samą operację wyszukiwania.                     
+  Goal: the code that starts a fetch finds the connector by its fixed name
+  through ConnectorProvider and uses the shared connector interface.
+
+  Acceptance criteria:
+
+  1. Concrete connectors are registered in one place in the Offer sources
+  module. Each connector has a unique, fixed name, independent of the file
+  path. Existing source identifiers keep their meaning.
+  2. ConnectorProvider can fetch a connector by name and list the
+  registered names. The resolved connector exposes the shared interface from
+  oferty-pracy-0mq.1. An unknown name and a double registration have explicit
+  behaviour.
+  3. The code that calls the fetch refers to ConnectorProvider and the shared
+  interface. Imports of concrete collector implementations are concentrated in
+  the registration place.
+  4. Adding a connector means creating its subdirectory, implementing the
+  interface and registering it under a fixed name. Existing call sites
+  use it through the same lookup operation.
 
 
 
 PARENT
-  ↑ ○ oferty-pracy-0mq: (EPIC) Poprawki architektury kodu P2
+  ↑ ○ oferty-pracy-0mq: (EPIC) Code architecture fixes P2
 
 DEPENDS ON
-  → ○ oferty-pracy-0mq.1: Ujednolicić interfejs konektorów źródeł ofert P2
+  → ○ oferty-pracy-0mq.1: Unify the offer source connector interface P2
 
 BLOCKS
-  ← ○ oferty-pracy-0mq.5: Wydzielić serwis uruchamiania kolektora P2
+  ← ○ oferty-pracy-0mq.5: Extract the collector run service P2
 
 
 
 ### oferty-pracy-0mq.3
 
 
-○ oferty-pracy-0mq.3 · Wydzielić serwis zapisu metadanych przebiegu pobierania   [P2 · OPEN]
+○ oferty-pracy-0mq.3 · Extract the fetch run metadata save service   [P2 · OPEN]
 Created by: Piotr Ziółkowski · Type: task
 Created: 2026-11-12 · Updated: 2026-11-12
 
 DESCRIPTION
 
-  Serwis utrwala metadane przebiegu synchronizacji: identyfikator źródła i    
-  zakres, przyczynę uruchomienia, daty, identyfikator zadania, status i       
-  diagnostykę przebiegu. Udostępnia operacje utworzenia, przejęcia i          
-  zakończenia przebiegu oraz odczytu stanu potrzebnego do odzyskiwania.       
-  Kryteria odbioru: zmiany stanu przebiegu przechodzą przez ten serwis,       
-  zachowane są atomowość utworzenia przebiegu i wpisu kolejki oraz odporność  
-  na podwójne przejęcie. Serwis przyjmuje decyzje o przebiegu od kodu, który  
-  nim zarządza. Powiązany kontekst o zlecaniu synchronizacji: oferty-pracy-   
-  slu.                                                                        
+  The service persists sync run metadata: the source identifier and
+  scope, the start reason, dates, the job identifier, the status and the
+  run diagnostics. It exposes operations to create, claim and
+  finish a run and to read the state needed for recovery.
+  Acceptance criteria: run state changes go through this service,
+  the atomicity of creating a run and its queue entry is preserved, and so is
+  resistance to a double claim. The service accepts decisions about the run from the code that
+  manages it. Related context on requesting syncs: oferty-pracy-
+  slu.
 
 
 
 PARENT
-  ↑ ○ oferty-pracy-0mq: (EPIC) Poprawki architektury kodu P2
+  ↑ ○ oferty-pracy-0mq: (EPIC) Code architecture fixes P2
 
 BLOCKS
-  ← ○ oferty-pracy-0mq.5: Wydzielić serwis uruchamiania kolektora P2
+  ← ○ oferty-pracy-0mq.5: Extract the collector run service P2
 
 
 
 ### oferty-pracy-0mq.4
 
 
-○ oferty-pracy-0mq.4 · Wydzielić serwis zapisu wyników pobierania   [P2 · OPEN]
+○ oferty-pracy-0mq.4 · Extract the fetch results save service   [P2 · OPEN]
 Created by: Piotr Ziółkowski · Type: task
 Created: 2026-11-12 · Updated: 2026-11-12
 
 DESCRIPTION
 
-  Serwis przyjmuje ujednolicone porcje ogłoszeń źródłowych i identyfikator    
-  przebiegu. Zapisuje ogłoszenia, obserwacje w przebiegu i rewizje treści, po 
-  czym zwraca liczniki potrzebne do podsumowania. Wykorzystuje obecną logikę  
-  saveOffers. Kryteria odbioru: zachowane są zapis przyrostowy, wyniki        
-  częściowe, tożsamość źródło plus identyfikator w źródle i brak nowych       
-  rewizji dla identycznej treści. Aktualizację dostępności wykonuje na jawne  
-  polecenie po potwierdzeniu kompletności i tylko w zakresie przebiegu, który 
-  na to pozwala.                                                              
+  The service accepts unified chunks of source ads and the run
+  identifier. It saves ads, observations in the run and content revisions, and
+  then returns the counters needed for the summary. It uses the current
+  saveOffers logic. Acceptance criteria: incremental saving, partial
+  results, the identity of source plus in-source identifier, and no new
+  revisions for identical content are preserved. It performs the availability update on an explicit
+  command after completeness is confirmed, and only within the scope of a run that
+  allows it.
 
 
 
 PARENT
-  ↑ ○ oferty-pracy-0mq: (EPIC) Poprawki architektury kodu P2
+  ↑ ○ oferty-pracy-0mq: (EPIC) Code architecture fixes P2
 
 BLOCKS
-  ← ○ oferty-pracy-0mq.5: Wydzielić serwis uruchamiania kolektora P2
+  ← ○ oferty-pracy-0mq.5: Extract the collector run service P2
 
 
 
 ### oferty-pracy-0mq.5
 
 
-○ oferty-pracy-0mq.5 · Wydzielić serwis uruchamiania kolektora   [P2 · OPEN]
+○ oferty-pracy-0mq.5 · Extract the collector run service   [P2 · OPEN]
 Created by: Piotr Ziółkowski · Type: task
 Created: 2026-11-12 · Updated: 2026-11-12
 
 DESCRIPTION
 
-  Serwis wykonuje przebieg pobierania na podstawie jego identyfikatora.       
-  Odczytuje zapisane źródło i zakres, rozwiązuje konektor przez               
-  ConnectorProvider, uruchamia go przez wspólny interfejs i przekazuje porcje 
-  ogłoszeń do serwisu zapisu wyników. Na podstawie zakończenia pobierania     
-  wyznacza status przebiegu, zleca zapis metadanych i decyduje o aktualizacji 
-  dostępności według zasad źródła. Kryteria odbioru: handler workera deleguje 
-  wykonanie po odebraniu zadania, a serwis używa ConnectorProvider i obu      
-  serwisów zapisu. Zachowane są reguły wykonania pełnego, częściowego i       
-  nieudanego oraz rozpoznawanie przebiegu już przejętego lub zakończonego.    
+  The service executes a fetch run based on its identifier.
+  It reads the saved source and scope, resolves the connector through
+  ConnectorProvider, runs it through the shared interface and passes chunks of
+  ads to the results save service. Based on how the fetch ended,
+  it sets the run status, requests the metadata save and decides on updating
+  availability according to the source's rules. Acceptance criteria: the worker handler delegates
+  execution after receiving the job, and the service uses ConnectorProvider and both
+  save services. The rules for complete, partial and
+  failed execution are preserved, as is detecting a run already claimed or finished.
 
 
 
 PARENT
-  ↑ ○ oferty-pracy-0mq: (EPIC) Poprawki architektury kodu P2
+  ↑ ○ oferty-pracy-0mq: (EPIC) Code architecture fixes P2
 
 DEPENDS ON
-  → ○ oferty-pracy-0mq.4: Wydzielić serwis zapisu wyników pobierania P2
-  → ○ oferty-pracy-0mq.3: Wydzielić serwis zapisu metadanych przebiegu pobierania P2
-  → ○ oferty-pracy-0mq.2: Dodać ConnectorProvider i rejestr konektorów źródeł ofert P2
+  → ○ oferty-pracy-0mq.4: Extract the fetch results save service P2
+  → ○ oferty-pracy-0mq.3: Extract the fetch run metadata save service P2
+  → ○ oferty-pracy-0mq.2: Add ConnectorProvider and the offer source connector registry P2
 
 BLOCKS
-  ← ○ oferty-pracy-0mq.7: Wydzielić wspólną regułę dostępności ogłoszeń po pełnym przebiegu P2
+  ← ○ oferty-pracy-0mq.7: Extract a shared ad availability rule after a complete run P2
 
 
 
 ### oferty-pracy-0mq.6
 
 
-○ oferty-pracy-0mq.6 · Udostępnić wspólny interfejs odczytu ogłoszeń źródłowych   [P1 · OPEN]
+○ oferty-pracy-0mq.6 · Expose a shared read interface for source ads   [P1 · OPEN]
 Created by: Piotr Ziółkowski · Type: task
 Created: 2026-11-12 · Updated: 2026-11-12
 
 DESCRIPTION
 
-  Wymagany element podziału modułów. Źródła ofert udostępniają Ofertom,       
-  Dopasowaniu i Firmom stabilny interfejs odczytu ogłoszeń źródłowych oraz ich
-  rewizji. Moduł odpowiada za sposób przechowywania i odczytu danych.         
+  A required element of the module split. Offer sources give Offers,
+  Matching and Companies a stable read interface for source ads and their
+  revisions. The module is responsible for how the data is stored and read.
 
 
 
 ACCEPTANCE CRITERIA
 
-  Interfejs pozwala pobrać aktualne ogłoszenie wraz z identyfikatorem rewizji 
-  i odczytać wskazaną wersję. Lista i szczegóły ofert oraz odczyty            
-  wykorzystywane przez Dopasowanie i Firmy korzystają z interfejsu Źródeł     
-  ofert. Zachowane są dotychczasowe dane widoku oraz spójność treści i        
-  identyfikatora rewizji przy ocenie.                                         
+  The interface can fetch the current ad together with its revision identifier
+  and read a given version. The offer list and details, and the reads
+  used by Matching and Companies, use the Offer sources
+  interface. The existing view data and the consistency of content and
+  revision identifier during assessment are preserved.
 
 
 
 PARENT
-  ↑ ○ oferty-pracy-0mq: (EPIC) Poprawki architektury kodu P2
+  ↑ ○ oferty-pracy-0mq: (EPIC) Code architecture fixes P2
 
 COMMENTS
   2026-11-12 13:58 Piotr Ziółkowski
     
-      Osobny temat do rozważenia przy dalszych pracach nad Dopasowaniem. Źródła   
-      ofert zachowują rewizje ogłoszenia, a Dopasowanie powinno ustalać aktualność
-      oceny na podstawie zmiany danych istotnych dla oceny. Dziś zmiana           
-      identyfikatora rewizji wystarcza, więc korekta formatowania może oznaczyć   
-      ocenę jako nieaktualną. Por. definicje w GLOSSARY.md. Ta uwaga jest         
-      powiązana z odczytem rewizji, poza kryteriami odbioru tego zadania.         
+      A separate topic to consider in further work on Matching. Offer
+      sources keep ad revisions, and Matching should decide whether an
+      assessment is current based on a change in the data that matters for it. Today a change of the
+      revision identifier is enough, so a formatting fix may mark the
+      assessment as stale. Cf. the definitions in GLOSSARY.md. This note is
+      related to reading revisions and is outside this task's acceptance criteria.
 
 
 
 ### oferty-pracy-0mq.7
 
 
-○ oferty-pracy-0mq.7 · Wydzielić wspólną regułę dostępności ogłoszeń po pełnym przebiegu   [P2 · OPEN]
+○ oferty-pracy-0mq.7 · Extract a shared ad availability rule after a complete run   [P2 · OPEN]
 Created by: Piotr Ziółkowski · Type: task
 Created: 2026-11-12 · Updated: 2026-11-12
 
 DESCRIPTION
 
-  Przenieść regułę wykrywania niewidzianych ogłoszeń z synchronizacji         
-  SOLID.Jobs do wspólnej logiki modułu Źródła ofert. Konektor przekazuje      
-  znalezione ogłoszenia i informację o kompletności przebiegu. Konfiguracja   
-  źródła określa, czy pełny wynik dla zakresu pozwala wnioskować o            
-  niedostępności. Serwis uruchamiania kolektora wywołuje wspólną regułę przy  
-  zakończeniu przebiegu, a zapis korzysta z obserwacji zarejestrowanych dla   
-  tego przebiegu.                                                             
+  Move the rule that detects unseen ads from the SOLID.Jobs
+  sync into the shared logic of the Offer sources module. The connector passes
+  the ads it found and information about run completeness. The source
+  configuration says whether a complete result for a scope allows inferring
+  unavailability. The collector run service calls the shared rule when
+  the run ends, and the save uses the observations recorded for
+  that run.
 
 
 
 ACCEPTANCE CRITERIA
 
-                                                                              
-  1. Po pełnym przebiegu SOLID.Jobs wspólna reguła porównuje zapisane         
-  ogłoszenia dla tego samego źródła i zakresu z obserwacjami bieżącego        
-  przebiegu. Brakujące oznacza jako niedostępne w źródle.                     
-  2. Niepełne i nieudane przebiegi pozostawiają dostępność niewidzianych      
-  ogłoszeń bez zmian. Ta sama zasada obowiązuje przy pełnym przebiegu dla     
-  źródła, którego konfiguracja nie pozwala wnioskować z braku w wynikach, jak 
-  Himalayas.                                                                  
-  3. Oznaczenie niedostępności i zapis pełnego zakończenia przebiegu są       
-  atomowe.                                                                    
-  4. Konektor SOLID.Jobs zgłasza wynik i kompletność. Porównanie z historią i 
-  decyzja o zmianie dostępności odbywają się we wspólnej logice modułu.       
+  
+  1. After a complete SOLID.Jobs run, the shared rule compares the saved
+  ads for the same source and scope with the observations of the current
+  run. It marks the missing ones as unavailable at the source.
+  2. Incomplete and failed runs leave the availability of unseen
+  ads unchanged. The same rule applies to a complete run for a
+  source whose configuration does not allow inference from absence in results, such as
+  Himalayas.
+  3. Marking unavailability and saving the complete end of the run are
+  atomic.
+  4. The SOLID.Jobs connector reports the result and completeness. The comparison with history and
+  the decision to change availability happen in the module's shared logic.
 
 
 
 PARENT
-  ↑ ○ oferty-pracy-0mq: (EPIC) Poprawki architektury kodu P2
+  ↑ ○ oferty-pracy-0mq: (EPIC) Code architecture fixes P2
 
 DEPENDS ON
-  → ○ oferty-pracy-0mq.5: Wydzielić serwis uruchamiania kolektora P2
+  → ○ oferty-pracy-0mq.5: Extract the collector run service P2
 
 
 
 ### oferty-pracy-0mq.8
 
 
-○ oferty-pracy-0mq.8 · Zebrać moduł Oferty w katalogu modules/offers   [P2 · OPEN]
+○ oferty-pracy-0mq.8 · Gather the Offers module in the modules/offers directory   [P2 · OPEN]
 Created by: Piotr Ziółkowski · Type: task
 Created: 2026-11-12 · Updated: 2026-11-12
 
 DESCRIPTION
 
-  Kod Ofert jest obecnie rozproszony między lib/offers.ts, obsługą API,       
-  widokiem i testami. Przenieść pliki należące do Ofert do modules/offers/ i  
-  uporządkować publiczne operacje modułu. Zachować działanie obecnej listy i  
-  szczegółów. Docelowy model łączenia ogłoszeń w ofertę opisać w dokumentacji 
-  jako kierunek rozwoju.                                                      
+  The Offers code is currently scattered between lib/offers.ts, API handling,
+  the view and tests. Move the files that belong to Offers to modules/offers/ and
+  tidy the module's public operations. Keep the current list and
+  details working. Describe the target model of combining ads into an offer in the documentation
+  as a direction of development.
 
 
 
 ACCEPTANCE CRITERIA
 
-                                                                              
-  • Wszystkie pliki należące do modułu Oferty znajdują się w modules/offers/, 
-  w tym logika odczytu i prezentacji, filtrowanie, sortowanie, kod widoków i  
-  testy dedykowane modułowi. W punktach wejścia aplikacji pozostaje           
-  rejestracja wymagana przez framework i delegowanie do modułu.               
-  • Kod spoza modułu korzysta z jego publicznego interfejsu. Lista i szczegóły
-  zachowują dotychczasowe działanie, w tym filtry, sortowanie, paginację i    
-  prezentację wynagrodzeń.                                                    
-  • Na koniec, po uporządkowaniu kodu i sprawdzeniu istniejących testów,      
-  powstaje modules/offers/README.md. Opisuje odpowiedzialność modułu,         
-  publiczne operacje, strukturę katalogu i zależności oraz wskazuje, które    
-  elementy docelowego modelu ofert są jeszcze do wdrożenia.                   
+  
+  • All files that belong to the Offers module are in modules/offers/,
+  including the read and presentation logic, filtering, sorting, view code and
+  tests dedicated to the module. The application entry points keep
+  the registration the framework requires and delegation to the module.
+  • Code outside the module uses its public interface. The list and details
+  keep their current behaviour, including filters, sorting, pagination and
+  salary presentation.
+  • Finally, after the code is tidied and the existing tests are checked,
+  modules/offers/README.md is created. It describes the module's responsibility,
+  public operations, directory structure and dependencies, and states which
+  elements of the target offer model are still to be implemented.
 
 
 
 LABELS: ready-for-agent
 
 PARENT
-  ↑ ○ oferty-pracy-0mq: (EPIC) Poprawki architektury kodu P2
+  ↑ ○ oferty-pracy-0mq: (EPIC) Code architecture fixes P2
 
 
 
 ### oferty-pracy-0mq.9
 
 
-○ oferty-pracy-0mq.9 · Przenieść wykonanie propozycji profilu za interfejs modułu AI   [P2 · OPEN]
+○ oferty-pracy-0mq.9 · Move profile proposal execution behind the AI module interface   [P2 · OPEN]
 Created by: Piotr Ziółkowski · Type: task
 Created: 2026-11-12 · Updated: 2026-11-12
 
 DESCRIPTION
 
-  Profil zawodowy nadal tworzy adaptery OpenAI i Ollamy oraz koordynuje ich   
-  wykonanie w lib/profile/ai.ts, local-ai.ts i ai-configuration.ts. Wydzielić 
-  zarządzanie wykonaniem do modułu AI i wprowadzić cienką warstwę integrującą 
-  przypadek użycia Profilu z AI. Wykorzystać istniejące adaptery, wspólny     
-  budżet i mechanizmy operacji z oferty-pracy-334.2, oferty-pracy-334.3 i     
-  oferty-pracy-334.6. Zakres obejmuje orkiestrację ponad adapterami.          
+  The Professional profile still creates the OpenAI and Ollama adapters and coordinates their
+  execution in lib/profile/ai.ts, local-ai.ts and ai-configuration.ts. Extract
+  execution management into the AI module and introduce a thin layer that integrates
+  the Profile use case with AI. Use the existing adapters, the shared
+  budget and the operation mechanisms from oferty-pracy-334.2, oferty-pracy-334.3 and
+  oferty-pracy-334.6. The scope covers orchestration above the adapters.
 
 
 
 ACCEPTANCE CRITERIA
 
-                                                                              
-  • Profil zleca przygotowanie propozycji z oczyszczonego tekstu CV i         
-  otrzymuje identyfikator wykonania. Przez ten sam interfejs odczytuje        
-  ujednolicony stan oraz wynik w ustalonym formacie. Konfiguracja dostawcy i  
-  modelu nie wymaga zmiany kodu Profilu.                                      
-  • Moduł AI wybiera dostawcę i model, zarządza konfiguracją próby,           
-  komunikacją, kolejką, wspólnym slotem lokalnym, ponowieniami, odzyskiwaniem 
-  oraz budżetem i rozliczeniem. Zachowuje historię prób i dotychczasowe zasady
-  obsługi niepewnego wykonania oraz kosztu.                                   
-  • Warstwa integrująca przekłada zlecenie przygotowania propozycji na        
-  instrukcję i schemat odpowiedzi oraz przekazuje ujednolicony wynik. Profil  
-  utrzymuje powiązanie z rewizją tekstu, sprawdza cytaty i zapisuje propozycję.
-  Właściciel nadal wybiera zmiany do szkicu i osobno zatwierdza wersję profilu.
-  • Sprawdzone są obie ścieżki wykonania, odrzucony wynik, wynik dla starszej 
-  rewizji oraz odzyskiwanie przerwanej próby. Zachowane są dotychczasowe      
-  zachowanie importu i dostęp do zapisanych propozycji.                       
+  
+  • Profile requests preparation of a proposal from the cleaned CV text and
+  receives an execution identifier. Through the same interface it reads
+  the unified state and the result in a set format. Changing the provider and
+  model configuration does not require changing Profile code.
+  • The AI module chooses the provider and model, manages the attempt configuration,
+  communication, the queue, the shared local slot, retries, recovery
+  and the budget and settlement. It keeps the attempt history and the existing rules
+  for handling uncertain execution and cost.
+  • The integrating layer turns the proposal preparation request into
+  an instruction and a response schema and passes on the unified result. Profile
+  keeps the link to the text revision, checks quotations and saves the proposal.
+  The owner still chooses changes for the draft and confirms the profile version separately.
+  • Both execution paths, a rejected result, a result for an older
+  revision and recovery of an interrupted attempt are checked. The existing
+  import behaviour and access to saved proposals are preserved.
 
 
 
 LABELS: ready-for-agent
 
 PARENT
-  ↑ ○ oferty-pracy-0mq: (EPIC) Poprawki architektury kodu P2
+  ↑ ○ oferty-pracy-0mq: (EPIC) Code architecture fixes P2
 
 
 
 ### oferty-pracy-0mq.10
 
 
-○ oferty-pracy-0mq.10 · Udostępnić publiczny serwis odczytu Profilu zawodowego   [P2 · OPEN]
+○ oferty-pracy-0mq.10 · Expose a public read service for the Professional profile   [P2 · OPEN]
 Created by: Piotr Ziółkowski · Type: task
 Created: 2026-11-12 · Updated: 2026-11-12
 
 DESCRIPTION
 
-  Dopasowanie odczytuje aktywny profil i historię wersji bezpośrednio z tabel 
-  modułu Profil zawodowy. Umieścić odczyt zatwierdzonych wersji za publicznym 
-  serwisem Profilu zgodnie z modules/profile/README.md. Profil odpowiada za   
-  dostęp do wersji i ukrywa sposób przechowywania danych. Dopasowanie nadal   
-  odpowiada za regułę aktualności oceny i używa identyfikatora profilu        
-  zwróconego przez serwis.                                                    
-                                                                              
-  Miejsca do migracji w Dopasowaniu obejmują lib/matching/store.ts, groups.ts,
-  ratings.ts i list.ts. To zadanie obejmuje odczyt profilu. Wykonanie         
-  propozycji AI ma osobne zadanie oferty-pracy-0mq.9.                         
+  Matching reads the active profile and version history directly from the tables
+  of the Professional profile module. Put the read of confirmed versions behind a public
+  Profile service in line with modules/profile/README.md. Profile is responsible for
+  access to versions and hides how the data is stored. Matching remains
+  responsible for the assessment currency rule and uses the profile identifier
+  returned by the service.
+  
+  The places to migrate in Matching include lib/matching/store.ts, groups.ts,
+  ratings.ts and list.ts. This task covers reading the profile. Execution of
+  the AI proposal has a separate task, oferty-pracy-0mq.9.
 
 
 
 ACCEPTANCE CRITERIA
 
-                                                                              
-  • Publiczny serwis Profilu udostępnia dane aktywnej zatwierdzonej wersji    
-  wraz z jej identyfikatorem oraz jawny wynik, gdy aktywnej wersji jeszcze nie
-  ma. Udostępnia też odczyt wskazanej zatwierdzonej wersji na potrzeby        
-  historii i oceny ręcznej.                                                   
-  • Dopasowanie korzysta z publicznego odczytu przy zlecaniu ocen pojedynczych
-  i grupowych, ocenie ręcznej, odczycie historii, sprawdzaniu gotowości       
-  profilu i ustalaniu aktualności ocen. Kod Dopasowania nie odczytuje         
-  bezpośrednio tabel profile_head ani profile_versions.                       
-  • Nowe oceny w grupie używają tej samej wersji profilu. Zlecenia nadal      
-  zapisują identyfikator wersji i przygotowane wejście. Brak zatwierdzonego   
-  profilu zachowuje dotychczasowy komunikat.                                  
-  • Odczyty używane przy zapisie i publikacji zachowują ochronę przed         
-  równoległym zatwierdzeniem innej wersji profilu. Widoki listy i historii    
-  pobierają metadane wersji zbiorczo, bez dodatkowego odczytu dla każdej      
-  pozycji.                                                                    
+  
+  • The public Profile service exposes the data of the active confirmed version
+  together with its identifier, and an explicit result when there is no active version
+  yet. It also exposes a read of a given confirmed version for
+  history and manual assessment.
+  • Matching uses the public read when requesting single and group
+  assessments, in manual assessment, reading history, checking profile
+  readiness and deciding assessment currency. Matching code does not read
+  the profile_head or profile_versions tables directly.
+  • New assessments in a group use the same profile version. Requests still
+  save the version identifier and the prepared input. The absence of a confirmed
+  profile keeps the existing message.
+  • Reads used when saving and publishing keep the protection against
+  concurrent confirmation of another profile version. The list and history views
+  fetch version metadata in bulk, without an extra read for each
+  item.
 
 
 
 LABELS: ready-for-agent
 
 PARENT
-  ↑ ○ oferty-pracy-0mq: (EPIC) Poprawki architektury kodu P2
+  ↑ ○ oferty-pracy-0mq: (EPIC) Code architecture fixes P2
 
 
 
 ### oferty-pracy-0mq.11
 
 
-○ oferty-pracy-0mq.11 · Usunąć pozostałe obejścia publicznych interfejsów modułów   [P2 · OPEN]
+○ oferty-pracy-0mq.11 · Remove the remaining workarounds of module public interfaces   [P2 · OPEN]
 Created by: Piotr Ziółkowski · Type: task
 Created: 2026-11-12 · Updated: 2026-11-12
 
 DESCRIPTION
 
-  Cel to zastąpienie bezpośredniego dostępu do tabel oraz wewnętrznych        
-  implementacji innych modułów ich publicznymi operacjami zgodnie z           
-  docs/architecture/moduly-i-zasady-kodu.md. Zachować obecne zachowanie       
-  aplikacji.                                                                  
-                                                                              
-  Miejsca z audytu do poprawy w tym zadaniu                                   
-                                                                              
-  • server/api/profile/index.get.ts:7–12 czyta importy Profilu i wylicza      
-  wspólny budżet AI. server/api/profile/versions/[id].get.ts:5–8 i            
-  server/api/profile/imports/[id].get.ts:5–9 odczytują tabele Profilu.        
-  server/api/profile/imports/[id]/apply.post.ts:30–50 czyta propozycję,       
-  pilnuje rewizji, waliduje wynik i zapisuje szkic. Całą operację zastosowania
-  propozycji powinien prowadzić Profil.                                       
-  • lib/matching/store.ts:55,159,340, lib/matching/groups.ts:300 i            
-  lib/companies/research.ts:33,159,181,235,253 czytają lub aktualizują próby  
-  AI. Moduł AI powinien udostępnić operacje na próbach i rozliczeniach, które 
-  można wywołać w istniejącej transakcji publikacji. Obecne wspólne funkcje   
-  budżetu są punktem wyjścia.                                                 
-  • lib/matching/store.ts:109, lib/matching/ratings.ts:199,321 i              
-  lib/companies/store.ts:198 korzystają z projectOffer oraz kształtu wierszy i
-  payloadu Źródeł. lib/offers.ts:1–8,203–216 korzysta z wewnętrznych katalogów
-  JobSpy i polskich źródeł oraz kwalifikacji zdalności. Wykorzystać odczyt    
-  Źródeł rozwijany w oferty-pracy-0mq.6. Składanie listy ofert z podsumowaniem
-  ocen jest dozwolone przez kontrakt odczytu.                                 
-  • lib/matching/store.ts:8–9, groups.ts:6, ratings.ts:4–5, model.ts:3–5 i    
-  lib/companies/research.ts:7 zależą od wewnętrznych schematów, oczyszczania  
-  tekstu albo helpera transakcji Profilu. Trasy ocen i archiwum biorą UUID z  
-  lib/profile/model.ts. Trasy Dopasowania, Firm i Źródeł oraz                 
-  server/utils/{companies,ratings}.ts używają wspólnych helperów z            
-  server/utils/profile.ts. Wydzielić tylko współdzielone mechanizmy, a dane   
-  domenowe pobierać przez kontrakty właścicieli.                              
-                                                                              
-  Pozostałe miejsca z audytu są już objęte istniejącymi zadaniami             
-                                                                              
-  • SQL Ofert, Dopasowania i Firm w source_ads i source_ad_revisions          
-  (lib/offers.ts:519, lib/matching/{store,list,ratings}.ts,                   
-  lib/companies/store.ts:109,205,220,252) należy do oferty-pracy-0mq.6. SQL   
-  Dopasowania w profile_head i profile_versions (store.ts:98,554,561, groups. 
-  ts:143, ratings.ts:131,202,327,440–441 i list.ts:18,65) należy do oferty-   
-  pracy-0mq.10.                                                               
-  • Wybór i uruchamianie konektorów w worker/index.ts, scripts/init-queue.ts, 
-  skryptach JobSpy, polskich źródeł i Himalayas oraz w server/api/sources/ są 
-  objęte oferty-pracy-0mq.2 i oferty-pracy-0mq.5.                             
-  • Wykonanie propozycji CV, w tym operacje na tabelach AI w lib/profile/{ai, 
-  local-ai}.ts, należy do oferty-pracy-0mq.9. Protokoły OpenAI Batch i        
-  wykonawcy researchu śledzą oferty-pracy-334.4 i oferty-pracy-334.5. Uzgodnić
-  ich integrację z operacjami rozliczenia AI.                                 
-                                                                              
-  Punkty wejścia mogą składać wyniki publicznych operacji. Klucze obce w      
-  migracjach są zależnościami schematu. Zadanie dotyczy dostępu i             
-  odpowiedzialności w kodzie wykonawczym.                                     
+  The goal is to replace direct access to tables and to the internal
+  implementations of other modules with their public operations, in line with
+  docs/architecture/moduly-i-zasady-kodu.md. Keep the current application
+  behaviour.
+  
+  Places from the audit to fix in this task
+  
+  • server/api/profile/index.get.ts:7–12 reads Profile imports and computes the
+  shared AI budget. server/api/profile/versions/[id].get.ts:5–8 and
+  server/api/profile/imports/[id].get.ts:5–9 read Profile tables.
+  server/api/profile/imports/[id]/apply.post.ts:30–50 reads the proposal,
+  guards the revision, validates the result and saves the draft. The whole operation of applying
+  the proposal should be driven by Profile.
+  • lib/matching/store.ts:55,159,340, lib/matching/groups.ts:300 and
+  lib/companies/research.ts:33,159,181,235,253 read or update AI
+  attempts. The AI module should expose operations on attempts and settlements that
+  can be called within the existing publication transaction. The current shared
+  budget functions are the starting point.
+  • lib/matching/store.ts:109, lib/matching/ratings.ts:199,321 and
+  lib/companies/store.ts:198 use projectOffer and the shape of Sources rows and
+  payload. lib/offers.ts:1–8,203–216 uses the internal catalogues of
+  JobSpy and the Polish sources, and the remote-work qualification. Use the Sources
+  read developed in oferty-pracy-0mq.6. Assembling the offer list with an assessment summary
+  is allowed by the read contract.
+  • lib/matching/store.ts:8–9, groups.ts:6, ratings.ts:4–5, model.ts:3–5 and
+  lib/companies/research.ts:7 depend on internal schemas, text cleaning
+  or the Profile transaction helper. The assessment and archive routes take UUID from
+  lib/profile/model.ts. The Matching, Companies and Sources routes and
+  server/utils/{companies,ratings}.ts use shared helpers from
+  server/utils/profile.ts. Extract only the shared mechanisms, and fetch domain
+  data through the owners' contracts.
+  
+  Remaining places from the audit are already covered by existing tasks
+  
+  • SQL of Offers, Matching and Companies on source_ads and source_ad_revisions
+  (lib/offers.ts:519, lib/matching/{store,list,ratings}.ts,
+  lib/companies/store.ts:109,205,220,252) belongs to oferty-pracy-0mq.6. Matching
+  SQL on profile_head and profile_versions (store.ts:98,554,561, groups.
+  ts:143, ratings.ts:131,202,327,440–441 and list.ts:18,65) belongs to oferty-
+  pracy-0mq.10.
+  • Selecting and starting connectors in worker/index.ts, scripts/init-queue.ts,
+  the JobSpy, Polish sources and Himalayas scripts and in server/api/sources/ is
+  covered by oferty-pracy-0mq.2 and oferty-pracy-0mq.5.
+  • Execution of the CV proposal, including operations on AI tables in lib/profile/{ai,
+  local-ai}.ts, belongs to oferty-pracy-0mq.9. The OpenAI Batch and
+  research executor protocols are tracked by oferty-pracy-334.4 and oferty-pracy-334.5. Agree
+  their integration with the AI settlement operations.
+  
+  Entry points may assemble the results of public operations. Foreign keys in
+  migrations are schema dependencies. The task concerns access and
+  responsibility in the executing code.
 
 
 
 ACCEPTANCE CRITERIA
 
-                                                                              
-  • Trasy Profilu delegują odczyt listy i szczegółów importów, odczyt wersji  
-  oraz zastosowanie propozycji do operacji Profilu. Podsumowanie budżetu      
-  pochodzi z operacji AI. Trasy zachowują dotychczasowe odpowiedzi i obsługę  
-  konfliktów rewizji.                                                         
-  • Dopasowanie i Firmy korzystają z operacji AI do rejestrowania i           
-  aktualizacji prób oraz odczytu i rozliczania kosztów. Ich kod i trasy       
-  aplikacji nie odwołują się bezpośrednio do ai_attempts ani ai_budget_months.
-  Zachowane są atomowość rozliczenia i publikacji, rozliczenie przy odrzuconej
-  treści, stan niepewnego kosztu i rezerwacja grupy w całości.                
-  • Dopasowanie i Firmy pobierają dane ogłoszenia przez kontrakt Źródeł       
-  zamiast projektować cudzy wiersz przez projectOffer. Oferty pobierają       
-  metadane źródła i kwalifikację zdalności przez udostępniony kontrakt.       
-  Zachowane są identyfikatory rewizji, istniejące widoki i zbiorcze odczyty.  
-  • Wspólny mechanizm transakcji, walidacja UUID i pomocniczy kod HTTP oraz   
-  kolejki mają neutralnych właścicieli. Dopasowanie, Firmy i Źródła nie       
-  importują w tym celu wewnętrznych plików Profilu. Dopasowanie otrzymuje dane
-  zatwierdzonego profilu przez jego kontrakt, a oczyszczanie tekstu nie zależy
-  od implementacji importu CV.                                                
-  • Weryfikacja regresji obejmuje import i zastosowanie propozycji, zlecenia  
-  pojedyncze i grupowe, ocenę ręczną, listę i historię ocen, powiązania firm z
-  ogłoszeniami oraz rozliczenie AI. Przy zastępowaniu złączeń zachowane są    
-  dotychczasowe granice transakcji i blokady używane przy zapisie oraz        
-  publikacji.                                                                 
+  
+  • Profile routes delegate reading the list and details of imports, reading versions
+  and applying the proposal to Profile operations. The budget summary
+  comes from an AI operation. The routes keep their current responses and handling of
+  revision conflicts.
+  • Matching and Companies use AI operations to record and
+  update attempts and to read and settle costs. Their code and the application
+  routes do not refer directly to ai_attempts or ai_budget_months.
+  The atomicity of settlement and publication, settlement for rejected
+  content, the uncertain-cost state and reservation of the whole group are preserved.
+  • Matching and Companies fetch ad data through the Sources contract
+  instead of projecting another module's row through projectOffer. Offers fetch
+  source metadata and the remote-work qualification through the exposed contract.
+  Revision identifiers, existing views and bulk reads are preserved.
+  • The shared transaction mechanism, UUID validation and helper code for HTTP and
+  the queue have neutral owners. Matching, Companies and Sources do not
+  import internal Profile files for this purpose. Matching receives the data
+  of the confirmed profile through its contract, and text cleaning does not depend
+  on the CV import implementation.
+  • Regression verification covers importing and applying the proposal, single and
+  group requests, manual assessment, the assessment list and history, links between companies and
+  ads, and AI settlement. When joins are replaced, the existing
+  transaction boundaries and locks used for saving and
+  publication are preserved.
 
 
 
 LABELS: ready-for-agent
 
 PARENT
-  ↑ ○ oferty-pracy-0mq: (EPIC) Poprawki architektury kodu P2
+  ↑ ○ oferty-pracy-0mq: (EPIC) Code architecture fixes P2
 
 
 
 ### oferty-pracy-0mq.12
 
 
-○ oferty-pracy-0mq.12 · Dostosować struktury katalogów i plików modułów   [P2 · OPEN]
+○ oferty-pracy-0mq.12 · Adjust module directory and file structures   [P2 · OPEN]
 Created by: Piotr Ziółkowski · Type: task
 Created: 2026-11-12 · Updated: 2026-11-12
 
 DESCRIPTION
 
-  Uporządkować kod modułów zgodnie z sekcją Katalog modułu w                  
-  docs/architecture/moduly-i-zasady-kodu.md. Uwzględnić Źródła ofert, Oferty, 
-  Profil zawodowy, Dopasowanie, Firmy i AI. Skoordynować prace z istniejącymi 
-  zadaniami epiku, szczególnie oferty-pracy-0mq.8 dotyczącym Ofert oraz       
-  oferty-pracy-0mq.1 dotyczącym konektorów.                                   
+  Tidy the module code according to the section Module directory in
+  docs/architecture/moduly-i-zasady-kodu.md. Include Offer sources, Offers,
+  Professional profile, Matching, Companies and AI. Coordinate the work with the existing
+  tasks of the epic, especially oferty-pracy-0mq.8 on Offers and
+  oferty-pracy-0mq.1 on connectors.
 
 
 
 ACCEPTANCE CRITERIA
 
-  Kod każdego modułu znajduje się w jego katalogu pod modules/, z publicznym  
-  index.ts i opisem w README.md. Operacje i reguły domenowe są rozmieszczone  
-  zgodnie z ich odpowiedzialnością. Kod dostępu do danych i adaptery oraz     
-  kontrolery, handlery workerów i polecenia CLI należą do infrastructure/     
-  właściwego modułu. Podkatalogi tworzone są tam, gdzie istnieje odpowiadający
-  im kod. Wymagana przez framework rejestracja punktów wejścia może pozostać  
-  poza modułem i deleguje do niego wykonanie. Importy i konfiguracja są       
-  dostosowane do nowych lokalizacji, istniejące zachowanie aplikacji jest     
-  zachowane i zweryfikowane odpowiednimi kontrolami.                          
+  The code of each module is in its directory under modules/, with a public
+  index.ts and a description in README.md. Operations and domain rules are placed
+  according to their responsibility. Data access code and adapters, and
+  controllers, worker handlers and CLI commands belong to infrastructure/
+  of the relevant module. Subdirectories are created where there is matching
+  code. Entry point registration required by the framework may stay
+  outside the module and delegates execution to it. Imports and configuration are
+  adjusted to the new locations, and the existing application behaviour is
+  preserved and verified by the relevant checks.
 
 
 
 LABELS: ready-for-agent
 
 PARENT
-  ↑ ○ oferty-pracy-0mq: (EPIC) Poprawki architektury kodu P2
+  ↑ ○ oferty-pracy-0mq: (EPIC) Code architecture fixes P2
 

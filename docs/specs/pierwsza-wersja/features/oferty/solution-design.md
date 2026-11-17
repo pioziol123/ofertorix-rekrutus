@@ -1,56 +1,56 @@
-# Tożsamość ofert, rozbieżności i historia — projekt rozwiązania
+# Offer identity, discrepancies and history — solution design
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **roboczy szkic — do dopracowania przed realizacją tej funkcjonalności**, 2026-10-31. Uzasadnienie: [wymagania tej funkcjonalności](requirements.md) → [PRD](../../PRD.md). Pokrycie: R-08/AC-08, R-09/AC-09, R-10/AC-10, R-11/AC-11.
+Status: **working draft — to be refined before this feature is implemented**, 2026-10-31. Rationale: [this feature's requirements](requirements.md) → [PRD](../../PRD.md). Coverage: R-08/AC-08, R-09/AC-09, R-10/AC-10, R-11/AC-11.
 
-## Granice i decyzje
+## Boundaries and decisions
 
-Potwierdzone wybory D-01–D-06 i proponowane D-07–D-08 są utrzymywane we [wspólnej architekturze](../../architecture.md). Pozostałe mechanizmy w tym pliku są **propozycjami SD**, a nie zatwierdzonymi decyzjami właściciela. Nazwy encji i komend opisują plan, nie istniejący kod. Wspólna semantyka null, wersji i komend obowiązuje przez odnośnik, nie przez kopię.
+The confirmed choices D-01–D-06 and the proposed D-07–D-08 are maintained in the [shared architecture](../../architecture.md). The other mechanisms in this file are **SD proposals**, not approved owner's decisions. Entity and command names describe the plan, not existing code. The shared semantics of null, versions and commands apply by reference, not by copy.
 
-## Własność danych i kontrakty
+## Data ownership and contracts
 
-| Encja / grupa | Istotne pola i niezmienniki |
+| Entity / group | Relevant fields and invariants |
 | --- | --- |
-| AdRevision | `id`, `source_ad_id`, data pobrania, surowe pola, znormalizowany tekst/pola, hashe, klasyfikacja zmian. Zachować wersje użyte jako wejście AI; nie wymagamy UI dawnych pełnych opisów. |
-| Offer / MembershipHistory | Logiczna oferta, przypisania ogłoszeń i historia połączeń/rozdzieleń. Scalenie nie jest kaskadowym usunięciem dawnych identyfikatorów. |
-| FieldAssertion | Podmiot, pole, wartość, źródło, zakres, data, autor; `selected_assertion_id` może wskazywać ręcznie obowiązującą wartość. Odczyty źródłowe nie zmieniają ręcznej selekcji. |
+| AdRevision | `id`, `source_ad_id`, fetch date, raw fields, normalised text/fields, hashes, change classification. Keep the versions used as AI input; we do not require a UI for past full descriptions. |
+| Offer / MembershipHistory | The logical offer, ad assignments and the history of merges/splits. A merge is not a cascading deletion of old identifiers. |
+| FieldAssertion | Subject, field, value, source, scope, date, author; `selected_assertion_id` can point to a manually applicable value. Source reads do not change a manual selection. |
 
-## Łączenie i rozdzielanie
+## Merging and splitting
 
-Propozycja SD: komenda połączenia wskazuje oferty i ofertę główną, blokuje je w transakcji, przenosi przypisania i zachowuje identyfikatory dawnych ofert jako aliasy/historyczne rekordy. Nie usuwa notatek ani raportów. Rozdzielenie wskazuje podział źródeł i przypisania aplikacji. Wspólne historyczne notatki mogą być dostępne przez wpis połączenia z oryginalnym pochodzeniem, zamiast kopiowania treści bez autora. Walidacja zakazuje utraty aplikacji. **Potwierdzone Q12:** przy dwóch aktywnych aplikacjach wymagana jest decyzja właściciela: ten sam proces czy odrębne rekrutacje. Nie wywnioskowujemy tej tożsamości z samego podobieństwa ofert. Propozycja SD: komenda zawiera jawne rozstrzygnięcie procesów i oczekiwane wersje; bez niego zwraca konflikt wymagający decyzji. Przy jednym procesie zachowuje pochodzenie obu historii i elementów, a przy odrębnych nie scala aplikacji. Dokładną reprezentację odrębnych rekrutacji przy grupowanych ofertach oraz odwracalne przypisania należy przejrzeć przed implementacją; nie można wymusić utraty procesu ograniczeniem bazy.
+SD proposal: the merge command indicates the offers and the main offer, locks them in a transaction, moves the assignments and keeps the identifiers of the old offers as aliases/historical records. It does not delete notes or reports. A split indicates the division of sources and the assignment of applications. Shared historical notes can be available through the merge entry with their original provenance, instead of copying content without an author. Validation forbids losing an application. **Confirmed Q12:** with two active applications the owner's decision is required: the same process or separate recruitments. We do not infer this identity from offer similarity alone. SD proposal: the command contains an explicit resolution of the processes and the expected versions; without it, it returns a conflict that requires a decision. With one process it keeps the provenance of both histories and items, and with separate ones it does not merge the applications. The exact representation of separate recruitments for grouped offers and the reversible assignments must be reviewed before implementation; a database constraint must not force the loss of a process.
 
-## Wartości i rozbieżności
+## Values and discrepancies
 
-Oryginalne pola źródła zachowują jego własną semantykę; mapowanie wersjonuje adapter. Wynagrodzenie: zbiór wariantów z `from/to` nullable, walutą, okresem, typem umowy i podstawą kwoty. Brak dolnej granicy nie oznacza zera. Bez ustalonej podstawy nie zakładać B2B netto wyłącznie z kwoty. Brak automatycznego przeliczenia netto/brutto lub walut w tym projekcie.
+The original source fields keep the source's own semantics; the adapter versions the mapping. Pay: a set of variants with nullable `from/to`, currency, period, contract type and amount basis. A missing lower bound does not mean zero. Without an established basis, do not assume B2B net from the amount alone. No automatic net/gross or currency conversion in this design.
 
-Propozycja SD: źródłowy upsert nie nadpisuje ręcznego selected_assertion_id. Zmiana wybranej wartości i jej pochodzenia tworzy zdarzenie historii. Zachowujemy wszystkie sprzeczne warianty i pochodzenie, bez uznania korzystniejszego za jedyny fakt. Kwalifikacja według zaakceptowanej reguły [dopasowania](../dopasowanie/solution-design.md#sprzeczne-warianty) może uznać wymaganie za spełnione na podstawie jednego wariantu; znacznik rozbieżności jest wtedy obowiązkowy.
+SD proposal: the source upsert does not overwrite a manual selected_assertion_id. Changing the chosen value and its provenance creates a history event. We keep all conflicting variants and their provenance, without treating the more favourable one as the only fact. Qualification, under the accepted [matching](../dopasowanie/solution-design.md#conflicting-variants) rule, can consider a requirement met based on one variant; the discrepancy marker is then mandatory.
 
-## Archiwizacja
+## Archiving
 
-Potwierdzone Q15: ofertę można archiwizować, zachowując dostęp do historii. Propozycja SD: archiwizacja jest odrębnym znacznikiem logicznej oferty, niezależnym od dostępności/wygaśnięcia ogłoszeń oraz stanu aplikacji. Nie wykonuje DELETE rekordów domenowych ani kaskad usuwających powiązane dane.
+Confirmed Q15: an offer can be archived while keeping access to its history. SD proposal: archiving is a separate marker on the logical offer, independent of the availability/expiry of ads and of the application state. It does not run DELETE on domain records or cascades that remove related data.
 
-## Rewizje i zdarzenia
+## Revisions and events
 
-Propozycja SD: moduł przyjmuje z synchronizacji nową treść i pola ogłoszenia, zachowuje rewizję oraz porównuje znaczące dane. Istotna zmiana atomowo oznacza ocenę jako nieaktualną i zleca operację ponownej oceny przez kontrakt modułu dopasowania/operacji. Zmiany samego formatowania zapisują się bez nowej płatnej oceny. Poprzednie wejścia użytych ocen pozostają dostępne, bez obowiązku budowania przeglądarki pełnych snapshotów.
+SD proposal: the module accepts new ad content and fields from the sync, keeps the revision and compares meaningful data. A material change atomically marks the assessment as stale and requests a reassessment operation through the contract of the matching/operations module. Changes of formatting alone are saved without a new paid assessment. The previous inputs of the assessments used remain available, without the obligation to build a browser of full snapshots.
 
 
-## Komendy
+## Commands
 
-Nazwy logiczne, nie zamrożone endpointy. Wspólny kontrakt walidacji/wersji/odpowiedzi: [architektura](../../architecture.md#wspólny-kontrakt-komend).
+Logical names, not frozen endpoints. Shared validation/version/response contract: [architecture](../../architecture.md#shared-command-contract).
 
-| Komenda | Wejście i skutek |
+| Command | Input and effect |
 | --- | --- |
-| MergeOffers / SplitOffers | Identyfikatory i oczekiwane wersje; atomowa walidacja przypisań i historia. |
+| MergeOffers / SplitOffers | Identifiers and expected versions; atomic validation of assignments and history. |
 
-## Integracja z pozostałymi funkcjonalnościami
+## Integration with other features
 
-[pobieranie](../pobieranie/requirements.md), [dopasowanie](../dopasowanie/requirements.md), [rekrutacje](../rekrutacje/requirements.md). Status wykonania, rezerwacje i ponowienia zapewnia [kontrakt operacji](../operacje/solution-design.md); prywatny dostęp i trwałe uruchomienie określa [uruchomienie](../uruchomienie/solution-design.md). Zależności te są kontraktami, nie listą kolejności ticketów implementacyjnych.
+[fetching](../pobieranie/requirements.md), [matching](../dopasowanie/requirements.md), [recruitments](../rekrutacje/requirements.md). Execution status, reservations and retries are provided by the [operations contract](../operacje/solution-design.md); private access and durable launch are set by [launch](../uruchomienie/solution-design.md). These dependencies are contracts, not a list of the order of implementation tickets.
 
-## Weryfikacja funkcjonalności
+## Feature verification
 
-Ponowny odczyt klucza, dwie podobne oferty, merge/split z aplikacjami, sprzeczne widełki i ręczny wybór, zmiana znacząca vs formatowanie. Sprawdzić kompletność historii i zachowanie przypisań. Pokrycie obejmuje wszystkie R/AC wskazane na początku dokumentu. [Odbiór integracyjny](../odbior/solution-design.md) sprawdza współpracę modułów; nie zastępuje ich kryteriów. Testów produktu jeszcze nie wykonano.
+Reading a key again, two similar offers, merge/split with applications, conflicting salary ranges and a manual choice, a meaningful change vs formatting. Check the completeness of the history and that assignments are kept. Coverage includes all R/ACs listed at the start of the document. [Integration acceptance](../odbior/solution-design.md) checks how the modules work together; it does not replace their criteria. No product tests have been run yet.
 
-## Otwarte decyzje i gotowość
+## Open decisions and readiness
 
-O-02, O-03 — [rejestr i skutki](../../open-decisions.md). Przed oznaczeniem tej pary jako gotowej należy rozstrzygnąć dotyczące jej kontrakty i przejrzeć zgodność z wymaganiami. Samo utworzenie dokumentów nie zatwierdza propozycji.
+O-02, O-03 — [register and consequences](../../open-decisions.md). Before marking this pair as ready, settle the contracts that concern it and review conformance with the requirements. Creating the documents alone does not approve the proposals.

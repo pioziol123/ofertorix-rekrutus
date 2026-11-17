@@ -1,96 +1,96 @@
-# JobSpy — ocena biblioteki i dopasowania do projektu
+# JobSpy — assessment of the library and its fit for the project
 
-Data odczytu: **2026-11-02**. Badany [speedyapply/JobSpy](https://github.com/speedyapply/JobSpy), pliki gałęzi `main`; odczytany `pyproject.toml` deklaruje **1.4.1**. Nie potwierdzono SHA tego zestawu plików: strony drzewa i historii GitHub zwracały starsze, wzajemnie niespójne widoki względem plików raw. Nie należy utożsamiać tej analizy z konkretnym wydaniem PyPI ani historycznym commitem. [Metadane pakietu](https://github.com/speedyapply/JobSpy/blob/main/pyproject.toml).
+Read on: **2026-11-02**. Examined: [speedyapply/JobSpy](https://github.com/speedyapply/JobSpy), files of the `main` branch; the `pyproject.toml` that was read declares **1.4.1**. The SHA of this set of files was not confirmed: the GitHub tree and history pages returned older, mutually inconsistent views compared with the raw files. This analysis must not be equated with a specific PyPI release or a historical commit. [Package metadata](https://github.com/speedyapply/JobSpy/blob/main/pyproject.toml).
 
-To analiza README i kodu, bez instalacji, uruchamiania scraperów ani prób dostępu do portali. „Obsługuje” oznacza obecność implementacji/deklaracji, a nie potwierdzoną dziś skuteczność pobierania. Raport jest materiałem badawczym, nie decyzją o dodaniu źródła.
+This is an analysis of the README and code, without installation, running scrapers or attempts to access portals. "Supports" means the presence of an implementation/declaration, not fetching effectiveness confirmed today. The report is research material, not a decision to add a source.
 
-## Ocena
+## Assessment
 
-**Wniosek:** JobSpy może skrócić eksperyment z dodatkowymi ogłoszeniami LinkedIn i Indeed, ale wymaga własnego adaptera, kontroli jakości i obsługi niepełnych wyników. Nie zastępuje istniejącego importera SOLID.Jobs. Największe problemy dla obecnego zakresu PHP Senior to wyszukiwanie tekstowe zamiast filtrów katalogowych, brak gwarancji kompletności oraz różnice między polskim modelem zatrudnienia a schematem biblioteki. Poniżej przesłanki i granice tej oceny.
+**Conclusion:** JobSpy can shorten an experiment with additional LinkedIn and Indeed ads, but it needs its own adapter, quality control and handling of incomplete results. It does not replace the existing SOLID.Jobs importer. The biggest problems for the current PHP Senior scope are text search instead of catalogue filters, no guarantee of completeness, and the differences between the Polish employment model and the library's schema. The reasons and the limits of this assessment follow below.
 
-## Co dostarcza
+## What it provides
 
-JobSpy to lokalna biblioteka Python do pobierania ogłoszeń z wielu portali i ujednolicania ich do tabeli Pandas. Nie jest bazą ofert prowadzoną przez operatora ani gotową aplikacją do zarządzania rekrutacją. README opisuje także CLI i serwer MCP oraz uprzedza o blokadach źródeł. [README](https://github.com/speedyapply/JobSpy#readme).
+JobSpy is a local Python library for fetching ads from many portals and normalising them into a Pandas table. It is not an offer database run by an operator, nor a ready-made application for managing recruitment. The README also describes a CLI and an MCP server and warns about source blocks. [README](https://github.com/speedyapply/JobSpy#readme).
 
-Pakiet wymaga Python ≥3.10; zależy od `requests`, BeautifulSoup, Pandas, Pydantic, `curl_cffi` i `markdownify`. Ma komendy `jobspy` i `mcp-jobspy`. To dodatkowy runtime względem naszego TypeScript/Node. [pyproject.toml](https://github.com/speedyapply/JobSpy/blob/main/pyproject.toml).
+The package requires Python ≥3.10; it depends on `requests`, BeautifulSoup, Pandas, Pydantic, `curl_cffi` and `markdownify`. It has the `jobspy` and `mcp-jobspy` commands. This is an additional runtime besides our TypeScript/Node. [pyproject.toml](https://github.com/speedyapply/JobSpy/blob/main/pyproject.toml).
 
-### Źródła i Polska
+### Sources and Poland
 
-| Źródło | Stan deklarowany / widoczny w kodzie | Znaczenie dla tego projektu |
+| Source | State declared / visible in the code | Meaning for this project |
 | --- | --- | --- |
-| LinkedIn | Globalne wyszukiwanie przez `location`. | Kandydat na dodatkowe ogłoszenia dostępne z Polski; lokalizacja nie dowodzi prawa do pracy z Polski. |
-| Indeed | Lista obsługiwanych krajów obejmuje `Poland`. | Najbardziej bezpośredni kandydat do eksperymentu na polskim rynku. |
-| Glassdoor | Polska nie jest oznaczona jako obsługiwana w README i nie występuje w mapie domen. | Nie zakładać wsparcia `country_indeed="poland"` dla tego źródła. |
-| ZipRecruiter | USA/Kanada. | Niewielka przydatność dla zakresu Polska. |
-| Bayt / Naukri / BDJobs / HelloWork | Odpowiednio rynki bliskowschodnie, Indie, Bangladesz i Francja. | Obecność źródła nie oznacza pokrycia polskiego rynku. |
-| Google Jobs | Implementacja nadal istnieje, lecz README mówi, że źródło jest niedostępne. | Nie planować go jako działającego źródła. |
+| LinkedIn | Global search through `location`. | A candidate for additional ads available from Poland; the location does not prove the right to work from Poland. |
+| Indeed | The list of supported countries includes `Poland`. | The most direct candidate for an experiment on the Polish market. |
+| Glassdoor | Poland is not marked as supported in the README and does not appear in the domain map. | Do not assume support for `country_indeed="poland"` for this source. |
+| ZipRecruiter | USA/Canada. | Little usefulness for the Poland scope. |
+| Bayt / Naukri / BDJobs / HelloWork | Middle Eastern markets, India, Bangladesh and France respectively. | The presence of a source does not mean coverage of the Polish market. |
+| Google Jobs | The implementation still exists, but the README says the source is unavailable. | Do not plan it as a working source. |
 
-Geografię deklaruje [README](https://github.com/speedyapply/JobSpy#supported-countries-for-job-searching); brak Polski potwierdza [mapa Glassdoor](https://github.com/speedyapply/JobSpy/blob/main/jobspy/glassdoor/constant.py). Biblioteka nie zawiera adapterów SOLID.Jobs, Just Join IT, No Fluff Jobs, Bulldogjob ani theprotocol.it — nie rozszerza automatycznie naszego pokrycia tych portali. [Mapa adapterów](https://github.com/speedyapply/JobSpy/blob/main/jobspy/__init__.py).
+The geography is declared by the [README](https://github.com/speedyapply/JobSpy#supported-countries-for-job-searching); the absence of Poland is confirmed by the [Glassdoor map](https://github.com/speedyapply/JobSpy/blob/main/jobspy/glassdoor/constant.py). The library contains no adapters for SOLID.Jobs, Just Join IT, No Fluff Jobs, Bulldogjob or theprotocol.it — it does not automatically extend our coverage of these portals. [Adapter map](https://github.com/speedyapply/JobSpy/blob/main/jobspy/__init__.py).
 
-## Architektura i sieć
+## Architecture and network
 
-`scrape_jobs()` waliduje argumenty przez Pydantic, tworzy po jednym adapterze na portal i wykonuje adaptery równolegle przez `ThreadPoolExecutor`. Następnie spłaszcza ogłoszenia do DataFrame i sortuje po źródle i dacie. **Nie scala tej samej oferty między portalami.** Parametr `results_wanted` dotyczy każdego źródła osobno. Do tabeli dopina `attrs["errors"]` i `attrs["warnings"]` z adapterów. Nie dodaje trwałego magazynu, historii ani harmonogramu. [Orchestrator](https://github.com/speedyapply/JobSpy/blob/main/jobspy/__init__.py).
+`scrape_jobs()` validates arguments through Pydantic, creates one adapter per portal and runs the adapters in parallel through `ThreadPoolExecutor`. It then flattens the ads into a DataFrame and sorts by source and date. **It does not merge the same offer across portals.** The `results_wanted` parameter applies to each source separately. It attaches `attrs["errors"]` and `attrs["warnings"]` from the adapters to the table. It adds no persistent storage, history or scheduler. [Orchestrator](https://github.com/speedyapply/JobSpy/blob/main/jobspy/__init__.py).
 
-Ważna różnica wobec opisu „default is all”: domyślna lista funkcji bibliotecznej obejmuje wszystkie wartości `Site` **oprócz Google**. CLI ma jeszcze inny domyślny zestaw: Indeed, LinkedIn, ZipRecruiter, Glassdoor. Do integracji trzeba jawnie podać źródła. [Model wejścia](https://github.com/speedyapply/JobSpy/blob/main/jobspy/model.py), [domyślne źródła CLI](https://github.com/speedyapply/JobSpy/blob/main/jobspy/records.py).
+An important difference from the description "default is all": the default list of the library function includes all `Site` values **except Google**. The CLI has yet another default set: Indeed, LinkedIn, ZipRecruiter, Glassdoor. For integration, the sources must be given explicitly. [Input model](https://github.com/speedyapply/JobSpy/blob/main/jobspy/model.py), [CLI default sources](https://github.com/speedyapply/JobSpy/blob/main/jobspy/records.py).
 
 ### LinkedIn
 
-Adapter pobiera HTML anonimowego endpointu `jobs-guest/jobs/api/seeMoreJobPostings/search`, bez konta i OAuth. Przesyła frazę, lokalizację, odległość, filtr czasu, easy apply i opcjonalne identyfikatory firm. **Aktualny kod ignoruje `is_remote` i `job_type`, zapisując ostrzeżenie**. Deduplikuje identyfikatory w jednym przebiegu. Przerwy 3–7 sekund dotyczą kolejnych stron wyszukiwania; nie stanowią ogólnego ogranicznika każdego żądania. Błędy strony przerywają przebieg z dotychczasowymi wynikami. [Adapter LinkedIn](https://github.com/speedyapply/JobSpy/blob/main/jobspy/linkedin/__init__.py).
+The adapter fetches the HTML of the anonymous endpoint `jobs-guest/jobs/api/seeMoreJobPostings/search`, without an account or OAuth. It sends the phrase, location, distance, time filter, easy apply and optional company identifiers. **The current code ignores `is_remote` and `job_type`, recording a warning**. It deduplicates identifiers within one run. The 3–7 second pauses apply to successive search pages; they are not a general limiter for every request. Page errors stop the run with the results so far. [LinkedIn adapter](https://github.com/speedyapply/JobSpy/blob/main/jobspy/linkedin/__init__.py).
 
-`fetch_description=True` dodaje GET strony każdego ogłoszenia. Dopiero szczegóły dostarczają m.in. opis, seniority i rodzaj pracy. Błąd szczegółów może pozostawić ogłoszenie bez tych pól, jedynie z wpisem w logu. Parsowanie opiera się na konkretnych klasach HTML i angielskich nazwach kryteriów. **Wniosek:** zmiana strony lub jej języka może zmniejszyć kompletność bez utraty całego rekordu. [Kod szczegółów](https://github.com/speedyapply/JobSpy/blob/main/jobspy/linkedin/__init__.py).
+`fetch_description=True` adds a GET of the page of each ad. Only the details provide, among others, the description, seniority and type of work. A details error can leave the ad without these fields, with only a log entry. Parsing relies on specific HTML classes and English criterion names. **Conclusion:** a change to the page or its language can reduce completeness without losing the whole record. [Details code](https://github.com/speedyapply/JobSpy/blob/main/jobspy/linkedin/__init__.py).
 
-Stałe określają 10 kart na stronę i limit startu 1000. Parser płacy oczekuje charakterystycznego formatu; heurystyka opisu szuka dolarów, a nie polskich widełek PLN. [Stałe LinkedIn](https://github.com/speedyapply/JobSpy/blob/main/jobspy/linkedin/constant.py).
+The constants set 10 cards per page and a start limit of 1000. The salary parser expects a characteristic format; the description heuristic looks for dollars, not Polish PLN salary ranges. [LinkedIn constants](https://github.com/speedyapply/JobSpy/blob/main/jobspy/linkedin/constant.py).
 
 ### Indeed
 
-Adapter wysyła POST GraphQL do `https://apis.indeed.com/graphql`, stronicuje kursorem, deduplikuje klucze ogłoszeń i pobiera opisy razem z wynikami. Obsługuje kraj/lokalizację, czas, typ pracy, remote i easy apply; remote wyklucza atrybut hybrid. Błąd sieci lub walidacji strony kończy pobieranie z częściowym wynikiem. [Adapter Indeed](https://github.com/speedyapply/JobSpy/blob/main/jobspy/indeed/__init__.py).
+The adapter sends a GraphQL POST to `https://apis.indeed.com/graphql`, pages with a cursor, deduplicates ad keys and fetches descriptions together with the results. It supports country/location, time, job type, remote and easy apply; remote excludes the hybrid attribute. A network or page validation error ends fetching with a partial result. [Indeed adapter](https://github.com/speedyapply/JobSpy/blob/main/jobspy/indeed/__init__.py).
 
-Kod ma zapisany w repo klucz w nagłówku `indeed-api-key` i nagłówki naśladujące aplikację Indeed na iOS. Zapytanie pobiera do 100 wpisów i sortuje po trafności. **Wniosek:** to zależność od interfejsu i stałych aplikacji portalu; obecność GraphQL nie jest dowodem oficjalnej, stabilnej umowy API dla naszej aplikacji. [Zapytanie i nagłówki](https://github.com/speedyapply/JobSpy/blob/main/jobspy/indeed/constant.py).
+The code has a key stored in the repo in the `indeed-api-key` header, and headers imitating the Indeed iOS app. The query fetches up to 100 entries and sorts by relevance. **Conclusion:** this is a dependency on the portal app's interface and constants; the presence of GraphQL is not evidence of an official, stable API contract for our application. [Query and headers](https://github.com/speedyapply/JobSpy/blob/main/jobspy/indeed/constant.py).
 
 ### Google
 
-Pozostawiony adapter parsuje stronę `google.com/search` z `udm=8`, następnie wewnętrzny callback i zagnieżdżone struktury wyników. `google_search_term` nadpisuje budowaną frazę. Kod limituje liczbę do 900 i deduplikuje URL-e. **Wniosek:** obecność kodu i wartości enum nie potwierdza sprawności; negatywna deklaracja README ma znaczenie dla wyboru źródła. [Adapter Google](https://github.com/speedyapply/JobSpy/blob/main/jobspy/google/__init__.py).
+The remaining adapter parses the `google.com/search` page with `udm=8`, then an internal callback and nested result structures. `google_search_term` overrides the built phrase. The code limits the count to 900 and deduplicates URLs. **Conclusion:** the presence of code and an enum value does not confirm that it works; the negative statement in the README matters for choosing a source. [Google adapter](https://github.com/speedyapply/JobSpy/blob/main/jobspy/google/__init__.py).
 
-### Proxy, logowanie i ponowienia
+### Proxies, logging and retries
 
-Wspólna warstwa rotuje przekazane proxy przy żądaniach; `localhost` oznacza połączenie bez proxy. Domyślny timeout to 15 s, można nadpisać User-Agent i plik CA. Dla części adapterów istnieje sesja `curl_cffi` z impersonacją Chrome; LinkedIn i Indeed używają `requests`. Nie znaleziono we wspólnej warstwie retry/backoff ani respektowania `Retry-After`. Poziomy logowania to errors / warnings / info. [Warstwa HTTP i logi](https://github.com/speedyapply/JobSpy/blob/main/jobspy/util.py).
+The shared layer rotates the given proxies on requests; `localhost` means a connection without a proxy. The default timeout is 15 s; the User-Agent and the CA file can be overridden. For some adapters there is a `curl_cffi` session with Chrome impersonation; LinkedIn and Indeed use `requests`. No retry/backoff or respect for `Retry-After` was found in the shared layer. The logging levels are errors / warnings / info. [HTTP layer and logs](https://github.com/speedyapply/JobSpy/blob/main/jobspy/util.py).
 
-**Wniosek dotyczący przepływu danych:** lokalny proces wysyła zapytania do wybranych portali. Użycie zewnętrznego proxy dodaje kolejną usługę do tego przepływu; JobSpy nie zapewnia ani nie finansuje proxy. Nie trzeba przesyłać CV, profilu zawodowego ani historii aplikacji. Nie badano osobno warunków dostawców proxy.
+**Conclusion about the data flow:** a local process sends queries to the selected portals. Using an external proxy adds another service to this flow; JobSpy neither provides nor pays for proxies. There is no need to send the CV, the professional profile or the application history. The terms of proxy providers were not examined separately.
 
-## Schemat danych i filtr PHP Senior
+## Data schema and the PHP Senior filter
 
-Model obejmuje identyfikator/źródło, URL źródłowy i docelowy, tytuł, firmę, lokalizację, datę, opis, typ pracy, remote, seniority, wynagrodzenie z walutą i okresem oraz dodatkowe informacje o firmie/umiejętnościach. Większość pól jest opcjonalna. Serializer zamienia lokalizację na tekst, a listy, np. `skills` i `job_type`, na tekst rozdzielony przecinkami. Nie jest to bezstratny transport obiektowego modelu domeny. [JobPost i serializer](https://github.com/speedyapply/JobSpy/blob/main/jobspy/model.py).
+The model includes an identifier/source, source and target URLs, title, company, location, date, description, job type, remote, seniority, salary with currency and period, and additional information about the company/skills. Most fields are optional. The serializer turns the location into text, and lists such as `skills` and `job_type` into comma-separated text. This is not a lossless transport of an object domain model. [JobPost and serializer](https://github.com/speedyapply/JobSpy/blob/main/jobspy/model.py).
 
-Nie ma osobnych filtrów wejścia na technologie, seniority, wynagrodzenie, język pracy, uprawnienia geograficzne ani polskie UoP/B2B. `job_type="contract"` nie potwierdza B2B. Zapytanie tekstowe `Senior PHP` trzeba traktować jako wyszukanie kandydatów, a nie odpowiednik filtrów Developer/PHP/Senior SOLID.Jobs. Brakujące kryterium pozostaje niewiadomą. [ScraperInput](https://github.com/speedyapply/JobSpy/blob/main/jobspy/model.py).
+There are no separate input filters for technologies, seniority, salary, working language, geographic eligibility or Polish UoP/B2B (employment contract/B2B contract). `job_type="contract"` does not confirm B2B. The text query `Senior PHP` must be treated as a search for candidates, not an equivalent of the SOLID.Jobs Developer/PHP/Senior filters. A missing criterion remains an unknown. [ScraperInput](https://github.com/speedyapply/JobSpy/blob/main/jobspy/model.py).
 
-**Istotna pułapka płacowa:** Indeed wybiera pensję pracodawcy, a przy jej braku może użyć własnego oszacowania portalu. Funkcja zwraca same kwoty/walutę/okres bez oznaczenia tej różnicy. Wniosek: nie wolno traktować każdej kwoty jako widełek podanych przez pracodawcę; potrzebna jest poprawa adaptera lub zachowanie dowodu pochodzenia. [Ekstrakcja płacy Indeed](https://github.com/speedyapply/JobSpy/blob/main/jobspy/indeed/util.py). Także automatycznej annualizacji nie należy używać jako polskiego wynagrodzenia porównywalnego brutto/netto.
+**A significant salary pitfall:** Indeed chooses the employer's salary and, when it is missing, may use the portal's own estimate. The function returns only the amounts/currency/period without marking this difference. Conclusion: not every amount may be treated as a salary range given by the employer; the adapter must be fixed or proof of origin must be kept. [Indeed salary extraction](https://github.com/speedyapply/JobSpy/blob/main/jobspy/indeed/util.py). Automatic annualisation must also not be used as a comparable Polish gross/net salary.
 
-## Kompletność, jakość i utrzymanie
+## Completeness, quality and maintenance
 
-`errors`/`warnings` w `attrs` są użyteczne, ale **nie stanowią dowodu pełnej synchronizacji źródła**. Adaptery mogą pomijać pojedyncze błędne ogłoszenia lub nie pobrać szczegółów, używając zwykłego `log.warning`, poza listą `warnings`. LinkedIn przy pustej kolejnej stronie dopuszcza zarówno koniec wyników, jak i throttling. Własny importer musi zachować tę niepewność; nieobecność ogłoszenia nie dowodzi wygaśnięcia. [LinkedIn](https://github.com/speedyapply/JobSpy/blob/main/jobspy/linkedin/__init__.py), [Indeed](https://github.com/speedyapply/JobSpy/blob/main/jobspy/indeed/__init__.py).
+`errors`/`warnings` in `attrs` are useful, but **they are not evidence of a complete source sync**. Adapters can skip individual faulty ads or fail to fetch details, using an ordinary `log.warning`, outside the `warnings` list. With an empty next page, LinkedIn allows both the end of results and throttling. Our own importer must keep this uncertainty; the absence of an ad does not prove its expiry. [LinkedIn](https://github.com/speedyapply/JobSpy/blob/main/jobspy/linkedin/__init__.py), [Indeed](https://github.com/speedyapply/JobSpy/blob/main/jobspy/indeed/__init__.py).
 
-CLI zwraca kod 0 także po odpowiedzi bez ofert oraz gdy przynajmniej część źródeł odpowie. Kod 1 oznacza całkowite niepowodzenie przy pustym zbiorze. Sam exit code nie wystarczy do oceny każdego źródła. Domyślny stdout to wybrane pola JSONL; pełny eksport również nie przenosi metadanych `DataFrame.attrs`. [CLI](https://github.com/speedyapply/JobSpy/blob/main/jobspy/cli.py), [serializacja/eksport](https://github.com/speedyapply/JobSpy/blob/main/jobspy/records.py).
+The CLI returns code 0 also after a response with no offers and when at least some of the sources respond. Code 1 means total failure with an empty set. The exit code alone is not enough to assess each source. The default stdout is selected JSONL fields; a full export also does not carry the `DataFrame.attrs` metadata. [CLI](https://github.com/speedyapply/JobSpy/blob/main/jobspy/cli.py), [serialisation/export](https://github.com/speedyapply/JobSpy/blob/main/jobspy/records.py).
 
-Potwierdzony workflow CI buduje i instaluje pakiety na Pythonie 3.10–3.14, sprawdza import/CLI/start MCP, uruchamia Ruff i strict mypy. W tym workflow nie ma testów parserów na fixture ani prób kontraktowych portali. Nie potwierdzono osobnego, kompleksowego zestawu testów funkcjonalnych. Nie uruchamiano CI i nie oceniano jego aktualnego wyniku. [CI](https://github.com/speedyapply/JobSpy/blob/main/.github/workflows/ci.yml).
+The confirmed CI workflow builds and installs packages on Python 3.10–3.14, checks import/CLI/MCP startup, and runs Ruff and strict mypy. This workflow has no parser tests on fixtures and no portal contract tests. A separate, comprehensive functional test suite was not confirmed. CI was not run and its current result was not assessed. [CI](https://github.com/speedyapply/JobSpy/blob/main/.github/workflows/ci.yml).
 
-**Ocena:** typowanie, walidacja i diagnostyka pomagają w integracji, lecz nie dają gwarancji odporności scraperów na zmiany portali. Wersji `main` nie należy aktualizować automatycznie w produkcji. W tym odczycie nie ustalono rytmu wydań, czasu reakcji maintainerów ani gwarancji wsparcia.
+**Assessment:** typing, validation and diagnostics help with integration, but give no guarantee that the scrapers withstand portal changes. The `main` version should not be updated automatically in production. This reading did not establish the release cadence, maintainer response time or any support guarantee.
 
-## Licencja i dostęp do danych
+## Licence and access to data
 
-Kod jest na MIT: pozwala używać i modyfikować bibliotekę z zachowaniem informacji o autorze i licencji w kopiach/istotnych częściach. Jest dostarczany bez gwarancji. [LICENSE](https://github.com/speedyapply/JobSpy/blob/main/LICENSE).
+The code is under MIT: it allows using and modifying the library, keeping the author and licence notice in copies/substantial portions. It is provided without warranty. [LICENSE](https://github.com/speedyapply/JobSpy/blob/main/LICENSE).
 
-**Granica ustaleń:** licencja biblioteki nie jest zgodą operatorów portali na systematyczne pobieranie, przechowywanie czy dalsze publikowanie ogłoszeń. Nie przeprowadzono tu osobnej analizy regulaminów LinkedIn/Indeed/Google. Techniczna możliwość anonimowego żądania lub rotacji proxy nie rozstrzyga warunków dozwolonego wykorzystania. Ten raport nie daje oceny prawnej ani potwierdzenia uprawnień do danych.
+**Limit of the findings:** the library's licence is not consent from the portal operators to systematic fetching, storing or republishing of ads. No separate analysis of the LinkedIn/Indeed/Google terms of service was done here. The technical possibility of an anonymous request or of proxy rotation does not settle the terms of permitted use. This report gives no legal assessment and no confirmation of rights to the data.
 
-## Możliwa integracja z obecną aplikacją — propozycja
+## Possible integration with the current application — proposal
 
-Obecny projekt ma oddzielny worker, pg-boss, PostgreSQL oraz wersjonowane `source_ads`/`source_ad_revisions` i statusy przebiegów. Utrzymuje jawny zakres PHP Senior w SOLID.Jobs. Te granice pozostają właściwe także przy eksperymencie z JobSpy. [Projekt pobierania](../specs/pierwsza-wersja/features/pobieranie/solution-design.md), [architektura](../specs/pierwsza-wersja/architecture.md).
+The current project has a separate worker, pg-boss, PostgreSQL and versioned `source_ads`/`source_ad_revisions` and run statuses. It keeps an explicit PHP Senior scope in SOLID.Jobs. These boundaries remain appropriate also for an experiment with JobSpy. [Fetching design](../specs/pierwsza-wersja/features/pobieranie/solution-design.md), [architecture](../specs/pierwsza-wersja/architecture.md).
 
-Proponowany wariant, wymagający osobnej decyzji wdrożeniowej:
+Proposed variant, requiring a separate implementation decision:
 
-1. Worker Node zleca kontrolowany proces Python albo lokalny kontener z przypiętą wersją. Osobne zadanie dla jednego portalu i zakresu; jawne `site_name`, limit wyników i timeout całego procesu. Nuxt pozostaje interfejsem użytkownika.
-2. Mały wrapper biblioteczny zwraca kopertę JSON: `schemaVersion`, źródło, parametry, wersję JobSpy, daty wykonania, ogłoszenia oraz **oddzielne errors/warnings i braki szczegółów**. Nie opierać protokołu wyłącznie na CLI/stdout lub kodzie wyjścia.
-3. Adapter TypeScript waliduje kopertę i mapuje `source + external_id`, zapisuje rewizje i obserwacje idempotentnie. Wynik JobSpy oznaczyć jako znormalizowany payload, nie oryginalną odpowiedź portalu. Zachować pochodzenie kwot i reguł kwalifikacji.
-4. Nie uznawać ograniczonego wyszukiwania po trafności za pełną synchronizację. Ustalić osobną semantykę „zakończono odczyt ustalonego zapytania” bez automatycznego oznaczania niewidzianych wpisów jako niedostępne. Błędy i częściowe wyniki zachować w istniejącym modelu przebiegów.
-5. Przed dopuszczeniem źródła: sprawdzić warunki dostępu, przygotować fixture parserów i transportu, ustalić retry/limity oraz wykonać małą autoryzowaną próbę dla Polski/PHP Senior. Zmierzyć brak opisów, szacunki płacy, duplikaty i rzeczywiste dodatkowe oferty względem SOLID.Jobs.
+1. The Node worker dispatches a controlled Python process or a local container with a pinned version. A separate job for one portal and scope; explicit `site_name`, a result limit and a timeout for the whole process. Nuxt remains the user interface.
+2. A small library wrapper returns a JSON envelope: `schemaVersion`, source, parameters, JobSpy version, execution dates, ads and **separate errors/warnings and missing details**. Do not base the protocol only on the CLI/stdout or the exit code.
+3. A TypeScript adapter validates the envelope and maps `source + external_id`, and stores revisions and observations idempotently. Mark the JobSpy result as a normalised payload, not the portal's original response. Keep the origin of amounts and of qualification rules.
+4. Do not treat a limited relevance-sorted search as a complete sync. Define a separate semantics of "finished reading a fixed query" without automatically marking unseen entries as unavailable. Keep errors and partial results in the existing run model.
+5. Before admitting the source: check the access terms, prepare parser and transport fixtures, settle retries/limits and run a small authorised trial for Poland/PHP Senior. Measure missing descriptions, salary estimates, duplicates and the actual additional offers compared with SOLID.Jobs.
 
-**Rekomendacja badawcza:** jeśli dodajemy to narzędzie do planu, zacząć od jednego izolowanego eksperymentu Indeed Polska; LinkedIn ocenić jako następny. Zachować obecny działający import SOLID.Jobs i nie obiecywać pełnego pokrycia rynku na podstawie samej listy portali JobSpy.
+**Research recommendation:** if we add this tool to the plan, start with one isolated Indeed Poland experiment; assess LinkedIn next. Keep the current working SOLID.Jobs import and do not promise full market coverage based only on JobSpy's list of portals.

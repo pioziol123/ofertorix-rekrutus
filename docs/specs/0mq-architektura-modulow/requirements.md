@@ -1,499 +1,499 @@
-# Architektura modułów — Requirements
+# Module architecture — Requirements
 
-Podstawa: [PRD](PRD.md). Rozwiązanie techniczne: [solution-design.md](solution-design.md). Pojęcia: [słownik domeny](../../../GLOSSARY.md), [Źródła ofert](../../../modules/sources/README.md), [mapa modułów](../../architecture/moduly.md).
+Basis: [PRD](PRD.md). Technical solution: [solution-design.md](solution-design.md). Concepts: [domain glossary](../../../GLOSSARY.md), [Offer sources](../../../modules/sources/README.md), [module map](../../architecture/moduly.md).
 
-Sekcja `A<n>` opisuje zadanie Beads `oferty-pracy-0mq.<n>`. Identyfikatory wymagań (`A<n>-R..`) i kryteriów (`A<n>-AC..`) są stabilne, a zadanie w Beads cytuje kryteria po ID. Kolumna *Sprawdzenie* mówi, czym wykonawca dowodzi spełnienia kryterium.
+Section `A<n>` describes the Beads task `oferty-pracy-0mq.<n>`. Requirement IDs (`A<n>-R..`) and criterion IDs (`A<n>-AC..`) are stable, and the Beads task cites criteria by ID. The *Check* column says how the implementer proves that a criterion is met.
 
 <a id="wymagania-wspolne"></a>
 
-## Kryteria wspólne
+## Shared criteria
 
-Obowiązują każde zadanie epiku i są cytowane w każdym z nich.
+They apply to every task of the epic and are cited in each of them.
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| W-AC01 | Wszystkie automatyczne kontrole jakości projektu przechodzą: reguły i formatowanie kodu, typy, budowanie aplikacji oraz testy automatyczne razem z testami na rzeczywistej bazie danych. | Pełne uruchomienie kontroli jakości |
-| W-AC02 | Działanie aplikacji nie zmienia się poza zmianami opisanymi w wymaganiach zadania. Istniejące testy po zmianie sprawdzają to samo zachowanie. Test usuwa się lub osłabia tylko wtedy, gdy zadanie celowo zmienia sprawdzane zachowanie; wynik zadania wskazuje każdy taki test i powód. | Przegląd zmian w testach |
-| W-AC03 | Kod tworzony lub przenoszony w zadaniu należy do modułu, który jest właścicielem jego danych i reguł, i korzysta z innych modułów wyłącznie przez ich publiczne operacje, zgodnie z [zasadami architektury](../../architecture/moduly-i-zasady-kodu.md). | Przegląd kodu |
+| W-AC01 | All of the project's automated quality checks pass: code rules and formatting, types, the application build, and automated tests including the tests on a real database. | Full run of the quality checks |
+| W-AC02 | The application's behaviour does not change beyond the changes described in the task's requirements. After the change, existing tests check the same behaviour. A test is removed or weakened only when the task deliberately changes the behaviour it checks; the task result names each such test and the reason. | Review of test changes |
+| W-AC03 | Code created or moved in the task belongs to the module that owns its data and rules, and uses other modules only through their public operations, in line with the [architecture rules](../../architecture/moduly-i-zasady-kodu.md). | Code review |
 
 <a id="f2"></a>
 
-## Reguły synchronizacji źródeł (F2)
+## Source sync rules (F2)
 
-Decyzje właściciela dla procesu synchronizacji. Zadania 0mq.1–0mq.5, 0mq.16 i 0mq.7 realizują ich części; każde zadanie wskazuje swoje reguły.
+The owner's decisions for the sync process. Tasks 0mq.1–0mq.5, 0mq.16 and 0mq.7 implement parts of them; each task names its rules.
 
-| Reguła | Treść |
+| Rule | Content |
 | --- | --- |
-| F2-01 | **Konektor.** Każde źródło jest obsługiwane przez konektor o wspólnym kontrakcie. Konektor odpowiada za komunikację ze źródłem, podział wyników na porcje i ocenę, czy sprawdził cały zakres. Wspólny proces synchronizacji nie zależy od szczegółów żadnego źródła. |
-| F2-02 | **Porcje.** Wyniki zapisują się w miarę otrzymywania. Porcja zawiera rzeczywiste ogłoszenia, a jej wielkość nie jest określona: trzy porcje po 100 ogłoszeń i jedna porcja 300 są równoważne. Zapisane porcje zostają po późniejszym błędzie. |
-| F2-03 | **Duplikaty.** Powtórzone ogłoszenie, w porcji lub między porcjami, nie przerywa pobierania ani zapisu. Nie rozstrzygamy, która treść duplikatu zostanie zapisana. Źródło może nadal uznać taki przebieg za niekompletny. |
-| F2-04 | **Rezultat.** O tym, czy cały zakres został sprawdzony, decyduje źródło według swoich dotychczasowych kryteriów. Ujednolicenie tych kryteriów nie należy do epiku. Synchronizacja nie jest kompletna, jeśli zapis wyników się nie powiódł. |
-| F2-05 | **Czas oczekiwania.** Pojedyncze zapytanie konektora do źródła czeka na odpowiedź najwyżej 5 s. Zapytanie nieudane z przyczyny przejściowej jest ponawiane najwyżej dwa razy. Ponowienie zapytania nie jest ponowieniem przebiegu. Źródła pobierane przez zewnętrzne narzędzia pomocnicze (JobSpy, polskie portale) zachowują obecne limity czasu (decyzja właściciela z 2026-11-15); ewentualne odstępstwa ocenimy osobno. |
-| F2-06 | **Jeden aktywny przebieg na źródło.** Jedno źródło wykonuje naraz najwyżej jeden przebieg, niezależnie od zakresu. Pozostałe czekają w kolejności zlecenia. Różne źródła działają równolegle. Nowe zlecenie nie przerywa trwającego przebiegu. |
-| F2-07 | **Jeden oczekujący na źródło i zakres.** Jeśli to samo źródło i zakres mają przebieg oczekujący, kolejne zlecenie nie tworzy nowego i dostaje identyfikator oczekującego. Jeśli trwa przebieg, a oczekującego nie ma, zlecenie tworzy jeden oczekujący. Reguła dotyczy przebiegów aktywnych; historia zakończonych przebiegów jest nieograniczona. Przykład: dla źródła S i zakresu PHP trwa przebieg A. Pierwsze zlecenie tworzy oczekujący B, a kolejne wskazują B. Zakres Java dostaje własny oczekujący, ale nie wykona się równolegle z A. Po starcie B można zlecić kolejny przebieg PHP. |
-| F2-08 | **Zakres.** Zakres to źródło i parametry określające zbiór pobieranych ogłoszeń. Kolejność równoważnych filtrów i sposób uruchomienia nie tworzą innego zakresu. Ustawienia przebiegu są ustalane w chwili zlecenia, a ich późniejsza zmiana nie wpływa na przyjęty przebieg. Zmiana limitu wyników zachowuje obecne znaczenie: oznacza inny zakres. |
-| F2-09 | **Bez ograniczeń czasowych.** Ponowne pobranie tego samego dnia jest dozwolone, a oczekujący przebieg nie wygasa z powodu czasu w kolejce. Jedno wystąpienie harmonogramu tworzy jedno zlecenie; dodatkowe zlecenia podlegają F2-07. |
-| F2-10 | **Sposoby uruchomienia.** CLI, aplikacja i harmonogram zlecają synchronizację tą samą operacją i korzystają z tego samego wykonania. Aplikacja i harmonogram dostają identyfikator przebiegu bez czekania na wynik. CLI czeka na wynik swojego przebiegu bez osobnego limitu czasu; gdy zlecenie wskazało istniejący oczekujący przebieg, czeka na niego. Przerwanie oczekiwania nie anuluje przebiegu. |
-| F2-11 | **Błędy konfiguracji.** Nieznane źródło albo błędne ustawienia przebiegu kończą przebieg zapisanym błędem. Dwa źródła o tej samej nazwie są błędem konfiguracji, który uniemożliwia start aplikacji. |
-| F2-12 | **Obserwacje i dostępność.** System pamięta, w których przebiegach widziano każde ogłoszenie, a przez nie w których zakresach. Zasady dostępności ([F1](../../../modules/sources/README.md#jak-ustalana-jest-dostępność)): obserwacja przywraca dostępność od razu; informacje źródła o konkretnym ogłoszeniu są zachowywane; brak ogłoszenia oznacza niedostępność tylko po kompletnym przebiegu źródła, które na to pozwala, i tylko w tym samym zakresie. |
-| F2-13 | **Przerwanie pracy.** Jeśli wykonujący przebieg proces przestanie działać, przebieg zostaje wznowiony albo jawnie zakończony, bez duplikowania ogłoszeń. Proces, który utracił przebieg, przestaje zapisywać jego wyniki. Ponowna próba kontynuuje ten sam przebieg zamiast tworzyć nowy. |
-| F2-14 | **Poza zakresem:** scalanie identycznych treści pod różnymi identyfikatorami, szczególna obsługa zmian treści A → B → A, wybór właściwej treści duplikatu, przebudowa wersjonowania, wpływ wersji na aktualność dopasowania oraz ujednolicenie źródłowych kryteriów kompletności i jakości danych. |
+| F2-01 | **Connector.** Each source is handled by a connector with a shared contract. The connector is responsible for communication with the source, for splitting results into batches and for judging whether it checked the whole scope. The shared sync process does not depend on the details of any source. |
+| F2-02 | **Batches.** Results are saved as they arrive. A batch contains actual ads, and its size is not fixed: three batches of 100 ads and one batch of 300 are equivalent. Saved batches stay after a later error. |
+| F2-03 | **Duplicates.** A repeated ad, within a batch or between batches, does not stop the fetch or the save. We do not decide which content of a duplicate gets saved. The source may still treat such a run as incomplete. |
+| F2-04 | **Result.** The source decides whether the whole scope was checked, using its existing criteria. Unifying those criteria is not part of the epic. A sync is not complete if saving the results failed. |
+| F2-05 | **Timeout.** A single connector request to the source waits at most 5 s for a response. A request that fails for a transient reason is retried at most twice. A request retry is not a run retry. Sources fetched through external helper tools (JobSpy, Polish portals) keep their current time limits (owner's decision of 2026-11-15); any exceptions will be assessed separately. |
+| F2-06 | **One active run per source.** One source executes at most one run at a time, whatever the scope. The others wait in the order they were requested. Different sources work in parallel. A new request does not interrupt a run in progress. |
+| F2-07 | **One pending run per source and scope.** If the same source and scope have a pending run, a further request does not create a new one and gets the pending run's identifier. If a run is in progress and there is no pending one, the request creates one pending run. The rule applies to active runs; the history of finished runs is unlimited. Example: for source S and scope PHP, run A is in progress. The first request creates pending run B, and further requests point to B. Scope Java gets its own pending run, but it will not execute in parallel with A. After B starts, another PHP run can be requested. |
+| F2-08 | **Scope.** A scope is a source and the parameters that define the set of ads fetched. The order of equivalent filters and the way the run is started do not create a different scope. The run's settings are fixed at the moment of the request, and changing them later does not affect an accepted run. Changing the result limit keeps its current meaning: it means a different scope. |
+| F2-09 | **No time limits.** Fetching again on the same day is allowed, and a pending run does not expire because of its time in the queue. One schedule occurrence creates one request; additional requests are subject to F2-07. |
+| F2-10 | **Ways of starting.** The CLI, the application and the schedule request a sync through the same operation and use the same execution. The application and the schedule get the run identifier without waiting for the result. The CLI waits for the result of its run without a separate time limit; when the request pointed to an existing pending run, it waits for that run. Stopping the wait does not cancel the run. |
+| F2-11 | **Configuration errors.** An unknown source or invalid run settings end the run with a saved error. Two sources with the same name are a configuration error that prevents the application from starting. |
+| F2-12 | **Observations and availability.** The system remembers in which runs each ad was seen, and through them in which scopes. Availability rules ([F1](../../../modules/sources/README.md#how-availability-is-established)): an observation restores availability at once; the source's information about a specific ad is kept; a missing ad means unavailability only after a complete run of a source that allows it, and only in the same scope. |
+| F2-13 | **Interrupted work.** If the process executing a run stops working, the run is resumed or explicitly ended, without duplicating ads. A process that has lost a run stops saving its results. A new attempt continues the same run instead of creating a new one. |
+| F2-14 | **Out of scope:** merging identical content under different identifiers, special handling of content changes A → B → A, choosing the right content of a duplicate, rebuilding versioning, the effect of versions on match freshness, and unifying the sources' criteria for completeness and data quality. |
 
 <a id="f4"></a>
 
-## Zakres obsługi zadań AI (F4)
+## Scope of AI job handling (F4)
 
-Dotyczy zadań 0mq.14, 0mq.9, 0mq.11 i 0mq.17.
+Applies to tasks 0mq.14, 0mq.9, 0mq.11 and 0mq.17.
 
-- Zadania przenoszą istniejącą obsługę zadań AI i zachowują jej obecne działanie. Obejmuje to:
-  - historię prób, ponowienia i odzyskiwanie przerwanej próby,
-  - współdzielenie lokalnego modelu,
-  - rezerwy przy nieznanym koszcie, budżet i rozliczenie kosztu,
-  - łączne rozliczenie i publikację wyniku,
-  - rozliczenie przy odrzuconej treści,
-  - rezerwację grupy zleceń w całości,
-  - obsługę wyników przetwarzania wsadowego i researchu po błędzie.
+- The tasks move the existing AI job handling and keep its current behaviour. This covers:
+  - attempt history, retries and recovery of an interrupted attempt,
+  - sharing the local model,
+  - reserves for an unknown cost, the budget and cost settlement,
+  - joint settlement and publication of the result,
+  - settlement when the content is rejected,
+  - reserving a group of requests as a whole,
+  - handling of batch processing results and of research after an error.
 
-  Działających zabezpieczeń nie usuwa się.
-- Zadania nie dodają nowych gwarancji obsługi, odzyskiwania ani rozliczeń. Prostsza koordynacja jest dopuszczalna, jeśli nie pogarsza obecnego działania. Usprawnienia należą do epiku `oferty-pracy-sq2`.
-- Brak gwarancji wykryty w trakcie pracy, który nie jest regresją, wykonawca zgłasza jako dalszą pracę i go nie naprawia. Dotyczy to też kryteriów przejętych z etapów 1–4 epiku `oferty-pracy-334`.
-- Do czasu zadania `oferty-pracy-0mq.15` zadania w tle poza synchronizacją źródeł nie wykrywają przerwania pracy. To świadomie zaakceptowana zmiana, a nie regresja.
+  Working safeguards are not removed.
+- The tasks do not add new guarantees of handling, recovery or settlement. Simpler coordination is acceptable if it does not make the current behaviour worse. Improvements belong to the epic `oferty-pracy-sq2`.
+- A missing guarantee found during the work that is not a regression is reported by the implementer as follow-up work and not fixed. This also applies to criteria taken over from stages 1–4 of the epic `oferty-pracy-334`.
+- Until the task `oferty-pracy-0mq.15`, background jobs other than source sync do not detect interrupted work. This is a knowingly accepted change, not a regression.
 
 <a id="a13"></a>
 
-## Zadanie 0mq.13 — Operacje kilku modułów zapisują się razem
+## Task 0mq.13 — Operations of several modules are saved together
 
-Wspólny mechanizm dostępu do danych pozwala operacji przypadku użycia objąć zapisy wszystkich modułów, które wywołuje. Zadanie wprowadza mechanizm i zasady. Istniejący kod migrują zadania, które go zmieniają.
+A shared data access mechanism lets a use-case operation cover the writes of all modules it calls. The task introduces the mechanism and the rules. Existing code is migrated by the tasks that change it.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A13-R01 | Operacja przypadku użycia zapisuje się w całości albo wcale. Błąd w dowolnym kroku wycofuje zapisy wszystkich modułów wykonane w jej trakcie, także kroków zakończonych pomyślnie. |
-| A13-R02 | Operacja modułu wywołana samodzielnie sama zatwierdza swoje zmiany. Wywołana w trakcie innej operacji staje się jej częścią i nie zatwierdza zmian przed jej końcem. |
-| A13-R03 | Równoległe operacje są od siebie niezależne: błąd jednej nie wycofuje zmian drugiej. |
-| A13-R04 | Zlecenie pracy w tle jest częścią operacji, która je zleca: wycofanie operacji wycofuje zlecenie. |
-| A13-R05 | Błędy operacji nie wyczerpują zasobów bazy danych: po dowolnej liczbie nieudanych operacji system obsługuje kolejne. |
-| A13-R06 | Moduły nie zarządzają połączeniami z bazą. Kod modułu nie zależy od tego, czy działa w ramach większej operacji. |
-| A13-R07 | Zasady dostępu do danych i granic operacji są opisane w dokumentacji architektury jako obowiązujące dla całego kodu. |
-| A13-R08 | Zadanie nie przepisuje istniejących operacji. Robią to zadania, które zmieniają dany kod. |
+| A13-R01 | A use-case operation is saved in full or not at all. An error in any step rolls back the writes of all modules made during it, including steps that finished successfully. |
+| A13-R02 | A module operation called on its own commits its own changes. Called during another operation, it becomes part of that operation and does not commit changes before that operation ends. |
+| A13-R03 | Parallel operations are independent of each other: an error in one does not roll back the changes of the other. |
+| A13-R04 | A request for background work is part of the operation that makes it: rolling back the operation rolls back the request. |
+| A13-R05 | Operation errors do not exhaust database resources: after any number of failed operations, the system handles further ones. |
+| A13-R06 | Modules do not manage database connections. A module's code does not depend on whether it runs as part of a larger operation. |
+| A13-R07 | The rules for data access and operation boundaries are described in the architecture documentation as binding on all code. |
+| A13-R08 | The task does not rewrite existing operations. The tasks that change that code do so. |
 
-Decyzje właściciela:
+Owner's decisions:
 
-- Odczyt danych innego modułu nie blokuje ich zmiany. Przy publikacji oceny dopasowania akceptujemy, że profil lub ogłoszenie może zmienić się między sprawdzeniem aktualności oceny a jej zapisem. Okno jest bardzo krótkie, a właściciel może ponownie zlecić ocenę.
-- Rezygnujemy z mechanizmu, który wykrywał przerwanie pracy procesu w tle. Synchronizacja źródeł odzyskuje tę ochronę w zadaniach 0mq.5 i 0mq.16, pozostałe zadania w tle w zadaniu `0mq.15`. Ochrona przed podwójnym podjęciem tej samej pracy pozostaje.
+- Reading another module's data does not block changes to it. When a match assessment is published, we accept that the profile or the ad may change between checking the assessment's freshness and saving it. The window is very short, and the owner can request the assessment again.
+- We give up the mechanism that detected interrupted work of a background process. Source sync regains this protection in tasks 0mq.5 and 0mq.16, the other background jobs in task `0mq.15`. Protection against the same work being picked up twice stays.
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A13-AC01 | Operacja A wywołuje operację B i zgłasza błąd po zakończeniu B: zapis B zostaje wycofany. | Test automatyczny na rzeczywistej bazie |
-| A13-AC02 | Operacja B wywołana samodzielnie zatwierdza swój zapis. | jw. |
-| A13-AC03 | Zmiany operacji wywołanej w trakcie innej są niewidoczne dla pozostałych użytkowników bazy do zakończenia operacji zewnętrznej. | jw. |
-| A13-AC04 | Z dwóch równoległych operacji jedna kończy się błędem: zmiany drugiej zostają zatwierdzone. | jw. |
-| A13-AC05 | Praca w tle zlecona w wycofanej operacji nie trafia do kolejki; zlecona w zatwierdzonej trafia. | jw., z rzeczywistą kolejką |
-| A13-AC06 | Po nieudanych operacjach w liczbie większej niż dopuszczalna liczba równoczesnych połączeń kolejna operacja wykonuje się poprawnie. | jw. |
-| A13-AC07 | Dokumentacja architektury opisuje zasady dostępu do danych, granic operacji i decyzje z tej sekcji. | Przegląd dokumentacji |
-| A13-AC08 | Zadanie zmienia tylko wspólny mechanizm, sposób jego uruchomienia w aplikacji, workerze i skryptach oraz dokumentację; istniejące operacje modułów zostają bez zmian. | Przegląd zmian |
+| A13-AC01 | Operation A calls operation B and raises an error after B finishes: B's write is rolled back. | Automated test on a real database |
+| A13-AC02 | Operation B called on its own commits its write. | Same as above |
+| A13-AC03 | The changes of an operation called during another one are invisible to other database users until the outer operation ends. | Same as above |
+| A13-AC04 | Of two parallel operations, one ends with an error: the changes of the other are committed. | Same as above |
+| A13-AC05 | Background work requested in a rolled-back operation does not reach the queue; requested in a committed one, it does. | Same as above, with a real queue |
+| A13-AC06 | After more failed operations than the allowed number of concurrent connections, the next operation executes correctly. | Same as above |
+| A13-AC07 | The architecture documentation describes the rules for data access, operation boundaries and the decisions from this section. | Documentation review |
+| A13-AC08 | The task changes only the shared mechanism, how it is started in the application, the worker and the scripts, and the documentation; existing module operations stay unchanged. | Change review |
 
 <a id="a1"></a>
 
-## Zadanie 0mq.1 — Źródła pobierane przez wspólny kontrakt konektora
+## Task 0mq.1 — Sources fetched through a shared connector contract
 
-Każde źródło ofert jest obsługiwane przez konektor o wspólnym kontrakcie, niezależnie od tego, czy źródło udostępnia API, strony HTML czy wymaga narzędzia pomocniczego. Reguły: F2-01–F2-05, F2-08.
+Each offer source is handled by a connector with a shared contract, whether the source offers an API, HTML pages, or needs a helper tool. Rules: F2-01–F2-05, F2-08.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A1-R01 | Każde obsługiwane źródło (SOLID.Jobs, Himalayas, portale JobSpy, polskie portale) ma konektor. Konektor przyjmuje zakres, przekazuje znalezione ogłoszenia w porcjach i zgłasza, czy sprawdził cały zakres, a jeśli nie, z jakiego powodu. |
-| A1-R02 | Każde źródło zachowuje dotychczasowe kryteria kompletności, z wyjątkiem A1-R04. |
-| A1-R03 | Konektor stosuje limity czasu i ponowień z F2-05. |
-| A1-R04 | Powtórzone ogłoszenie nie przerywa pobierania kolejnych porcji. SOLID.Jobs nadal uznaje przebieg z duplikatem za niekompletny, tak jak dziś. |
-| A1-R05 | Zapisane dane się nie zmieniają: ogłoszenia mają te same identyfikatory, adresy, daty ważności i treści. Istniejące ogłoszenia nie dostają nowych wersji z powodu refaktoru. |
-| A1-R06 | Konektor ustala zakres ze zlecenia zgodnie z F2-08. Dotychczasowe zakresy zachowują tożsamość, więc historia ich przebiegów i obserwacji pozostaje przypisana. |
-| A1-R07 | Konektor deklaruje, czy brak ogłoszenia po kompletnym przebiegu pozwala wnioskować o niedostępności. Deklaracja odpowiada obecnemu działaniu: pozwala tylko SOLID.Jobs. |
-| A1-R08 | Dotychczasowe uruchamianie synchronizacji pobiera dane przez konektory. Zachowuje zapis przyrostowy, wyniki częściowe, liczniki przebiegu, komunikaty błędów i reguły dostępności. |
+| A1-R01 | Each supported source (SOLID.Jobs, Himalayas, JobSpy portals, Polish portals) has a connector. The connector accepts a scope, passes on the ads it finds in batches, and reports whether it checked the whole scope and, if not, why. |
+| A1-R02 | Each source keeps its existing completeness criteria, except for A1-R04. |
+| A1-R03 | The connector applies the time and retry limits from F2-05. |
+| A1-R04 | A repeated ad does not stop the fetch of further batches. SOLID.Jobs still treats a run with a duplicate as incomplete, as it does today. |
+| A1-R05 | Saved data does not change: ads have the same identifiers, addresses, expiry dates and content. Existing ads do not get new versions because of the refactor. |
+| A1-R06 | The connector derives the scope from the request according to F2-08. Existing scopes keep their identity, so the history of their runs and observations stays attached to them. |
+| A1-R07 | The connector declares whether a missing ad after a complete run allows unavailability to be inferred. The declaration matches the current behaviour: only SOLID.Jobs allows it. |
+| A1-R08 | The existing way of starting a sync fetches data through the connectors. It keeps incremental saving, partial results, run counters, error messages and availability rules. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A1-AC01 | Każde źródło z katalogów SOLID.Jobs, Himalayas, JobSpy i polskich portali ma konektor o wspólnym kontrakcie. | Przegląd kodu |
-| A1-AC02 | Zapytanie do źródła bez odpowiedzi kończy się po 5 s. Zapytanie nieudane z przyczyny przejściowej ma najwyżej trzy próby, a nieudane z innej przyczyny jedną. Ponowienia nie tworzą przebiegów. | Test automatyczny z symulowanym źródłem i czasem |
-| A1-AC03 | Konektor przekazuje wyniki w wielu porcjach: trzy strony wyników SOLID.Jobs dają trzy porcje ogłoszeń. | Test automatyczny z symulowanym źródłem |
-| A1-AC04 | Duplikat w porcji i między porcjami nie przerywa pobierania: wszystkie strony zostają pobrane, a rezultat SOLID.Jobs jest niekompletny. | jw. |
-| A1-AC05 | Dla każdego źródła dane wejściowe, które dawały przebieg kompletny, częściowy albo nieudany, dają ten sam status co przed zmianą, poza przypadkiem z A1-AC04. Kryterium wiąże zmianę z tego zadania; od zadania 0mq.5 status ustala A5-R03. | Istniejące testy synchronizacji na rzeczywistej bazie |
-| A1-AC06 | Dla tych samych danych wejściowych zapisane ogłoszenia i ich wersje mają te same identyfikatory, adresy, daty ważności, skróty i treści co przed zmianą. | Testy synchronizacji na rzeczywistej bazie |
-| A1-AC07 | Domyślne zakresy wszystkich źródeł mają te same odciski co przed zmianą. Dwa zlecenia polskiego portalu różniące się tylko kolejnością parametrów dają ten sam zakres. | Test automatyczny z odciskami policzonymi przed zmianą |
-| A1-AC08 | Wnioskowanie z braku jest dopuszczone dla SOLID.Jobs i wyłączone dla pozostałych źródeł. | Test automatyczny |
+| A1-AC01 | Each source from the SOLID.Jobs, Himalayas, JobSpy and Polish portal directories has a connector with the shared contract. | Code review |
+| A1-AC02 | A request to the source with no response ends after 5 s. A request that fails for a transient reason has at most three attempts, and one that fails for another reason has one. Retries do not create runs. | Automated test with a simulated source and time |
+| A1-AC03 | The connector passes on results in many batches: three pages of SOLID.Jobs results give three batches of ads. | Automated test with a simulated source |
+| A1-AC04 | A duplicate within a batch and between batches does not stop the fetch: all pages are fetched, and the SOLID.Jobs result is incomplete. | Same as above |
+| A1-AC05 | For each source, input data that gave a complete, partial or failed run gives the same status as before the change, except for the case in A1-AC04. The criterion binds the change from this task; from task 0mq.5 on, the status is set by A5-R03. | Existing sync tests on a real database |
+| A1-AC06 | For the same input data, the saved ads and their versions have the same identifiers, addresses, expiry dates, hashes and content as before the change. | Sync tests on a real database |
+| A1-AC07 | The default scopes of all sources have the same fingerprints as before the change. Two Polish portal requests that differ only in the order of parameters give the same scope. | Automated test with fingerprints computed before the change |
+| A1-AC08 | Inference from absence is allowed for SOLID.Jobs and disabled for the other sources. | Automated test |
 
 <a id="a2"></a>
 
-## Zadanie 0mq.2 — Źródło wybierane po stałej nazwie
+## Task 0mq.2 — Source selected by a fixed name
 
-System odnajduje konektor źródła po stałej nazwie w jednym rejestrze. Reguły: F2-11.
+The system finds a source's connector by a fixed name in one registry. Rules: F2-11.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A2-R01 | Każdy konektor ma stałą, unikalną nazwę, równą dotychczasowemu identyfikatorowi źródła zapisanemu w danych. |
-| A2-R02 | Rejestr pozwala odnaleźć konektor po nazwie i podaje listę wszystkich nazw. |
-| A2-R03 | Dwa konektory o tej samej nazwie to błąd konfiguracji, który uniemożliwia start aplikacji i workera. Rejestr nie wybiera żadnego z nich. |
-| A2-R04 | Nieznana nazwa daje jednoznaczny błąd ze wskazaniem nazwy, który można zapisać jako błąd przebiegu. Zapis należy do zadania 0mq.5. |
-| A2-R05 | Dodanie źródła polega na dodaniu konektora i wpisaniu go do rejestru. Pozostała część systemu nie zna konkretnych konektorów. |
+| A2-R01 | Each connector has a fixed, unique name, equal to the existing source identifier saved in the data. |
+| A2-R02 | The registry lets you find a connector by name and gives the list of all names. |
+| A2-R03 | Two connectors with the same name are a configuration error that prevents the application and the worker from starting. The registry picks neither of them. |
+| A2-R04 | An unknown name gives an unambiguous error that names it and that can be saved as a run error. Saving it belongs to task 0mq.5. |
+| A2-R05 | Adding a source means adding a connector and entering it in the registry. The rest of the system does not know the specific connectors. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A2-AC01 | Lista nazw w rejestrze to dokładnie: SOLID.Jobs, Himalayas, wszystkie źródła JobSpy i wszystkie polskie portale, pod dotychczasowymi identyfikatorami. Konektor znaleziony po nazwie ma tę nazwę. | Test automatyczny |
-| A2-AC02 | Rejestr z dwoma konektorami o tej samej nazwie nie powstaje; błąd wskazuje nazwę. | jw. |
-| A2-AC03 | Wyszukanie nieznanej nazwy daje błąd z tą nazwą, bez innych danych. | jw. |
-| A2-AC04 | Konkretne konektory są znane wyłącznie w rejestrze. | Przegląd kodu |
+| A2-AC01 | The list of names in the registry is exactly: SOLID.Jobs, Himalayas, all JobSpy sources and all Polish portals, under their existing identifiers. A connector found by name has that name. | Automated test |
+| A2-AC02 | A registry with two connectors of the same name is not created; the error names the name. | Same as above |
+| A2-AC03 | Looking up an unknown name gives an error with that name and no other data. | Same as above |
+| A2-AC04 | The specific connectors are known only in the registry. | Code review |
 
 <a id="a3"></a>
 
-## Zadanie 0mq.3 — Stan przebiegu synchronizacji w jednym miejscu
+## Task 0mq.3 — Sync run state in one place
 
-Moduł Źródła ofert prowadzi stan przebiegów w jednym miejscu: przyjęcie, rozpoczęcie, zakończenie i odczyt stanu potrzebnego do odzyskiwania. O przebiegu decyduje kod, który nim zarządza; zadania 0mq.5 i 0mq.16 podłączają do niego wykonanie i zlecanie. Reguły: F2-07, F2-08.
+The Sources module keeps the state of runs in one place: acceptance, start, finish, and reading the state needed for recovery. The run is controlled by the code that manages it; tasks 0mq.5 and 0mq.16 connect execution and requesting to it. Rules: F2-07, F2-08.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A3-R01 | Przebieg przechowuje źródło, zakres z ustawieniami, przyczynę uruchomienia, daty, powiązanie ze zleceniem w kolejce, status, liczniki, błąd i diagnostykę. |
-| A3-R02 | Przyjęcie przebiegu i jego zlecenie w kolejce powstają razem albo wcale. Przyjęcie stosuje F2-07 także przy równoczesnych zleceniach. |
-| A3-R03 | Przebieg rozpoczyna się tylko z oczekiwania. Ponowne dostarczenie tej samej pracy nie rozpoczyna go drugi raz, a przebieg zakończony nie rozpoczyna się ponownie. |
-| A3-R04 | Ustawienia przebiegu są ustalane przy przyjęciu i nie zmieniają się później (F2-08). |
-| A3-R05 | Zakończenie zapisuje status kompletny, częściowy albo nieudany oraz błąd i diagnostykę. Historia zakończonych przebiegów jest nieograniczona. |
-| A3-R06 | W tym zadaniu dotychczasowe zlecanie i wykonanie zachowują obecne reguły. Nowe reguły przyjęcia zaczną obowiązywać w zadaniu 0mq.16. |
+| A3-R01 | A run stores the source, the scope with its settings, the reason it was started, dates, the link to the request in the queue, the status, counters, the error and diagnostics. |
+| A3-R02 | Accepting a run and its request in the queue are created together or not at all. Acceptance applies F2-07 also for concurrent requests. |
+| A3-R03 | A run starts only from waiting. Delivering the same work again does not start it a second time, and a finished run does not start again. |
+| A3-R04 | A run's settings are fixed at acceptance and do not change later (F2-08). |
+| A3-R05 | Finishing saves the status complete, partial or failed, plus the error and diagnostics. The history of finished runs is unlimited. |
+| A3-R06 | In this task, the existing requesting and execution keep the current rules. The new acceptance rules take effect in task 0mq.16. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A3-AC01 | Dziesięć równoczesnych przyjęć tego samego źródła i zakresu daje dokładnie jeden przebieg oczekujący i jedno zlecenie w kolejce; wszystkie przyjęcia zwracają jego identyfikator. Nie ma przebiegów bez zleceń ani zleceń bez przebiegów. | Test automatyczny na rzeczywistej bazie i kolejce |
-| A3-AC02 | Przy trwającym przebiegu przyjęcie tworzy jeden oczekujący, a kolejne przyjęcia zwracają jego identyfikator. Zakończone przebiegi zakresu nie wpływają na przyjęcie. | jw. |
-| A3-AC03 | Drugie rozpoczęcie tego samego przebiegu i rozpoczęcie przebiegu zakończonego nie zmieniają jego stanu. | jw. |
-| A3-AC04 | Przyjęcie z innymi ustawieniami tworzy osobny zakres i nie zmienia ustawień wcześniej przyjętego przebiegu. | jw. |
-| A3-AC05 | W jednym zakresie mogą istnieć jednocześnie jeden przebieg trwający i jeden oczekujący, ale nigdy dwa oczekujące ani dwa trwające. Dotychczasowe uruchamianie synchronizacji działa bez zmian. | jw. i istniejące testy synchronizacji |
+| A3-AC01 | Ten concurrent acceptances of the same source and scope give exactly one pending run and one request in the queue; all acceptances return its identifier. There are no runs without requests and no requests without runs. | Automated test on a real database and queue |
+| A3-AC02 | With a run in progress, acceptance creates one pending run, and further acceptances return its identifier. Finished runs of the scope do not affect acceptance. | Same as above |
+| A3-AC03 | A second start of the same run and a start of a finished run do not change its state. | Same as above |
+| A3-AC04 | Acceptance with different settings creates a separate scope and does not change the settings of a previously accepted run. | Same as above |
+| A3-AC05 | One scope may have one run in progress and one pending run at the same time, but never two pending or two in progress. The existing way of starting a sync works unchanged. | Same as above, plus existing sync tests |
 
 <a id="a4"></a>
 
-## Zadanie 0mq.4 — Zapis wyników pobierania
+## Task 0mq.4 — Saving fetch results
 
-Moduł Źródła ofert zapisuje porcję ogłoszeń przebiegu: ogłoszenia, obserwacje i wersje treści. Zwraca też podsumowanie porcji. Reguły: F2-02, F2-03, F2-12.
+The Sources module saves a run's batch of ads: the ads, observations and content versions. It also returns a summary of the batch. Rules: F2-02, F2-03, F2-12.
 
-Dostępność ma trzy odrębne podstawy ([F1](../../../modules/sources/README.md#jak-ustalana-jest-dostępność)):
+Availability has three separate grounds ([F1](../../../modules/sources/README.md#how-availability-is-established)):
 
-1. **Obserwacja ogłoszenia** w wynikach aktywnych ofert przywraca jego dostępność już przy zapisie porcji, także w przebiegu, który skończy się częściowo.
-2. **Informacja ze źródła o konkretnym ogłoszeniu**, czyli status zamknięcia i data ważności, nie zależy od pobrania pozostałych wyników. Brak tej informacji pozostaje niewiadomą.
-3. **Brak ogłoszenia w wynikach** nie jest sam dowodem niedostępności. Wnioskowanie z braku należy do zadania 0mq.7, a nie do zapisu porcji.
+1. **An observation of the ad** in the results of active offers restores its availability already when the batch is saved, also in a run that will end as partial.
+2. **Information from the source about a specific ad**, that is the closed status and the expiry date, does not depend on fetching the other results. Missing information stays an unknown.
+3. **A missing ad in the results** is not by itself proof of unavailability. Inference from absence belongs to task 0mq.7, not to saving the batch.
 
-Przykład: A było niedostępne, B dostępne. Pierwsza porcja zawiera A jako aktywne, potem pobieranie się przerywa. A odzyskuje dostępność, B zachowuje stan. Jeśli A ma przeszłą datę ważności, informacja o wygaśnięciu zostaje zachowana.
+Example: A was unavailable, B available. The first batch contains A as active, then the fetch stops. A regains availability, B keeps its state. If A has a past expiry date, the information about expiry is kept.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A4-R01 | Porcje zapisują się przyrostowo, każda w całości albo wcale. Błąd późniejszego pobierania nie usuwa wcześniej zapisanych ogłoszeń, obserwacji i wersji. |
-| A4-R02 | Źródło i identyfikator ogłoszenia w źródle wskazują jedno ogłoszenie, także przy pobraniu w innym zakresie. Identyczna treść nie tworzy nowej wersji, a zmieniona tworzy wersję bez usuwania historii. |
-| A4-R03 | Zapis przywraca dostępność obserwowanego ogłoszenia i zachowuje informacje ze źródła o jego ważności i statusie. Nie dopowiada statusu zamknięcia ani terminu, których źródło nie podało. |
-| A4-R04 | Zapis porcji nie zmienia dostępności ogłoszeń nieobecnych w porcji. Dotychczasowe oznaczanie niewidzianych ogłoszeń po pełnym przebiegu SOLID.Jobs działa bez zmian do zadania 0mq.7. |
-| A4-R05 | Obserwacje, rozpoznawanie powtórnych obserwacji i liczniki przebiegu zachowują znaczenie. Podsumowanie porcji podaje liczbę nowych obserwacji, powtórnych obserwacji i nowych wersji. |
-| A4-R06 | Powtórzone ogłoszenie w porcji i między porcjami nie przerywa zapisu (F2-03). |
-| A4-R07 | Błąd zapisu porcji jest zgłaszany procesowi synchronizacji, który może przez to zakończyć przebieg błędem. |
-| A4-R08 | Zadanie nie łączy dostępności z wygaśnięciem, nie zmienia prezentacji stanów i nie dodaje zasad rozstrzygania sprzecznych informacji ze źródła. |
+| A4-R01 | Batches are saved incrementally, each in full or not at all. An error in a later fetch does not remove previously saved ads, observations and versions. |
+| A4-R02 | The source and the ad's identifier at the source point to one ad, also when it is fetched in a different scope. Identical content does not create a new version, and changed content creates a version without removing history. |
+| A4-R03 | Saving restores the availability of an observed ad and keeps the source's information about its validity and status. It does not fill in a closed status or a deadline the source did not give. |
+| A4-R04 | Saving a batch does not change the availability of ads absent from the batch. The existing marking of unseen ads after a full SOLID.Jobs run works unchanged until task 0mq.7. |
+| A4-R05 | Observations, recognising repeated observations, and run counters keep their meaning. The batch summary gives the number of new observations, repeated observations and new versions. |
+| A4-R06 | A repeated ad within a batch and between batches does not stop the save (F2-03). |
+| A4-R07 | An error in saving a batch is reported to the sync process, which may then end the run with an error. |
+| A4-R08 | The task does not combine availability with expiry, does not change how states are presented, and does not add rules for resolving conflicting information from the source. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A4-AC01 | Po zapisie dwóch porcji i błędzie w trzeciej ogłoszenia, obserwacje i wersje z dwóch pierwszych zostają zachowane. | Test automatyczny na rzeczywistej bazie |
-| A4-AC02 | To samo ogłoszenie zapisane w dwóch przebiegach o różnych zakresach jest jednym ogłoszeniem z obserwacjami w obu przebiegach. Identyczna treść nie tworzy wersji, zmieniona tworzy, a poprzednie wersje zostają. | jw. |
-| A4-AC03 | Ogłoszenie wcześniej niedostępne, zaobserwowane w pierwszej porcji przebiegu przerwanego później, jest po przerwaniu dostępne. | jw. |
-| A4-AC04 | Ogłoszenie dostępne, nieobecne w częściowym lub nieudanym przebiegu, pozostaje dostępne. | jw. |
-| A4-AC05 | Ponownie zaobserwowane ogłoszenie z przeszłą datą ważności jest nadal prezentowane jako wygasłe. Ogłoszenie bez daty ważności nie ma terminu. | jw. |
-| A4-AC06 | Powtórna obserwacja ogłoszenia w tym samym przebiegu nie zwiększa liczby unikalnych ogłoszeń przebiegu; podsumowanie liczy ją jako powtórną. Liczniki przebiegu rosną jak dotąd. | jw. |
-| A4-AC07 | Ogłoszenie powtórzone w porcji i między porcjami nie przerywa zapisu, a następna porcja zostaje zapisana. | jw. |
-| A4-AC08 | Błąd zapisu w trakcie porcji wycofuje całą porcję i zostaje zgłoszony jako błąd zapisu. | jw., z wymuszonym błędem |
-| A4-AC09 | Pełny przebieg SOLID.Jobs nadal oznacza niewidziane ogłoszenia zakresu jako niedostępne, a pełny przebieg Himalayas nie zmienia dostępności niewidzianych ogłoszeń. | Istniejące testy synchronizacji |
+| A4-AC01 | After two batches are saved and the third fails, the ads, observations and versions from the first two are kept. | Automated test on a real database |
+| A4-AC02 | The same ad saved in two runs with different scopes is one ad with observations in both runs. Identical content does not create a version, changed content does, and the previous versions stay. | Same as above |
+| A4-AC03 | An ad that was unavailable before, observed in the first batch of a run that is later interrupted, is available after the interruption. | Same as above |
+| A4-AC04 | An available ad absent from a partial or failed run stays available. | Same as above |
+| A4-AC05 | An ad observed again with a past expiry date is still presented as expired. An ad without an expiry date has no deadline. | Same as above |
+| A4-AC06 | A repeated observation of an ad in the same run does not increase the run's number of unique ads; the summary counts it as repeated. Run counters grow as before. | Same as above |
+| A4-AC07 | An ad repeated within a batch and between batches does not stop the save, and the next batch is saved. | Same as above |
+| A4-AC08 | A save error during a batch rolls back the whole batch and is reported as a save error. | Same as above, with a forced error |
+| A4-AC09 | A full SOLID.Jobs run still marks unseen ads of the scope as unavailable, and a full Himalayas run does not change the availability of unseen ads. | Existing sync tests |
 
 <a id="a5"></a>
 
-## Zadanie 0mq.5 — Wspólne wykonanie przebiegu synchronizacji
+## Task 0mq.5 — Shared execution of a sync run
 
-Każdy przebieg, niezależnie od źródła, wykonuje jeden wspólny proces. Odczytuje on zapisane ustawienia przebiegu, uruchamia konektor źródła, zapisuje porcje i kończy przebieg. Reguły: F2-01–F2-04, F2-11–F2-13.
+Every run, whatever the source, is executed by one shared process. It reads the run's saved settings, starts the source's connector, saves the batches and finishes the run. Rules: F2-01–F2-04, F2-11–F2-13.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A5-R01 | Wspólny proces wykonuje przebiegi wszystkich źródeł i nie zawiera warunków zależnych od konkretnego źródła ani interpretacji jego stron, komunikatów i diagnostyki. |
-| A5-R02 | Proces korzysta z ustawień zapisanych przy przyjęciu przebiegu, a nie z bieżących ustawień źródła. |
-| A5-R03 | Status kończonego przebiegu: kompletny, gdy źródło sprawdziło cały zakres i wszystkie porcje się zapisały; częściowy, gdy przebieg nie jest kompletny, ale zapisał co najmniej jedno ogłoszenie; nieudany w pozostałych przypadkach. Błąd zapisu nigdy nie daje statusu kompletnego. Reguła obowiązuje każde źródło. Niekompletny przebieg bez zapisanego ogłoszenia jest nieudany także tam, gdzie dziś kończy się jako częściowy: w SOLID.Jobs po przeczytaniu choć jednej strony, w JobSpy przy statusie narzędzia innym niż nieudany. Zmiana jest zamierzona (decyzja właściciela z 2026-11-16). |
-| A5-R04 | Nieznane źródło i błędne ustawienia przebiegu kończą przebieg nieudanym z zapisanym błędem. Zapisany komunikat nie zawiera sekretów ani surowych odpowiedzi źródła. |
-| A5-R05 | Przerwanie pracy procesu jest obsługiwane według F2-13: przebieg zostaje wznowiony albo jawnie zakończony, proces, który go utracił, przestaje zapisywać, a ponowna próba kontynuuje ten sam przebieg bez duplikowania ogłoszeń. |
-| A5-R06 | Przebieg pozostawiony bez wykonawcy jest rozpoznawany przy starcie workera i okresowo, a następnie wznawiany albo jawnie kończony. Odzyskiwanie nie wymaga wyłącznego dostępu jednego workera. |
-| A5-R07 | Po kompletnym przebiegu proces uruchamia ocenę dostępności z kontekstem źródła, zakresu i rezultatu, w jednej operacji z zapisem zakończenia. Do zadania 0mq.7 ocena działa według dotychczasowej reguły. |
-| A5-R08 | Dotychczasowe zlecanie przebiegów (CLI, aplikacja, harmonogram) działa bez zmian i korzysta z nowego wykonania. Himalayas, uruchamiany dziś bez kolejki, korzysta ze wspólnego wykonania w procesie CLI do zadania 0mq.16. |
+| A5-R01 | The shared process executes the runs of all sources and contains no conditions that depend on a specific source, nor any interpretation of its pages, messages and diagnostics. |
+| A5-R02 | The process uses the settings saved when the run was accepted, not the source's current settings. |
+| A5-R03 | Status of a finishing run: complete when the source checked the whole scope and all batches were saved; partial when the run is not complete but saved at least one ad; failed in all other cases. A save error never gives the complete status. The rule applies to every source. An incomplete run with no saved ad is failed also where today it ends as partial: in SOLID.Jobs after reading at least one page, in JobSpy when the tool's status is other than failed. The change is intended (owner's decision of 2026-11-16). |
+| A5-R04 | An unknown source and invalid run settings end the run as failed with a saved error. The saved message contains no secrets and no raw source responses. |
+| A5-R05 | Interrupted work of the process is handled according to F2-13: the run is resumed or explicitly ended, the process that lost it stops saving, and a new attempt continues the same run without duplicating ads. |
+| A5-R06 | A run left without an executor is recognised when the worker starts and periodically, and then resumed or explicitly ended. Recovery does not need exclusive access by a single worker. |
+| A5-R07 | After a complete run, the process starts the availability assessment with the context of the source, scope and result, in one operation with saving the finish. Until task 0mq.7, the assessment works by the existing rule. |
+| A5-R08 | The existing requesting of runs (CLI, application, schedule) works unchanged and uses the new execution. Himalayas, which today is started without a queue, uses the shared execution in the CLI process until task 0mq.16. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A5-AC01 | Przebieg z symulowanym źródłem zapisuje jedną i wiele porcji, a status wynika z rezultatu źródła zgodnie z A5-R03. | Test automatyczny na rzeczywistej bazie i kolejce |
-| A5-AC02 | Proces nie rozróżnia źródeł: ten sam test przechodzi dla dwóch symulowanych źródeł o różnych nazwach. | Test automatyczny i przegląd kodu |
-| A5-AC03 | Zmiana ustawień źródła po przyjęciu przebiegu nie zmienia ustawień, z którymi wykonuje się przebieg. | Test automatyczny |
-| A5-AC04 | Błąd pobierania po zapisanej porcji daje przebieg częściowy z wcześniejszymi danymi i obserwacjami. Błąd zapisu przy rezultacie kompletnym daje przebieg częściowy albo nieudany, nigdy kompletny. | jw. |
-| A5-AC05 | Nieznane źródło i błędne ustawienia dają przebieg nieudany z zapisanym błędem bez sekretów. | jw. |
-| A5-AC06 | Utrata procesu w trakcie przebiegu prowadzi do jego wznowienia lub jawnego zakończenia; ogłoszenia nie są zdublowane, a liczba przebiegów się nie zmienia. | Test automatyczny z rzeczywistą kolejką i symulowaną utratą procesu |
-| A5-AC07 | Proces, który utracił przebieg, nie zapisuje kolejnych porcji ani zakończenia. | jw. |
-| A5-AC08 | Ponowne dostarczenie pracy przebiegu zakończonego nie zmienia jego stanu. | jw. |
-| A5-AC09 | Przebieg trwający bez aktywnej pracy w kolejce zostaje rozpoznany i zakończony z komunikatem o przerwaniu. | jw. |
-| A5-AC10 | Pełny przebieg SOLID.Jobs oznacza niewidziane ogłoszenia zakresu jako niedostępne w jednej operacji z zakończeniem przebiegu; pełny przebieg Himalayas tego nie robi. | Istniejące testy synchronizacji |
-| A5-AC11 | Wszystkie dotychczasowe sposoby zlecania (CLI dla każdego źródła, zlecenie polskiego portalu z aplikacji, harmonogram SOLID.Jobs) kończą się przebiegiem wykonanym przez wspólny proces. | Istniejące i uzupełnione testy synchronizacji |
-| A5-AC12 | Wynik zadania rozróżnia testy wykonane od pominiętych. | Przegląd wyniku zadania |
+| A5-AC01 | A run with a simulated source saves one and many batches, and the status follows from the source's result according to A5-R03. | Automated test on a real database and queue |
+| A5-AC02 | The process does not distinguish sources: the same test passes for two simulated sources with different names. | Automated test and code review |
+| A5-AC03 | Changing a source's settings after a run is accepted does not change the settings the run executes with. | Automated test |
+| A5-AC04 | A fetch error after a saved batch gives a partial run with the earlier data and observations. A save error with a complete result gives a partial or failed run, never a complete one. | Same as above |
+| A5-AC05 | An unknown source and invalid settings give a failed run with a saved error without secrets. | Same as above |
+| A5-AC06 | Losing the process during a run leads to its resumption or explicit end; ads are not duplicated, and the number of runs does not change. | Automated test with a real queue and a simulated process loss |
+| A5-AC07 | A process that has lost a run does not save further batches or the finish. | Same as above |
+| A5-AC08 | Delivering the work of a finished run again does not change its state. | Same as above |
+| A5-AC09 | A run in progress without active work in the queue is recognised and ended with a message about the interruption. | Same as above |
+| A5-AC10 | A full SOLID.Jobs run marks unseen ads of the scope as unavailable in one operation with finishing the run; a full Himalayas run does not. | Existing sync tests |
+| A5-AC11 | All existing ways of requesting (CLI for each source, a Polish portal request from the application, the SOLID.Jobs schedule) end with a run executed by the shared process. | Existing and extended sync tests |
+| A5-AC12 | The task result distinguishes executed tests from skipped ones. | Review of the task result |
 
 <a id="a19"></a>
 
-## Zadanie 0mq.19 — Przyjęcie bez ponawiania prób
+## Task 0mq.19 — Acceptance without retrying
 
-Gdy zlecenie trafia na istniejący oczekujący przebieg tego samego źródła i zakresu, przyjęcie zwraca ten przebieg z informacją, że synchronizacja już jest zlecona, i niczego nie ponawia. Dziś przyjęcie z zadania 0mq.3 ponawia wstawienie do trzech razy, gdy oczekujący przebieg ruszy, zanim zostanie odczytany. Decyzja właściciela z 2026-11-16: ponawianie jest zbędne. Reguła F2-07 się nie zmienia. Reguły: F2-07.
+When a request meets an existing pending run of the same source and scope, acceptance returns that run with the information that a sync is already requested, and retries nothing. Today the acceptance from task 0mq.3 retries the insert up to three times when the pending run starts before it is read. Owner's decision of 2026-11-16: retrying is unnecessary. Rule F2-07 does not change. Rules: F2-07.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A19-R01 | Przyjęcie, które nie wstawiło przebiegu z powodu oczekującego przebiegu tego zakresu, nie ponawia wstawienia. Zwraca identyfikator tego przebiegu i informację, że wskazano istniejący, także gdy przebieg w międzyczasie ruszył. |
-| A19-R02 | Gdy przebiegu, który zablokował wstawienie, nie ma już wśród aktywnych, przyjęcie kończy się błędem bez zmian, a wywołujący może zlecić ponownie. |
-| A19-R03 | Pozostałe zachowanie przyjęcia z zadania 0mq.3 i reguła F2-07 się nie zmieniają. |
+| A19-R01 | An acceptance that did not insert a run because of a pending run of this scope does not retry the insert. It returns that run's identifier and the information that an existing run was pointed to, also when the run has started in the meantime. |
+| A19-R02 | When the run that blocked the insert is no longer among the active runs, acceptance ends with an error and no changes, and the caller can request again. |
+| A19-R03 | The rest of the acceptance behaviour from task 0mq.3 and rule F2-07 do not change. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A19-AC01 | Gdy oczekujący przebieg rusza między nieudanym wstawieniem a odczytem, przyjęcie zwraca identyfikator tego przebiegu z informacją, że wskazano istniejący, i nie tworzy przebiegu ani zlecenia w kolejce. | Test automatyczny na rzeczywistej bazie i kolejce |
-| A19-AC02 | Gdy przebieg, który zablokował wstawienie, zakończy się przed odczytem, przyjęcie kończy się błędem i nie zostawia przebiegu, zakresu ani zlecenia. | jw. |
-| A19-AC03 | Przyjęcie wykonuje najwyżej jedną próbę wstawienia. | Przegląd kodu i test z A19-AC01 |
-| A19-AC04 | Kryteria A3-AC01–AC05 nadal są spełnione. | Istniejące testy przyjęcia |
+| A19-AC01 | When the pending run starts between the failed insert and the read, acceptance returns that run's identifier with the information that an existing run was pointed to, and creates no run and no request in the queue. | Automated test on a real database and queue |
+| A19-AC02 | When the run that blocked the insert finishes before the read, acceptance ends with an error and leaves no run, scope or request. | Same as above |
+| A19-AC03 | Acceptance makes at most one insert attempt. | Code review and the test from A19-AC01 |
+| A19-AC04 | Criteria A3-AC01–AC05 are still met. | Existing acceptance tests |
 
 <a id="a16"></a>
 
-## Zadanie 0mq.16 — Wspólne zlecanie synchronizacji
+## Task 0mq.16 — Shared sync requesting
 
-Wszystkie sposoby uruchomienia zlecają synchronizację jedną operacją i podlegają tym samym regułom kolejki. Reguły: F2-06–F2-10.
+All ways of starting request a sync through one operation and are subject to the same queue rules. Rules: F2-06–F2-10.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A16-R01 | CLI dla każdego źródła, aplikacja i harmonogram zlecają synchronizację tą samą operacją modułu Źródła ofert. |
-| A16-R02 | Kolejka stosuje F2-06 i F2-07 dla wszystkich źródeł, także przy wielu workerach. |
-| A16-R03 | Harmonogram tworzy jedno zlecenie na wystąpienie (dzień i godzina harmonogramu). Ponowne sprawdzenie tego samego wystąpienia nie tworzy zlecenia. Zlecenie ręczne wcześniej tego dnia nie wstrzymuje zlecenia z harmonogramu. Nie ma blokady ponownego pobrania tego samego dnia ani wygasania oczekujących przebiegów. |
-| A16-R04 | Aplikacja i harmonogram dostają identyfikator przebiegu bez czekania. CLI czeka na wynik swojego przebiegu bez limitu czasu, także gdy zlecenie wskazało istniejący oczekujący przebieg, i kończy się kodem błędu, gdy przebieg nie jest kompletny. Przerwanie oczekiwania nie anuluje przebiegu. |
-| A16-R05 | Himalayas jest zlecany i wykonywany jak pozostałe źródła. |
-| A16-R06 | Stan przebiegu i stan katalogu źródeł są odczytywane jedną operacją modułu dla wszystkich źródeł. Odpowiedzi aplikacji i komunikaty CLI zachowują dotychczasową treść. |
-| A16-R07 | Przebiegi czekające w dotychczasowych kolejkach w chwili wdrożenia są kończone przez odzyskiwanie z komunikatem o przerwaniu; właściciel zleca je ponownie. |
+| A16-R01 | The CLI for each source, the application and the schedule request a sync through the same operation of the Sources module. |
+| A16-R02 | The queue applies F2-06 and F2-07 to all sources, also with many workers. |
+| A16-R03 | The schedule creates one request per occurrence (the schedule's day and hour). Checking the same occurrence again does not create a request. A manual request earlier that day does not hold back the request from the schedule. There is no block on fetching again on the same day and no expiry of pending runs. |
+| A16-R04 | The application and the schedule get the run identifier without waiting. The CLI waits for the result of its run without a time limit, also when the request pointed to an existing pending run, and ends with an error code when the run is not complete. Stopping the wait does not cancel the run. |
+| A16-R05 | Himalayas is requested and executed like the other sources. |
+| A16-R06 | The run state and the state of the source catalogue are read through one module operation for all sources. The application's responses and the CLI messages keep their existing content. |
+| A16-R07 | Runs waiting in the existing queues at the moment of deployment are ended by recovery with a message about the interruption; the owner requests them again. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A16-AC01 | Równoczesne zlecenia tego samego źródła i zakresu tworzą najwyżej jeden przebieg oczekujący i zwracają jego identyfikator; nie powstają przebiegi ani zlecenia osierocone. | Test automatyczny na rzeczywistej bazie i kolejce |
-| A16-AC02 | Przy trwającym przebiegu powstaje jeden oczekujący, a kolejne zlecenia go wskazują. Nic nie przerywa trwającego przebiegu. | jw. |
-| A16-AC03 | Dwa workery nie wykonują równolegle przebiegów jednego źródła, także w różnych zakresach; przebiegi różnych źródeł wykonują się równolegle; przebiegi jednego źródła wykonują się w kolejności zlecenia. | Test automatyczny z dwoma workerami na rzeczywistej kolejce |
-| A16-AC04 | Wielokrotne sprawdzenie tego samego wystąpienia harmonogramu tworzy jedno zlecenie. Zlecenie ręczne tego samego dnia nie wstrzymuje harmonogramu, a drugie zlecenie ręczne tego dnia jest przyjmowane według F2-07. | Test automatyczny |
-| A16-AC05 | Aplikacja i harmonogram wracają po zleceniu z identyfikatorem przebiegu. CLI czeka na zakończenie swojego przebiegu dłużej niż dotychczasowe 120 s i zwraca kod zależny od statusu. | Test automatyczny i uruchomienie CLI z symulowanym źródłem |
-| A16-AC06 | Zmiana ustawień po zleceniu nie zmienia ustawień przebiegu; zlecenia z CLI i z aplikacji z równoważnymi parametrami trafiają do tego samego zakresu. | Test automatyczny |
-| A16-AC07 | Himalayas jest zlecany przez CLI do kolejki i wykonywany przez worker. | Test automatyczny |
-| A16-AC08 | Odpowiedzi aplikacji o stanie źródeł i przebiegów mają dotychczasową postać. | Istniejące testy tras aplikacji |
-| A16-AC09 | Przebieg oczekujący w dotychczasowej kolejce zostaje po wdrożeniu zakończony z komunikatem o przerwaniu. | Test automatyczny odzyskiwania |
+| A16-AC01 | Concurrent requests for the same source and scope create at most one pending run and return its identifier; no orphaned runs or requests are created. | Automated test on a real database and queue |
+| A16-AC02 | With a run in progress, one pending run is created, and further requests point to it. Nothing interrupts the run in progress. | Same as above |
+| A16-AC03 | Two workers do not execute runs of one source in parallel, also in different scopes; runs of different sources execute in parallel; runs of one source execute in the order they were requested. | Automated test with two workers on a real queue |
+| A16-AC04 | Checking the same schedule occurrence many times creates one request. A manual request on the same day does not hold back the schedule, and a second manual request that day is accepted according to F2-07. | Automated test |
+| A16-AC05 | The application and the schedule return after the request with the run identifier. The CLI waits for its run to finish longer than the existing 120 s and returns a code that depends on the status. | Automated test and a CLI run with a simulated source |
+| A16-AC06 | Changing the settings after the request does not change the run's settings; requests from the CLI and from the application with equivalent parameters go to the same scope. | Automated test |
+| A16-AC07 | Himalayas is requested by the CLI to the queue and executed by the worker. | Automated test |
+| A16-AC08 | The application's responses about the state of sources and runs keep their existing form. | Existing application route tests |
+| A16-AC09 | A run pending in the existing queue is ended after deployment with a message about the interruption. | Automated recovery test |
 
 <a id="a7"></a>
 
-## Zadanie 0mq.7 — Niedostępność ogłoszeń po pełnym przebiegu
+## Task 0mq.7 — Ad unavailability after a full run
 
-Wspólna reguła modułu Źródła ofert ustala, które ogłoszenia stały się niedostępne, na podstawie historii obserwacji w zakresie. Zastępuje regułę wbudowaną dziś w synchronizację SOLID.Jobs. Reguły: F2-12.
+A shared rule of the Sources module determines which ads have become unavailable, based on the observation history in the scope. It replaces the rule built into the SOLID.Jobs sync today. Rules: F2-12.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A7-R01 | Po kompletnym przebiegu źródła, które dopuszcza wnioskowanie z braku, ogłoszenia tego źródła widziane wcześniej w tym samym zakresie, a nieobecne w bieżącym przebiegu, stają się niedostępne. |
-| A7-R02 | O tym, czy ogłoszenie należało do zakresu, decyduje historia obserwacji w przebiegach zakresu, a nie ostatni zakres, w którym ogłoszenie widziano. |
-| A7-R03 | Przebiegi częściowe i nieudane nie zmieniają dostępności niewidzianych ogłoszeń. Kompletny przebieg źródła, które nie dopuszcza wnioskowania z braku (np. Himalayas), też nie. |
-| A7-R04 | Oznaczenie niedostępności i zapis zakończenia przebiegu jako kompletnego wykonują się razem albo wcale. |
-| A7-R05 | Reguła nie zależy od nazwy źródła; dopuszczenie wnioskowania pochodzi z deklaracji konektora. Nie sprawdza, czy zniknięcie wynika ze zmiany treści powodującej niespełnienie filtrów. |
-| A7-R06 | Późniejsza obserwacja w dowolnym zakresie przywraca dostępność; przejściowe zniknięcie i ponowne pojawienie się ogłoszenia jest akceptowane. Informacje o wygaśnięciu ze źródła pozostają odrębne. |
+| A7-R01 | After a complete run of a source that allows inference from absence, the ads of that source seen earlier in the same scope and absent from the current run become unavailable. |
+| A7-R02 | Whether an ad belonged to the scope is decided by the observation history in the scope's runs, not by the last scope in which the ad was seen. |
+| A7-R03 | Partial and failed runs do not change the availability of unseen ads. Neither does a complete run of a source that does not allow inference from absence (e.g. Himalayas). |
+| A7-R04 | Marking unavailability and saving the run's finish as complete happen together or not at all. |
+| A7-R05 | The rule does not depend on the source name; permission to infer comes from the connector's declaration. It does not check whether the disappearance results from a content change that makes the ad fail the filters. |
+| A7-R06 | A later observation in any scope restores availability; an ad that disappears temporarily and appears again is accepted. Expiry information from the source stays separate. |
 
-Przykład: ogłoszenie X widziano w przebiegu zakresu PHP, a później w przebiegu zakresu Java. Kolejny pełny przebieg PHP bez X oznacza X jako niedostępne, choć ostatnim zakresem X jest Java. Następny przebieg Java, który znajdzie X, przywraca jego dostępność.
+Example: ad X was seen in a run of scope PHP, and later in a run of scope Java. The next full PHP run without X marks X as unavailable, even though X's last scope is Java. The next Java run that finds X restores its availability.
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A7-AC01 | Po pełnym przebiegu SOLID.Jobs ogłoszenia widziane wcześniej w zakresie i nieobecne w przebiegu są niedostępne. | Test automatyczny na rzeczywistej bazie |
-| A7-AC02 | Przebieg częściowy i nieudany nie zmieniają dostępności niewidzianych ogłoszeń; pełny przebieg Himalayas też nie. | jw. |
-| A7-AC03 | Błąd w trakcie oznaczania wycofuje oznaczenie i przebieg nie jest kompletny. | jw., z wymuszonym błędem |
-| A7-AC04 | Przykład X: oznaczenie po pełnym przebiegu PHP i przywrócenie po przebiegu Java. | jw. |
-| A7-AC05 | Ogłoszenie nigdy niewidziane w zakresie A nie zmienia dostępności po pełnym przebiegu A. | jw. |
-| A7-AC06 | Reguła nie zawiera warunków zależnych od nazwy źródła. | Przegląd kodu |
+| A7-AC01 | After a full SOLID.Jobs run, ads seen earlier in the scope and absent from the run are unavailable. | Automated test on a real database |
+| A7-AC02 | A partial and a failed run do not change the availability of unseen ads; neither does a full Himalayas run. | Same as above |
+| A7-AC03 | An error during marking rolls back the marking, and the run is not complete. | Same as above, with a forced error |
+| A7-AC04 | Example X: marking after the full PHP run and restoring after the Java run. | Same as above |
+| A7-AC05 | An ad never seen in scope A does not change availability after a full run of A. | Same as above |
+| A7-AC06 | The rule contains no conditions that depend on the source name. | Code review |
 
 <a id="a8"></a>
 
-## Zadanie 0mq.8 — Moduł Oferty
+## Task 0mq.8 — Offers module
 
-Kod przeglądania ofert tworzy moduł Oferty z publicznymi operacjami. Widoki zostają na miejscu i korzystają z API.
+The offer browsing code forms the Offers module with public operations. The views stay where they are and use the API.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A8-R01 | Logika listy i szczegółów ofert, filtrowania, sortowania, paginacji i prezentacji wynagrodzeń należy do modułu Oferty, razem z dedykowanymi jej testami. |
-| A8-R02 | Trasy API ofert przekazują żądania do publicznych operacji modułu. |
-| A8-R03 | Lista i szczegóły działają jak dotąd: te same filtry, sortowanie, paginacja, prezentacja wynagrodzeń i dane w odpowiedziach. |
-| A8-R04 | Do zadań 0mq.6 i 0mq.18 moduł Oferty korzysta z dotychczasowych odczytów danych Źródeł i Dopasowania; przeniesienie ich nie zmienia. |
-| A8-R05 | Opis modułu przypisuje mu odpowiedzialność za grupowanie ogłoszeń tej samej rekrutacji w ofertę pracy i odróżnia ją od stanu wdrożenia: grupowanie nie jest wdrożone i nie należy do epiku. Opis podaje też publiczne operacje, strukturę i zależności modułu. |
+| A8-R01 | The logic of the offer list and offer details, filtering, sorting, pagination and salary presentation belongs to the Offers module, together with its dedicated tests. |
+| A8-R02 | The offer API routes pass requests to the module's public operations. |
+| A8-R03 | The list and details work as before: the same filters, sorting, pagination, salary presentation and data in responses. |
+| A8-R04 | Until tasks 0mq.6 and 0mq.18, the Offers module uses the existing reads of Sources and Matching data; the move does not change them. |
+| A8-R05 | The module description assigns it responsibility for grouping ads of the same recruitment into a job offer and separates that from the state of implementation: grouping is not implemented and is not part of the epic. The description also gives the module's public operations, structure and dependencies. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A8-AC01 | Kod listy i szczegółów ofert oraz jego dedykowane testy należą do modułu Oferty; poza modułem zostają tylko trasy, które do niego delegują, i widoki. | Przegląd kodu |
-| A8-AC02 | Lista i szczegóły zwracają te same dane dla tych samych filtrów, sortowania i strony co przed zmianą. | Istniejące testy ofert |
-| A8-AC03 | Opis modułu spełnia A8-R05. | Przegląd dokumentacji |
+| A8-AC01 | The code of the offer list and details and its dedicated tests belong to the Offers module; outside the module only the routes that delegate to it and the views remain. | Code review |
+| A8-AC02 | The list and details return the same data for the same filters, sorting and page as before the change. | Existing offer tests |
+| A8-AC03 | The module description meets A8-R05. | Documentation review |
 
 <a id="a6"></a>
 
-## Zadanie 0mq.6 — Odczyt ogłoszeń przez kontrakt Źródeł
+## Task 0mq.6 — Reading ads through the Sources contract
 
-Źródła ofert udostępniają publiczny odczyt ogłoszeń źródłowych i ich wersji. Oferty, Dopasowanie i Firmy przestają czytać dane Źródeł bezpośrednio i interpretować treść ogłoszeń.
+Sources provide a public read of source ads and their versions. Offers, Matching and Companies stop reading Sources data directly and interpreting ad content.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A6-R01 | Źródła udostępniają odczyt aktualnego ogłoszenia z identyfikatorem jego bieżącej wersji, odczyt wielu ogłoszeń naraz, odczyt wskazanej wersji i listę wersji ogłoszenia. |
-| A6-R02 | Odczyt zwraca ogłoszenie w ujednoliconej postaci: tytuł, firmę, adres, opis, umiejętności, wynagrodzenia z pochodzeniem kwoty, lokalizacje, poziom, wymiar, tryb pracy, daty, dostępność, wygaśnięcie, źródło i kwalifikację pracy zdalnej. Znaczenie pól określają Źródła; tłumaczenie treści ze źródła należy do nich. |
-| A6-R03 | Oferty składają listę i szczegóły z odczytu Źródeł. Dopasowanie pobiera ogłoszenie do oceny, bieżące wersje do ustalenia aktualności ocen i ogłoszenia do listy przez odczyt Źródeł. Firmy pobierają ogłoszenia powiązane z firmą, tytuły wersji w historii powiązań, nazwę firmy z ogłoszenia i bieżącą wersję przy powiązaniu przez odczyt Źródeł. |
-| A6-R04 | Ocena dopasowania korzysta z treści i identyfikatora tej samej wersji ogłoszenia. |
-| A6-R05 | Odczyt nie blokuje zmian ogłoszenia. Powiązanie firmy z ogłoszeniem zapisuje wersję odczytaną w chwili powiązania; jeśli ogłoszenie zmieni się w tym czasie, powiązanie wskazuje poprzednią wersję. Zmiana jest akceptowana na tych samych zasadach co przy ocenie dopasowania. |
-| A6-R06 | Widoki listy i szczegółów, oceny i firmy pokazują te same dane co przed zmianą. Odczyty dla list pobierają dane zbiorczo, bez osobnego odczytu dla każdej pozycji. |
+| A6-R01 | Sources provide a read of the current ad with the identifier of its current version, a read of many ads at once, a read of a given version and the list of an ad's versions. |
+| A6-R02 | The read returns the ad in a unified form: title, company, address, description, skills, salaries with the origin of the amount, locations, level, working time, work mode, dates, availability, expiry, source and remote-work qualification. Sources define the meaning of the fields; translating content from the source belongs to them. |
+| A6-R03 | Offers build the list and details from the Sources read. Matching gets the ad for assessment, the current versions for determining assessment freshness, and the ads for the list through the Sources read. Companies get the ads linked to a company, the version titles in the link history, the company name from the ad and the current version at linking through the Sources read. |
+| A6-R04 | The match assessment uses the content and the identifier of the same ad version. |
+| A6-R05 | The read does not block changes to the ad. Linking a company to an ad saves the version read at the moment of linking; if the ad changes in the meantime, the link points to the previous version. The change is accepted on the same terms as for the match assessment. |
+| A6-R06 | The list and details views, assessments and companies show the same data as before the change. Reads for lists fetch data in bulk, without a separate read for each item. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A6-AC01 | Odczyt aktualnego ogłoszenia, wielu ogłoszeń, wskazanej wersji i listy wersji zwraca dane z A6-R01 i A6-R02. | Test automatyczny na rzeczywistej bazie |
-| A6-AC02 | Dla tych samych danych lista i szczegóły ofert, wejście oceny dopasowania i widoki firm zawierają te same wartości co przed zmianą. | Istniejące testy ofert, dopasowania i firm |
-| A6-AC03 | Ocena zapisana dla ogłoszenia wskazuje wersję, której treść oceniono, także gdy ogłoszenie zmieni się w trakcie oceny. | Test automatyczny |
-| A6-AC04 | Oferty, Dopasowanie i Firmy nie czytają danych Źródeł inaczej niż przez ich publiczny odczyt i nie interpretują samodzielnie treści ogłoszeń. | Przegląd kodu |
-| A6-AC05 | Lista ofert z ocenami wykonuje stałą liczbę odczytów niezależnie od liczby ofert. | Test automatyczny licznika zapytań albo przegląd kodu |
+| A6-AC01 | Reading the current ad, many ads, a given version and the list of versions returns the data from A6-R01 and A6-R02. | Automated test on a real database |
+| A6-AC02 | For the same data, the offer list and details, the match assessment input and the company views contain the same values as before the change. | Existing offer, matching and company tests |
+| A6-AC03 | An assessment saved for an ad points to the version whose content was assessed, also when the ad changes during the assessment. | Automated test |
+| A6-AC04 | Offers, Matching and Companies do not read Sources data other than through its public read and do not interpret ad content on their own. | Code review |
+| A6-AC05 | The offer list with assessments makes a constant number of reads, whatever the number of offers. | Automated query counter test or code review |
 
 <a id="a10"></a>
 
-## Zadanie 0mq.10 — Publiczny odczyt Profilu zawodowego
+## Task 0mq.10 — Public read of the Profile
 
-Dopasowanie korzysta z zatwierdzonych wersji profilu przez publiczny odczyt Profilu ([kontrakt Profilu](../../../modules/profile/README.md#publiczne-operacje)). Profil ukrywa sposób przechowywania wersji, a Dopasowanie nadal odpowiada za regułę aktualności oceny.
+Matching uses confirmed profile versions through the Profile's public read ([Profile contract](../../../modules/profile/README.md#public-operations)). The Profile hides how versions are stored, and Matching stays responsible for the assessment freshness rule.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A10-R01 | Profil udostępnia aktywną zatwierdzoną wersję z jej identyfikatorem albo jawną informację, że aktywnej wersji nie ma, oraz odczyt wskazanych wersji. |
-| A10-R02 | Dopasowanie korzysta z tego odczytu przy zlecaniu ocen pojedynczych i grupowych, ocenie ręcznej, odczycie historii, sprawdzaniu gotowości profilu i ustalaniu aktualności ocen. Nie czyta danych Profilu inaczej. |
-| A10-R03 | Nowe oceny w jednej grupie używają tej samej wersji profilu. Zlecenia zapisują identyfikator wersji i przygotowane wejście jak dotąd. Brak zatwierdzonego profilu daje dotychczasowy komunikat. |
-| A10-R04 | Odczyt profilu nie blokuje zatwierdzenia nowej wersji (decyzja w [0mq.13](#a13)). |
-| A10-R05 | Widoki listy i historii ocen pobierają dane wersji zbiorczo. |
+| A10-R01 | The Profile provides the active confirmed version with its identifier, or explicit information that there is no active version, and a read of given versions. |
+| A10-R02 | Matching uses this read when requesting single and group assessments, in manual assessment, when reading history, when checking profile readiness and when determining assessment freshness. It does not read Profile data in any other way. |
+| A10-R03 | New assessments in one group use the same profile version. Requests save the version identifier and the prepared input as before. A missing confirmed profile gives the existing message. |
+| A10-R04 | Reading the profile does not block confirming a new version (decision in [0mq.13](#a13)). |
+| A10-R05 | The assessment list and history views fetch version data in bulk. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A10-AC01 | Odczyt zwraca aktywną wersję z identyfikatorem, informację o braku aktywnej wersji i wskazane wersje. | Test automatyczny na rzeczywistej bazie |
-| A10-AC02 | Zlecenia ocen, ocena ręczna, historia, gotowość profilu i aktualność ocen działają jak dotąd; brak profilu daje dotychczasowy komunikat. | Istniejące testy dopasowania |
-| A10-AC03 | Grupa ocen zlecona podczas zatwierdzania nowej wersji używa w całości jednej wersji. | Test automatyczny |
-| A10-AC04 | Zatwierdzenie nowej wersji nie czeka na trwającą publikację oceny. | Test automatyczny z równoległymi operacjami |
-| A10-AC05 | Dopasowanie nie czyta danych Profilu inaczej niż przez jego publiczny odczyt, a lista i historia ocen wykonują stałą liczbę odczytów profilu. | Przegląd kodu |
+| A10-AC01 | The read returns the active version with its identifier, information that there is no active version, and the given versions. | Automated test on a real database |
+| A10-AC02 | Assessment requests, manual assessment, history, profile readiness and assessment freshness work as before; a missing profile gives the existing message. | Existing matching tests |
+| A10-AC03 | A group of assessments requested while a new version is being confirmed uses one version throughout. | Automated test |
+| A10-AC04 | Confirming a new version does not wait for an assessment publication in progress. | Automated test with parallel operations |
+| A10-AC05 | Matching does not read Profile data other than through its public read, and the assessment list and history make a constant number of profile reads. | Code review |
 
 <a id="a14"></a>
 
-## Zadanie 0mq.14 — Kontrakt AI, koordynacja wykonania i adaptery dostawców
+## Task 0mq.14 — AI contract, execution coordination and provider adapters
 
-Moduł AI udostępnia ogólne możliwości pracy z modelem, niezależne od przypadków biznesowych: pojedyncze wykonanie, przetwarzanie wsadowe i pracę agentową ([opis modułu AI](../../../modules/ai/README.md)). Zadanie ustala granice i kierunek zależności; obsługa cyklu życia i rozliczeń może być uproszczona zgodnie z [F4](#f4). Przejmuje etap 1 epiku `oferty-pracy-334` (wspólna konfiguracja i budżet, kryteria E01-AC01–04 w [dokumentach etapu](../lokalne-ai/etapy/01-konfiguracja-budzet/requirements.md)).
+The AI module provides general capabilities for working with a model, independent of business cases: single execution, batch processing and agent work ([AI module description](../../../modules/ai/README.md)). The task sets the boundaries and the direction of dependencies; lifecycle handling and settlement may be simplified in line with [F4](#f4). It takes over stage 1 of the epic `oferty-pracy-334` (shared configuration and budget, criteria E01-AC01–04 in the [stage documents](../lokalne-ai/etapy/01-konfiguracja-budzet/requirements.md)).
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A14-R01 | Publiczne operacje AI wyrażają ogólne możliwości wykonania i nie znają przypadku biznesowego klienta: zlecenie wykonania z instrukcją, schematem odpowiedzi i wejściem; odczyt stanu, wyniku, użycia i kosztu; odczyt budżetu. |
-| A14-R02 | Wspólny przebieg obsługi wykonania i jego rozliczenia należy do modułu AI: wybór dostawcy i modelu z konfiguracji, utrwalenie ustawień przy zleceniu, kolejka, rezerwacja budżetu, ponowienia, odzyskiwanie, współdzielenie lokalnego modelu i rozliczenie. |
-| A14-R03 | Szczegóły dostawcy (protokół, stan zadania u dostawcy, kolejne kroki integracji, dane o użyciu) należą do jego adaptera. Adapter realizuje rozliczenie w przebiegu wyznaczonym przez moduł AI i nie ustala własnej polityki modułu. |
-| A14-R04 | Moduł zlecający przygotowuje zlecenie, interpretuje wynik i decyduje o jego zastosowaniu. AI nie zapisuje danych biznesowych klienta. |
-| A14-R05 | Wynik wykonania trafia do modułu zlecającego przez kontrakt zdefiniowany przez AI, a rozliczenie może nastąpić w tej samej operacji co publikacja wyniku przez klienta. |
-| A14-R06 | Konfiguracja, ceny i arytmetyka kosztów mają jednego właściciela w module AI i działają jak dotąd (E01-AC01–02). Sprawdzenie budżetu, zapis próby i zlecenie pracy pozostają w jednej operacji (E01-AC03). |
-| A14-R07 | Uproszczenia są jawnie opisane w opisie modułu AI i oddzielone od wymagań epiku `oferty-pracy-sq2`. |
+| A14-R01 | The public AI operations express general execution capabilities and do not know the client's business case: requesting an execution with an instruction, a response schema and input; reading the state, result, usage and cost; reading the budget. |
+| A14-R02 | The shared flow for handling an execution and its settlement belongs to the AI module: choosing the provider and model from configuration, fixing the settings at request time, the queue, budget reservation, retries, recovery, sharing the local model and settlement. |
+| A14-R03 | Provider details (protocol, job state at the provider, further integration steps, usage data) belong to its adapter. The adapter carries out settlement in the flow set by the AI module and does not set its own module policy. |
+| A14-R04 | The requesting module prepares the request, interprets the result and decides how to apply it. AI does not save the client's business data. |
+| A14-R05 | The execution result reaches the requesting module through a contract defined by AI, and settlement may happen in the same operation as the client's publication of the result. |
+| A14-R06 | Configuration, prices and cost arithmetic have one owner in the AI module and work as before (E01-AC01–02). Checking the budget, saving the attempt and requesting the work stay in one operation (E01-AC03). |
+| A14-R07 | Simplifications are explicitly described in the AI module description and kept separate from the requirements of the epic `oferty-pracy-sq2`. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A14-AC01 | Publiczne operacje AI nie zawierają pojęć Profilu, Dopasowania ani Firm. | Przegląd kodu |
-| A14-AC02 | Zlecenie wykonania z symulowanym dostawcą przechodzi przez kolejkę i kończy się stanem, wynikiem, użyciem i kosztem dostępnymi przez odczyt; wynik trafia do zarejestrowanego odbiorcy klienta. | Test automatyczny na rzeczywistej bazie i kolejce |
-| A14-AC03 | Wycofanie operacji klienta wycofuje zlecenie wykonania i rezerwację budżetu. | jw. |
-| A14-AC04 | Odrzucenie wyniku przez klienta nadal rozlicza poniesiony koszt; nieznany koszt pozostaje zarezerwowany. | jw. |
-| A14-AC05 | Kryteria E01-AC01–04 są spełnione. | Testy wskazane w SD etapu 1 i istniejące testy konfiguracji i budżetu |
-| A14-AC06 | Opis modułu AI wymienia uproszczenia i odsyła usprawnienia do `oferty-pracy-sq2`. | Przegląd dokumentacji |
-| A14-AC07 | Protokoły i stany dostawców występują tylko w adapterach; koordynacja AI i moduły zlecające ich nie znają, a AI nie zapisuje danych biznesowych klientów. | Przegląd kodu |
+| A14-AC01 | The public AI operations contain no Profile, Matching or Companies concepts. | Code review |
+| A14-AC02 | An execution request with a simulated provider goes through the queue and ends with a state, result, usage and cost available through a read; the result reaches the client's registered receiver. | Automated test on a real database and queue |
+| A14-AC03 | Rolling back the client's operation rolls back the execution request and the budget reservation. | Same as above |
+| A14-AC04 | When the client rejects the result, the cost incurred is still settled; an unknown cost stays reserved. | Same as above |
+| A14-AC05 | Criteria E01-AC01–04 are met. | Tests named in the stage 1 SD and existing configuration and budget tests |
+| A14-AC06 | The AI module description lists the simplifications and refers improvements to `oferty-pracy-sq2`. | Documentation review |
+| A14-AC07 | Provider protocols and states appear only in the adapters; the AI coordination and the requesting modules do not know them, and AI does not save the clients' business data. | Code review |
 
 <a id="a9"></a>
 
-## Zadanie 0mq.9 — Propozycja profilu przez moduł AI
+## Task 0mq.9 — Profile proposal through the AI module
 
-Profil zleca przygotowanie propozycji z CV przez kontrakt AI i nie obsługuje dostawców. Przejmuje etap 2 epiku `oferty-pracy-334` (kryteria E02-AC01–04 w [dokumentach etapu](../lokalne-ai/etapy/02-profil-adapter/requirements.md)).
+The Profile requests preparing a proposal from a CV through the AI contract and does not handle providers. It takes over stage 2 of the epic `oferty-pracy-334` (criteria E02-AC01–04 in the [stage documents](../lokalne-ai/etapy/02-profil-adapter/requirements.md)).
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A9-R01 | Profil zleca przygotowanie propozycji z oczyszczonego tekstu CV i dostaje identyfikator wykonania. Przez ten sam kontrakt odczytuje ujednolicony stan i wynik. Zmiana dostawcy lub modelu nie wymaga zmiany Profilu. |
-| A9-R02 | Wybór dostawcy, kolejka, wspólne wykonanie lokalne, ponowienia, odzyskiwanie, budżet i rozliczenie są po stronie AI i działają jak dotąd, łącznie z historią prób i obsługą niepewnego wykonania i kosztu ([F4](#f4)). |
-| A9-R03 | Warstwa integrująca przekłada zlecenie propozycji na instrukcję i schemat odpowiedzi i przekazuje Profilowi wynik w ustalonym formacie. |
-| A9-R04 | Profil wiąże wynik z rewizją tekstu, sprawdza cytaty i zapisuje propozycję we własnych danych. Wynik dla starszej rewizji nie zastępuje nowszej propozycji. Właściciel nadal wybiera zmiany do szkicu i osobno zatwierdza wersję. |
-| A9-R05 | Profil nie czyta ani nie zapisuje danych modułu AI inaczej niż przez jego kontrakt. Najwyżej jedno przygotowanie propozycji dla importu jest w toku, jak dotąd. |
-| A9-R06 | Opis modułu AI wyjaśnia, jak dodać nową ścieżkę wykonania (np. lokalny model dla kolejnego zadania) przez kontrakt AI, na potrzeby zadania `oferty-pracy-334.6`. |
+| A9-R01 | The Profile requests preparing a proposal from the cleaned CV text and gets an execution identifier. Through the same contract, it reads the unified state and result. Changing the provider or model does not require changing the Profile. |
+| A9-R02 | Choosing the provider, the queue, the shared local execution, retries, recovery, the budget and settlement are on the AI side and work as before, including the attempt history and the handling of uncertain execution and cost ([F4](#f4)). |
+| A9-R03 | The integrating layer translates the proposal request into an instruction and a response schema and passes the result to the Profile in a fixed format. |
+| A9-R04 | The Profile ties the result to the text revision, checks the quotes and saves the proposal in its own data. A result for an older revision does not replace a newer proposal. The owner still chooses the changes for the draft and confirms the version separately. |
+| A9-R05 | The Profile does not read or write AI module data other than through its contract. At most one proposal preparation per import is in progress, as before. |
+| A9-R06 | The AI module description explains how to add a new execution path (e.g. a local model for another job) through the AI contract, for the needs of task `oferty-pracy-334.6`. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A9-AC01 | Przygotowanie propozycji działa ścieżką płatną i lokalną z symulowanymi dostawcami: poprawny wynik daje propozycję dla właściwej rewizji. | Test automatyczny na rzeczywistej bazie |
-| A9-AC02 | Wynik z niepotwierdzonym cytatem jest odrzucony, a wynik dla starszej rewizji nie zastępuje propozycji nowszej. | jw. |
-| A9-AC03 | Przerwana próba jest odzyskiwana w zakresie, w jakim działa to dziś. | jw. |
-| A9-AC04 | Import, zastosowanie propozycji i odczyt zapisanych propozycji działają jak dotąd. | Istniejące testy profilu |
-| A9-AC05 | Kryteria E02-AC01–04 są spełnione. | Testy wskazane w SD etapu 2 |
-| A9-AC06 | Profil nie korzysta z danych i wnętrza modułu AI poza jego kontraktem. | Przegląd kodu |
-| A9-AC07 | Opis modułu AI spełnia A9-R06. | Przegląd dokumentacji |
+| A9-AC01 | Preparing a proposal works through the paid path and the local path with simulated providers: a correct result gives a proposal for the right revision. | Automated test on a real database |
+| A9-AC02 | A result with an unconfirmed quote is rejected, and a result for an older revision does not replace a newer proposal. | Same as above |
+| A9-AC03 | An interrupted attempt is recovered to the extent this works today. | Same as above |
+| A9-AC04 | Import, applying a proposal and reading saved proposals work as before. | Existing profile tests |
+| A9-AC05 | Criteria E02-AC01–04 are met. | Tests named in the stage 2 SD |
+| A9-AC06 | The Profile does not use the AI module's data and internals outside its contract. | Code review |
+| A9-AC07 | The AI module description meets A9-R06. | Documentation review |
 
 <a id="a11"></a>
 
-## Zadanie 0mq.11 — Operacje Profilu dla tras aplikacji
+## Task 0mq.11 — Profile operations for application routes
 
-Trasy Profilu przekazują żądania do publicznych operacji Profilu i nie łączą danych kilku modułów.
+Profile routes pass requests to the Profile's public operations and do not combine the data of several modules.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A11-R01 | Lista i szczegóły importów oraz odczyt wersji profilu pochodzą z operacji Profilu. |
-| A11-R02 | Zastosowanie propozycji prowadzi w całości Profil: odczyt propozycji, sprawdzenie rewizji, walidację wyniku i zapis szkicu, zgodnie z [zasadami architektury](../../architecture/moduly-i-zasady-kodu.md#operacja-modułu-prowadzi-cały-przypadek-użycia). |
-| A11-R03 | Podsumowanie budżetu AI w odpowiedzi profilu pochodzi z operacji modułu AI. |
-| A11-R04 | Odpowiedzi tras i obsługa konfliktów rewizji pozostają bez zmian. |
+| A11-R01 | The list and details of imports and the read of profile versions come from Profile operations. |
+| A11-R02 | Applying a proposal is run entirely by the Profile: reading the proposal, checking the revision, validating the result and saving the draft, in line with the [architecture rules](../../architecture/moduly-i-zasady-kodu.md#a-module-operation-carries-the-whole-use-case). |
+| A11-R03 | The AI budget summary in the profile response comes from an AI module operation. |
+| A11-R04 | Route responses and the handling of revision conflicts stay unchanged. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A11-AC01 | Trasy profilu zwracają te same odpowiedzi co przed zmianą, także przy konflikcie rewizji szkicu i tekstu. | Istniejące testy tras profilu |
-| A11-AC02 | Trasy profilu nie czytają danych Profilu ani AI inaczej niż przez operacje tych modułów i nie zawierają logiki zastosowania propozycji. | Przegląd kodu |
+| A11-AC01 | Profile routes return the same responses as before the change, also on a conflict of draft and text revisions. | Existing profile route tests |
+| A11-AC02 | Profile routes do not read Profile or AI data other than through the operations of those modules and contain no logic for applying a proposal. | Code review |
 
 <a id="a17"></a>
 
-## Zadanie 0mq.17 — Próby i rozliczenia AI Dopasowania i Firm
+## Task 0mq.17 — AI attempts and settlement for Matching and Companies
 
-Dopasowanie i Firmy zlecają pracę AI i rozliczają ją przez kontrakt AI. Przejmuje etapy 3 i 4 epiku `oferty-pracy-334` (kryteria E03-AC01–05 i E04-AC01–04 w dokumentach [etapu 3](../lokalne-ai/etapy/03-oceny-batch/requirements.md) i [etapu 4](../lokalne-ai/etapy/04-research-wykonawca/requirements.md)).
+Matching and Companies request AI work and settle it through the AI contract. It takes over stages 3 and 4 of the epic `oferty-pracy-334` (criteria E03-AC01–05 and E04-AC01–04 in the documents of [stage 3](../lokalne-ai/etapy/03-oceny-batch/requirements.md) and [stage 4](../lokalne-ai/etapy/04-research-wykonawca/requirements.md)).
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A17-R01 | Oceny pojedyncze i grupowe korzystają z kontraktu AI; przetwarzanie wsadowe u dostawcy należy do AI. Dopasowanie przygotowuje zlecenie i interpretuje wynik. |
-| A17-R02 | Research firmy korzysta z kontraktu AI w trybie pracy agentowej; wyszukiwanie i synteza u dostawcy należą do AI. Firmy przygotowują zlecenie i walidują raport. |
-| A17-R03 | Dopasowanie i Firmy nie czytają ani nie zapisują danych modułu AI inaczej niż przez jego kontrakt. |
-| A17-R04 | Zachowane są w obecnym zakresie: łączne rozliczenie i publikacja, rozliczenie przy odrzuconej treści, niepewny koszt, rezerwacja grupy w całości oraz obsługa wyników wsadowych i researchu po błędzie ([F4](#f4)). |
+| A17-R01 | Single and group assessments use the AI contract; batch processing at the provider belongs to AI. Matching prepares the request and interprets the result. |
+| A17-R02 | Company research uses the AI contract in agent work mode; search and synthesis at the provider belong to AI. Companies prepare the request and validate the report. |
+| A17-R03 | Matching and Companies do not read or write AI module data other than through its contract. |
+| A17-R04 | The following are kept to their current extent: joint settlement and publication, settlement when the content is rejected, uncertain cost, reserving a group as a whole, and the handling of batch results and of research after an error ([F4](#f4)). |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A17-AC01 | Oceny pojedyncze, grupowe, ręczne i research działają jak dotąd z symulowanymi dostawcami. | Istniejące testy dopasowania i firm |
-| A17-AC02 | Kryteria E03-AC01–05 są spełnione. | Testy wskazane w SD etapu 3 |
-| A17-AC03 | Kryteria E04-AC01–04 są spełnione. | Testy wskazane w SD etapu 4 |
-| A17-AC04 | Dopasowanie i Firmy nie korzystają z danych i wnętrza modułu AI poza jego kontraktem. | Przegląd kodu |
+| A17-AC01 | Single, group and manual assessments and research work as before with simulated providers. | Existing matching and company tests |
+| A17-AC02 | Criteria E03-AC01–05 are met. | Tests named in the stage 3 SD |
+| A17-AC03 | Criteria E04-AC01–04 are met. | Tests named in the stage 4 SD |
+| A17-AC04 | Matching and Companies do not use the AI module's data and internals outside its contract. | Code review |
 
 <a id="a18"></a>
 
-## Zadanie 0mq.18 — Neutralni właściciele wspólnych mechanizmów
+## Task 0mq.18 — Neutral owners of shared mechanisms
 
-Mechanizmy używane przez wiele modułów mają neutralnych właścicieli, a moduły nie zależą od wnętrza Profilu.
+Mechanisms used by many modules have neutral owners, and modules do not depend on the internals of the Profile.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A18-R01 | Dotychczasowe pomocnicze mechanizmy transakcji modułów zostają zastąpione wspólnym mechanizmem z zadania 0mq.13, z zachowaniem granic transakcji. |
-| A18-R02 | Walidacja identyfikatorów, wspólna obsługa żądań HTTP i dostęp do kolejki w trasach mają neutralnego właściciela; trasy Dopasowania, Firm i Źródeł nie korzystają z nich przez Profil. |
-| A18-R03 | Usuwanie danych kontaktowych z tekstu jest wspólnym mechanizmem niezależnym od importu CV. |
-| A18-R04 | Dopasowanie i Firmy dostają dane zatwierdzonego profilu przez jego kontrakt i nie korzystają z wewnętrznych schematów Profilu. |
+| A18-R01 | The existing helper transaction mechanisms of the modules are replaced by the shared mechanism from task 0mq.13, keeping the transaction boundaries. |
+| A18-R02 | Identifier validation, shared HTTP request handling and queue access in routes have a neutral owner; Matching, Companies and Sources routes do not use them through the Profile. |
+| A18-R03 | Removing contact details from text is a shared mechanism independent of CV import. |
+| A18-R04 | Matching and Companies get the confirmed profile data through its contract and do not use the Profile's internal schemas. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A18-AC01 | Nie ma pomocniczych mechanizmów transakcji poza wspólnym; operacje zapisują się z tymi samymi granicami co przed zmianą. | Przegląd kodu i istniejące testy |
-| A18-AC02 | Dopasowanie, Firmy, Źródła i ich trasy nie korzystają z wnętrza Profilu. | Przegląd kodu |
-| A18-AC03 | Import CV, zastosowanie propozycji, zlecenia ocen, ocena ręczna, lista i historia ocen, powiązania firm z ogłoszeniami i rozliczenie AI działają jak dotąd. | Istniejące testy |
+| A18-AC01 | There are no helper transaction mechanisms other than the shared one; operations are saved with the same boundaries as before the change. | Code review and existing tests |
+| A18-AC02 | Matching, Companies, Sources and their routes do not use the internals of the Profile. | Code review |
+| A18-AC03 | CV import, applying a proposal, assessment requests, manual assessment, the assessment list and history, company-to-ad links and AI settlement work as before. | Existing tests |
 
 <a id="a12"></a>
 
-## Zadanie 0mq.12 — Docelowe katalogi modułów
+## Task 0mq.12 — Target module directories
 
-Kod pozostały po wcześniejszych zadaniach trafia do modułów Źródła ofert, Oferty, Profil zawodowy, Dopasowanie, Firmy i AI. Zadanie nie przenosi ponownie kodu ułożonego przez wcześniejsze zadania.
+Code left over from earlier tasks goes into the Sources, Offers, Profile, Matching, Companies and AI modules. The task does not move again code arranged by earlier tasks.
 
-| Wymaganie | Treść |
+| Requirement | Content |
 | --- | --- |
-| A12-R01 | Kod każdego modułu leży w jego katalogu, z publicznym wejściem i opisem modułu. |
-| A12-R02 | Operacje, reguły, dostęp do danych, integracje oraz obsługa tras, kolejek i poleceń CLI są rozmieszczone według [katalogu modułu](../../architecture/moduly-i-zasady-kodu.md#katalog-modułu). |
-| A12-R03 | Pliki wymagane przez framework i uruchomienie zostają na miejscu i delegują do modułów. Widoki zostają na miejscu i korzystają z publicznych wejść modułów. |
-| A12-R04 | Wynik zadania wymienia pliki pozostawione poza modułami wraz z powodem. |
+| A12-R01 | Each module's code lies in its directory, with a public entry point and a module description. |
+| A12-R02 | Operations, rules, data access, integrations and the handling of routes, queues and CLI commands are laid out according to the [module directory](../../architecture/moduly-i-zasady-kodu.md#module-directory). |
+| A12-R03 | Files required by the framework and by startup stay where they are and delegate to the modules. Views stay where they are and use the modules' public entry points. |
+| A12-R04 | The task result lists the files left outside the modules, with the reason. |
 
-| Kryterium | Warunek akceptacji | Sprawdzenie |
+| Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| A12-AC01 | Każdy z sześciu modułów ma katalog z publicznym wejściem i opisem, a kod spoza modułu importuje go tylko przez publiczne wejście. | Przegląd kodu |
-| A12-AC02 | Poza modułami zostają tylko pliki wymagane przez framework i uruchomienie oraz wspólna infrastruktura; wynik zadania wymienia je z powodem. | Przegląd wyniku zadania |
-| A12-AC03 | Aplikacja działa jak dotąd. | Kryterium W-AC01 |
+| A12-AC01 | Each of the six modules has a directory with a public entry point and a description, and code outside the module imports it only through the public entry point. | Code review |
+| A12-AC02 | Outside the modules only the files required by the framework and by startup and the shared infrastructure remain; the task result lists them with the reason. | Review of the task result |
+| A12-AC03 | The application works as before. | Criterion W-AC01 |

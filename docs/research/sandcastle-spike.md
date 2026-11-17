@@ -1,74 +1,74 @@
-# Spike: Sandcastle jako sandbox dla runnera agentów
+# Spike: Sandcastle as a sandbox for the agent runner
 
-Data: 2026-11-15. Wersja: `@ai-hero/sandcastle` 0.14.0. Branch: `spike/sandcastle`.
+Date: 2026-11-15. Version: `@ai-hero/sandcastle` 0.14.0. Branch: `spike/sandcastle`.
 
-## Pytanie
+## Question
 
-Czy Sandcastle nadaje się na warstwę izolacji dla `scripts/agent-runner.ts`, tak żeby agent pracował bez nadzoru z pełnymi uprawnieniami w środku, ale bez dostępu do danych właściciela, jego stacku i `main`?
+Is Sandcastle suitable as the isolation layer for `scripts/agent-runner.ts`, so that the agent works unattended with full permissions inside, but without access to the owner's data, the owner's stack and `main`?
 
-## Wybór dostawcy sandboxa
+## Choice of sandbox provider
 
-**`docker()`**, nie natywny `seatbelt()`.
+**`docker()`**, not the native `seatbelt()`.
 
-`seatbelt()` uruchamia agenta na narzędziach hosta. W tym projekcie zależności istnieją tylko w Dockerze, a Node na hoście (24.14) nie spełnia wymagania projektu (24.15). Agent nie uruchomiłby lintu ani testów. Gniazdo Dockera leży w ukrytym katalogu domowym, a jego odsłonięcie dałoby agentowi kontrolę nad całym Dockerem.
+`seatbelt()` runs the agent on the host's tools. In this project the dependencies exist only in Docker, and Node on the host (24.14) does not meet the project's requirement (24.15). The agent could not run lint or tests. The Docker socket lives in a hidden home directory, and exposing it would give the agent control over the whole of Docker.
 
-`docker()` uruchamia agenta w obrazie z toolchainem projektu i własnym Postgresem, więc sandbox jest samowystarczalny: nie potrzebuje projektu Compose ani dostępu do sieci Dockera. Na macOS granicą jest dodatkowo maszyna wirtualna Docker Desktop.
+`docker()` runs the agent in an image with the project's toolchain and its own Postgres, so the sandbox is self-contained: it needs neither the Compose project nor access to the Docker network. On macOS, the Docker Desktop virtual machine is an additional boundary.
 
-Pierwsza wersja spike'u łączyła sandbox z siecią projektu Compose `oferty-pracy-agent`. Zrezygnowaliśmy z niej na rzecz bazy w obrazie: każdy sandbox ma własną bazę i porty, więc zadania są od siebie niezależne, a równoległość nie wymaga dodatkowej infrastruktury.
+The first version of the spike connected the sandbox to the network of the Compose project `oferty-pracy-agent`. We dropped it in favour of a database in the image: each sandbox has its own database and ports, so tasks are independent of each other, and parallelism needs no additional infrastructure.
 
-## Konfiguracja
+## Configuration
 
-- `.sandcastle/Dockerfile`: obraz `oferty-pracy-sandbox`.
+- `.sandcastle/Dockerfile`: the `oferty-pracy-sandbox` image.
   - Node 24.15.0, pnpm 10.34.9, git, Claude Code.
-  - Użytkownik `agent` z UID/GID hosta.
-  - Magazyn pnpm pod stałą ścieżką `npm_config_store_dir=/home/agent/.pnpm-store`, wypełniony przez `pnpm fetch` z lockfile'a.
-  - PostgreSQL z repozytorium PGDG (w dniu spike'u 18.7; projekt deklaruje 18.6) i katalog danych `PGDATA=/home/agent/pgdata` ze schematem zmigrowanym w etapie `seed` z kodu commita, z którego zbudowano obraz. `DATABASE_URL=postgresql://oferty@localhost:5432/oferty`, uwierzytelnianie `trust`.
-  - Każdy kontener dostaje własną kopię katalogu danych (copy-on-write), więc każde zadanie zaczyna od czystej, zmigrowanej bazy.
-  - Budowa z katalogu głównego repo: `docker build -f .sandcastle/Dockerfile -t oferty-pracy-sandbox --build-arg AGENT_UID=$(id -u) --build-arg AGENT_GID=$(id -g) .`
-- `.sandcastle/package.json`: Sandcastle instalowany na hoście przez `npm install` w `.sandcastle/`, oddzielnie od zależności aplikacji.
-- `docker({ imageName, env })`. W `env` przekazujemy tożsamość git (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`), której Sandcastle w kontenerze nie ustawia.
-- `scripts/test-integration.sh`: start Postgresa, `pnpm migrate` (tylko brakujące migracje: nowe w zadaniu lub nowsze niż obraz), `pnpm build`, serwer z `.output` i `pnpm worker` w tle, `WEB_BASE_URL=http://localhost:3000 RUN_INTEGRATION=1 pnpm test`, sprzątanie procesów przez `trap`. Build zawsze w sandboxie, bo musi pochodzić z kodu agenta.
-- Logowanie agenta: `CLAUDE_CODE_OAUTH_TOKEN` w `.sandcastle/.env` (wykluczony z gita), wygenerowany przez właściciela poleceniem `claude setup-token`.
+  - The `agent` user with the host's UID/GID.
+  - The pnpm store at a fixed path `npm_config_store_dir=/home/agent/.pnpm-store`, filled by `pnpm fetch` from the lockfile.
+  - PostgreSQL from the PGDG repository (18.7 on the day of the spike; the project declares 18.6) and a data directory `PGDATA=/home/agent/pgdata` with the schema migrated in the `seed` stage from the code of the commit the image was built from. `DATABASE_URL=postgresql://oferty@localhost:5432/oferty`, `trust` authentication.
+  - Each container gets its own copy of the data directory (copy-on-write), so each task starts from a clean, migrated database.
+  - Build from the repo root: `docker build -f .sandcastle/Dockerfile -t oferty-pracy-sandbox --build-arg AGENT_UID=$(id -u) --build-arg AGENT_GID=$(id -g) .`
+- `.sandcastle/package.json`: Sandcastle installed on the host by `npm install` in `.sandcastle/`, separately from the application's dependencies.
+- `docker({ imageName, env })`. In `env` we pass the git identity (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`), which Sandcastle does not set in the container.
+- `scripts/test-integration.sh`: start Postgres, `pnpm migrate` (only the missing migrations: new in the task or newer than the image), `pnpm build`, the server from `.output` and `pnpm worker` in the background, `WEB_BASE_URL=http://localhost:3000 RUN_INTEGRATION=1 pnpm test`, process cleanup through `trap`. The build always happens in the sandbox, because it must come from the agent's code.
+- Agent login: `CLAUDE_CODE_OAUTH_TOKEN` in `.sandcastle/.env` (excluded from git), generated by the owner with the `claude setup-token` command.
 
-## Wyniki
+## Results
 
-Sprawdzenia bez agenta (`node .sandcastle/spike.ts probe`), w jednym sandboxie, łącznie około 61 s:
+Checks without an agent (`node .sandcastle/spike.ts probe`), in one sandbox, about 61 s in total:
 
-| Sprawdzenie | Wynik |
+| Check | Result |
 | --- | --- |
-| Worktree w `/home/agent/workspace` na branchu `agent/...` | tak |
-| `pnpm install --offline --frozen-lockfile` | tak, 12 s |
-| `pnpm lint` | tak, 4 s |
-| `pnpm typecheck` | tak, 7 s |
-| `scripts/test-integration.sh` | tak, 27 s: 589 testów zaliczonych, 1 pominięty, jak w bramce przez Compose |
-| Gniazdo i CLI Dockera hosta | niewidoczne |
-| Baza deweloperska właściciela | nieosiągalna |
-| Pliki głównego checkoutu, w tym `.env` | niewidoczne; widać tylko jego `.git` |
-| Sieć wychodząca | otwarta |
+| Worktree in `/home/agent/workspace` on an `agent/...` branch | yes |
+| `pnpm install --offline --frozen-lockfile` | yes, 12 s |
+| `pnpm lint` | yes, 4 s |
+| `pnpm typecheck` | yes, 7 s |
+| `scripts/test-integration.sh` | yes, 27 s: 589 tests passed, 1 skipped, as in the gate through Compose |
+| The host's Docker socket and CLI | not visible |
+| The owner's development database | unreachable |
+| Files of the main checkout, including `.env` | not visible; only its `.git` is visible |
+| Outbound network | open |
 
-Pominięty test to `polish-python.test.ts`, który wymaga Pythona; pomijany jest także w obecnej bramce.
+The skipped test is `polish-python.test.ts`, which requires Python; it is also skipped in the current gate.
 
-Przebieg agenta (`node .sandcastle/spike.ts agent`, `claude-opus-5-5`, effort `medium`): 36 s, sygnał zakończenia odebrany, jeden commit na branchu agenta z tożsamością właściciela, `main` bez zmian.
+Agent run (`node .sandcastle/spike.ts agent`, `claude-opus-5-5`, effort `medium`): 36 s, completion signal received, one commit on the agent's branch with the owner's identity, `main` unchanged.
 
-Pułapki napotkane po drodze:
+Pitfalls met along the way:
 
-- pnpm szuka magazynu u korzenia montowanego urządzenia, więc potrzebna jest stała ścieżka `npm_config_store_dir`.
-- `COPY --from` nie zachowuje trybu katalogu; Postgres odmawia startu, gdy `PGDATA` nie ma `0700`.
-- Sandbox tworzy worktree z ostatniego commita, więc niezacommitowane pliki trzeba przekazać przez `copyToWorktree`.
+- pnpm looks for the store at the root of the mounted device, so a fixed `npm_config_store_dir` path is needed.
+- `COPY --from` does not preserve the directory mode; Postgres refuses to start when `PGDATA` is not `0700`.
+- The sandbox creates the worktree from the last commit, so uncommitted files must be passed through `copyToWorktree`.
 
-## Ryzyko: wspólny `.git` jest zapisywalny
+## Risk: the shared `.git` is writable
 
-Sandcastle montuje `.git` głównego repo z prawem zapisu, bo commity z worktree trafiają do wspólnej bazy obiektów i referencji. Tylko `hooks`, `config` i `info` są tylko do odczytu. Agent może więc technicznie przestawić `refs/heads/main` albo usunąć inne branche.
+Sandcastle mounts the main repo's `.git` with write access, because commits from the worktree go into the shared object and reference store. Only `hooks`, `config` and `info` are read-only. So the agent can technically move `refs/heads/main` or delete other branches.
 
-Zabezpieczenie w runnerze: zapisać SHA `main` przed uruchomieniem agenta i porównać po zakończeniu. Zmiana oznacza przywrócenie referencji, odrzucenie zadania i powiadomienie właściciela.
+Safeguard in the runner: record the SHA of `main` before starting the agent and compare it after it finishes. A change means restoring the reference, rejecting the task and notifying the owner.
 
-## Wnioski dla runnera
+## Conclusions for the runner
 
-1. Zastąpić bezpośrednie `claude -p` przez `createSandbox({ branch: 'agent/<id>', sandbox: docker(...) })` i `sandbox.run({ agent: claudeCode(model, { effort }) })`. Merge zostaje w runnerze.
-2. Usunąć listę dozwolonych narzędzi: w sandboxie Sandcastle uruchamia agenta bez pytań o uprawnienia, a granicą jest kontener.
-3. Agent uruchamia pełne testy, z integracją, bezpośrednio w sandboxie przez `scripts/test-integration.sh`.
-4. Bramkę runnera uruchamiać w świeżym sandboxie z tego samego obrazu (`sandbox.exec()`): `pnpm install --offline --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `scripts/test-integration.sh`. Agent i bramka pracują w identycznym środowisku.
-5. Po przejściu runnera na sandbox `scripts/agent-compose.sh`, `scripts/agent-exec.sh` i `scripts/agent-gate.sh` stają się zbędne, a projekt Compose `oferty-pracy-agent` (z wolumenami) można usunąć.
-6. Dodać kontrolę SHA `main` przed i po przebiegu agenta.
-7. Przebudowywać obraz, gdy zmieni się `pnpm-lock.yaml`. Runner może porównywać hash lockfile'a z etykietą obrazu. Nowe migracje nie wymagają przebudowy.
-8. Plik wyniku `.agent-result.json` można zastąpić wyjściem strukturalnym Sandcastle (`output`).
+1. Replace the direct `claude -p` with `createSandbox({ branch: 'agent/<id>', sandbox: docker(...) })` and `sandbox.run({ agent: claudeCode(model, { effort }) })`. The merge stays in the runner.
+2. Remove the list of allowed tools: in the sandbox, Sandcastle runs the agent without permission prompts, and the container is the boundary.
+3. The agent runs the full tests, including integration, directly in the sandbox through `scripts/test-integration.sh`.
+4. Run the runner's gate in a fresh sandbox from the same image (`sandbox.exec()`): `pnpm install --offline --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `scripts/test-integration.sh`. The agent and the gate work in an identical environment.
+5. Once the runner moves to the sandbox, `scripts/agent-compose.sh`, `scripts/agent-exec.sh` and `scripts/agent-gate.sh` become unnecessary, and the Compose project `oferty-pracy-agent` (with its volumes) can be removed.
+6. Add a check of the `main` SHA before and after the agent run.
+7. Rebuild the image when `pnpm-lock.yaml` changes. The runner can compare the lockfile hash with an image label. New migrations do not require a rebuild.
+8. The `.agent-result.json` result file can be replaced by Sandcastle's structured output (`output`).

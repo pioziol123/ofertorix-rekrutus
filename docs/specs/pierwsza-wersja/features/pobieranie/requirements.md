@@ -1,53 +1,53 @@
-# Pobieranie i synchronizacja ofert — wymagania
+# Fetching and syncing offers — requirements
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **zakres zrealizowanego etapu pobierania**, 2026-10-31. Funkcjonalność pod wspólnym [PRD](../../PRD.md). Źródła i decyzje właściciela: [PRD](../../PRD.md#źródła-i-odpowiedzialność-dokumentów). Projekt techniczny: [solution-design.md](solution-design.md). Terminologia: [słownik](../../../../../GLOSSARY.md).
+Status: **scope of the implemented fetching stage**, 2026-10-31. A feature under the shared [PRD](../../PRD.md). Sources and owner's decisions: [PRD](../../PRD.md#sources-and-document-responsibilities). Technical design: [solution-design.md](solution-design.md). Terminology: [glossary](../../../../../GLOSSARY.md).
 
-## Bieżący etap po setupie
+## Current stage after the setup
 
-Zakres do przeglądu: pobranie z SOLID.Jobs, zapis i aktualizacja ogłoszeń w PostgreSQL, historia zmian źródłowych, pełne/niepełne przebiegi, dostępność oraz codzienny i ręczny import. Uruchomienie i status przez polecenia kontenera, bez dodawania ekranów lub niezabezpieczonych endpointów danych.
+Scope for review: fetching from SOLID.Jobs, saving and updating ads in PostgreSQL, the history of source changes, complete/incomplete runs, availability, and daily and manual import. Start and status through container commands, without adding screens or unsecured data endpoints.
 
-Lista UI powstanie w kolejnym etapie. Profil, lokalne dopasowanie, ratingi, AI/research, profile firm i łączenie logicznych ofert nie są częścią tej implementacji. Zapisujemy pochodzenie i surowe pola potrzebne tym etapom; nie tworzymy jeszcze ich pełnego modelu.
+The UI list will be built in the next stage. The profile, local matching, ratings, AI/research, company profiles and merging logical offers are not part of this implementation. We save the provenance and raw fields these stages need; we do not yet create their full model.
 
-**Potwierdzone:** bieżący zakres to wyłącznie PHP i poziom Senior według filtrów SOLID.Jobs. Staff, Vue.js i agenci AI są poza tym etapem. Zakres źródła jest wersjonowany; używamy jego podkategorii PHP i poziomu Senior, bez poszerzania importu o lokalne rozpoznawanie Staff. Brakujące dane pozostałych kryteriów w pobranych ofertach pozostają niewiadomymi.
+**Confirmed:** the current scope is only PHP and the Senior level according to SOLID.Jobs filters. Staff, Vue.js and AI agents are outside this stage. The source scope is versioned; we use its PHP subcategory and the Senior level, without extending the import with local recognition of Staff. Missing data of the other criteria in fetched offers stays unknown.
 
-## Zakres i zależności
+## Scope and dependencies
 
-Ten dokument jest właścicielem wymagań R-04, R-05, R-06, R-07 i odpowiadających im AC. Powiązania: [profil](../profil/requirements.md), [oferty](../oferty/requirements.md), [operacje](../operacje/requirements.md). Nie przejmuje reguł innych funkcjonalności. Aktorem jest właściciel; scenariusze są przyszłymi kryteriami, nie wynikiem testów.
+This document owns requirements R-04, R-05, R-06, R-07 and their ACs. Related: [profile](../profil/requirements.md), [offers](../oferty/requirements.md), [operations](../operacje/requirements.md). It does not take over the rules of other features. The actor is the owner; the scenarios are future criteria, not test results.
 
-### R-04 — pierwsze źródło
+### R-04 — first source
 
-Pierwszy adapter używa oficjalnego API SOLID.Jobs. Importuje wszystkie aktualnie dostępne ogłoszenia w skonfigurowanym zakresie; kolejne przebiegi wykrywają nowe i zmienione. Historia zaczyna się od pierwszego odczytu.
+The first adapter uses the official SOLID.Jobs API. It imports all currently available ads in the configured scope; subsequent runs detect new and changed ones. The history starts at the first read.
 
-**AC-04:** kontrolny zestaw źródła jest odwzorowany bez pominiętych stron i duplikatów identyfikatora źródłowego. Zapis obejmuje oryginalny identyfikator, źródło, URL, aktualną treść, dane strukturalne i daty odczytu. URL źródła jest zachowany do późniejszego widoku; w tym etapie dostępny w danych/diagnostyce CLI, bez wymogu budowania listy UI. Nie obiecuje odzyskania ogłoszeń niedostępnych przed pierwszym importem.
+**AC-04:** a control set from the source is mapped without skipped pages and without duplicates of the source identifier. The record covers the original identifier, the source, the URL, the current content, the structured data and the read dates. The source URL is kept for a later view; at this stage it is available in the data/CLI diagnostics, with no requirement to build a UI list. It does not promise to recover ads that were unavailable before the first import.
 
-### R-05 — harmonogram i ręczne pobranie
+### R-05 — schedule and manual fetch
 
-Pobieranie działa raz dziennie i na żądanie. Po starcie lub wybudzeniu nadrabia jedno zaległe pobranie, bez odtwarzania wszystkich pominiętych cykli. Godzinę ustawia właściciel w konfiguracji. Proponowany startowy harmonogram: 08:00 Europe/Warsaw, z możliwością wyłączenia harmonogramu i ręcznego importu; ustawienie nie jest potwierdzoną preferencją właściciela.
+Fetching runs once a day and on demand. After a start or a wake-up it catches up on one overdue fetch, without replaying all the skipped cycles. The owner sets the time in the configuration. Proposed starting schedule: 08:00 Europe/Warsaw, with the option to turn the schedule off and import manually; the setting is not a confirmed owner's preference.
 
-**AC-05:** po kilkudniowym wyłączeniu start powoduje co najwyżej jeden zaległy przebieg dla źródła/zakresu; żądanie podczas już trwającego przebiegu nie uruchamia równoległej duplikacji. Polecenie statusu pokazuje stan bieżący, liczniki i czas ostatniej pełnej synchronizacji, bez konieczności tworzenia UI. Zamknięcie karty nie zatrzymuje pracy. Nie obiecujemy wykonania na wyłączonym/uśpionym komputerze.
+**AC-05:** after being off for several days, a start causes at most one overdue run per source/scope; a request while a run is already in progress does not start a parallel duplicate. The status command shows the current state, counters and the time of the last complete sync, without the need to build a UI. Closing the tab does not stop the work. We do not promise execution on a computer that is off/asleep.
 
-### R-06 — niepełna synchronizacja
+### R-06 — incomplete sync
 
-Poprawnie pobrane części zostają zapisane. Błąd nie pozwala uznać brakujących ogłoszeń za niedostępne. Właściciel odczytuje błąd w statusie przebiegu i może ponowić pobranie poleceniem CLI.
+Correctly fetched parts are saved. An error does not allow the missing ads to be considered unavailable. The owner reads the error in the run status and can retry the fetch with a CLI command.
 
-**AC-06:** przy błędzie strony 3 po udanych stronach 1–2 nowe dane z 1–2 są dostępne, przebieg oznaczony jako niepełny, data ostatniej pełnej synchronizacji nie przesuwa się. Nie zmienia się dostępność nieodczytanych ogłoszeń. Ponowienie nie tworzy kolejnych kopii tych samych wpisów.
+**AC-06:** on an error on page 3 after successful pages 1–2, the new data from 1–2 is available, the run is marked as incomplete, and the date of the last complete sync does not move. The availability of unread ads does not change. A retry does not create further copies of the same entries.
 
-### R-07 — dostępność a wygaśnięcie
+### R-07 — availability versus expiry
 
-Brak po pełnym sprawdzeniu tego samego zakresu oznacza niedostępność w źródle. Wygaśnięcie wynika z informacji źródłowej, np. daty ważności. Oba stany są odrębne od przebiegu aplikacji.
+Absence after a complete check of the same scope means unavailability at the source. Expiry follows from source information, e.g. a validity date. Both states are separate from the application process.
 
-**AC-07:** nieobecność w pełnym przebiegu zmienia dostępność z zachowaniem powodu i daty; niepełny przebieg lub zmieniony zakres tego nie robi. Jawne wygaśnięcie jest oznaczone osobno. Żaden z tych stanów nie usuwa notatek ani nie zamyka aplikacji.
+**AC-07:** absence in a complete run changes availability, keeping the reason and date; an incomplete run or a changed scope does not. Explicit expiry is marked separately. Neither of these states removes notes or closes an application.
 
-## Odbiór wybranego etapu
+## Acceptance of the chosen stage
 
-- Ręczne zlecenie i status działają z kontenera narzędziowego; pobieranie wykonuje osobny worker.
-- Powtórny pełny import nie tworzy duplikatów wpisów ani rewizji o identycznej treści.
-- Test zakresu potwierdza przekazanie do API podkategorii PHP i poziomu Senior, bez dodatkowego zakresu Staff i innych specjalizacji. Kontrolowane API wielostronicowe potwierdza zachowanie przy błędzie, niestabilnej paginacji i braku wpisu. Rzeczywisty import potwierdza działanie adaptera, ale nie zastępuje kontrolowanych przypadków.
-- Restart workera nie pozostawia aktywnego przebiegu blokującego import bezterminowo; status przechowuje przerwanie, a ponowienie nie traci wcześniej zapisanych stron.
-- Żadna operacja tego etapu nie wywołuje AI, nie uruchamia researchu ani nie wystawia ofert przez publiczny endpoint.
+- The manual request and the status work from the tools container; fetching is done by a separate worker.
+- A repeated complete import does not create duplicate entries or revisions with identical content.
+- A scope test confirms that the PHP subcategory and the Senior level are passed to the API, without an additional Staff scope or other specialisations. A controlled multi-page API confirms the behaviour on an error, unstable pagination and a missing entry. A real import confirms the adapter works, but does not replace the controlled cases.
+- A worker restart does not leave an active run blocking the import indefinitely; the status keeps the interruption, and a retry does not lose previously saved pages.
+- No operation of this stage calls AI, starts research or exposes offers through a public endpoint.
 
-## Otwarte kwestie
+## Open questions
 
-Powiązane: O-05, O-06. Szczegóły, konsekwencje i sposób zamknięcia: [wspólny rejestr](../../open-decisions.md). Otwarte kwestie rozpatrujemy przy podejmowaniu tej funkcjonalności; sam szkic nie oznacza gotowości implementacji.
+Related: O-05, O-06. Details, consequences and how to close them: [shared register](../../open-decisions.md). We consider open questions when taking up this feature; the draft alone does not mean the implementation is ready.

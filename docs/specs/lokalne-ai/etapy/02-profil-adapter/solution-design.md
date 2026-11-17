@@ -1,16 +1,16 @@
-# Etap 2: Profil niezależny od protokołu OpenAI — Solution design
+# Stage 2: Profile independent of the OpenAI protocol — Solution design
 
-Status: **przegląd wykonany, specyfikacja gotowa do implementacji**, 2026-11-05. Beads: `oferty-pracy-334.3`, przygotowanie `334.20`. To projekt docelowy, nie wynik testów. Podstawa: [Requirements](requirements.md), [LA-02/03](../../requirements.md), [plan](../../README.md). Etap wymaga ukończenia etapu 1.
+Status: **review done, specification ready for implementation**, 2026-11-05. Beads: `oferty-pracy-334.3`, preparation `334.20`. This is the target design, not a test result. Basis: [Requirements](requirements.md), [LA-02/03](../../requirements.md), [plan](../../README.md). The stage requires stage 1 to be finished.
 
-## Stan bazowy i granice
+## Baseline state and boundaries
 
-Przejrzano robocze [profile/ai.ts](../../../../../lib/profile/ai.ts), [model.ts](../../../../../lib/ai/models/model.ts), [openai.ts](../../../../../lib/ai/models/openai.ts) oraz wersję profilu z HEAD. Zastany adapter zwraca cały Responses jako tekst, zawsze deklaruje completed, gubi semantykę retry i ponownie konwertuje schemat Zod mimo typu JSON Schema. Profil tworzy konkretny adapter, ustawia requestStarted dopiero po odpowiedzi i uzależnia responseId od usage. To częściowa implementacja do poprawienia w tym zadaniu; nie usuwać innych zmian.
+Reviewed: the work-in-progress [profile/ai.ts](../../../../../lib/profile/ai.ts), [model.ts](../../../../../lib/ai/models/model.ts), [openai.ts](../../../../../lib/ai/models/openai.ts) and the profile version from HEAD. The existing adapter returns the whole Responses result as text, always declares completed, loses the retry semantics and converts the Zod schema again despite the JSON Schema type. Profile creates a concrete adapter, sets requestStarted only after the response and makes responseId depend on usage. This is a partial implementation to be corrected in this task; do not remove other changes.
 
-Profil posiada instrukcje, factSchema, JSON.parse i checkProposal. Adapter posiada HTTP, normalizację Responses i politykę transportu OpenAI. Zapis próby, retry i propozycji pozostaje w profilu. Narzędzia, Batch i sesje nie należą do StructuredModel.
+Profile owns the instructions, factSchema, JSON.parse and checkProposal. The adapter owns HTTP, Responses normalisation and the OpenAI transport policy. Writing the attempt, retry and the proposal stay in profile. Tools, Batch and sessions do not belong to StructuredModel.
 
-## E02-D01 — Kontrakt pojedynczego modelu
+## E02-D01 — Single-model contract
 
-Docelowy interfejs w `lib/ai/models/model.ts`:
+Target interface in `lib/ai/models/model.ts`:
 
 ```ts
 type ModelRequest = {
@@ -30,31 +30,31 @@ type StructuredModel = {
 }
 ```
 
-Wszystkie pola request wymagane; input/instructions/name niepuste. Domena konwertuje Zod do draft-7 JSON Schema i usuwa `$schema` raz. Adapter otrzymuje gotowy JSON Schema, nigdy Zod. completed ma dokładnie jedną niepustą końcową treść assistant; reasoning nie jest treścią. Odmowa daje refused, status inny niż completed daje incomplete; oba text=null. Zero/wiele treści przy status completed to błąd format. Każdy licznik usage niezależnie: bezpieczny nieujemny integer albo null. responseId zachowujemy także bez usage. Walidacja cytatów i JSON należy do profilu.
+All request fields are required; input/instructions/name are non-empty. The domain converts Zod to draft-7 JSON Schema and removes `$schema` once. The adapter receives a ready JSON Schema, never Zod. completed has exactly one non-empty final assistant content; reasoning is not content. A refusal gives refused, a status other than completed gives incomplete; both have text=null. Zero or several contents with status completed is a format error. Each usage counter independently: a safe non-negative integer or null. We keep responseId also without usage. Validation of quotes and JSON belongs to profile.
 
-`OpenAiAdapter` otrzymuje przez konstruktor fetcher, resolver klucza i zapisane opcje płatnego wywołania. `maxOutputTokens`, reasoning, store, tools, serviceTier nie są parametrami neutralnego interfejsu. Fabryka adaptera w `lib/ai/models/` dobiera implementację z zapisanej konfiguracji. Punkt wejścia workera składa zależności; wewnętrzna funkcja wykonania profilu przyjmuje StructuredModel. Zachować publiczny punkt `executeAi(pool,boss,id,fetcher)` jako fasadę aktualnych konsumentów/testów; nie wymagać HTTP w testach domeny.
+`OpenAiAdapter` receives through its constructor a fetcher, a key resolver and the recorded options of the paid call. `maxOutputTokens`, reasoning, store, tools, serviceTier are not parameters of the neutral interface. An adapter factory in `lib/ai/models/` picks the implementation from the recorded configuration. The worker's entry point assembles the dependencies; the internal profile execution function takes a StructuredModel. Keep the public entry point `executeAi(pool,boss,id,fetcher)` as a facade for the current consumers/tests; do not require HTTP in domain tests.
 
-Payload OpenAI identyczny z bazowym profilem: `/v1/responses`, model, store=false, tools=[], service_tier=default, max_output_tokens z migawki, reasoning low, istniejące instrukcje/input_text i strict json_schema `profile_proposal`. Płatny timeout 90 s pozostaje opcją tego adaptera; zewnętrzny signal łączy się z nim. Nie przenosić tego deadline do Ollamy.
+The OpenAI payload is identical to the baseline profile: `/v1/responses`, model, store=false, tools=[], service_tier=default, max_output_tokens from the snapshot, reasoning low, the existing instructions/input_text and strict json_schema `profile_proposal`. The paid 90 s timeout stays an option of this adapter; an external signal is combined with it. Do not carry this deadline over to Ollama.
 
-## E02-D02 — Błędy i zgodność retry
+## E02-D02 — Errors and retry compatibility
 
-Typowany błąd adaptera ma `code: configuration|network|http|format|aborted`, `requestSent:boolean`, `responseReceived:boolean`, `httpStatus:number|null`, `retryAfterMs:number|null`, `responseId:string|null` i znormalizowane usage. Bez surowego body/CV/klucza w message. `requestSent=true` ustawić przed wywołaniem fetch; oznacza możliwość wysłania, nie dowód przyjęcia. Nie wnioskować o HTTP z tekstu wyjątku. Błąd parsowania body po odpowiedzi HTTP nie staje się błędem sieciowym przed odpowiedzią. Zachować dostępne metadane także przy błędzie formatu.
+The typed adapter error has `code: configuration|network|http|format|aborted`, `requestSent:boolean`, `responseReceived:boolean`, `httpStatus:number|null`, `retryAfterMs:number|null`, `responseId:string|null` and normalised usage. No raw body/CV/key in the message. Set `requestSent=true` before calling fetch; it means the request may have been sent, not proof that it was accepted. Do not infer HTTP from the exception text. A body parsing error after an HTTP response does not become a network error before the response. Keep the available metadata also on a format error.
 
-Koordynator zachowuje politykę HEAD płatnego profilu: maksymalnie dwie próby w generation; retry dla HTTP 429/5xx oraz niepewnego requestSent bez responseReceived. Domyślne opóźnienie 1000 ms. Retry-After: liczba sekund lub data HTTP; niepoprawna wartość albo >60000 ms wyłącza retry, pozostałe minimum 1000 ms. Błędny JSON, odmowa, incomplete i walidacja cytatów nie uruchamiają automatycznej poprawki. Zastana regresja wrappera nie jest nową polityką produktu.
+The coordinator keeps the HEAD policy of the paid profile: at most two attempts per generation; retry for HTTP 429/5xx and for an uncertain requestSent without responseReceived. Default delay 1000 ms. Retry-After: a number of seconds or an HTTP date; an invalid value or >60000 ms disables retry, otherwise a minimum of 1000 ms. Invalid JSON, refusal, incomplete and quote validation do not trigger an automatic correction. The existing wrapper regression is not a new product policy.
 
-Nieznany koszt zachowuje rezerwację. Rozliczenie wymaga obu liczników mieszczących się w limitach płatnej migawki. Nie wyliczać tokenów z tekstu i nie zerować kosztu przy błędzie walidatora. Zapis próby i enqueue płatnego retry pozostają atomowe. Lokalna polityka ręcznego retry powstaje dopiero w etapie 5.
+An unknown cost keeps the reservation. Settlement requires both counters to be within the limits of the paid snapshot. Do not compute tokens from the text and do not zero the cost on a validator error. Writing the attempt and enqueueing the paid retry stay atomic. The local manual retry policy is created only in stage 5.
 
-## Zmiana i zgodność
+## Change and compatibility
 
-Bez migracji i zmian env. Stare queued konfiguracje nadal OpenAI. `readAiProposal` rozdzielić na prywatną normalizację dostawcy i publiczną walidację tekstu propozycji; przełączyć testy zamiast pozostawić domenę zależną od Responses. Bez eksportowania parsera OpenAI z profilu jako drugiego kontraktu. Historia i zatwierdzanie propozycji bez zmian.
+No migrations or env changes. Old queued configurations still use OpenAI. Split `readAiProposal` into private provider normalisation and public validation of the proposal text; switch the tests instead of leaving the domain dependent on Responses. Do not export the OpenAI parser from profile as a second contract. Proposal history and approval stay unchanged.
 
-## Weryfikacja i zakończenie
+## Verification and completion
 
-| Kryterium | Dowód wymagany w implementacji |
+| Criterion | Evidence required in the implementation |
 | --- | --- |
-| E02-AC01 | Kontrakt HTTP na atrapie porównuje pełny payload z HEAD; test domeny wstrzykuje StructuredModel, bez sieci. |
-| E02-AC02 | Obecne przypadki cytatów w `tests/profile.test.ts` oraz propozycja/akceptacja/konflikt rewizji w `tests/profile.integration.test.ts`. |
-| E02-AC03 | Macierz completed/refused/incomplete, 0/2 treści, zły JSON, błąd parsowania HTTP i sieci, osobno brak każdego usage i zachowane ID; komunikaty bez sekretów. |
-| E02-AC04 | 429/500/401, Retry-After sekundy/data/złe/>60 s, utrata odpowiedzi przed/po nagłówkach, podwójna dostawa, brak podwójnej propozycji/kosztu; regresje recovery w testach profilu. |
+| E02-AC01 | An HTTP contract on a fake compares the full payload with HEAD; a domain test injects a StructuredModel, without the network. |
+| E02-AC02 | The current quote cases in `tests/profile.test.ts` and proposal/acceptance/revision conflict in `tests/profile.integration.test.ts`. |
+| E02-AC03 | A matrix of completed/refused/incomplete, 0/2 contents, bad JSON, HTTP parsing error and network error, each usage counter missing separately and the ID preserved; messages without secrets. |
+| E02-AC04 | 429/500/401, Retry-After seconds/date/invalid/>60 s, loss of the response before/after headers, double delivery, no double proposal/cost; recovery regressions in the profile tests. |
 
-Test adaptera może powstać w `tests/ai-models.test.ts`. Zachować istniejące przypadki, przenieść je na właściwy interfejs zamiast duplikować parser. `pnpm check`, build i integracje z RUN_INTEGRATION=1 według [przekazania](../../przekazanie-lokalnemu-modelowi.md). Workflow implement-with-tester. Nie ma otwartej decyzji produktowej tego etapu; aktualizacja zastanego kodu jest obowiązkiem wykonawcy.
+The adapter test can go in `tests/ai-models.test.ts`. Keep the existing cases, move them to the proper interface instead of duplicating the parser. `pnpm check`, build and integrations with RUN_INTEGRATION=1 per the [hand-off](../../przekazanie-lokalnemu-modelowi.md). Workflow implement-with-tester. There is no open product decision for this stage; updating the existing code is the implementer's obligation.

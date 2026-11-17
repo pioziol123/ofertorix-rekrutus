@@ -6,6 +6,7 @@ This file is the index of the project's agent documentation. It names each famil
 
 | Name | Entry | Read it |
 | --- | --- | --- |
+| **System overview** | `docs/product/system-overview.md` | First, when you lack context about the project. It explains in a few minutes what the system does, its key terms and principles. It describes the intended system, not what is built yet, and it decides and requires nothing. |
 | **Process contract** | `docs/agents/implementation-workflow.md` | Before preparing or implementing a task. It defines the specification documents, bd tasks and their labels, the hand-off, the runner and how spec conflicts are classified. |
 | **Architecture rules** | `docs/architecture/` (files below) | Before designing, implementing or reviewing a change. They bind every task, whether or not its documents cite them. |
 | **Domain docs** | `docs/agents/domain.md` | Before exploration, specification or design. It lists the glossary, confirmed product decisions and ADRs. |

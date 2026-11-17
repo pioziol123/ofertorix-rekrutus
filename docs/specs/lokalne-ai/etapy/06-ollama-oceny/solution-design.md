@@ -1,102 +1,102 @@
-# Etap 6: Lokalne oceny pojedyncze i zbiorcze — Solution design
+# Stage 6: Local single and group assessments — Solution design
 
-Status: **przegląd wykonany, specyfikacja gotowa do implementacji**, 2026-11-05. Etap 6 z dziewięciu; przegląd w ramach `oferty-pracy-334.20`, bez implementacji i testów aplikacji. Beads: `oferty-pracy-334.7`.
+Status: **review done, specification ready for implementation**, 2026-11-05. Stage 6 of nine; review as part of `oferty-pracy-334.20`, without implementation or application tests. Beads: `oferty-pracy-334.7`.
 
-Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md), [plan](../../README.md). Potwierdzone: lokalnie `gpt-oss:20b`, OpenCode dla agenta i brak kwot Ollamy. Kontrakty SD są decyzjami technicznymi do realizacji w zatwierdzonym zakresie; weryfikacja działania pozostaje częścią implementacji.
+Basis: [PRD](../../PRD.md), [cross-cutting requirements](../../requirements.md), [plan](../../README.md). Confirmed: `gpt-oss:20b` locally, OpenCode for the agent and no Ollama charges. The SD contracts are technical decisions to be implemented within the approved scope; verifying that they work remains part of the implementation.
 
-Zakres normatywny zachowania: [Requirements](requirements.md), E06-R01–E06-R06. Stan bazowy: lokalny katalog z 2026-11-04, łącznie z zastanymi zmianami; nie jest to wyłącznie HEAD. Pliki projektowane poniżej nie są deklaracją istniejącej implementacji.
+Normative scope of behaviour: [Requirements](requirements.md), E06-R01–E06-R06. Baseline state: the local directory as of 2026-11-04, including the existing changes; this is not only HEAD. The designed files below are not a statement about an existing implementation.
 
-## Podejście i granice
+## Approach and boundaries
 
-Nowy lokalny wykonawca korzysta z MatchingTask/publikacji etapu 3 i adaptera etapu 5. store.ts/groups.ts wybierają trasę z migawki. Worker dostarcza krótkie jednostki obserwacji/claim; trwały postęp jest w PostgreSQL. Rozszerzyć readMatching i komponenty ocen o lokalne stany, bez pól Batch dla lokalnego wykonania.
+The new local executor uses the MatchingTask/publication of stage 3 and the adapter of stage 5. store.ts/groups.ts choose the route from the snapshot. The worker delivers short units of observation/claim; durable progress is in PostgreSQL. Extend readMatching and the assessment components with local states, without Batch fields for local execution.
 
-## Decyzja E06-D01 — Trwały stan każdej lokalnej oceny
+## Decision E06-D01 — Durable state of each local assessment
 
-**Decyzja techniczna:** Jedno długie wywołanie dla całej grupy utrudnia częściowy sukces i restart. Publikacja pozostaje wspólna z Batch, a wykonanie jest odrębne.
+**Technical decision:** One long call for the whole group makes partial success and restart harder. Publication stays shared with Batch, and execution is separate.
 
-Punkty integracji w obecnym katalogu: [lib/matching/store.ts](../../../../../lib/matching/store.ts), [lib/matching/groups.ts](../../../../../lib/matching/groups.ts), [lib/matching/model.ts](../../../../../lib/matching/model.ts), [app/components/OfferMatching.vue](../../../../../app/components/OfferMatching.vue). Wskazują miejsca zmiany, nie obowiązek przeniesienia wszystkich ich odpowiedzialności.
+Integration points in the current directory: [lib/matching/store.ts](../../../../../lib/matching/store.ts), [lib/matching/groups.ts](../../../../../lib/matching/groups.ts), [lib/matching/model.ts](../../../../../lib/matching/model.ts), [app/components/OfferMatching.vue](../../../../../app/components/OfferMatching.vue). They show where the change happens, not an obligation to move all of their responsibilities.
 
-## Kontrakty i niezmienniki
+## Contracts and invariants
 
-matching_requests zachowuje ad_revision_id/profile_version_id/input i operation ID. Dla lokalnego wykonania request_payload jest null (brak payloadu OpenAI) i nie powstaje matching_batches. Bieżące pole jest już nullable; nie dodawać zbędnej migracji tej kolumny. Do aktywnych stanów dodać running i cancelling, do końcowych cancelled; istniejący unknown obejmuje niepewny skutek wykonania. Każdy nowy stan ma wejść do właściwych częściowych indeksów pending i zapytań recovery.
+matching_requests keeps ad_revision_id/profile_version_id/input and the operation ID. For local execution, request_payload is null (no OpenAI payload) and no matching_batches is created. The current field is already nullable; do not add an unnecessary migration of this column. Add running and cancelling to the active states and cancelled to the final states; the existing unknown covers an uncertain outcome of execution. Each new state must be included in the relevant partial pending indexes and recovery queries.
 
-Przejścia lokalne: queued→running→completed|failed|unknown; queued→cancelled; running→cancelling→cancelled, jeżeli zatrzymanie potwierdzono, w przeciwnym razie unknown. Koszt lokalnej inferencji jest zawsze znany zero, niezależnie od stanu. Lokalne unknown o nierozstrzygniętej aktywności blokuje nową ocenę dla tego samego ogłoszenia do wyjaśnienia, także gdy dotychczasowy indeks pending nie obejmował unknown. Zabezpieczenie musi działać atomowo w komendzie oraz po utracie lease. claim/lease używa warunkowej aktualizacji i tokenu właściciela; publikacja odrzuca stary token i wynik anulowanej operacji. Nie utrzymywać transakcji podczas HTTP.
+Local transitions: queued→running→completed|failed|unknown; queued→cancelled; running→cancelling→cancelled if the stop was confirmed, otherwise unknown. The cost of local inference is always known as zero, regardless of the state. A local unknown with unresolved activity blocks a new assessment for the same ad until it is cleared up, also when the existing pending index did not cover unknown. The safeguard must work atomically in the command and after a lease is lost. claim/lease uses a conditional update and an owner token; publication rejects an old token and the result of a cancelled operation. Do not hold a transaction during HTTP.
 
-Grupa przechowuje command_id i członków z jednoznacznym request ID; lokalne wykonanie nie wymaga identyfikatora partii. Stan agregowany wyznacza tabela po przeglądzie poniżej (w szczególności unknown ma pierwszeństwo); oddzielne liczniki completed/failed/cancelled/unknown/excluded nie pozwalają mylić zakończenia z pełnym sukcesem. Przy anulowaniu grupa nie przyjmuje nowych claimów, zachowuje wyniki już opublikowane. unknown wymaga wyjaśnienia przed startem ponowionej pozycji; zapis ręcznego retry może nastąpić wcześniej.
+A group stores the command_id and members with an unambiguous request ID; local execution does not require a batch identifier. The aggregated state is determined by the table after the review below (in particular unknown takes precedence); separate counters completed/failed/cancelled/unknown/excluded prevent confusing completion with full success. On cancellation, the group accepts no new claims and keeps results already published. unknown must be cleared up before a retried item starts; the manual retry can be recorded earlier.
 
-Potwierdzono 2026-11-05 porcjowanie nowych lokalnych ocen: maksymalnie 20 pozycji w grupie. Większa komenda dzieli się automatycznie w kolejności przekazanych ofert: 30 → 20 + 10, 40 → 20 + 20, 41 → 20 + 20 + 1. Nie odrzucać nadmiaru ani nie wysyłać go ponownie przy retry. Pozycje i wyniki nadal są indywidualne; limit rozmiaru grupy nie ustala współbieżności ani kwoty inferencji.
+Confirmed 2026-11-05, batching of new local assessments: at most 20 items per group. A larger command is split automatically in the order of the given offers: 30 → 20 + 10, 40 → 20 + 20, 41 → 20 + 20 + 1. Do not reject the excess and do not send it again on retry. Items and results are still individual; the group size limit does not set concurrency or an inference quota.
 
-Trwały kontrakt (szczegóły po przeglądzie poniżej): zlecenie nadrzędne z command_id UUID UNIQUE i uporządkowaną listą unikalnych offerIds; grupy mają parent_command_id oraz ordinal z UNIQUE(parent_command_id,ordinal), a członkowie stały request ID. Podział i członkostwo utrwalić atomowo przed enqueue. Powtórzenie command_id z tą samą listą zwraca te same grupy; inna lista pod tym ID daje konflikt. Kolejka przenosi identyfikatory, nie pełną dużą komendę. Listę wyników nadrzędnych i grup prezentować z osobnymi licznikami stanów. Schemat danych i API rozstrzygnięto w uzupełnieniu po przeglądzie poniżej. Istniejących grup i aktywnych partii OpenAI nie przepisywać ani nie dzielić wstecznie.
+Durable contract (details after the review below): a parent request with command_id UUID UNIQUE and an ordered list of unique offerIds; groups have parent_command_id and ordinal with UNIQUE(parent_command_id,ordinal), and members have a fixed request ID. Persist the split and membership atomically before enqueue. Repeating a command_id with the same list returns the same groups; a different list under this ID gives a conflict. The queue carries identifiers, not the full large command. Present the list of parent results and groups with separate state counters. The data schema and API were resolved in the addendum after the review below. Do not rewrite or retroactively split existing groups and active OpenAI batches.
 
-## Migracja i uruchomienie
+## Migration and rollout
 
-Nowe migracje stanów, parent/membership, bieżących tokenów i indeksów aktywności; użyć lease wspólnego modułu z etapu 5; test na starych aktywnych rekordach. Do kanonicznych requirements/SD dopasowania dopisać lokalny wariant AC-B1/AC-G4–G7, nie zmieniając znaczenia dla Batch. Włączyć po lokalnym profilu, najpierw ręcznie kilka ocen i grupę.
+New migrations of states, parent/membership, current tokens and activity indexes; use the lease of the shared module from stage 5; test on old active records. Add the local variant of AC-B1/AC-G4–G7 to the canonical matching requirements/SD, without changing its meaning for Batch. Enable after the local profile, first manually with a few assessments and a group.
 
-## Weryfikacja
+## Verification
 
-Wszystkie poniższe próby są planem, nie wykonanym wynikiem. Testy automatyczne z atrapami nie dowodzą sprawności usług live.
+All the checks below are a plan, not a result that has been produced. Automated tests with fakes do not prove that live services work.
 
-1. Porównać walidację tego samego assessment po normalizacji Batch/Ollama.
-2. Integracja grupy: sukces+błąd+excluded, out-of-order, duplikat komendy i wyniku.
-3. Restart, utrata lease i race anulowanie/publikacja; stare wyniki nie wypierają aktualnych.
-4. Migracja z aktywną partią, read API/UI obu wykonawców, zero budżetu lokalnie, podział komendy 20/21/30/40/41 na grupy do 20, idempotencja podziału.
+1. Compare validation of the same assessment after Batch/Ollama normalisation.
+2. Group integration: success+error+excluded, out-of-order, duplicate command and duplicate result.
+3. Restart, lease loss and a cancellation/publication race; old results do not displace current ones.
+4. Migration with an active batch, read API/UI of both executors, zero budget locally, splitting a command of 20/21/30/40/41 into groups of up to 20, idempotency of the split.
 
-| Kryterium | Co musi wykazać weryfikacja |
+| Criterion | What verification must show |
 | --- | --- |
-| E06-AC01 | Próby 1 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
-| E06-AC02 | Próby 2 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
-| E06-AC03 | Próby 2–3 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
-| E06-AC04 | Próby 4 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
-| E06-AC05 | Próby 3–4 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
-| E06-AC06 | Próby 4 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
+| E06-AC01 | Check 1 above; observe the outcome stated in the corresponding Requirements criterion. |
+| E06-AC02 | Check 2 above; observe the outcome stated in the corresponding Requirements criterion. |
+| E06-AC03 | Checks 2–3 above; observe the outcome stated in the corresponding Requirements criterion. |
+| E06-AC04 | Check 4 above; observe the outcome stated in the corresponding Requirements criterion. |
+| E06-AC05 | Checks 3–4 above; observe the outcome stated in the corresponding Requirements criterion. |
+| E06-AC06 | Check 4 above; observe the outcome stated in the corresponding Requirements criterion. |
 
-Przy implementacji zmieniającej zachowanie zastosować projektowy workflow `implement-with-tester`. Stan, dowody i ewentualne odchylenia aktualizować w Beads i tej parze; nie dopisywać niesprawdzonych sukcesów.
+For an implementation that changes behaviour, use the project workflow `implement-with-tester`. Update the status, evidence and any deviations in Beads and in this pair; do not add unverified successes.
 
-## Gotowość i kontrola zmian
+## Readiness and change control
 
-API nadrzędnej komendy i stan grupy przy unknown określa uzupełnienie SD z 2026-11-05. Strategia zatrzymania i wspólny slot pochodzą z etapu 5. Nie ma otwartej decyzji produktowej.
+The parent command API and the group state on unknown are defined by the SD addendum of 2026-11-05. The stop strategy and the shared slot come from stage 5. There is no open product decision.
 
-Przed kodem odświeżyć stan roboczy i zależności Beads. Przegląd specyfikacji wykonano 2026-11-05; nie zastępuje wyników testów ani kontroli zmian powstałych po przeglądzie.
+Before coding, refresh the working state and the Beads dependencies. The specification review was done on 2026-11-05; it does not replace test results or control of changes made after the review.
 
-Rozszerzenie z 2026-11-05: ręczne check/stop/skip w [panelu zadań](../../features/panel-zadan/requirements.md). Wspólne komendy i ich wpływ na recovery/publikację określają kontrakty runtime i uzupełnienie SD poniżej.
+Extension of 2026-11-05: manual check/stop/skip in the [task panel](../../features/panel-zadan/requirements.md). The shared commands and their effect on recovery/publication are defined by the runtime contracts and the SD addendum below.
 
-Wyjątek potwierdzony 2026-11-05: zakaz uruchamiania kolejnego wykonania przy running/unknown dotyczy automatycznego recovery. Jawne ponowienie w panelu jest dozwolone po atomowym odebraniu staremu wykonaniu prawa publikacji; abort jest próbą, późny wynik pozostaje do wglądu. Kanoniczny kontrakt: [panel zadań](../../features/panel-zadan/requirements.md).
+Exception confirmed 2026-11-05: the ban on starting another execution while running/unknown applies to automatic recovery. An explicit retry in the panel is allowed after the old execution's right to publish has been atomically revoked; abort is an attempt, and a late result stays available for viewing. Canonical contract: [task panel](../../features/panel-zadan/requirements.md).
 
-## Wspólny slot i ręczne retry — 2026-11-05
+## Shared slot and manual retry — 2026-11-05
 
-Używać `ai_local_queue` i jednego `ai_local_slots` z kontraktów runtime dla wszystkich lokalnych prac, nie tylko OpenCode. Slot przypisany do execution ID, nie dostawy kolejki; zwalniany po potwierdzonym końcu inferencji. Przy niepewnym HTTP nie powtarzać generate i nie uznawać abort połączenia za koniec pracy na serwerze. Operator może według instrukcji ręcznie zrestartować Ollamę; aplikacja nie uruchamia restartu. Potwierdzenie końca i zwolnienie slotu muszą mieć trwały zapis.
+Use `ai_local_queue` and a single `ai_local_slots` from the runtime contracts for all local work, not only OpenCode. The slot is assigned to the execution ID, not to a queue delivery; it is released after the confirmed end of inference. On an uncertain HTTP call, do not repeat generate and do not treat a connection abort as the end of the work on the server. The operator can manually restart Ollama according to the instructions; the application does not trigger a restart. The end confirmation and the slot release must have a durable record.
 
-Ręczne retry można zapisać przed rozstrzygnięciem unknown, lecz czeka ono na slot. Kopiować poprzednią migawkę, bez aktualnego `.env` lub profilu; poprzedni wynik traci publikację i pozostaje w historii. Generacje naprawcze po złym formacie/cytatach nie uruchamiają się automatycznie. Testy integracyjne obejmują profile i oceny konkurujące z zatrzymanym/nieznanym researchem, zamianę konfiguracji przed retry oraz błąd odpowiedzi bez drugiego HTTP. Budżet OpenAI i stare migawki pozostają zgodne. Zob. LA-11, LA-16–18.
+A manual retry can be recorded before unknown is resolved, but it waits for the slot. Copy the previous snapshot, without the current `.env` or profile; the previous result loses publication and stays in the history. Repair generations after a bad format/quotes do not start automatically. Integration tests cover profiles and assessments competing with a stopped/unknown research, a configuration swap before retry and a response error without a second HTTP call. The OpenAI budget and old snapshots stay compatible. See LA-11, LA-16–18.
 
-## Rozstrzygnięte API i stan grupy — przegląd 2026-11-05
+## Resolved API and group state — review 2026-11-05
 
-Poniższa sekcja zastępuje wcześniejsze propozycje kontraktu nadrzędnego i zdania wymagające rozstrzygnięcia unknown przed zapisaniem ręcznego retry. Zapis retry jest dozwolony od razu; jego **start** wymaga wolnego wspólnego slotu.
+The section below replaces the earlier proposals of the parent contract and the sentences requiring unknown to be resolved before a manual retry is recorded. Recording a retry is allowed immediately; its **start** requires a free shared slot.
 
-Istniejący `POST /api/matching` przyjmuje strict `{commandId:UUID,offerIds:UUID[]}`. Zachować istniejący limit przyjęcia 1–100 i odrzucenie duplikatów/nieprawidłowych ID; to limit pojedynczego komunikatu HTTP, nie limit korzystania z Ollamy. Lokalne grupy dzielić po 20 w kolejności wejściowej, przed odfiltrowaniem excluded/reused. Podział 21/30/40/41 daje odpowiednio 20+1/20+10/20+20/20+20+1. Nowy parent nie ma własnego wykonania modelu ani slotu: wykonania należą wyłącznie do pojedynczych ocen.
+The existing `POST /api/matching` takes a strict `{commandId:UUID,offerIds:UUID[]}`. Keep the existing acceptance limit of 1–100 and the rejection of duplicates/invalid IDs; this is a limit of a single HTTP message, not a limit on using Ollama. Split local groups by 20 in the input order, before filtering out excluded/reused. A split of 21/30/40/41 gives 20+1/20+10/20+20/20+20+1 respectively. The new parent has no model execution or slot of its own: executions belong only to individual assessments.
 
-W transakcji komendy pod blokadą commandId najpierw szukać ID zarówno w starych matching_groups, jak i nowej tabeli komend, **przed** odczytem bieżącej konfiguracji. Duplikat po zmianie `.env` zwraca stary wynik/trasowanie, nigdy nowe grupy. Dla lokalnego parent fingerprint obejmuje uporządkowane offerIds; inna kolejność jest innym payloadem i daje 409 przy tym samym ID. Dla historycznego Batch zachować dotychczasowe porównanie zbioru. Grupy i kolejkę utrwalić atomowo; błąd zapisu/enqueue cofa całą nową komendę.
+In the command transaction, under a lock on commandId, first look for the ID both in the old matching_groups and in the new command table, **before** reading the current configuration. A duplicate after a `.env` change returns the old result/routing, never new groups. For a local parent, the fingerprint covers the ordered offerIds; a different order is a different payload and gives 409 for the same ID. For historical Batch, keep the existing set comparison. Persist the groups and the queue atomically; a write/enqueue error rolls back the whole new command.
 
-Lokalna odpowiedź HTTP 202: `{execution:'direct',commandId,parentId,state,groups:[{groupId,ordinal,state,items:[{requestId,offerId,state,reused}]}],counts}`. UUID parentId oddzielny od commandId, ordinal od 1. Powtórzenie komendy zwraca te same identyfikatory i aktualny widok postępu. Legacy OpenAI zachowuje dotychczasowy status/body; klient rozpoznaje oba warianty. Nowy `GET /api/matching/commands/:parentId` odczytuje ten sam agregat, bez akcji sterujących na parent. Pojedyncze `POST /api/offers/:id/matching` zachowuje swój kontrakt, używa jednego request/execution zamiast fikcyjnej grupy/Batch.
+Local HTTP 202 response: `{execution:'direct',commandId,parentId,state,groups:[{groupId,ordinal,state,items:[{requestId,offerId,state,reused}]}],counts}`. The parentId UUID is separate from commandId, ordinal starts at 1. Repeating the command returns the same identifiers and the current progress view. Legacy OpenAI keeps the existing status/body; the client recognises both variants. The new `GET /api/matching/commands/:parentId` reads the same aggregate, with no control actions on the parent. The single `POST /api/offers/:id/matching` keeps its contract and uses one request/execution instead of a fictional group/Batch.
 
-Nowa tabela `matching_commands`: id UUID PK, command_id UUID UNIQUE, fingerprint, ordered_offer_ids UUID[], immutable configuration JSONB, created_at. Nowe matching_groups: nullable parent_command_id FK i ordinal z UNIQUE(parent_command_id,ordinal). command_id istniejącej grupy pozostaje UUID, dla lokalnej podgrupy jest osobnym trwale wygenerowanym ID. Nie używać parent commandId w każdej podgrupie (naruszyłoby UNIQUE). Brak parent dla legacy jest poprawny. Członkostwo i kolejność przechowuje jawna tabela `matching_group_members(group_id,ordinal,request_id,offer_id,reused)` z PK(group_id,ordinal), UNIQUE(group_id,offer_id); istniejące items JSON pozostaje czytelne, nie migrować historii wstecz.
+New table `matching_commands`: id UUID PK, command_id UUID UNIQUE, fingerprint, ordered_offer_ids UUID[], immutable configuration JSONB, created_at. New in matching_groups: nullable parent_command_id FK and ordinal with UNIQUE(parent_command_id,ordinal). The command_id of an existing group stays a UUID; for a local subgroup it is a separate, durably generated ID. Do not use the parent commandId in each subgroup (it would violate UNIQUE). A missing parent for legacy is valid. Membership and order are stored in an explicit table `matching_group_members(group_id,ordinal,request_id,offer_id,reused)` with PK(group_id,ordinal), UNIQUE(group_id,offer_id); the existing items JSON stays readable, do not migrate history retroactively.
 
-Nowe lokalne requests dodają current_execution_id/current_publication_token. request_payload **już jest nullable** (migracja 1770000000007); lokalnie null i brak matching_batches. ai_attempts.execution_id z etapu 5 wiąże każdą ręczną próbę z jej wykonaniem; request.attempt_id wskazuje bieżącą próbę, starsze zachowujemy przez execution. Indeks aktywnych matching_requests uwzględnia running/cancelling i lokalne unknown dla bieżącego wykonania; jawne retry aktualizuje wykonanie tego samego request zamiast tworzyć drugi request omijający indeks. Nowe zlecenie z nowymi wejściami przy niepewnym bieżącym zadaniu odrzucić z jawnym konfliktem aktywnej pracy; ręczne retry ze starą migawką pozostaje możliwe.
+New local requests add current_execution_id/current_publication_token. request_payload **is already nullable** (migration 1770000000007); locally null and no matching_batches. ai_attempts.execution_id from stage 5 links each manual attempt to its execution; request.attempt_id points to the current attempt, and older ones are kept through the execution. The index of active matching_requests takes into account running/cancelling and local unknown for the current execution; an explicit retry updates the execution of the same request instead of creating a second request that bypasses the index. Reject a new request with new inputs while the current job is uncertain, with an explicit active-work conflict; a manual retry with the old snapshot stays possible.
 
-Przy przyjmowaniu grupy zachować istniejące reguły eligible/excluded/reused oraz walidację wersji wejść. reused wskazuje rzeczywisty istniejący request, nie nową generację. Widok pokazuje wspólne wykonanie; akcja grupowa deduplikuje request/execution ID, aby nie wywołać go dwa razy. Nie zmieniać wejścia reused request na aktualny profil.
+When accepting a group, keep the existing eligible/excluded/reused rules and the validation of input versions. reused points to an actual existing request, not a new generation. The view shows the shared execution; a group action deduplicates request/execution IDs so it is not triggered twice. Do not change the input of a reused request to the current profile.
 
-Agregat jest wyliczany z **bieżących** wykonań członków i stanu blokującego runtime:
+The aggregate is computed from the **current** executions of the members and the blocking runtime state:
 
-| Warunek, w kolejności pierwszeństwa | Stan grupy/parent |
+| Condition, in order of precedence | Group/parent state |
 | --- | --- |
-| Jakikolwiek członek ma nierozstrzygnięty unknown runtime, również stary superseded trzymający slot | unknown |
-| Brak unknown, jest runtime running/cancelling/waiting_user albo rozpoczęte przetwarzanie i oczekujące pozycje | running |
-| Są queued, ale żadnego wykonania nie rozpoczęto | queued |
-| Brak pracy oczekującej/aktywnej/niepewnej | completed |
+| Any member has an unresolved runtime unknown, including an old superseded one holding the slot | unknown |
+| No unknown, and there is a runtime running/cancelling/waiting_user or processing has started and items are pending | running |
+| There are queued items, but no execution has started | queued |
+| No pending/active/uncertain work | completed |
 
-completed znaczy rozstrzygnięte pozycje, nie sukces wszystkich. Liczniki osobno completed/failed/cancelled/skipped/unknown/excluded/queued/running; suma obejmuje każdą pozycję dokładnie raz, według jej bieżącej disposition/wyniku. `blockedByExecutionId` wskazuje faktyczny slot, nawet gdy bieżące retry jest queued. Terminalny błąd formatu po pełnym done nie blokuje innych pozycji. unknown pozycji blokuje globalny start również następnej grupy, nie tylko powtórzenie tej samej oferty. Stop/skip grupy odcina publikację nieukończonych członków i nowe claimy; nie usuwa ukończonych wyników.
+completed means the items are resolved, not that all of them succeeded. Separate counters completed/failed/cancelled/skipped/unknown/excluded/queued/running; the sum covers each item exactly once, according to its current disposition/result. `blockedByExecutionId` points to the actual slot, even when the current retry is queued. A terminal format error after a full done does not block other items. An item's unknown blocks the global start also of the next group, not only a repetition of the same offer. Stop/skip of a group cuts off publication of unfinished members and new claims; it does not remove completed results.
 
-Uzupełnić podczas implementacji kanoniczne dokumenty dopasowania o lokalny wariant AC-B1/AC-G4–G7 i odczyt obu odpowiedzi HTTP. Regresje: `tests/matching-groups.integration.test.ts`, `tests/matching-ratings.integration.test.ts`, `tests/matching-list.integration.test.ts`, `tests/matching-archive.integration.test.ts`. Testy nowych tras mogą powstać osobno. E06-AC02/03 muszą sprawdzić duplikat po zmianie konfiguracji, kolejność podziału, współbieżny commandId i dwa workery. AC05: unknown na różnych grupach, stop/skip/retry przeciw publikacji; AC06: stare Batch >20 i stare archive operation ID. Bez wymogu live generacji do oceny jakości.
+During implementation, extend the canonical matching documents with the local variant of AC-B1/AC-G4–G7 and reading of both HTTP responses. Regressions: `tests/matching-groups.integration.test.ts`, `tests/matching-ratings.integration.test.ts`, `tests/matching-list.integration.test.ts`, `tests/matching-archive.integration.test.ts`. Tests of the new routes can be created separately. E06-AC02/03 must check a duplicate after a configuration change, the split order, a concurrent commandId and two workers. AC05: unknown on different groups, stop/skip/retry against publication; AC06: old Batch >20 and old archive operation IDs. No requirement for a live generation to evaluate quality.
 
-Migracja grup dodaje także `revision bigint NOT NULL DEFAULT 0 CHECK(revision>=0)` i `dispatch_allowed boolean NOT NULL DEFAULT true`; komendy grupowe zwiększają revision i stop/skip blokują kolejne claimy nieukończonych pozycji. Odczyt agregatów liczy stan z członków, bez zmiany revision od każdego postępu. Zapis retry grupy i jego dokładna lista celów są atomowe według wspólnego kontraktu; zakończone pozycje nie są ponawiane.
+The group migration also adds `revision bigint NOT NULL DEFAULT 0 CHECK(revision>=0)` and `dispatch_allowed boolean NOT NULL DEFAULT true`; group commands increase revision, and stop/skip block further claims of unfinished items. Reading aggregates computes the state from the members, without changing revision on each progress step. Recording a group retry and its exact target list are atomic according to the shared contract; completed items are not retried.
 
-Dla nowych wykonań unknown oznacza nierozstrzygnięty runtime, nie nieodwracalny koniec publikacji. Gdy pełny wynik tego samego request zostanie później potwierdzony, rekoncyliacja może opublikować go tylko pod nadal bieżącym tokenem i disposition=active. Nie traktować samego matching_requests.state=unknown jako powodu odrzucenia poprawnie skorelowanej późnej odpowiedzi. superseded/cancelled/skipped zawsze pozostają bez publikacji; wynik po zakończonej publikacji nie tworzy drugiej rewizji. Reguła idempotencji starego Batch z etapu 3 pozostaje zgodna dla legacy.
+For new executions, unknown means an unresolved runtime, not an irreversible end of publication. When a full result of the same request is later confirmed, reconciliation can publish it only under the still current token and disposition=active. Do not treat matching_requests.state=unknown alone as a reason to reject a correctly correlated late response. superseded/cancelled/skipped always stay without publication; a result after a completed publication does not create a second revision. The idempotency rule of old Batch from stage 3 stays compatible for legacy.

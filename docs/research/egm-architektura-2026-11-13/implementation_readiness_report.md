@@ -35,7 +35,7 @@ The plan is not ready for independent implementation of all twelve tasks. This i
 
 Reviewer `/root/style_final` read the style persona, full input, three module README files, glossary and product requirements. No edits or tests.
 
-**S1 — Major — Task .4 applies the completion condition too broadly.** Input lines 531–533 say availability changes require confirmed completeness. That condition should apply only to marking unseen advertisements unavailable. It must not prevent restoration when an advertisement is observed during a partial run or application of an explicit source status. Suggested wording: “Oznaczenie niewidzianych ogłoszeń jako niedostępnych wykonuje na jawne polecenie po potwierdzeniu kompletności, w zakresie przebiegu i dla źródła dopuszczającego takie wnioskowanie”.
+**S1 — Major — Task .4 applies the completion condition too broadly.** Input lines 531–533 say availability changes require confirmed completeness. That condition should apply only to marking unseen advertisements unavailable. It must not prevent restoration when an advertisement is observed during a partial run or application of an explicit source status. Suggested wording: "It marks unseen ads as unavailable on an explicit command after completeness is confirmed, within the scope of the run and for a source that allows such inference".
 
 ## Codebase-details reviewer
 

@@ -1,134 +1,134 @@
-# Zarządzanie ofertami pracy
+# Job offer management
 
-Pojęcia używane przy wyszukiwaniu ofert dla właściciela systemu, zarządzaniu nimi i przygotowaniu do rekrutacji.
+Terms used when searching for offers for the system's owner, managing them and preparing for recruitment.
 
-## Język domeny
+## Domain language
 
-**Ogłoszenie źródłowe**:
-Konkretny wpis z ofertą w konkretnym portalu, z własną treścią i historią zmian.
+**Source ad** (ogłoszenie źródłowe):
+A specific offer entry on a specific portal, with its own content and change history.
 
-**Historia zmian ogłoszenia**:
-Zapis zmian ogłoszenia w czasie, odrębny od jego aktualnej treści oraz ewentualnie zachowanych pełnych treści poprzednich wersji.
+**Ad change history** (historia zmian ogłoszenia):
+A record of an ad's changes over time, separate from its current content and from any kept full content of earlier versions.
 
-**Oferta pracy**:
-Wspólna możliwość zatrudnienia, z którą może być powiązanych kilka ogłoszeń źródłowych dotyczących tej samej rekrutacji.
+**Job offer** (oferta pracy):
+A shared employment opportunity, to which several source ads about the same recruitment may be linked.
 
-**Połączenie ofert**:
-Zatwierdzone przez właściciela potraktowanie wskazanych ofert jako jednej, odnotowane w historii.
+**Offer merge** (połączenie ofert):
+Treating the indicated offers as one, approved by the owner and recorded in the history.
 
-**Rozdzielenie ofert**:
-Cofnięcie połączenia z zachowaniem ogłoszeń źródłowych, notatek i historii; istniejąca aplikacja pozostaje przypisana do oferty wskazanej przez właściciela.
+**Offer split** (rozdzielenie ofert):
+Undoing a merge while keeping the source ads, notes and history; an existing application stays assigned to the offer the owner indicates.
 
-**Rozbieżność danych**:
-Sprzeczne informacje o tej samej ofercie, zachowujące źródło każdej wartości i odrębność od informacji wskazanej jako obowiązująca przez właściciela.
+**Data discrepancy** (rozbieżność danych):
+Conflicting information about the same offer, which keeps the source of each value and stays separate from the information the owner marked as binding.
 
-**Istotna zmiana ogłoszenia**:
-Zmiana informacji wpływającej na dopasowanie, np. technologii, wynagrodzenia, seniority lub trybu pracy; samo formatowanie nie stanowi takiej zmiany.
+**Material ad change** (istotna zmiana ogłoszenia):
+A change to information that affects the match, e.g. technologies, salary, seniority or work mode; formatting alone is not such a change.
 
-**Nieaktualna ocena dopasowania**:
-Ocena odnosząca się do stanu ogłoszenia sprzed istotnej zmiany, zachowana w historii i oznaczona jako nieaktualna do czasu zakończenia ponownej oceny.
+**Stale match assessment** (nieaktualna ocena dopasowania):
+An assessment that refers to the state of the ad before a material change, kept in the history and marked as stale until a new assessment is complete.
 
-**Niewiadoma kryterium**:
-Brak informacji pozwalających potwierdzić lub wykluczyć spełnienie kryterium przez ofertę; jest jawnie komunikowany i sam nie stanowi podstawy odrzucenia.
+**Criterion unknown** (niewiadoma kryterium):
+A lack of information that would confirm or rule out that an offer meets a criterion; it is reported openly and is not by itself a reason for rejection.
 
-**Ogłoszenie niedostępne w źródle**:
-Ogłoszenie, którego nie znaleziono podczas pełnego sprawdzenia źródła; sama nieobecność nie potwierdza jego wygaśnięcia ani zakończenia rekrutacji.
+**Ad unavailable at the source** (ogłoszenie niedostępne w źródle):
+An ad that was not found during a complete check of the source; its absence alone does not confirm that it expired or that the recruitment ended.
 
-**Ogłoszenie wygasłe w źródle**:
-Ogłoszenie, którego wygaśnięcie wynika z informacji źródła, np. daty ważności; ten stan nie oznacza automatycznie zakończenia aplikacji właściciela.
+**Ad expired at the source** (ogłoszenie wygasłe w źródle):
+An ad whose expiry follows from the source's information, e.g. a validity date; this state does not automatically mean the owner's application has ended.
 
-**Pełna synchronizacja źródła**:
-Zakończone bez brakujących części sprawdzenie wszystkich ogłoszeń w ustalonym zakresie źródła.
+**Complete source sync** (pełna synchronizacja źródła):
+A check of all ads in the set scope of a source, finished with no missing parts.
 
-**Niepełna synchronizacja źródła**:
-Przebieg, w którym pobrano tylko część ustalonego zakresu; poprawne wyniki pozostają dostępne, a nieobecność pozostałych ogłoszeń nie świadczy o ich niedostępności.
+**Incomplete source sync** (niepełna synchronizacja źródła):
+A run that fetched only part of the set scope; the valid results stay available, and the absence of the other ads does not show that they are unavailable.
 
-**Organizacja**:
-Konkretny podmiot, np. polska lub niemiecka spółka; może być powiązany z innymi organizacjami przez wspólną markę lub grupę.
+**Organisation** (organizacja):
+A specific entity, e.g. a Polish or German company; it may be linked to other organisations through a shared brand or group.
 
-**Marka**:
-Nazwa, pod którą może występować jedna lub wiele organizacji; sama marka nie rozstrzyga, która organizacja jest pracodawcą.
+**Brand** (marka):
+A name under which one or many organisations may appear; the brand alone does not settle which organisation is the employer.
 
-**Grupa organizacji**:
-Powiązane organizacje, które zachowują odrębność jako podmioty i pracodawcy.
+**Organisation group** (grupa organizacji):
+Linked organisations that stay separate as entities and employers.
 
-**Profil zawodowy**:
-Opis doświadczenia i umiejętności właściciela systemu, początkowo oparty na CV i uzupełniony o preferencje oraz kryteria wykluczające.
+**Professional profile** (profil zawodowy):
+A description of the system owner's experience and skills, initially based on the CV and extended with preferences and exclusion criteria.
 
-**Wymagania podstawowe**:
-Kryteria określające zakres ofert pobieranych ze źródeł przed oceną dopasowania.
+**Baseline requirements** (wymagania podstawowe):
+Criteria that set the scope of offers fetched from sources before match assessment.
 
-**Preferencje zawodowe**:
-Oczekiwania wobec przyszłej pracy, odrębne od posiadanych umiejętności i doświadczenia.
+**Professional preferences** (preferencje zawodowe):
+Expectations of a future job, separate from the skills and experience held.
 
-**Wymaganie konieczne**:
-Kryterium profilu, którego spełnienie jest niezbędne do uznania oferty za odpowiednią; brak informacji pozostaje niewiadomą, a nie dowodem niespełnienia.
+**Must-have requirement** (wymaganie konieczne):
+A profile criterion that must be met for an offer to count as suitable; missing information stays an unknown, not evidence that the criterion is not met.
 
-**Filtr widoku**:
-Warunek ograniczający wyświetlane oferty z zapisanej bazy, niezależny od kryteriów pobierania i oceny dopasowania.
+**View filter** (filtr widoku):
+A condition that limits the offers shown from the saved database, independent of the fetch criteria and the match assessment.
 
-**Triage ofert**:
-Etap oceny pobranych ofert względem preferencji zawodowych, obejmujący ocenę dopasowania i jej opisowe uzasadnienie.
+**Offer triage** (triage ofert):
+The stage of assessing fetched offers against professional preferences, covering the match assessment and its descriptive justification.
 
-**Dopasowanie oferty**:
-Ocena zgodności oferty z profilem zawodowym wraz z uzasadnieniem.
+**Offer match** (dopasowanie oferty):
+An assessment of how well an offer fits the professional profile, together with a justification.
 
-**Research pracodawcy**:
-Zebrane informacje o firmie, jej działalności, projektach, warunkach i metodach pracy oraz technologiach, przypięte do profilu firmy i pomagające ocenić ofertę oraz przygotować się do rekrutacji.
+**Employer research** (research pracodawcy):
+Collected information about a company, its business, projects, conditions and working methods and its technologies, attached to the company profile and helping to assess an offer and prepare for recruitment.
 
-**Profil firmy**:
-Zapis informacji o organizacji, jej powiązaniach i ofertach, do którego przypięte są wyniki researchu pracodawcy.
+**Company profile** (profil firmy):
+A record of information about an organisation, its links and its offers, to which the employer research results are attached.
 
-**Źródło informacji**:
-Pochodzenie informacji, np. ogłoszenie, strona firmy, własna wiedza lub rozmowa z rekruterem; ręczne wpisanie lub poprawienie informacji korzysta z tego samego mechanizmu niezależnie od jej pochodzenia.
+**Information source** (źródło informacji):
+The origin of information, e.g. an ad, the company's website, own knowledge or a conversation with a recruiter; entering or correcting information by hand uses the same mechanism whatever its origin.
 
-**Wersja researchu**:
-Raport przypięty do profilu firmy, zachowany wraz z wcześniejszymi raportami; wynik ponowienia na żądanie staje się wersją aktualną.
+**Research version** (wersja researchu):
+A report attached to the company profile, kept together with earlier reports; the result of an on-demand retry becomes the current version.
 
-**Historia ocen**:
-Dostępny do wglądu zapis kolejnych ocen automatycznych i ręcznych; nowa ocena AI może zastąpić ocenę właściciela bez usuwania wcześniejszych wartości.
+**Assessment history** (historia ocen):
+A viewable record of successive automatic and manual assessments; a new AI assessment may replace the owner's assessment without deleting earlier values.
 
-**Research podstawowy**:
-Pierwszy etap researchu pracodawcy, dostarczający podstawowych informacji o firmie do oceny atrakcyjności oferty; istniejący wynik jest wykorzystywany ponownie, a ponowne badanie wymaga żądania właściciela.
+**Basic research** (research podstawowy):
+The first stage of employer research, providing basic information about the company for assessing how attractive an offer is; an existing result is reused, and a new investigation requires the owner's request.
 
-**Research pogłębiony**:
-Drugi etap researchu pracodawcy, ukierunkowany na przygotowanie do rekrutacji na konkretne stanowisko, z uwzględnieniem zespołu lub projektu, jeśli są znane.
+**Deep research** (research pogłębiony):
+The second stage of employer research, aimed at preparing for recruitment for a specific position, taking the team or project into account if they are known.
 
-**Przygotowanie do rozmowy**:
-Informacje o firmie i projektach oraz tematy, zwłaszcza technologiczne, które warto przećwiczyć przed rozmową rekrutacyjną.
+**Interview preparation** (przygotowanie do rozmowy):
+Information about the company and its projects, and topics, especially technical ones, worth practising before a job interview.
 
-**Aplikacja**:
-Odrębny proces ubiegania się o pracę w odpowiedzi na ofertę, obejmujący etapy rekrutacji, rozmowy, zadania, terminy, kontakty i notatki; wiele ogłoszeń tej oferty nie tworzy osobnych procesów, natomiast kolejne podejście po zakończeniu poprzedniego może być nową aplikacją.
+**Application** (aplikacja):
+A separate process of applying for a job in response to an offer, covering the recruitment stages, interviews, assignments, deadlines, contacts and notes; several ads of this offer do not create separate processes, but another attempt after the previous one has ended may be a new application.
 
-**Technologie pracodawcy**:
-Zestaw technologii powiązanych z firmą, z rozróżnieniem ich powiązań z poszczególnymi ofertami pracy.
+**Employer technologies** (technologie pracodawcy):
+The set of technologies linked to a company, distinguishing their links to individual job offers.
 
-**Ocena AI**:
-Rekomendacja dopasowania w poszczególnych obszarach, obejmująca uzasadnienie, mocne strony, braki i niewiadome; powstaje na podstawie profilu i ogłoszeń, odrębnie od researchu pracodawcy i decyzji właściciela.
+**AI assessment** (ocena AI):
+A match recommendation in individual areas, covering the justification, strengths, gaps and unknowns; it is produced from the profile and the ads, separately from employer research and the owner's decision.
 
-**Składowa dopasowania**:
-Ocena jednego z obszarów: technologii, doświadczenia, warunków lub kierunku zawodowego.
+**Match component** (składowa dopasowania):
+An assessment of one of the areas: technologies, experience, conditions or career direction.
 
-**Rating łączny**:
-Wynik dopasowania w skali 0–100 obliczany z możliwych do oceny kryteriów według jawnych, konfigurowalnych wag; nie zastępuje sprawdzenia wymagań koniecznych, a przy braku podstaw do oceny pozostaje nieokreślony.
+**Overall rating** (rating łączny):
+A match score on a 0–100 scale, calculated from the criteria that can be assessed, using explicit, configurable weights; it does not replace checking the must-have requirements, and when there is no basis for assessment it stays undetermined.
 
-**Kompletność oceny**:
-Osobna od ratingu miara zakresu kryteriów, które można ocenić na podstawie dostępnych danych; niewiadome nie stanowią zerowych ani zgadywanych ocen.
+**Assessment completeness** (kompletność oceny):
+A measure, separate from the rating, of the range of criteria that can be assessed from the available data; unknowns are not zero or guessed scores.
 
-**Uzasadnienie składowej**:
-Powiązanie oceny obszaru z wymaganiami ogłoszenia i informacjami z profilu, rozróżniające potwierdzone dopasowanie, potwierdzony brak i niewiadomą.
+**Component justification** (uzasadnienie składowej):
+The link between an area's assessment and the ad's requirements and the profile's information, distinguishing a confirmed match, a confirmed gap and an unknown.
 
-**Kierunek zawodowy**:
-Zgodność stanowiska z pożądaną rolą, technologiami rozwoju i rodzajem projektu, niezależnie od już posiadanych umiejętności.
+**Career direction** (kierunek zawodowy):
+How well a position fits the desired role, the technologies one wants to develop in and the kind of project, regardless of the skills already held.
 
-**Decyzja właściciela**:
-Własna ocena lub wybór dotyczący oferty, zapisane niezależnie od rekomendacji AI.
+**Owner's decision** (decyzja właściciela):
+The owner's own assessment or choice about an offer, recorded independently of the AI recommendation.
 
-**Firma publikująca**:
-Organizacja publikująca ogłoszenie, która może być pracodawcą albo pośrednikiem prowadzącym rekrutację.
+**Publishing company** (firma publikująca):
+The organisation that publishes the ad, which may be the employer or an intermediary running the recruitment.
 
-**Firma zatrudniająca**:
-Organizacja, z którą kandydat ma zawrzeć umowę.
+**Employing company** (firma zatrudniająca):
+The organisation with which the candidate is to sign the contract.
 
-**Klient**:
-Organizacja, na rzecz której wykonywana jest praca, jeśli jest odrębna od firmy zatrudniającej; jej tożsamość może być nieznana.
+**Client** (klient):
+The organisation for which the work is done, if it is separate from the employing company; its identity may be unknown.

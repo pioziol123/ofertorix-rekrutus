@@ -1,56 +1,56 @@
-# AI i trwały research pracodawcy — weryfikacja usług
+# AI and persistent employer research — service verification
 
-Stan: **2026-10-31**, `oferty-pracy-v4t.10`. Zakres: osobista aplikacja lokalna, później możliwy VPS; zapis twierdzeń, URL i ograniczonych fragmentów dowodów do ponownego wykorzystania. Świeżo odczytane źródła oficjalne, bez kluczy, płatnych prób i zakupów. Uzupełnienie [wcześniejszej kalkulacji](ai-research-budzet.md), nie audyt wszystkich serwisów źródłowych.
+As of: **2026-10-31**, `oferty-pracy-v4t.10`. Scope: a personal local application, possibly a VPS later; storing claims, URLs and limited evidence excerpts for reuse. Official sources read fresh, without keys, paid trials or purchases. A supplement to the [earlier calculation](ai-research-budzet.md), not an audit of all source services.
 
-## Wynik i rekomendacja
+## Result and recommendation
 
-**Kandydat do pierwszej integracji: OpenAI Responses API, `gpt-6-luna` i standardowe `web_search`.** Dokumentacja potwierdza funkcje i niski koszt. Warunki dają podstawę do zachowania własnego Output, ale nie przenoszą praw wydawców do dowolnie kopiowanych tekstów. Rekomendacja obejmuje trwałe własne opracowanie i cytowania; fragment dowodu zapisujemy wyłącznie przy ustalonej podstawie dotyczącej konkretnego źródła. W przeciwnym razie `evidence_excerpt = null`, zachowując twierdzenie i odnośnik. To proponowany zakres wdrożenia, nie zatwierdzony wybór dostawcy.
+**Candidate for the first integration: OpenAI Responses API, `gpt-6-luna` and the standard `web_search`.** The documentation confirms the features and the low cost. The terms give a basis for keeping our own Output, but they do not transfer publishers' rights to freely copied texts. The recommendation covers persistent storage of our own write-up and citations; we store an evidence excerpt only when there is an established basis for that specific source. Otherwise `evidence_excerpt = null`, keeping the claim and the link. This is a proposed implementation scope, not an approved choice of provider.
 
-Nie potwierdzono bezwarunkowego prawa do trwałego zbierania fragmentów z całego internetu. Jeżeli wymaganiem stanie się fragment dla każdego twierdzenia niezależnie od źródła, ten warunek pozostaje nierozstrzygnięty; sam wybór API go nie usuwa.
+An unconditional right to persistently collect excerpts from the whole internet was not confirmed. If an excerpt for every claim, regardless of the source, becomes a requirement, that condition remains unresolved; the choice of API alone does not remove it.
 
-## Co ustalają warunki OpenAI
+## What the OpenAI terms establish
 
-[Services Agreement](https://openai.com/policies/services-agreement/), obowiązujące od 1.01.2026, obejmuje API. Konkretne postanowienia:
+The [Services Agreement](https://openai.com/policies/services-agreement/), in force from 1.01.2026, covers the API. Specific provisions:
 
-- **§4.1:** klient posiada Output w relacji z OpenAI, w granicach prawa; OpenAI przenosi swoje ewentualne prawa do Output.
-- **§3.3(b):** zakazane jest naruszanie praw osób trzecich. **§3.4:** dodatkowe warunki Third-Party Services mogą mieć zastosowanie.
-- **§4.3:** klient odpowiada za prawa do przesyłanego Input oraz użycie i ocenę Output.
+- **§4.1:** the customer owns the Output as between it and OpenAI, to the extent permitted by law; OpenAI assigns any rights it has in the Output.
+- **§3.3(b):** infringing third-party rights is prohibited. **§3.4:** additional Third-Party Services terms may apply.
+- **§4.3:** the customer is responsible for the rights to the Input it submits and for the use and evaluation of the Output.
 
-**Interpretacja projektowa:** własną syntezę można traktować jako Output do zapisania i ponownego użycia, z zachowaniem powyższych ograniczeń. Nie jest to przeniesienie cudzych praw do zawartych w odpowiedzi cytatów. Nie należy też utożsamiać zapisu we własnej bazie z retencją odpowiedzi po stronie dostawcy.
+**Design interpretation:** our own synthesis can be treated as Output to be stored and reused, subject to the restrictions above. This is not a transfer of third-party rights to quotes contained in the response. Storing in our own database must also not be equated with response retention on the provider's side.
 
-W odczytanych [Service Terms](https://openai.com/policies/service-terms/), aktualizacja 16.10.2026, nie ma osobnej sekcji web search ustanawiającej zakaz bazy analogiczny do Brave/Google. To wynik przeglądu wskazanego tekstu, **nie dowód nieograniczonej licencji przez przemilczenie**. §1(a) wymaga zgodności API z dokumentacją; zawiera też wyłączenia ochrony odszkodowawczej, m.in. dotyczące praw do Input i treści Third Party Offering. Ochrona odszkodowawcza nie zastępuje praw do źródła.
+The [Service Terms](https://openai.com/policies/service-terms/) that were read, updated 16.10.2026, have no separate web search section that establishes a database ban similar to Brave/Google. This is the result of reviewing the indicated text, **not proof of an unlimited licence by omission**. §1(a) requires use of the API in line with the documentation; it also contains exclusions from indemnification, among others concerning rights to Input and Third Party Offering content. Indemnification does not replace rights to the source.
 
-## Cytowania, dowody i ponowne użycie
+## Citations, evidence and reuse
 
-[OpenAI Docs: web search](https://developers.openai.com/api/docs/guides/tools-web-search) opisuje `url_citation` z URL, tytułem i powiązaniem z tekstem oraz pełniejszą listę odwiedzonych źródeł przez `include: ["web_search_call.action.sources"]`. Przy prezentowaniu wyników lub zawartych w nich informacji cytowania muszą być widoczne i klikalne. Dotyczy to także proponowanego widoku zapisanego researchu.
+[OpenAI Docs: web search](https://developers.openai.com/api/docs/guides/tools-web-search) describes `url_citation` with a URL, a title and a link to the text, and a fuller list of visited sources through `include: ["web_search_call.action.sources"]`. When presenting results or the information they contain, citations must be visible and clickable. This also applies to the proposed view of stored research.
 
-**Propozycja przepływu:** zapisujemy `claim`, rodzaj (fakt/opinia/wniosek/niewiadoma), konkretną organizację i zakres, URL, datę odczytu oraz identyfikator przebiegu. Lista odwiedzonych stron nie jest automatycznie dowodem każdego twierdzenia. Fragment z odpowiedzi modelu oznaczamy jako cytat dopiero po sprawdzeniu jego zgodności ze źródłem; streszczenie pozostaje opracowaniem. Dowód ze snippetu wyszukiwarki odróżniamy od fragmentu rzeczywiście odczytanej strony.
+**Proposed flow:** we store the `claim`, its kind (fact/opinion/inference/unknown), the specific organisation and scope, the URL, the read date and the run identifier. The list of visited pages is not automatically evidence for every claim. We mark an excerpt from the model's response as a quote only after checking that it matches the source; a summary remains a write-up. We distinguish evidence from a search engine snippet from an excerpt of a page that was actually read.
 
-Dla fragmentów proponuję zapisywać informację o podstawie ich utrwalenia i pochodzeniu. Nie ustalam tutaj uniwersalnego limitu znaków: mała długość ani prywatność aplikacji same nie ustanawiają licencji. Serwis ze zgodą/licencją na dany użytek może dostarczać fragmenty; przy nieustalonych prawach pozostaje odnośnik i własna synteza, wymagająca zwykłej oceny wykorzystanego materiału. Bezpośrednie pobranie strony zamiast wyniku wyszukiwania nie znosi warunków tego serwisu.
+For excerpts, I propose storing information about the basis for persisting them and their origin. I do not set a universal character limit here: neither short length nor the privacy of the application by itself establishes a licence. A service with consent/a licence for the given use can supply excerpts; where rights are not established, the link and our own synthesis remain, which requires the usual assessment of the material used. Fetching a page directly instead of a search result does not lift that service's terms.
 
-## Zgodność API i aktualny koszt kandydata
+## API compatibility and current cost of the candidate
 
-[Karta GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) potwierdza Responses API, web search i Structured Outputs. Ceny standardowe za milion tokenów: **wejście 0,10 USD, wyjście 0,50 USD**; Free tier jest nieobsługiwany. Dostęp na konkretnym koncie nie został sprawdzony. [Cennik API](https://developers.openai.com/api/docs/pricing) podaje **10 USD/1000 wywołań web search**, dodatkowo tokeny kontekstu wyszukiwania według stawki modelu. Nie zakładamy grantu ani rabatów cache/batch.
+The [GPT-6 Luna card](https://developers.openai.com/api/docs/models/gpt-6-luna) confirms the Responses API, web search and Structured Outputs. Standard prices per million tokens: **input 0.10 USD, output 0.50 USD**; the Free tier is not supported. Access on a specific account was not checked. The [API price list](https://developers.openai.com/api/docs/pricing) gives **10 USD/1000 web search calls**, plus search context tokens at the model rate. We do not assume a grant or cache/batch discounts.
 
-[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs) używa w Responses `text.format` z `type: "json_schema"`, `strict: true` i obsługiwanym podzbiorem schematu. Poprawny schemat nie gwarantuje poprawnych faktów. **Propozycja:** pierwszy etap zbiera research i natywne cytowania; drugi, bez search, mapuje go do schematu twierdzeń. Zachować oryginalne powiązania cytowań, obsłużyć odmowę/przerwanie i walidować identyfikatory źródeł. Dwa etapy nie są udokumentowanym obowiązkiem API; upraszczają kontrolę dowodów i kosztu naprawy JSON.
+[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs) in Responses uses `text.format` with `type: "json_schema"`, `strict: true` and a supported subset of the schema. A valid schema does not guarantee correct facts. **Proposal:** the first stage gathers research and native citations; the second, without search, maps it to the claim schema. Keep the original citation links, handle refusal/interruption and validate source identifiers. Two stages are not a documented API requirement; they simplify control of evidence and of the cost of JSON repair.
 
-Własny rachunek według świeżych cen, przy wolumenach i tokenach z poprzedniego raportu (obejmujących wszystkie etapy):
+Our own calculation at fresh prices, with the volumes and tokens from the previous report (covering all stages):
 
-| Scenariusz | Wejście / wyjście mln | Search | USD | PLN z zapasem |
+| Scenario | Input / output M | Search | USD | PLN with margin |
 | --- | --- | --- | --- | --- |
-| Mały | 2,44 / 0,382 | 72 | 1,155 | **7,51** |
-| Średni | 10,68 / 1,714 | 184 | 3,765 | **24,47** |
+| Small | 2.44 / 0.382 | 72 | 1.155 | **7.51** |
+| Medium | 10.68 / 1.714 | 184 | 3.765 | **24.47** |
 
-PLN to założone 5 PLN/USD i dodatkowe 30%, nie aktualny kurs ani faktura. Wynik mieści się w 100 PLN przy tych założeniach; nie dowodzi rzeczywistego zużycia. Aplikacja potrzebuje wspólnego limitu AI/search i ograniczenia liczby rund. Sam prompt nie stanowi twardej blokady kosztów.
+PLN assumes 5 PLN/USD plus an extra 30%, not a current rate or an invoice. The result fits within 100 PLN under these assumptions; it does not prove actual usage. The application needs a shared AI/search limit and a cap on the number of rounds. A prompt alone is not a hard cost block.
 
-## Porównanie: Brave i wcześniejsza kolizja Google
+## Comparison: Brave and the earlier Google conflict
 
-[Brave Search API Terms](https://api-dashboard.search.brave.com/documentation/resources/terms-of-service), aktualizacja 1.09.2026, **§3.2(i)** zabrania trwałego przechowywania/cache/bazy Search Results także w części, poza magazynowaniem przejściowym potrzebnym do działania. Definicja **§1.10** obejmuje wszystkie wyniki wywołań, a **§3.2(ii)** ogranicza utwory zależne. Nie zakładamy więc, że przeredagowanie snippetu przez AI omija warunki. §2 dopuszcza dodatkowe Order Forms.
+The [Brave Search API Terms](https://api-dashboard.search.brave.com/documentation/resources/terms-of-service), updated 1.09.2026, **§3.2(i)** prohibit persistent storing/caching/databases of Search Results, also in part, except for transient storage needed for operation. The definition in **§1.10** covers all call results, and **§3.2(ii)** restricts derivative works. So we do not assume that AI rewording of a snippet circumvents the terms. §2 allows additional Order Forms.
 
-[FAQ Brave](https://brave.com/search/api/) dopuszcza storage z planem zawierającym takie prawa. [Publiczny cennik](https://api-dashboard.search.brave.com/documentation/pricing) pokazuje Search 5 USD/1000 żądań i 5 USD miesięcznych kredytów, ale nie potwierdza przyznania storage w tym wariancie. **Wniosek:** Brave pozostaje rezerwą po uzyskaniu konkretnych warunków i ceny; nie jest obecnie potwierdzonym zamiennikiem dla trwałej bazy. Prawa wydawców nadal byłyby osobne.
+The [Brave FAQ](https://brave.com/search/api/) allows storage with a plan that includes such rights. The [public price list](https://api-dashboard.search.brave.com/documentation/pricing) shows Search at 5 USD/1000 requests and 5 USD in monthly credits, but does not confirm that storage is granted in that variant. **Conclusion:** Brave remains a fallback once specific terms and a price are obtained; it is not currently a confirmed replacement for a persistent database. Publishers' rights would still be separate.
 
-[Gemini Additional Terms — Grounding with Google Search, Use Restrictions](https://ai.google.dev/gemini-api/terms#grounding-with-google-search) nadal ograniczają cache, analizowanie i zbieranie linków do innych celów. Wyjątek historii czatu do dwóch lat służy oglądaniu historii, a wyjątek indywidualnego zapisu wyklucza automatyczne gromadzenie i bazę. To podtrzymuje wcześniejsze wyłączenie tego mechanizmu z projektowanej bazy pracodawców, bez oceniania całej oferty Gemini.
+The [Gemini Additional Terms — Grounding with Google Search, Use Restrictions](https://ai.google.dev/gemini-api/terms#grounding-with-google-search) still restrict caching, analysis and link collection for other purposes. The chat history exception of up to two years serves viewing history, and the individual storage exception excludes automated collection and a database. This upholds the earlier exclusion of this mechanism from the planned employer database, without assessing Gemini's whole offering.
 
-## Co pozostaje do rozstrzygnięcia
+## What remains to be decided
 
-Do wyboru kandydata wystarcza decyzja o opisanym warunkowym zakresie fragmentów; nie jest potrzebny otwarty audyt internetu. Późniejsza, osobno autoryzowana próba powinna sprawdzić dostęp konta, rozpoznawanie organizacji, zgodność cytatów, koszt wszystkich rund i ponowień oraz jakość polskich ofert. Bez niej potwierdzamy podstawę dokumentacyjną i rachunkową, nie jakość produkcyjną. W razie wymagania obowiązkowych fragmentów trzeba wcześniej określić dopuszczone źródła i podstawy ich wykorzystania.
+To choose the candidate, a decision on the described conditional scope of excerpts is enough; an open-ended audit of the internet is not needed. A later, separately authorised trial should check account access, organisation recognition, quote accuracy, the cost of all rounds and retries, and quality on Polish offers. Without it, we confirm the documentary and arithmetic basis, not production quality. If mandatory excerpts become a requirement, the permitted sources and the basis for using them must be defined first.

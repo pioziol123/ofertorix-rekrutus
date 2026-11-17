@@ -1,42 +1,42 @@
-# Etap 5: Ollama gpt-oss:20b i lokalny profil — Requirements
+# Stage 5: Ollama gpt-oss:20b and the local profile — Requirements
 
-Status: **przegląd wykonany, specyfikacja gotowa do implementacji**, 2026-11-05. Etap 5 z dziewięciu; przegląd w ramach `oferty-pracy-334.20`, bez implementacji i testów aplikacji. Beads: `oferty-pracy-334.6`.
+Status: **review done, specification ready for implementation**, 2026-11-05. Stage 5 of nine; review as part of `oferty-pracy-334.20`, without implementation or application tests. Beads: `oferty-pracy-334.6`.
 
-Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md), [plan](../../README.md). Potwierdzone: lokalnie `gpt-oss:20b`, OpenCode dla agenta i brak kwot Ollamy. Kontrakty SD są decyzjami technicznymi do realizacji w zatwierdzonym zakresie; weryfikacja działania pozostaje częścią implementacji.
+Basis: [PRD](../../PRD.md), [cross-cutting requirements](../../requirements.md), [plan](../../README.md). Confirmed: `gpt-oss:20b` locally, OpenCode for the agent and no Ollama charges. The SD contracts are technical decisions to be implemented within the approved scope; verifying that they work remains part of the implementation.
 
-## Cel i granice
+## Goal and boundaries
 
-Pierwsze użyteczne lokalne wykonanie: adapter Ollamy i propozycja profilu. Wspólna wersjonowana konfiguracja oraz koszt lokalny zero. Bez lokalnych ocen i agenta researchu.
+The first useful local execution: the Ollama adapter and the profile proposal. A shared versioned configuration and a local cost of zero. No local assessments and no research agent.
 
-Pokrycie przekrojowe: LA-01, LA-03, LA-04, LA-06, LA-08. Aktorzy: właściciel zlecający lub przeglądający operację oraz worker wykonujący jej zapisany zakres; mechanizm dostępu pozostaje zgodny z istniejącą prywatną aplikacją.
+Cross-cutting coverage: LA-01, LA-03, LA-04, LA-06, LA-08. Actors: the owner who requests or reviews an operation, and the worker that executes its recorded scope; the access mechanism stays consistent with the existing private application.
 
-## Warunki wejścia
+## Entry conditions
 
-Etapy 1–2; techniczne sprawdzenie API/modelu O-L1, bez pilota jakości. Należy przeczytać aktualny kod i istniejące niezacommitowane zmiany przed realizacją.
+Stages 1–2; a technical check of the API/model O-L1, without a quality pilot. Read the current code and the existing uncommitted changes before implementation.
 
-## Wymagania i kryteria akceptacji
+## Requirements and acceptance criteria
 
-Identyfikatory w wierszu łączą wymaganie z jego obserwowalnym kryterium. Oba pozostają stabilne przy kolejnych przeglądach.
+The identifiers in each row link a requirement to its observable criterion. Both stay stable across later reviews.
 
-| Wymaganie / kryterium | Zachowanie | Warunek akceptacji |
+| Requirement / criterion | Behaviour | Acceptance condition |
 | --- | --- | --- |
-| E05-R01 / E05-AC01 | Jawny wybór i zgodność starych ustawień | Bez nowej konfiguracji istniejąca instalacja nadal korzysta z OpenAI. Jawny wybór Ollamy wymaga gpt-oss:20b; brak modelu lub błędna kombinacja daje błąd bez fallbacku. |
-| E05-R02 / E05-AC02 | Lokalny profil bez OpenAI | Przy braku klucza i cennika OpenAI powstaje poprawna propozycja z cytatami. Zapis profilu nadal wymaga zatwierdzenia; zły JSON lub dowody nie zmieniają aktywnego profilu. |
-| E05-R03 / E05-AC03 | Niezmienna migawka wykonania | Zmiana konfiguracji po zleceniu nie przekierowuje próby. Nowa próba używa zapisanych wersji instrukcji, schematu, wejścia, modelu i parametrów; sekrety nie trafiają do historii. |
-| E05-R04 / E05-AC04 | Brak kwot i prawidłowy koszt | Ujemne saldo usług płatnych nie blokuje lokalnej propozycji. Koszt API to zero również przy usage=null; brak kwoty tokenów, rund, wywołań lub stałego deadline całej lokalnej pracy. |
-| E05-R05 / E05-AC05 | Jawna awaria, przerwanie i kontekst | Brak modelu, awaria połączenia, niepełna odpowiedź, zbyt duży fizyczny kontekst i anulowanie są odróżnialne od poprawnej propozycji; wejście nie jest cicho skracane. |
-| E05-R06 / E05-AC06 | Dostępność modelu przez API | Worker sprawdza GET /api/tags i znajduje dokładnie skonfigurowany gpt-oss:20b. Brak modelu, niedostępny serwer lub błędna odpowiedź są rozróżnialne. Nie uruchamiamy generacji do oceny jakości; właściciel ocenia wynik przy normalnym użyciu. |
+| E05-R01 / E05-AC01 | Explicit choice and compatibility of old settings | Without the new configuration, an existing installation still uses OpenAI. An explicit choice of Ollama requires gpt-oss:20b; a missing model or an invalid combination gives an error without fallback. |
+| E05-R02 / E05-AC02 | Local profile without OpenAI | Without an OpenAI key and price list, a valid proposal with quotes is produced. Saving the profile still requires approval; bad JSON or evidence does not change the active profile. |
+| E05-R03 / E05-AC03 | Immutable execution snapshot | A configuration change after the request does not redirect the attempt. A new attempt uses the recorded versions of the instructions, schema, input, model and parameters; secrets do not get into the history. |
+| E05-R04 / E05-AC04 | No charges and a correct cost | A negative balance of paid services does not block a local proposal. The API cost is zero also when usage=null; there is no quota on tokens, rounds or calls, and no fixed deadline for the whole local work. |
+| E05-R05 / E05-AC05 | Explicit failure, interruption and context | A missing model, a connection failure, an incomplete response, a physical context that is too large and cancellation are distinguishable from a valid proposal; the input is not silently shortened. |
+| E05-R06 / E05-AC06 | Model availability through the API | The worker checks GET /api/tags and finds exactly the configured gpt-oss:20b. A missing model, an unavailable server or an invalid response are distinguishable. We do not run a generation to evaluate quality; the owner judges the result in normal use. |
 
-## Zależności i gotowość
+## Dependencies and readiness
 
-Konfiguracja, done_reason, przepełnienie i recovery są określone w SD po przeglądzie 2026-11-05. O-L1 to techniczny test połączenia/modelu podczas realizacji, nie brak decyzji przed kodowaniem. Niewykonany test live nie jest sukcesem.
+Configuration, done_reason, overflow and recovery are defined in the SD after the review of 2026-11-05. O-L1 is a technical connection/model test during implementation, not a missing decision before coding. A live test that was not run is not a success.
 
-Rozwiązanie i mapowanie weryfikacji: [SD](solution-design.md). Reguły LA zachowują jedno miejsce utrzymania w wymaganiach przekrojowych; ta para określa ich zakres dla etapu. Nie zmienia reguł domenowych poza jawnym zakresem.
+Solution and verification mapping: [SD](solution-design.md). The LA rules keep a single place of maintenance in the cross-cutting requirements; this pair defines their scope for the stage. It does not change domain rules outside its explicit scope.
 
-Aktualizacja 2026-11-05: dostępność sprawdzamy przez [GET /api/tags](https://docs.ollama.com/api/tags); wcześniejszy pilot jakości odpowiedzi został zastąpiony oceną właściciela podczas normalnego używania. Testy techniczne i walidatory pozostają wymagane.
+Update 2026-11-05: we check availability through [GET /api/tags](https://docs.ollama.com/api/tags); the earlier response quality pilot was replaced by the owner's judgement during normal use. Technical tests and validators remain required.
 
-## Uzupełnienie po grill-me — zatwierdzone 2026-11-05
+## Addendum after grill-me — approved 2026-11-05
 
-LA-11 obejmuje tę ścieżkę wspólną kolejką jednej lokalnej pracy AI razem z researchem. Odbiór wymaga braku równoległej generacji przy mieszaninie profilu, ocen i OpenCode, również między workerami. Unknown zajmuje slot, retry może być queued bez startu. Zły JSON/dowód kończy próbę, bez kolejnej automatycznej generacji; ręczne retry ma niezmienne wejście i konfigurację zgodnie z LA-17. Infrastruktura jest obsługiwana ręcznie (LA-18). Ten etap jest częścią jednego wspólnego wydania z panelem (LA-16), nie osobnym wydaniem. Kontrakt kolejki i direct HTTP: [runtime](../../kontrakty-runtime.md).
+LA-11 covers this path with a shared queue of one local AI job, together with research. Acceptance requires no parallel generation with a mix of profile, assessments and OpenCode, also between workers. Unknown occupies the slot; a retry can be queued without starting. Bad JSON/evidence ends the attempt, with no further automatic generation; a manual retry has immutable input and configuration according to LA-17. The infrastructure is handled manually (LA-18). This stage is part of one shared release with the panel (LA-16), not a separate release. Queue contract and direct HTTP: [runtime](../../kontrakty-runtime.md).
 
-E05-AC03 obejmuje niezmienność ręcznego retry po zmianie `.env` i profilu; E05-AC04/05 obejmują wspólny slot z ocenami/researchem, unknown i ręczną procedurę operatora. Pierwszą wspólną kolejkę/slot implementuje ten etap, etap6/8 ją rozszerza bez tworzenia drugiego mechanizmu.
+E05-AC03 covers the immutability of a manual retry after a change to `.env` and the profile; E05-AC04/05 cover the shared slot with assessments/research, unknown and the manual operator procedure. This stage implements the first shared queue/slot; stages 6/8 extend it without creating a second mechanism.

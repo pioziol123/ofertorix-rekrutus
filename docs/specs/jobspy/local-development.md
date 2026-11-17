@@ -1,12 +1,12 @@
-# Lokalna praca nad forkiem JobSpy
+# Local work on the JobSpy fork
 
-Data: 2026-11-02. Repozytorium: https://github.com/pioziol123/JobSpy, oryginał: https://github.com/speedyapply/JobSpy.
+Date: 2026-11-02. Repository: https://github.com/pioziol123/JobSpy, original: https://github.com/speedyapply/JobSpy.
 
-Potwierdzona baza: `68b88d6909a2342ad75fbb945c4204a3a7ed6665` (2026-10-27), pakiet `python-jobspy` 1.4.1. Lokalna kopia w `.local/JobSpy` jest osobnym repozytorium Git, ignorowanym przez repo aplikacji. `origin` wskazuje fork, `upstream` oryginał. Zmiany aplikacji i forka przeglądamy osobno. Nie jest to jeszcze zależność uruchomieniowa aplikacji.
+Confirmed base: `68b88d6909a2342ad75fbb945c4204a3a7ed6665` (2026-10-27), package `python-jobspy` 1.4.1. The local copy in `.local/JobSpy` is a separate Git repository, ignored by the application repo. `origin` points to the fork, `upstream` to the original. We review application and fork changes separately. It is not yet a runtime dependency of the application.
 
-Gałąź pierwszej zmiany: `codex/indeed-salary-provenance`. Po wyraźnej zgodzie właściciela opublikowano commit `0f2540e0919f4506bec15fe9ae5a17b1246565d6`. Aktualna wersja forka: `1.4.1+oferty.1`. Status: `git -C .local/JobSpy status --short`. Gałąź main forka nie została zmieniona.
+Branch of the first change: `codex/indeed-salary-provenance`. After the owner's explicit consent, commit `0f2540e0919f4506bec15fe9ae5a17b1246565d6` was published. Current fork version: `1.4.1+oferty.1`. Status: `git -C .local/JobSpy status --short`. The fork's main branch was not changed.
 
-Środowisko: Python 3.13, uv, `.venv` wewnątrz forka. `uv.lock` przypina zależności środowiska testowego; upstreamowy `poetry.lock` pozostaje bez zmian. Cache uv poza repo, np. `/tmp/oferty-jobspy-uv`.
+Environment: Python 3.13, uv, `.venv` inside the fork. `uv.lock` pins the test environment's dependencies; the upstream `poetry.lock` stays unchanged. The uv cache lives outside the repo, e.g. `/tmp/oferty-jobspy-uv`.
 
 ```sh
 git clone https://github.com/pioziol123/JobSpy.git .local/JobSpy
@@ -19,25 +19,25 @@ cd .local/JobSpy
 .venv/bin/mypy
 ```
 
-Do dokładnego odtworzenia użyj commitu z [manifestu paczki](../../../integrations/jobspy/manifest.json). Repo aplikacji zawiera wheel i eksport przypiętych zależności; worker nie wymaga lokalnej kopii `.local/JobSpy`. Nie dodajemy całej kopii ani jej środowiska do repo aplikacji.
+For an exact reproduction, use the commit from the [package manifest](../../../integrations/jobspy/manifest.json). The application repo contains the wheel and an export of the pinned dependencies; the worker does not need the local copy `.local/JobSpy`. We do not add the whole copy or its environment to the application repo.
 
-## Integracja w aplikacji
+## Integration in the application
 
-Obraz worker zawiera interpreter `/opt/jobspy/bin/python` i zweryfikowaną paczkę. Web pozostaje bez Pythona. JobSpy nie jest objęty automatycznym harmonogramem; źródło jest domyślnie wyłączone.
+The worker image contains the interpreter `/opt/jobspy/bin/python` and the verified package. Web stays without Python. JobSpy is not covered by an automatic schedule; the source is disabled by default.
 
-- Status: `docker compose exec worker pnpm jobspy:status` lub GET `/api/sources/jobspy`.
-- Przyszłe ręczne zlecenie: `docker compose exec worker pnpm jobspy:sync --wait`, dopiero po rozstrzygnięciu dostępu i jawnej aktywacji w konfiguracji. Przy disabled polecenie kończy się bez uruchomienia Pythona i bez zlecenia w kolejce.
-- Zmiana konfiguracji wymaga odtworzenia kontenerów, które odczytują flagę. Nie ustawiono aktywacji w `.env`.
-- Testy integracyjne (`RUN_INTEGRATION=1`) wykonują pliki kolejno: advisory locks PostgreSQL są wspólne dla bazy, mimo odrębnych schematów danych testowych. Zwykłe testy jednostkowe pozostają równoległe.
+- Status: `docker compose exec worker pnpm jobspy:status` or GET `/api/sources/jobspy`.
+- Future manual request: `docker compose exec worker pnpm jobspy:sync --wait`, only after access is settled and after explicit activation in the configuration. When disabled, the command ends without starting Python and without a request in the queue.
+- A configuration change requires recreating the containers that read the flag. Activation has not been set in `.env`.
+- Integration tests (`RUN_INTEGRATION=1`) run the files one after another: PostgreSQL advisory locks are shared across the database, despite the separate schemas for test data. Ordinary unit tests stay parallel.
 
-Przeprowadzono test syntetycznego transportu pełnej drogi Node → zainstalowany Python → JSON → Zod w kontenerze, bez dostępu do Indeed i bez zapisu ofert do bazy użytkownika. Próba live pozostaje w Beads `oferty-pracy-y81.5`, scraper HTML w `oferty-pracy-y81.8` jako ostatni etap.
+A synthetic transport test of the full path Node → installed Python → JSON → Zod was run in the container, without access to Indeed and without saving offers to the user's database. The live trial remains in Beads `oferty-pracy-y81.5`, the HTML scraper in `oferty-pracy-y81.8` as the last stage.
 
-## Dostęp do Indeed
+## Access to Indeed
 
-Nie wykonano prób scrapowania. [Warunki Indeed, D.21](https://www.indeed.com/legal) ograniczają automatyczny dostęp bez pisemnej zgody z wyjątkiem określonego indeksowania zgodnego z robots.txt. Nie potwierdzono uprawnienia do zakresu używanego przez JobSpy. Kod testujemy na syntetycznych przykładach; regularny importer pozostaje nieaktywny.
+No scraping attempts were made. [Indeed's terms, D.21](https://www.indeed.com/legal) restrict automated access without written consent, except for specific indexing that complies with robots.txt. Permission for the scope used by JobSpy has not been confirmed. We test the code on synthetic samples; the regular importer stays inactive.
 
-Oficjalna [instrukcja dostępu do API](https://docs.indeed.com/getstarted/integrate-and-call-apis) prowadzi do [programu partnerskiego](https://partners.indeed.com/). Należy zapytać o zgodę na wyszukiwanie i lokalne przechowywanie ofert dla osobistego projektu; samo utworzenie aplikacji/OAuth nie potwierdza prawa do każdego zasobu. Właściciel został poinformowany o tej zależności. Nie wysłano zgłoszenia w jego imieniu.
+The official [API access guide](https://docs.indeed.com/getstarted/integrate-and-call-apis) leads to the [partner programme](https://partners.indeed.com/). We need to ask for consent to search and to store offers locally for a personal project; merely creating an application/OAuth does not confirm the right to every resource. The owner has been informed of this dependency. No application was sent on their behalf.
 
-## Aktualizacja dostępu — 2026-11-02
+## Access update — 2026-11-02
 
-Właściciel potwierdził uzyskanie zgody LinkedIn i Indeed z limitem jednego query/s. Powyższy opis braku zgody jest historyczny. W aplikacji liczymy wszystkie żądania i ponowienia, zachowujemy odstęp 2 s i serializujemy przebiegi runnera na współdzielonym wolumenie dokumentów. LinkedIn jest aktywowany do ręcznego pilota. Indeed HTML pozostaje osobnym zadaniem; GraphQL pozostaje wyłączony. Bezpośrednie uruchamianie biblioteki poza runnerem nie korzysta z blokady aplikacji.
+The owner confirmed obtaining consent from LinkedIn and Indeed with a limit of one query/s. The description of missing consent above is historical. In the application we count all requests and retries, keep a 2 s gap, and serialise runner runs on the shared documents volume. LinkedIn is activated for a manual pilot. Indeed HTML remains a separate task; GraphQL stays disabled. Running the library directly outside the runner does not use the application's lock.

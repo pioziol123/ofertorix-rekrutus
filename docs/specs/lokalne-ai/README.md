@@ -1,161 +1,161 @@
-# Refaktor AI, Ollama i lokalny agent — plan wdrożenia
+# AI refactor, Ollama and a local agent — implementation plan
 
-Status: **pakiet specyfikacji do pracy etapowej**, aktualizacja 2026-11-05. Decyzje produktowe opisane w wymaganiach są zatwierdzone; projekt techniczny i plan weryfikacji służą wykonawcy. Bieżąca praca obejmuje dokumentację, bez implementacji i uruchamiania usług.
+Status: **specification package for staged work**, updated 2026-11-05. The product decisions described in the requirements are approved; the technical design and the verification plan serve the implementer. The current work covers documentation, without implementation and without starting services.
 
-**Aktualizacja decyzji właściciela:** lokalny model to `gpt-oss:20b`, a runtime agenta to OpenCode. Bez narzuconych przez aplikację limitów korzystania z Ollamy (budżetu, tokenów, wywołań i rund). Własna pętla agenta oraz wcześniejsza propozycja limitowania lokalnej pracy są zastąpione tym wyborem. Obsługa błędów, anulowania i restartu pozostaje częścią integracji.
+**Update of the owner's decisions:** the local model is `gpt-oss:20b`, and the agent runtime is OpenCode. No application-imposed limits on Ollama use (budget, tokens, calls and rounds). This choice replaces a custom agent loop and the earlier proposal to limit local work. Handling of errors, cancellation and restart remains part of the integration.
 
-- [PRD — cel, zakres i rezultaty dla właściciela](PRD.md).
-- [Wymagania przekrojowe i kryteria LA-01–LA-21](requirements.md).
-- [Granice modułów i projekt przekrojowy](solution-design.md).
-- [Istniejąca architektura projektu](../pierwsza-wersja/architecture.md).
-- [Kontrakty runtime: sesje, kolejka, Chrome, archiwum i komendy](kontrakty-runtime.md).
-- [Przekazanie lokalnemu modelowi: wejście, etapy i walidacja](przekazanie-lokalnemu-modelowi.md).
-- [Kwalifikacja przypiętych wersji i izolacji Chrome](kwalifikacja-runtime.md).
+- [PRD — goal, scope and outcomes for the owner](PRD.md).
+- [Cross-cutting requirements and criteria LA-01–LA-21](requirements.md).
+- [Module boundaries and cross-cutting design](solution-design.md).
+- [Existing project architecture](../pierwsza-wersja/architecture.md).
+- [Runtime contracts: sessions, queue, Chrome, archive and commands](kontrakty-runtime.md).
+- [Hand-off to the local model: entry, stages and validation](przekazanie-lokalnemu-modelowi.md).
+- [Qualification of pinned versions and Chrome isolation](kwalifikacja-runtime.md).
 
-Specyfikacja utrzymuje zakres i decyzje. **Beads jest jedynym źródłem statusu, przypisań i zależności**: `bd show oferty-pracy-334`. Kolejność poniżej to plan techniczny; nie lista wykonanych prac. Gotowość każdego zadania oceniamy osobno po przeglądzie i dopracowaniu jego pary requirements/SD. Etykieta `ready-for-agent` oznacza przygotowanie specyfikacji; nie oznacza wykonania zadania ani spełnienia jego zależności implementacyjnych.
+The specification keeps the scope and decisions. **Beads is the only source of status, assignments and dependencies**: `bd show oferty-pracy-334`. The order below is a technical plan, not a list of finished work. We assess the readiness of each task separately, after reviewing and refining its requirements/SD pair. The label `ready-for-agent` means the specification is prepared; it does not mean the task is done or that its implementation dependencies are met.
 
-## Cel i zasady przejścia
+## Goal and transition rules
 
-Profil i oceny mają korzystać z lokalnego modelu bez klucza OpenAI. Research podstawowy ma uzyskać alternatywne wykonanie przez agenta z modelem lokalnym i narzędziami wyszukiwania oraz odczytu stron. Dotychczasowe OpenAI, Batch, historia i wspólny budżet pozostają obsługiwane.
+The profile and assessments are to use the local model without an OpenAI key. Basic research is to get an alternative execution through an agent with a local model and tools for searching and reading pages. The existing OpenAI, Batch, history and shared budget remain supported.
 
-Najpierw oddzielamy istniejące odpowiedzialności bez zmiany zachowania. Następnie dodajemy drugi adapter modelu i lokalne wykonanie, a później integrujemy agenta OpenCode. Pętlę agenta realizuje OpenCode. Profil można technicznie sprawdzić wcześniej, ale właściciel otrzyma jedno wspólne wdrożenie całego epiku, wraz z panelem.
+First we separate the existing responsibilities without changing behaviour. Then we add a second model adapter and local execution, and later we integrate the OpenCode agent. OpenCode implements the agent loop. The profile can be checked technically earlier, but the owner gets one shared deployment of the whole epic, including the panel.
 
-Przed każdym etapem przeczytać aktualny kod i zastane zmiany oraz odświeżyć jego przejrzane requirements/SD względem wyników poprzednika. Gotowość specyfikacji zapisano w Beads po przeglądzie; nie powtarzać formalnie całego przygotowania bez nowej rozbieżności. Uzyskać decyzję dla materialnej zmiany zachowania. Przy implementacji zachowania użyć `implement-with-tester`. Nie wykonujemy commitu, push ani synchronizacji Dolt w ramach samego planu.
+Before each stage, read the current code and existing changes, and refresh the stage's reviewed requirements/SD against the results of the preceding stage. Specification readiness was recorded in Beads after the review; do not formally repeat the whole preparation without a new discrepancy. Get a decision for a material change of behaviour. When implementing behaviour, use `implement-with-tester`. We do not commit, push or sync Dolt as part of the plan itself.
 
-## Requirements i SD każdego etapu
+## Requirements and SD for each stage
 
-Pary przygotowane 2026-11-04 zostały przejrzane i dopracowane 2026-11-05 w zadaniach 334.19/20. Krytyczne kontrakty doprecyzowano w SD i wspólnym runtime. Wybrano headless Chrome w kontenerze z ręcznym podglądem DevTools; zadanie kwalifikacji wersji/izolacji wskazano poniżej i blokuje etap 7 do uzyskania dowodów. Weryfikacja techniczna pozostaje pracą wykonawcy, nie wykonanym wynikiem dokumentacji.
+The pairs prepared on 2026-11-04 were reviewed and refined on 2026-11-05 in tasks 334.19/20. The critical contracts were clarified in the SD and the shared runtime. Headless Chrome in a container with manual DevTools preview was chosen; the version/isolation qualification task is listed below and blocks stage 7 until evidence is obtained. Technical verification remains the implementer's work, not a completed result of the documentation.
 
-| Etap | Requirements | Solution design |
+| Stage | Requirements | Solution design |
 | --- | --- | --- |
-| 1. Wspólna konfiguracja i budżet | [Requirements](etapy/01-konfiguracja-budzet/requirements.md) | [SD](etapy/01-konfiguracja-budzet/solution-design.md) |
-| 2. Profil niezależny od protokołu OpenAI | [Requirements](etapy/02-profil-adapter/requirements.md) | [SD](etapy/02-profil-adapter/solution-design.md) |
-| 3. Oceny oddzielone od OpenAI Batch | [Requirements](etapy/03-oceny-batch/requirements.md) | [SD](etapy/03-oceny-batch/solution-design.md) |
-| 4. Research niezależny od wykonawcy OpenAI | [Requirements](etapy/04-research-wykonawca/requirements.md) | [SD](etapy/04-research-wykonawca/solution-design.md) |
-| 5. Ollama gpt-oss:20b i lokalny profil | [Requirements](etapy/05-ollama-profil/requirements.md) | [SD](etapy/05-ollama-profil/solution-design.md) |
-| 6. Lokalne oceny pojedyncze i zbiorcze | [Requirements](etapy/06-ollama-oceny/requirements.md) | [SD](etapy/06-ollama-oceny/solution-design.md) |
-| 7. Wyszukiwanie i odczyt stron dla OpenCode | [Requirements](etapy/07-narzedzia-www/requirements.md) | [SD](etapy/07-narzedzia-www/solution-design.md) |
-| 8. OpenCode jako agent researchu z gpt-oss:20b | [Requirements](etapy/08-opencode/requirements.md) | [SD](etapy/08-opencode/solution-design.md) |
-| 9. Odbiór i wspólne wdrożenie | [Requirements](etapy/09-odbior/requirements.md) | [SD](etapy/09-odbior/solution-design.md) |
+| 1. Shared configuration and budget | [Requirements](etapy/01-konfiguracja-budzet/requirements.md) | [SD](etapy/01-konfiguracja-budzet/solution-design.md) |
+| 2. Profile independent of the OpenAI protocol | [Requirements](etapy/02-profil-adapter/requirements.md) | [SD](etapy/02-profil-adapter/solution-design.md) |
+| 3. Assessments separated from OpenAI Batch | [Requirements](etapy/03-oceny-batch/requirements.md) | [SD](etapy/03-oceny-batch/solution-design.md) |
+| 4. Research independent of the OpenAI executor | [Requirements](etapy/04-research-wykonawca/requirements.md) | [SD](etapy/04-research-wykonawca/solution-design.md) |
+| 5. Ollama gpt-oss:20b and local profile | [Requirements](etapy/05-ollama-profil/requirements.md) | [SD](etapy/05-ollama-profil/solution-design.md) |
+| 6. Local single and bulk assessments | [Requirements](etapy/06-ollama-oceny/requirements.md) | [SD](etapy/06-ollama-oceny/solution-design.md) |
+| 7. Search and page reading for OpenCode | [Requirements](etapy/07-narzedzia-www/requirements.md) | [SD](etapy/07-narzedzia-www/solution-design.md) |
+| 8. OpenCode as the research agent with gpt-oss:20b | [Requirements](etapy/08-opencode/requirements.md) | [SD](etapy/08-opencode/solution-design.md) |
+| 9. Acceptance and shared deployment | [Requirements](etapy/09-odbior/requirements.md) | [SD](etapy/09-odbior/solution-design.md) |
 
-## Etapy
+## Stages
 
-| Etap | Wynik | Zależności | Pokrycie | Beads |
+| Stage | Result | Dependencies | Coverage | Beads |
 | --- | --- | --- | --- | --- |
-| 1 | Wspólna konfiguracja i budżet poza modułem profilu | Przegląd pierwszego SD | LA-02, fundament LA-03/06 | `oferty-pracy-334.2` |
-| 2 | Profil oddzielony od protokołu OpenAI | 1 | LA-02/03, fundament LA-04 | `oferty-pracy-334.3` |
-| 3 | Oceny oddzielone od cyklu OpenAI Batch | 1 | LA-02/03, fundament LA-05 | `oferty-pracy-334.4` |
-| 4 | Research oddzielony od obecnego wykonawcy OpenAI | 1 | LA-02/03, fundament LA-07 | `oferty-pracy-334.5` |
-| 5 | Adapter Ollamy, profil z gpt-oss:20b i sprawdzenie dostępności modelu | 2; sprawdzenie wybranego modelu | LA-01/03/04/06/08 | `oferty-pracy-334.6` |
-| 6 | Lokalne oceny pojedyncze i zbiorcze | 3, 5 | LA-01/05/06/08/10 | `oferty-pracy-334.7` |
-| 7 | Wybrane źródło wyszukiwania i kontrolowane narzędzia WWW | 5 — wykonania i wspólny slot; kwalifikacja 334.21; T03–T05 przed live | LA-07/09/12/13 | `oferty-pracy-334.8` |
-| 8 | OpenCode z gpt-oss:20b jako agent researchu | 4, 5, 7; kontrakt sesji i recovery | LA-01/03/06/07/08/09/11/14/15 | `oferty-pracy-334.9` |
-| 9 | Odbiór mieszanej instalacji i wspólne wdrożenie | 6, 8, panel | LA-01–LA-21, PZ-01–08 | `oferty-pracy-334.10` |
+| 1 | Shared configuration and budget outside the profile module | Review of the first SD | LA-02, foundation for LA-03/06 | `oferty-pracy-334.2` |
+| 2 | Profile separated from the OpenAI protocol | 1 | LA-02/03, foundation for LA-04 | `oferty-pracy-334.3` |
+| 3 | Assessments separated from the OpenAI Batch cycle | 1 | LA-02/03, foundation for LA-05 | `oferty-pracy-334.4` |
+| 4 | Research separated from the current OpenAI executor | 1 | LA-02/03, foundation for LA-07 | `oferty-pracy-334.5` |
+| 5 | Ollama adapter, profile with gpt-oss:20b and model availability check | 2; check of the chosen model | LA-01/03/04/06/08 | `oferty-pracy-334.6` |
+| 6 | Local single and bulk assessments | 3, 5 | LA-01/05/06/08/10 | `oferty-pracy-334.7` |
+| 7 | Chosen search source and controlled web tools | 5 — executions and the shared slot; qualification 334.21; T03–T05 before live use | LA-07/09/12/13 | `oferty-pracy-334.8` |
+| 8 | OpenCode with gpt-oss:20b as the research agent | 4, 5, 7; session and recovery contract | LA-01/03/06/07/08/09/11/14/15 | `oferty-pracy-334.9` |
+| 9 | Acceptance of the mixed installation and shared deployment | 6, 8, panel | LA-01–LA-21, PZ-01–08 | `oferty-pracy-334.10` |
 
-Numeracja wyznacza zalecaną kolejność pracy. Etapy 2, 3 i 4 mogą być wykonywane po 1 niezależnie od siebie. Etap 7 wymaga kwalifikacji 334.21 i fundamentu wykonań/kolejki/slotu z etapu 5; samo rozpoznanie protokołu i izolowane testy Chrome można przygotować wcześniej. To zależności techniczne, nie polecenie równoległej edycji tych samych plików.
+The numbering sets the recommended order of work. Stages 2, 3 and 4 can be done after 1 independently of one another. Stage 7 needs qualification 334.21 and the foundation of executions/queue/slot from stage 5; the protocol investigation and isolated Chrome tests can be prepared earlier. These are technical dependencies, not an instruction to edit the same files in parallel.
 
-### Etap 1 — wydzielić konfigurację i budżet
+### Stage 1 — extract configuration and budget
 
-Z `lib/profile/ai.ts` przenieść wspólne funkcje do `lib/ai/`, przełączyć konsumentów w ocenach i researchu. Szczegóły: [Requirements etapu 1](etapy/01-konfiguracja-budzet/requirements.md) i [SD etapu 1](etapy/01-konfiguracja-budzet/solution-design.md).
+Move the shared functions from `lib/profile/ai.ts` to `lib/ai/`, and switch the consumers in assessments and research. Details: [stage 1 requirements](etapy/01-konfiguracja-budzet/requirements.md) and [stage 1 SD](etapy/01-konfiguracja-budzet/solution-design.md).
 
-Zakończenie: identyczne obliczenia i zachowanie rezerwacji, stare konfiguracje nadal obsługiwane, brak migracji i nowych płatnych wywołań. Weryfikacja: jednostkowe ceny/konfiguracja oraz istniejące testy PG profilu, ocen i researchu. Przegląd pary z 2026-11-05 doprecyzował wewnętrzną arytmetykę, konsumenta w liście ofert i transakcję wywołującego reserve; szczegóły i kryteria E01-AC01–04 utrzymuje SD etapu 1.
+Completion: identical calculations and reservation behaviour, old configurations still supported, no migration and no new paid calls. Verification: unit tests of prices/configuration and the existing PG tests of the profile, assessments and research. The 2026-11-05 review of the pair clarified the internal arithmetic, the consumer in the offer list and the caller's transaction for reserve; the stage 1 SD keeps the details and criteria E01-AC01–04.
 
-### Etap 2 — oddzielić profil od wywołania dostawcy
+### Stage 2 — separate the profile from the provider call
 
-W profilu pozostawić przygotowanie wejścia, instrukcje, schemat i `checkProposal`. Wydzielić pojedyncze wywołanie OpenAI do adaptera modelu. Zachować obecne retry, limity i sposób zatwierdzania profilu; nie przenosić reguł CV do transportu.
+Keep input preparation, instructions, schema and `checkProposal` in the profile. Extract the single OpenAI call into a model adapter. Keep the current retry, limits and the way the profile is approved; do not move CV rules into the transport.
 
-Zakończenie: wykonanie profilu zależy od małego interfejsu modelu, testy mogą dostarczyć odpowiedź bez HTTP. OpenAI zachowuje zgodne żądanie i rozliczenie. Testy obejmują odmowę, obcięcie, błędny JSON, brak cytatu, błąd sieci i brak telemetrii. W tym etapie zdefiniować neutralne komunikaty, wynik i zdolności wymagane do odpowiedzi strukturalnej. Nie przenosić do tego interfejsu zarządzania sesjami OpenCode.
+Completion: profile execution depends on a small model interface, and tests can supply an answer without HTTP. OpenAI keeps a compatible request and settlement. Tests cover refusal, truncation, invalid JSON, a missing quote, a network error and missing telemetry. In this stage, define neutral messages, the result and the capabilities required for a structured answer. Do not move OpenCode session management into this interface.
 
-### Etap 3 — oddzielić ocenę od OpenAI Batch
+### Stage 3 — separate assessment from OpenAI Batch
 
-Rozdzielić budowanie zadania oceny i jego walidację od upload/create/poll/results/cleanup w `matching/batch.ts`, `store.ts`, `groups.ts`. Wyodrębnić wspólną publikację poprawnego wyniku. Grupa zleceń i partia dostawcy mają odrębne znaczenia.
+Separate building an assessment task and its validation from upload/create/poll/results/cleanup in `matching/batch.ts`, `store.ts`, `groups.ts`. Extract the shared publication of a correct result. A request group and a provider batch have different meanings.
 
-Zakończenie: dotychczasowe partie pojedyncze i grupowe nadal można wysyłać, odczytywać, archiwizować i sprzątać. Zachowane custom_id, idempotencja komend, atomowe finansowanie, aktualność i publikacja rewizji. Testy: wyniki poza kolejnością, częściowy błąd, przerwanie przed/po utworzeniu partii, powtórne dostarczenie i starsza wersja wejścia. Bez lokalnego wykonawcy w tym etapie.
+Completion: existing single and group batches can still be sent, read, archived and cleaned up. Kept: custom_id, command idempotency, atomic funding, freshness and revision publication. Tests: results out of order, partial error, interruption before/after the batch is created, repeated delivery and an older version of the input. No local executor in this stage.
 
-### Etap 4 — oddzielić research od obecnego wykonawcy
+### Stage 4 — separate research from the current executor
 
-W module firm zachować cel, wersje raportu, reuse/refresh i walidację dowodów. Wykonawcę OpenAI z wbudowanym wyszukiwaniem utrzymać jako działającą całość za kontraktem wykonania researchu. Oddzielić pozyskany materiał dowodowy, syntezę i finalną walidację tam, gdzie pomaga to drugiemu wykonawcy; nie zastępować działającego wyszukiwania fikcyjnym ogólnym adapterem.
+In the Companies module, keep the goal, report versions, reuse/refresh and evidence validation. Keep the OpenAI executor with built-in search as a working whole behind a research execution contract. Separate the collected evidence material, synthesis and final validation where this helps the second executor; do not replace working search with a fictional generic adapter.
 
-Zakończenie: obecny ręczny research podstawowy zachowuje dwa wywołania, koszty i kontrakt źródeł. Testy: brak źródeł, błędne cytaty/URL, błąd syntezy po płatnym wyszukiwaniu, restart i zachowanie poprzedniego raportu. Research pogłębiony i progi automatyczne pozostają poza zakresem.
+Completion: the current manual basic research keeps its two calls, costs and source contract. Tests: no sources, wrong quotes/URLs, synthesis error after paid search, restart and keeping the previous report. Deep research and automatic thresholds remain out of scope.
 
-### Etap 5 — dodać Ollamę i uruchomić lokalny profil
+### Stage 5 — add Ollama and run the local profile
 
-Rozszerzyć konfigurację o jawnego dostawcę i sposób wykonania, z obsługą starych migawek jako OpenAI. Dodać natywny adapter Ollamy, wyjście strukturalne i rozpoznawanie niepełnej odpowiedzi. Zapis migawki nie obejmuje sekretów. Dodać do `.env.example`, Compose i README konfigurację dla WWW i workera oraz kontrolę dostępności modelu.
+Extend the configuration with an explicit provider and execution method, treating old snapshots as OpenAI. Add a native Ollama adapter, structured output and detection of an incomplete answer. The saved snapshot does not include secrets. Add to `.env.example`, Compose and the README the configuration for the web app and the worker, and a model availability check.
 
-Najpierw testy HTTP offline. Sprawdzić połączenie z workera i obecność skonfigurowanego gpt-oss:20b przez GET /api/tags, bez automatycznego pobierania. Nie wykonujemy osobnego pilota jakości modelu; właściciel oceni wynik podczas normalnego używania. Nie narzucać kwot inferencji; współbieżność wszystkich lokalnych prac wynosi 1 ze względu na zasoby. Obsługa kontekstu, anulowania i błędów pozostaje częścią integracji.
+Offline HTTP tests first. Check the connection from the worker and the presence of the configured gpt-oss:20b through GET /api/tags, without automatic download. We do not run a separate model quality pilot; the owner will assess the result during normal use. Do not impose inference quotas; concurrency of all local work is 1 because of resources. Handling of context, cancellation and errors remains part of the integration.
 
-Zakończenie: profil przez Ollamę działa bez klucza/cennika OpenAI; koszt API zero, nieznane tokeny pozostają nieznane, wyczerpany płatny budżet nie blokuje lokalnej propozycji. Model niedostępny lub zbyt mały kontekst daje kontrolowany błąd; nigdy ciche ucięcie wejścia lub fallback. To pierwszy działający fragment wewnętrzny, nie osobne wydanie.
+Completion: the profile works through Ollama without an OpenAI key/price list; API cost is zero, unknown tokens remain unknown, and an exhausted paid budget does not block a local proposal. An unavailable model or a context that is too small gives a controlled error; never silent truncation of input or a fallback. This is the first working internal increment, not a separate release.
 
-### Etap 6 — uruchomić lokalne oceny
+### Stage 6 — run local assessments
 
-Dodać lokalnego wykonawcę zadania z etapu 3, używając adaptera z etapu 5. Zlecenie zbiorcze zachowuje komendę i wyniki per pozycja; praca jest porcjowana z trwałym postępem, bez tworzenia plików OpenAI. Uzupełnić wymagania i SD dopasowania o lokalny wariant oraz UI o dostawcę/model i właściwe statusy.
+Add a local executor for the task from stage 3, using the adapter from stage 5. A bulk request keeps the command and per-item results; the work is batched with durable progress, without creating OpenAI files. Add the local variant to the matching requirements and SD, and the provider/model and correct statuses to the UI.
 
-Zakończenie: pojedyncze i grupowe lokalne oceny przez `gpt-oss:20b` przechodzą te same kontrole dowodów i aktualności. Restart nie powtarza ukończonych pozycji. Współistnieją stare partie OpenAI i nowe lokalne zlecenia; zmiana ustawień nie przepisuje ich wykonawcy. Testy obejmują brak kwot lokalnej pracy, brak podwójnego wykonania oraz brak blokowania bezpłatnej synchronizacji źródeł.
+Completion: single and group local assessments through `gpt-oss:20b` pass the same evidence and freshness checks. A restart does not repeat finished items. Old OpenAI batches and new local requests coexist; a change of settings does not rewrite their executor. Tests cover the absence of local work quotas, no double execution, and no blocking of the free source sync.
 
-### Etap 7 — wybrać wyszukiwanie i zbudować narzędzia
+### Stage 7 — choose search and build the tools
 
-Wybrano Google przez dedykowany headless Chrome w kontenerze i Chrome DevTools MCP; podgląd/input właściciela przez prywatny DevTools. Zbudować kontrolowany most przekazujący gotowe operacje przeglądarkowe i zapisujący odczyty przed podaniem modelowi. Nie implementować własnego silnika przeglądarki ani wyszukiwarki. Publiczne strony bez logowania, czysty profil per wykonanie, interwencja i wznowienie w tym samym stanie. Dowody rozróżniają search snippet i odczytaną stronę, zachowują tekst oraz pochodzenie.
+Chosen: Google through a dedicated headless Chrome in a container and Chrome DevTools MCP; owner preview/input through a private DevTools. Build a controlled bridge that passes on ready-made browser operations and saves page reads before giving them to the model. Do not implement our own browser engine or search engine. Public pages without signing in, a clean profile per execution, intervention and resumption in the same state. Evidence distinguishes a search snippet from a page that was read, and keeps the text and its origin.
 
-Zakończenie: E07-AC01–06 i T03–T05 z [kontraktów runtime](kontrakty-runtime.md). Test izolacji obejmuje cały ruch Chrome, nie tylko parametr URL. Same dokumenty lub konfiguracja proxy nie są dowodem spełnienia ochrony. Brak kwot rund/tokenów/czasu całego agenta.
+Completion: E07-AC01–06 and T03–T05 from the [runtime contracts](kontrakty-runtime.md). The isolation test covers all Chrome traffic, not just the URL parameter. Documents or proxy configuration alone are not proof that the protection works. No quotas on rounds/tokens/time of the whole agent.
 
-### Etap 8 — zintegrować OpenCode jako agenta researchu
+### Stage 8 — integrate OpenCode as the research agent
 
-Wybrano headless HTTP OpenCode jako osobną lokalną usługę. Adapter i trwały dziennik żądań wiążą wykonanie z sesją i wiadomościami; aplikacja nie prowadzi drugiej pętli agenta. Globalna kolejka FIFO dopuszcza jedną lokalną pracę AI; unknown, cancelling i interwencja zajmują slot. Jawne retry zapisuje nowe wykonanie, lecz jego start czeka na potwierdzone zakończenie poprzedniego. Końcowy raport waliduje moduł firm na dowodach konkretnego wykonania.
+Chosen: headless HTTP OpenCode as a separate local service. The adapter and a durable request journal tie the execution to the session and messages; the application does not run a second agent loop. A global FIFO queue allows one local AI work item; unknown, cancelling and intervention occupy the slot. An explicit retry records a new execution, but its start waits for confirmed completion of the previous one. The Companies module validates the final report against the evidence of that specific execution.
 
-Zakończenie: E08-AC01–06 i T01/T02, zgodność z etapem 7 oraz komendami panelu. Wersje, sesje, restart, abort, wynik, izolacja i retencja wymagają dowodów technicznych. Interwencję można testować bez gotowego UI, więc panel nie blokuje samej implementacji kontraktu wykonawcy.
+Completion: E08-AC01–06 and T01/T02, consistency with stage 7 and with the panel commands. Versions, sessions, restart, abort, result, isolation and retention need technical evidence. Intervention can be tested without a finished UI, so the panel does not block implementing the executor contract itself.
 
-### Etap 9 — odebrać całość i wdrożyć wspólnie
+### Stage 9 — accept the whole and deploy it together
 
-Podczas odbioru sprawdzić kolejno lokalny profil, kilka ręcznych ocen, grupę i ręczny research; udostępnić je dopiero jako jedno wydanie z panelem. Nie przełączać automatycznie całej bazy i nie uruchamiać masowej ponownej oceny. Sprawdzić warianty mieszane: lokalny profil/oceny i OpenAI research oraz wszystkie trzy zastosowania lokalnie z jawnym źródłem wyszukiwania.
+During acceptance, check in turn the local profile, several manual assessments, a group and manual research; make them available only as one release with the panel. Do not switch the whole database automatically and do not start a mass reassessment. Check mixed variants: local profile/assessments with OpenAI research, and all three uses locally with an explicit search source.
 
-Zakończenie: pełne `pnpm check`, potrzebne integracje PostgreSQL/API na izolowanych schematach, build i kontrola UI. Osobna próba migracji na kopii ze starymi oczekującymi partiami, ponowne uruchomienie workera i kontrola rozliczeń. Powrót do OpenAI dla nowych zadań działa bez kasowania historii. Jakość odpowiedzi właściciel ocenia w normalnym użyciu; osobny benchmark nie jest warunkiem wdrożenia.
+Completion: full `pnpm check`, the necessary PostgreSQL/API integrations on isolated schemas, build and a UI check. A separate migration trial on a copy with old pending batches, a worker restart and a settlement check. Going back to OpenAI for new tasks works without deleting history. The owner assesses answer quality in normal use; a separate benchmark is not a condition for deployment.
 
-## Kolejność wynikająca z zależności
+## Order resulting from dependencies
 
-Beads przechowuje blokady, nie kolejność wyświetlania po ID lub dacie aktualizacji. Po audycie grafu 2026-11-05:
+Beads stores blocks, not the display order by ID or update date. After the graph audit on 2026-11-05:
 
-| Zadanie wykonawcze | Wymagane wcześniejsze zadania |
+| Implementation task | Required earlier tasks |
 | --- | --- |
-| Etap1 — `334.2` | Brak wcześniejszego etapu implementacyjnego. |
-| Etap2 — `334.3` | Etap1 (`334.2`). |
-| Etap3 — `334.4` | Etap1 (`334.2`). |
-| Etap4 — `334.5` | Etap1 (`334.2`). |
-| Etap5 — `334.6` | Etap2 (`334.3`); etap1 jest zależnością pośrednią. |
-| Etap6 — `334.7` | Etapy3 i5 (`334.4`, `334.6`). |
-| Kwalifikacja runtime — `334.21` | Niezależna od refaktorów; wybrany headless w kontenerze, próby bez danych właściciela. |
-| Etap7 — `334.8` | Etap5 (`334.6`): trwałe wykonania i wspólny slot; kwalifikacja (`334.21`). |
-| Etap8 — `334.9` | Etapy4,5,7 (`334.5`, `334.6`, `334.8`). |
-| Panel — `334.15` | Etapy6 i8 (`334.7`, `334.9`). |
-| Odbiór i wspólne wdrożenie — `334.10` | Etapy6 i8 oraz panel (`334.7`, `334.9`, `334.15`). |
+| Stage 1 — `334.2` | No earlier implementation stage. |
+| Stage 2 — `334.3` | Stage 1 (`334.2`). |
+| Stage 3 — `334.4` | Stage 1 (`334.2`). |
+| Stage 4 — `334.5` | Stage 1 (`334.2`). |
+| Stage 5 — `334.6` | Stage 2 (`334.3`); stage 1 is an indirect dependency. |
+| Stage 6 — `334.7` | Stages 3 and 5 (`334.4`, `334.6`). |
+| Runtime qualification — `334.21` | Independent of the refactors; headless in a container chosen, trials without the owner's data. |
+| Stage 7 — `334.8` | Stage 5 (`334.6`): durable executions and the shared slot; qualification (`334.21`). |
+| Stage 8 — `334.9` | Stages 4, 5, 7 (`334.5`, `334.6`, `334.8`). |
+| Panel — `334.15` | Stages 6 and 8 (`334.7`, `334.9`). |
+| Acceptance and shared deployment — `334.10` | Stages 6 and 8 and the panel (`334.7`, `334.9`, `334.15`). |
 
-Pełny prefiks ID: `oferty-pracy-`. Dla jednego wykonawcy zalecana kolejność pozostaje 1 → 2 → 3 → 4 → 5 → 6 → kwalifikacja 334.21 → 7 → 8 → panel → 9. Graf pozostawia niezależne prace bez sztucznych wzajemnych blokad. Można go wyświetlić przez `bd list --parent oferty-pracy-334 --deps`.
+Full ID prefix: `oferty-pracy-`. For a single implementer, the recommended order remains 1 → 2 → 3 → 4 → 5 → 6 → qualification 334.21 → 7 → 8 → panel → 9. The graph leaves independent work without artificial mutual blocks. It can be shown with `bd list --parent oferty-pracy-334 --deps`.
 
-Backlog `oferty-pracy-281` wymaga ukończenia odbioru `334.10`, ale nie jest dzieckiem obecnego epiku i nie jest blockerem wydania. Zamknięte zadania planowania/specyfikacji nie oznaczają ukończenia etapów implementacyjnych.
+Backlog item `oferty-pracy-281` needs acceptance `334.10` to be finished, but it is not a child of the current epic and does not block the release. Closed planning/specification tasks do not mean the implementation stages are finished.
 
-## Warunki akceptacji planu i otwarte wybory
+## Plan acceptance conditions and open choices
 
-O-L4: przegląd specyfikacji wykonano i wynik zapisano w parach. Przed kodem odświeżyć zmiany powstałe po przeglądzie. Sposób izolacji headless Chrome opisuje kwalifikacja runtime; jej testy są pracą wykonawcy. Model (`gpt-oss:20b`), runtime agenta (OpenCode) i brak kwot Ollamy są ustalone. Przed włączeniem etapu 5 sprawdzamy dostępność modelu przez API; przed włączeniem 7/8 wyniki bramek technicznych T01–T05. Źródło wyszukiwania i zachowanie sesji są wybrane. Te kwestie nie blokują przygotowania pierwszego refaktoru. Nie ustalamy terminów kalendarzowych bez pomiaru wybranego zestawu i sprawdzenia wyszukiwania.
+O-L4: the specification review was done and the result was recorded in the pairs. Before code, refresh the changes made after the review. The runtime qualification describes how headless Chrome is isolated; its tests are the implementer's work. The model (`gpt-oss:20b`), the agent runtime (OpenCode) and the absence of Ollama quotas are settled. Before enabling stage 5, we check model availability through the API; before enabling 7/8, the results of the technical gates T01–T05. The search source and session behaviour are chosen. These questions do not block preparation of the first refactor. We do not set calendar dates without measuring the chosen set and checking search.
 
-Nie ma nowych testów ani zmian kodu w ramach tego dokumentu. Weryfikacja planu obejmuje odnośniki, pokrycie kryteriów etapami, zależności Beads i zachowanie zgodności opisanych kontraktów. Wynik planowania nie jest dowodem działania Ollamy lub agenta.
+This document adds no new tests or code changes. Verification of the plan covers links, coverage of criteria by stages, Beads dependencies and consistency of the described contracts. The planning result is not proof that Ollama or the agent works.
 
-Aktualizacja decyzji 2026-11-05: konfiguracja `.env`, bezterminowe zachowanie zebranych materiałów z wyjątkiem roboczego profilu Chrome, sprawdzanie modelu przez API bez pilota jakości oraz porcjowanie lokalnych ocen do 20 opisane są w [wymaganiach przekrojowych](requirements.md#doprecyzowanie-potwierdzone-2026-11-05). Próby techniczne API/sesji nie są testem jakości modelu.
+Decision update 2026-11-05: the `.env` configuration, indefinite retention of collected material except the working Chrome profile, checking the model through the API without a quality pilot, and batching local assessments into groups of up to 20 are described in the [cross-cutting requirements](requirements.md#clarification-confirmed-2026-11-05). Technical API/session trials are not a test of model quality.
 
-## Rozszerzenie: panel zarządzania zadaniami
+## Extension: task management panel
 
-Zlecone 2026-11-05: [Requirements](features/panel-zadan/requirements.md), [SD](features/panel-zadan/solution-design.md), Beads `oferty-pracy-334.15`. Panel obejmie sprawdzenie, zatrzymanie, pominięcie, retry i wznowienie; zachowanie jest zatwierdzone, kontrakt opisany w SD panelu i kontraktach runtime. Specyfikację panelu dopracowano po przeglądzie; realizacja wymaga ukończenia etapów 6/8. Nie jest to ukończona funkcja. Przed odbiorem etapu 9 należy uwzględnić przyjęty zakres panelu. Google przez przeglądarkę jest potwierdzonym kierunkiem etapu 7.
+Requested 2026-11-05: [Requirements](features/panel-zadan/requirements.md), [SD](features/panel-zadan/solution-design.md), Beads `oferty-pracy-334.15`. The panel will cover check, stop, skip, retry and resume; the behaviour is approved, and the contract is described in the panel SD and the runtime contracts. The panel specification was refined after the review; implementation needs stages 6/8 to be finished. It is not a finished feature. Before stage 9 acceptance, the agreed panel scope must be included. Google through a browser is the confirmed direction of stage 7.
 
-Potwierdzona decyzja 2026-11-05: OpenCode steruje dedykowanym Google Chrome przez **Chrome DevTools MCP** (`chrome-devtools-mcp`). Playwright MCP nie wchodzi do wybranej integracji. Szczegóły: [SD etapu 7](etapy/07-narzedzia-www/solution-design.md). Wybór nie oznacza uruchomienia implementacji ani instalacji usług.
+Confirmed decision 2026-11-05: OpenCode controls a dedicated Google Chrome through **Chrome DevTools MCP** (`chrome-devtools-mcp`). Playwright MCP is not part of the chosen integration. Details: [stage 7 SD](etapy/07-narzedzia-www/solution-design.md). The choice does not mean that implementation has started or that services have been installed.
 
-## Ostatnie rozstrzygnięcia — 2026-11-05
+## Latest decisions — 2026-11-05
 
-Potwierdzono wspólną kolejkę z jedną lokalną pracą AI ze względu na zasoby (profil, pojedyncze oceny, research) oraz reguły cookies, archiwum dowodów, osobnych usług i ręcznego wznowienia. Kanoniczne kryteria: LA-11–LA-15 w [wymaganiach](requirements.md). Retry może powstać od razu, ale jego start czeka na potwierdzone zakończenie poprzedniego agenta. To aktualizacja specyfikacji, bez rozpoczęcia implementacji.
+Confirmed: a shared queue with one local AI work item at a time because of resources (profile, single assessments, research), and the rules for cookies, the evidence archive, separate services and manual resumption. Canonical criteria: LA-11–LA-15 in the [requirements](requirements.md). A retry can be created at once, but its start waits for confirmed completion of the previous agent. This is a specification update, without starting implementation.
 
-## Zamknięty wywiad grill-me — 2026-11-05
+## Closed grill-me interview — 2026-11-05
 
-Q1–Q13 i wspólne podsumowanie zatwierdzone. Kryteria LA-16–LA-21 uzupełniają LA-11/13. Wszystkie lokalne prace używają wspólnego slotu od etapu 5; cały epik wdrażamy razem. Retry kopiuje stare wejście i konfigurację, po błędnej odpowiedzi decyzja o nowej generacji jest ręczna. Publiczne źródła bez logowania, Google tylko do wyszukiwania, bez danych właściciela w zapytaniach. Profil Chrome jest usuwalny po końcu i archiwizacji materiałów. Infrastruktura pozostaje odpowiedzialnością operatora. Logowanie i parkowanie sesji: backlog `oferty-pracy-281`, poza bieżącym wydaniem.
+Q1–Q13 and the shared summary approved. Criteria LA-16–LA-21 complement LA-11/13. All local work uses the shared slot from stage 5; we deploy the whole epic together. A retry copies the old input and configuration; after an invalid answer, the decision to generate again is manual. Public sources without signing in, Google only for search, no owner data in queries. The Chrome profile is removable after the end and after the material is archived. Infrastructure remains the operator's responsibility. Signing in and parking sessions: backlog item `oferty-pracy-281`, outside the current release.
 
-## Wejście po przeglądzie wykonawczym
+## Entry after the implementation review
 
-Zacznij od `oferty-pracy-334.2`. Kolejne zadania realizuj po spełnieniu blockerów z Beads, w zalecanej kolejności etapów. Kwalifikacja `334.21` dostarcza przypięty zestaw i dowody izolacji przed 7/8; headless Chrome w kontenerze z prywatnym DevTools jest wybranym projektem, a jego kwalifikacja wymaga rzeczywistych dowodów. Dokładne zmiany i testy określa SD danego etapu.
+Start with `oferty-pracy-334.2`. Carry out later tasks once their Beads blockers are met, in the recommended stage order. Qualification `334.21` delivers the pinned set and isolation evidence before 7/8; headless Chrome in a container with a private DevTools is the chosen design, and its qualification needs real evidence. The SD of each stage defines the exact changes and tests.
 
-Przygotowanie nie uruchomiło testów aplikacji ani usług. Wykonano przegląd aktualnego kodu oraz dokumentów; wyniki kontroli spójności i zależności zapisuje `334.20`. Odbiór, publikacja i uruchomienie w środowisku właściciela pozostają odrębnymi działaniami.
+The preparation did not run application tests or services. The current code and documents were reviewed; `334.20` records the results of the consistency and dependency checks. Acceptance, publication and running in the owner's environment remain separate activities.

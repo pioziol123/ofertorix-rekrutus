@@ -1,45 +1,45 @@
-# Cloudflare: diagnoza i opcje dla konektorów
+# Cloudflare: diagnosis and options for connectors
 
-Stan dokumentacji: 2026-11-03. Wyłącznie źródła pierwotne; ten research nie wykonywał nowych prób pobierania chronionych portali.
+Documentation as of: 2026-11-03. Primary sources only; this research did not make new attempts to fetch the protected portals.
 
-## Co potwierdza obecny wynik
+## What the current result confirms
 
-Przekazany wynik wcześniejszego testu: `bulldogjob.pl/companies/jobs` i `theprotocol.it/praca` odpowiadały `403` z `cf-mitigated: challenge`, również po ustawieniu nagłówków Chrome. `bulldogjob.com` odpowiadał `200`, a w No Fluff Jobs wystarczył inny User-Agent. To obserwacje pojedynczych żądań z wcześniejszego testu, nie gwarancja trwałej dostępności ani dowód rozwiązania problemu we wszystkich konektorach.
+The reported result of an earlier test: `bulldogjob.pl/companies/jobs` and `theprotocol.it/praca` responded with `403` and `cf-mitigated: challenge`, also after setting Chrome headers. `bulldogjob.com` responded with `200`, and for No Fluff Jobs a different User-Agent was enough. These are observations of single requests from the earlier test, not a guarantee of lasting availability or proof that the problem is solved in all connectors.
 
-Cloudflare dokumentuje `cf-mitigated: challenge` jako identyfikator strony challenge zamiast oczekiwanej odpowiedzi. Jej typ treści to `text/html`, również gdy żądano innego zasobu. Sam status `403` nie wystarcza do tak precyzyjnej diagnozy. Źródło: [Detect a Challenge Page response](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/).
+Cloudflare documents `cf-mitigated: challenge` as the identifier of a challenge page served instead of the expected response. Its content type is `text/html`, even when another resource was requested. The `403` status alone is not enough for such a precise diagnosis. Source: [Detect a Challenge Page response](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/).
 
-**Wniosek:** odpowiedź challenge nie dostarcza ogłoszeń źródłowych. Nie jest podstawą do uznania ich za wygasłe; przebieg synchronizacji należy oznaczyć jako niepełny.
+**Conclusion:** a challenge response does not deliver source ads. It is no basis for treating them as expired; the sync run must be marked as incomplete.
 
-## Co może pomóc i jakie ma ograniczenia
+## What may help and what its limits are
 
-| Opcja | Co rzeczywiście wnosi | Ograniczenie |
+| Option | What it actually brings | Limitation |
 |---|---|---|
-| Poprawny User-Agent i spójne nagłówki | Mogą usunąć prostą przyczynę odmowy. | W omawianych dwóch przypadkach nie wystarczyły. Nagłówki nie zapewniają środowiska przeglądarki ani wykonania JavaScript. |
-| `curl_cffi` / impersonacja | Projekt odtwarza sygnatury TLS oraz HTTP/2 przeglądarek; to więcej niż zmiana User-Agent. | Autorzy wprost uzależniają powodzenie od konfiguracji ochrony: TLS/HTTP2 to tylko część sygnałów, obok IP, częstotliwości i fingerprintów JS. Nie ma gwarancji obsługi tych portali. |
-| Zwykła przeglądarka użytkownika | Cloudflare wymaga włączonego JavaScript i cookies do przejścia challenge. | Udane ręczne otwarcie strony nie potwierdza działania bezobsługowego konektora. |
-| Automatyzacja przeglądarki | Zapewnia silnik JS i środowisko renderowania strony. | Cloudflare nie wspiera automatycznych przeglądarek ani Selenium/Puppeteer/Playwright/Cypress do rozwiązywania produkcyjnych challenge. Nie jest to pewne rozwiązanie. |
-| Wyjątek uzgodniony z właścicielem portalu | Operator może wyłączyć challenge dla uzgodnionego klienta, np. dopuszczonego IP, przez odpowiedni wyjątek lub regułę Skip. | Wymaga współpracy operatora oraz dopasowania wyjątku do produktu, który blokuje ruch. |
+| A correct User-Agent and consistent headers | May remove a simple cause of refusal. | In the two cases discussed they were not enough. Headers do not provide a browser environment or JavaScript execution. |
+| `curl_cffi` / impersonation | The project reproduces browser TLS and HTTP/2 signatures; this is more than changing the User-Agent. | The authors explicitly make success depend on the protection configuration: TLS/HTTP2 is only part of the signals, alongside IP, frequency and JS fingerprints. There is no guarantee it works for these portals. |
+| The user's ordinary browser | Cloudflare requires JavaScript and cookies to be enabled to pass the challenge. | Successfully opening the page by hand does not confirm that an unattended connector works. |
+| Browser automation | Provides a JS engine and a page rendering environment. | Cloudflare does not support automated browsers or Selenium/Puppeteer/Playwright/Cypress for solving production challenges. It is not a reliable solution. |
+| An exception agreed with the portal owner | The operator can disable the challenge for an agreed client, e.g. an allowed IP, through a suitable exception or a Skip rule. | Requires the operator's cooperation and matching the exception to the product that blocks the traffic. |
 
-Źródła tabeli: [curl_cffi — opis możliwości](https://curl-cffi.readthedocs.io/en/latest/), [curl_cffi — FAQ o Cloudflare](https://curl-cffi.readthedocs.io/en/latest/faq.html), [Cloudflare — Resolve a Challenge](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/resolve-challenge/), [Supported browsers](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/), [Troubleshooting i wyjątki](https://developers.cloudflare.com/cloudflare-challenges/troubleshooting/).
+Table sources: [curl_cffi — capabilities](https://curl-cffi.readthedocs.io/en/latest/), [curl_cffi — FAQ on Cloudflare](https://curl-cffi.readthedocs.io/en/latest/faq.html), [Cloudflare — Resolve a Challenge](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/resolve-challenge/), [Supported browsers](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/), [Troubleshooting and exceptions](https://developers.cloudflare.com/cloudflare-challenges/troubleshooting/).
 
-## Najbardziej przewidywalna ścieżka
+## The most predictable path
 
-**Rekomendacja projektowa:** dla źródła objętego challenge najpierw ustalić z portalem dostępny API/feed lub zgodę i warunki dostępu dla konektora. Sam dostęp techniczny nie rozstrzyga warunków dalszego wykorzystania danych. Jeśli portal dopuszcza pobieranie, uzgodnić odpowiedni wyjątek po stronie operatora, zamiast przyjmować, że zmiana biblioteki zapewni stałą dostępność.
+**Design recommendation:** for a source covered by a challenge, first establish with the portal an available API/feed, or consent and access terms for the connector. Technical access alone does not settle the terms of further use of the data. If the portal allows fetching, agree a suitable exception on the operator's side, instead of assuming that changing the library will ensure lasting availability.
 
-Cloudflare wskazuje, że tylko właściciel witryny może zmienić konfigurację tak, by challenge przestał być prezentowany. Reguła Skip powinna poprzedzać blokującą regułę i pomijać właściwą warstwę ochrony. Skip obsługuje m.in. Managed Rules, rate limiting i Super Bot Fight Mode; **nie pozwala pominąć Bot Fight Mode**. Źródła: [Resolve a Challenge](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/resolve-challenge/), [Configure a Skip rule](https://developers.cloudflare.com/waf/custom-rules/skip/), [Available skip options](https://developers.cloudflare.com/waf/custom-rules/skip/options/).
+Cloudflare states that only the site owner can change the configuration so that the challenge stops being presented. A Skip rule should precede the blocking rule and skip the relevant protection layer. Skip supports, among others, Managed Rules, rate limiting and Super Bot Fight Mode; **it cannot skip Bot Fight Mode**. Sources: [Resolve a Challenge](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/resolve-challenge/), [Configure a Skip rule](https://developers.cloudflare.com/waf/custom-rules/skip/), [Available skip options](https://developers.cloudflare.com/waf/custom-rules/skip/options/).
 
-Do czasu uzgodnienia dostępu: zachować wcześniej pobrane dane, zgłaszać blokadę źródła i nie interpretować braku wyników jako pełnej synchronizacji. To rekomendacja obsługi błędu w projekcie, nie metoda usunięcia challenge.
+Until access is agreed: keep the previously fetched data, report the source block and do not interpret the absence of results as a complete sync. This is an error-handling recommendation for the project, not a method of removing the challenge.
 
-## Czy pozostałe konektory już to rozwiązały?
+## Have the other connectors already solved this?
 
-Lokalny pakiet [JobSpy 1.4.1+oferty.4](../../../integrations/jobspy/python_jobspy-1.4.1+oferty.4-py3-none-any.whl) zawiera różne mechanizmy dostępu (numery linii odnoszą się do plików wewnątrz archiwum wheel):
+The local package [JobSpy 1.4.1+oferty.4](../../../integrations/jobspy/python_jobspy-1.4.1+oferty.4-py3-none-any.whl) contains various access mechanisms (line numbers refer to files inside the wheel archive):
 
-- `jobspy/util.py:77–84`: `TLSRotating` korzysta z `curl_cffi` z `impersonate="chrome"`; używają go Glassdoor (`jobspy/glassdoor/__init__.py:53`) i ZipRecruiter (`jobspy/ziprecruiter/__init__.py:39`).
-- LinkedIn korzysta z `RequestsRotating(..., clear_cookies=True)` (`jobspy/linkedin/__init__.py:52`) i endpointu `jobs-guest` (`:71`).
-- Indeed wskazuje `https://apis.indeed.com/graphql` (`jobspy/indeed/__init__.py:41`) i przy włączonej polityce kontroli używa `ControlledRequests` (`:61`).
+- `jobspy/util.py:77–84`: `TLSRotating` uses `curl_cffi` with `impersonate="chrome"`; Glassdoor (`jobspy/glassdoor/__init__.py:53`) and ZipRecruiter (`jobspy/ziprecruiter/__init__.py:39`) use it.
+- LinkedIn uses `RequestsRotating(..., clear_cookies=True)` (`jobspy/linkedin/__init__.py:52`) and the `jobs-guest` endpoint (`:71`).
+- Indeed points to `https://apis.indeed.com/graphql` (`jobspy/indeed/__init__.py:41`) and, when the control policy is enabled, uses `ControlledRequests` (`:61`).
 
-To potwierdza obecność impersonacji TLS w części konektorów i używanie odmiennych endpointów w innych. **Nie potwierdza uniwersalnego rozwiązania challenge Cloudflare.** Wynik `200` dla innego portalu lub domeny również tego nie dowodzi. Potwierdzenie działania konkretnego konektora wymaga udanego pobrania rzeczywistej listy i szczegółów ogłoszeń; aktualny test pozostaje odrębny od gwarancji trwałej dostępności.
+This confirms TLS impersonation in some connectors and different endpoints in others. **It does not confirm a universal solution to the Cloudflare challenge.** A `200` result for another portal or domain does not prove it either. Confirming that a specific connector works requires a successful fetch of a real list and of ad details; the current test remains separate from a guarantee of lasting availability.
 
-## Aktualizacja: działający transport curl_cffi
+## Update: working curl_cffi transport
 
-2026-11-03 potwierdzono odczyt Bulldogjob **.pl** i theprotocol z kontenera przez curl_cffi z profilem Chrome/Safari i HTTP/2, bez cookies właściciela. Lista, druga i ostatnia strona, filtr oraz szczegół zwróciły 200 i dane aplikacji. Zwykły requests, zwykły curl HTTP/2 oraz profil Chrome wymuszony na HTTP/1.1 nadal otrzymały challenge. Wcześniejsza blokada techniczna została rozwiązana w próbce diagnostycznej. [Wyniki, ograniczenia i reproduktory](dostep-http-rozwiazanie.md). Connectorów i pełnego importu jeszcze nie wdrożono.
+On 2026-11-03 reading Bulldogjob **.pl** and theprotocol from the container was confirmed via curl_cffi with a Chrome/Safari profile and HTTP/2, without the owner's cookies. The list, the second and last page, a filter and a detail returned 200 and application data. Plain requests, plain curl HTTP/2 and the Chrome profile forced to HTTP/1.1 still received a challenge. The earlier technical block was resolved in a diagnostic sample. [Results, limitations and reproducers](dostep-http-rozwiazanie.md). Connectors and full import have not been implemented yet.

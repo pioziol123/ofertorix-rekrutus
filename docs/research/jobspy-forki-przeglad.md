@@ -1,26 +1,26 @@
-# Przegląd forków JobSpy: decyzje po researchu
+# JobSpy fork review: decisions after research
 
-Data: 2026-11-03. Zadanie: `bd show oferty-pracy-y81.14`.
+Date: 2026-11-03. Task: `bd show oferty-pracy-y81.14`.
 
-## Wniosek
+## Conclusion
 
-Znaleziono wartościowy **kandydat do próby Indeed** — `cspenn/jobsniffer`, korzystający z impersonacji Chrome przez curl_cffi i danych HTML. Nie znaleziono dowodu skuteczności tego podejścia dla Indeed Polska z naszego środowiska. Sama obecność kodu, testów parsera czy udanej próby autora nie gwarantuje usunięcia 403.
+A valuable **candidate for an Indeed trial** was found — `cspenn/jobsniffer`, which uses Chrome impersonation through curl_cffi and HTML data. No evidence was found that this approach works for Indeed Poland from our environment. The mere presence of code, parser tests or a successful attempt by the author does not guarantee removal of the 403.
 
-Dla pozostałych portali są poprawki ponowień, tempa żądań, zachowania częściowych wyników i liczby requestów. Żadna z przejrzanych zmian nie daje samodzielnie gwarancji globalnego limitu 1 HTTP/s, obejmującego detale, retry i redirecty. Zachować naszą wspólną kontrolę transportu; przenosić wybrane pomysły, zamiast zastępować cały fork.
+For the other portals there are fixes for retries, request pacing, keeping partial results and the number of requests. None of the reviewed changes by itself guarantees a global limit of 1 HTTP/s covering details, retries and redirects. Keep our shared transport control; move selected ideas over instead of replacing everything with a fork.
 
-## Zalecana kolejność dalszej pracy
+## Recommended order of further work
 
-1. Oddzielna, ograniczona próba transportu Chrome/curl_cffi dla Indeed, inspirowana jobsniffer. Przed próbą wyłączyć automatyczne ponowienia i przekierowania lub objąć każdą próbę naszym ogranicznikiem. Wynik 403 pozostaje błędem dostępu, nie pustą synchronizacją. Nie dodawać automatycznie GraphQL fallback tylko dlatego, że zawiera go badany fork.
-2. Pierwsze dodatkowe API: Himalayas, następnie Jobicy i Remote OK. Zmierzyć rzeczywiste dopasowania Senior PHP oraz dostępność z Polski i liczbę nowych ogłoszeń względem obecnej bazy. To propozycja, nie zgoda na równoczesne wdrażanie wszystkich źródeł.
-3. Freehire jako mały eksperyment po weryfikacji dokumentacji i pochodzenia ofert. Arbeitnow oraz wybrane firmy przez ATS jako kolejne możliwości.
-4. WTTJ/Wellfound i jobsbylevel pozostawić niżej: odpowiednio braki danych i filtrów, zależność od ochrony antybotowej, niezmierzone pokrycie obecnego profilu. Poziom jobsbylevel opisuje użycie AI, nie seniority.
+1. A separate, limited trial of a Chrome/curl_cffi transport for Indeed, inspired by jobsniffer. Before the trial, disable automatic retries and redirects, or put every attempt under our limiter. A 403 result remains an access error, not an empty sync. Do not add a GraphQL fallback automatically just because the examined fork contains one.
+2. The first additional APIs: Himalayas, then Jobicy and Remote OK. Measure actual Senior PHP matches, availability from Poland and the number of new ads compared with the current database. This is a proposal, not consent to implement all sources at once.
+3. Freehire as a small experiment after verifying the documentation and the origin of the offers. Arbeitnow and selected companies through an ATS as further options.
+4. Keep WTTJ/Wellfound and jobsbylevel lower: respectively, gaps in data and filters, dependence on anti-bot protection, and unmeasured coverage of the current profile. The jobsbylevel level describes the use of AI, not seniority.
 
-SOLID.Jobs występuje także w PR forków, lecz **już mamy własną integrację**, więc nie stanowi nowego źródła aplikacji. Zmniejszenie liczby żądań w Glassdoor i raportowanie błędów LinkedIn opisane w raporcie częściowo pochodzą z upstream; nie liczyć ich ponownie jako nowych funkcji naszego forka bez porównania lokalnego kodu.
+SOLID.Jobs also appears in fork PRs, but **we already have our own integration**, so it is not a new source for the application. The reduction in the number of requests in Glassdoor and LinkedIn error reporting described in the report partly come from upstream; do not count them again as new features of our fork without comparing the local code.
 
-## Raporty szczegółowe
+## Detailed reports
 
-- [Indeed: próba forków, transport i dowody](jobspy-forki-indeed.md).
-- [Inne portale: limity i dodatkowe adaptery](jobspy-forki-inne-portale.md).
-- [Dodatkowe źródła: aktualna dokumentacja operatorów](jobspy-nowe-zrodla.md).
+- [Indeed: fork sample, transport and evidence](jobspy-forki-indeed.md).
+- [Other portals: limits and additional adapters](jobspy-forki-inne-portale.md).
+- [Additional sources: current operator documentation](jobspy-nowe-zrodla.md).
 
-To research statyczny, bez uruchamiania kodu forków i bez nowych prób pobierania LinkedIn/Indeed. Odczyt publicznej odpowiedzi Remote OK służył potwierdzeniu interfejsu; nie był importem do bazy. Nie zmieniano produkcyjnych adapterów ani włączonych źródeł. Raporty wskazują konkretną próbę i przypięte wersje kodu; nie audytowano całej sieci forków.
+This is static research, without running fork code and without new attempts to fetch from LinkedIn/Indeed. Reading the public Remote OK response served to confirm the interface; it was not an import into the database. Production adapters and enabled sources were not changed. The reports point to a specific sample and pinned code versions; the whole fork network was not audited.

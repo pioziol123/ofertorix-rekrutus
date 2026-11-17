@@ -1,17 +1,17 @@
-# Kontrakt przebiegu Indeed — solution design
+# Indeed run contract — solution design
 
-Projekt z 2026-11-02; [R-K01–R-K06](requirements.md). Kod względem `.local/JobSpy`. Nowe `jobspy.integration.collect_indeed` przyjmuje model `IndeedRequest` (`extra=forbid`) i zwraca model `RunResult`. Nie korzysta z Pandas; dotychczasowy `scrape_jobs` zostaje zachowany.
+Design of 2026-11-02; [R-K01–R-K06](requirements.md). Code relative to `.local/JobSpy`. The new `jobspy.integration.collect_indeed` takes an `IndeedRequest` model (`extra=forbid`) and returns a `RunResult` model. It does not use Pandas; the existing `scrape_jobs` is kept.
 
-## Semantyka
+## Semantics
 
-Adapter Indeed utrzymuje liczbę pominiętych rekordów i powód zatrzymania: `exhausted`, `result_limit`, `no_progress`, `page_error`. Pusta strona z następnym kursorem jest niepewna, nie zakończona. Zmiana dotyczy tylko raportowania, nie rekonstruuje całego rynku. Błędy podają stałe kody, nie treść wyjątków ani odpowiedzi GraphQL.
+The Indeed adapter keeps the number of skipped records and the stop reason: `exhausted`, `result_limit`, `no_progress`, `page_error`. An empty page with a next cursor is uncertain, not completed. The change concerns only reporting; it does not reconstruct the whole market. Errors give fixed codes, not the content of exceptions or GraphQL responses.
 
-`RunResult`: `schema_version=1`, `source=indeed`, `upstream_revision` (SHA bazy), `fork_revision` (wersja kontraktu zmian), `started_at`/`finished_at` (UTC), `query` (jawna dozwolona lista pól wejściowych), `status`, `stop_reason`, `skipped_jobs`, `missing_descriptions`, `warnings`, `jobs`. `market_complete` jest zawsze false. Dla `status=completed` koniec dotyczy wyłącznie wybranego zapytania.
+`RunResult`: `schema_version=1`, `source=indeed`, `upstream_revision` (base SHA), `fork_revision` (version of the change contract), `started_at`/`finished_at` (UTC), `query` (an explicit allowlist of input fields), `status`, `stop_reason`, `skipped_jobs`, `missing_descriptions`, `warnings`, `jobs`. `market_complete` is always false. For `status=completed`, the end applies only to the selected query.
 
-Statusy: `failed` dla page_error bez rekordów, `partial` dla page_error z rekordami lub znanych pominięć, `limited` dla result_limit/no_progress, `completed` dla exhausted bez pominięć. Brak opisu degraduje status do partial, ale nie zamienia exhausted w błąd. `stop_reason` zachowuje pierwotną przyczynę zakończenia; status opisuje jakość wyniku. Nieopisany wyjątek daje `unexpected_error` bez szczegółów. Wynik nie jest podstawą do wygaszania ofert.
+Statuses: `failed` for page_error without records, `partial` for page_error with records or known skips, `limited` for result_limit/no_progress, `completed` for exhausted without skips. A missing description downgrades the status to partial but does not turn exhausted into an error. `stop_reason` keeps the original reason for ending; status describes the quality of the result. An undescribed exception gives `unexpected_error` without details. The output is not a basis for expiring offers.
 
-Wejście jawnie pozwala określić frazę, lokalizację, kraj (domyślnie Poland), limit (1–100), czas publikacji, remote i job_type. Pozostałe parametry są odrzucane. Pełny profil, proxy i nagłówki nie wchodzą do tego kontraktu. Puste frazy są odrzucane. Kontrola żądań zostanie dodana w osobnej funkcjonalności przed użyciem live.
+The input explicitly allows setting the phrase, location, country (Poland by default), limit (1–100), publication time, remote and job_type. Other parameters are rejected. The full profile, proxies and headers are not part of this contract. Empty phrases are rejected. Request control will be added in a separate feature before live use.
 
-Rekordy serializujemy z pól modelu `JobPost`, z pominięciem jego spłaszczającego serializera, przez JSON-owy adapter Pydantic. `salary_source` zachowuje starą semantykę. Każdy rekord dostaje `site=indeed` oraz `missing_fields`, obecnie obejmujące brak opisu. Wszystkie pozostałe pola modelu zachowują nazwy i wartości.
+We serialise records from the `JobPost` model fields, bypassing its flattening serializer, through a Pydantic JSON adapter. `salary_source` keeps its old semantics. Each record gets `site=indeed` and `missing_fields`, currently covering a missing description. All other model fields keep their names and values.
 
-Testy offline weryfikują reguły R-K01–K06 na podstawionym transporcie oraz publicznym nowym wejściu. Nie wdrażamy globalnych zmian pozostałych adapterów ani CLI. Stałe wersji i bieżący kontrakt utrzymuje `FORK.md`/moduł integracji.
+Offline tests verify the R-K01–K06 rules on a substituted transport and the new public entry point. We do not implement global changes to the other adapters or the CLI. The version constants and the current contract are maintained by `FORK.md`/the integration module.

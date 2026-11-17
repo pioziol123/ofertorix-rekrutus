@@ -1,28 +1,28 @@
-# Działający odczyt Bulldogjob i theprotocol — 2026-11-03
+# Working read of Bulldogjob and theprotocol — 2026-11-03
 
-## Wynik
+## Result
 
-**Z kontenera worker udało się odczytać oba portale: `bulldogjob.pl` i `theprotocol.it`.** Wystarczył istniejący w projekcie `curl_cffi 0.17.0`, profil Chrome lub Safari i HTTP/2. Nie używano przeglądarki, cookies/tokenów właściciela, proxy ani zewnętrznych solverów. To udana diagnostyka i próbka protokołu odczytu; nie wdrożono connectorów do aplikacji ani nie wykonano pełnego importu do bazy.
+**Both portals, `bulldogjob.pl` and `theprotocol.it`, were read successfully from the worker container.** The `curl_cffi 0.17.0` already in the project, a Chrome or Safari profile and HTTP/2 were enough. No browser, owner cookies/tokens, proxies or external solvers were used. This is a successful diagnosis and a sample of the read protocol; no connectors were implemented in the application and no full import into the database was made.
 
-Łącznie 29 żądań HTTP w trzech sekwencyjnych seriach, odstępy co najmniej 2 s, timeout 20 s, bez redirectów i automatycznych retry. Każda próba miała świeżą sesję, `trust_env=False`. Skrypty zachowują wyłącznie podsumowania odpowiedzi i strukturę pól; pierwszy zapisuje publiczny stan Next.js tymczasowo wewnątrz kontenera, aby dalsze próby dobrały istniejące ID i buildId. Wyniki nie zawierają cookies. Czasy w wynikach to UTC.
+In total 29 HTTP requests in three sequential series, gaps of at least 2 s, timeout 20 s, without redirects or automatic retries. Each trial had a fresh session, `trust_env=False`. The scripts keep only response summaries and the field structure; the first one temporarily saves the public Next.js state inside the container so that later trials can pick existing IDs and the buildId. The results contain no cookies. Times in the results are UTC.
 
-## Co decyduje o wyniku w tej próbce
+## What decides the result in this sample
 
-Dla obu chronionych domen:
+For both protected domains:
 
-| Transport | HTTP | Wynik |
+| Transport | HTTP | Result |
 | --- | --- | --- |
-| requests, domyślne nagłówki | 1.1 | 403, `cf-mitigated: challenge` |
-| requests z nagłówkami Chrome — wcześniejsza seria | 1.1 | 403, challenge |
-| curl_cffi bez profilu przeglądarki | 2 | 403, challenge |
-| curl_cffi, profil Chrome | 2 | 200, dane `__NEXT_DATA__` |
-| curl_cffi, profil Safari | 2 | 200, dane `__NEXT_DATA__` |
-| curl_cffi, profil Chrome, wymuszone HTTP/1.1 | 1.1 | 403, challenge |
-| curl_cffi, profil Chrome, HTTP/2, powtórka w świeżej sesji | 2 | 200, dane `__NEXT_DATA__` |
+| requests, default headers | 1.1 | 403, `cf-mitigated: challenge` |
+| requests with Chrome headers — earlier series | 1.1 | 403, challenge |
+| curl_cffi without a browser profile | 2 | 403, challenge |
+| curl_cffi, Chrome profile | 2 | 200, `__NEXT_DATA__` data |
+| curl_cffi, Safari profile | 2 | 200, `__NEXT_DATA__` data |
+| curl_cffi, Chrome profile, forced HTTP/1.1 | 1.1 | 403, challenge |
+| curl_cffi, Chrome profile, HTTP/2, repeat in a fresh session | 2 | 200, `__NEXT_DATA__` data |
 
-Wynik wskazuje na znaczenie kombinacji profilu połączenia i HTTP/2. Nie wyizolowano konkretnego sygnału TLS/HTTP2, kolejności nagłówków lub innej reguły ochrony. Profil przeglądarki zmienia więcej niż jeden parametr. Próby nie były randomizowane; nie dowodzą trwałości ani działania z innego VPS/IP. W wynikach surowych `http_version: 3` oznacza enum curl **HTTP/2**, a `2` oznacza HTTP/1.1 — nie należy interpretować liczby 3 jako HTTP/3.
+The result points to the importance of the combination of the connection profile and HTTP/2. No specific TLS/HTTP2 signal, header order or other protection rule was isolated. A browser profile changes more than one parameter. The trials were not randomised; they do not prove durability or operation from another VPS/IP. In the raw results `http_version: 3` means the curl enum **HTTP/2**, and `2` means HTTP/1.1 — do not interpret the number 3 as HTTP/3.
 
-Minimalna konfiguracja sprawdzona w kontrolach:
+The minimal configuration checked in the controls:
 
 ```python
 from curl_cffi import requests
@@ -37,40 +37,40 @@ with requests.Session(impersonate="chrome", trust_env=False) as session:
     )
 ```
 
-W connectorze odpowiedź trzeba zweryfikować przed parsowaniem: status, brak `cf-mitigated: challenge`, obecność `__NEXT_DATA__`, kształt listy/szczegółu. Challenge oznacza błąd dostępu i niepełny przebieg, nigdy pustą listę lub wygaśnięcie ofert. Żądania nadal muszą przechodzić przez istniejącą kontrolę częstotliwości i budżetu.
+In the connector the response must be verified before parsing: status, no `cf-mitigated: challenge`, presence of `__NEXT_DATA__`, the shape of the list/detail. A challenge means an access error and an incomplete run, never an empty list or expired offers. Requests must still pass through the existing frequency and budget control.
 
-## Walidacja danych
+## Data validation
 
 ### Bulldogjob .pl
 
-- Pierwsza strona: 50 ogłoszeń, `totalCount=1046`.
-- `/companies/jobs/s/page,2`: 50 różnych ID, zero wspólnych z pierwszą stroną.
-- `/companies/jobs/s/page,21`: 46 różnych ID. Zgodne z licznikiem 1046 w tej próbce, lecz bez przejścia stron 3–20 nie potwierdzono pełnego pokrycia.
-- `/companies/jobs/s/skills,PHP/experienceLevel,senior`: 9 ogłoszeń, odwzorowany `slugState`.
-- `/companies/jobs/s/skills,Go`: 36 ogłoszeń. Technologie i poziomy muszą pozostać parametrami adaptera.
-- Szczegół ID pochodzącego z listy: 200, zgodne ID, stan published, daty, 1784 znaki wymagań, JSON-LD JobPosting. `offer` w tej konkretnej ofercie jest pusty; nie należy uznawać tego za brak całego opisu lub zakładać obligatoryjnego pola.
-- Drugi szczegół (Devire): 200, `offer` 148 znaków, `requirements` 1786; `details` i `recruitmentProcess` null. Pusty lub null fragment trzeba traktować osobno od błędu pobierania.
+- First page: 50 ads, `totalCount=1046`.
+- `/companies/jobs/s/page,2`: 50 distinct IDs, none shared with the first page.
+- `/companies/jobs/s/page,21`: 46 distinct IDs. Consistent with the 1046 counter in this sample, but without going through pages 3–20 full coverage was not confirmed.
+- `/companies/jobs/s/skills,PHP/experienceLevel,senior`: 9 ads, `slugState` reflected.
+- `/companies/jobs/s/skills,Go`: 36 ads. Technologies and levels must remain adapter parameters.
+- Detail of an ID taken from the list: 200, matching ID, state published, dates, 1784 characters of requirements, JSON-LD JobPosting. `offer` in this particular offer is empty; do not take this as the absence of the whole description or assume a mandatory field.
+- Second detail (Devire): 200, `offer` 148 characters, `requirements` 1786; `details` and `recruitmentProcess` null. An empty or null fragment must be treated separately from a fetch error.
 
-### Bulldogjob .com nie jest równoważnym zamiennikiem .pl
+### Bulldogjob .com is not an equivalent replacement for .pl
 
-W tym samym przebiegu .com miało `totalCount=1584`, .pl 1046. Na pierwszych stronach po 50 pozycji było 31 wspólnych ID, 19 występujących tylko na każdej z porównywanych stron. To nie jest pomiar pełnego pokrycia obu zbiorów, ale nie pozwala przyjąć ich równoważności. .com miało interfejs angielski, inny buildId i odpowiadało 200 także bez HTTP/2. Dla polskiego zakresu użyć działającej .pl.
+In the same run .com had `totalCount=1584`, .pl 1046. On the first pages of 50 items each there were 31 shared IDs, and 19 that appeared only on each of the compared pages. This is not a measurement of full coverage of both sets, but it does not allow assuming they are equivalent. .com had an English interface, a different buildId, and responded with 200 also without HTTP/2. For the Polish scope, use the working .pl.
 
 ### theprotocol.it
 
-- Lista: 50 ogłoszeń w `offersResponse.offers`.
-- `/praca?pageNumber=2`: 50 różnych ID, zero wspólnych z pierwszą stroną.
-- `/praca?pageNumber=83`: 25 różnych ID, `page.count=83`, `offersCount=4125` w tej próbie. Bez przejścia stron pośrednich nie potwierdzono pełnej synchronizacji.
-- `/filtry/go;t`: 27 ogłoszeń, potwierdzone `expectedTechnologies` w filtrze. Zakres jest konfigurowalny.
-- Szczegół wybrany z pierwszej strony: zgodne ID, siedem sekcji tekstowych, technologie, `publicationDetails`, JSON-LD JobPosting.
-- Szczegół zawiera również `offersResponse` listy — nie pomylić go z właściwym `pageProps.offer` podczas parsowania.
+- List: 50 ads in `offersResponse.offers`.
+- `/praca?pageNumber=2`: 50 distinct IDs, none shared with the first page.
+- `/praca?pageNumber=83`: 25 distinct IDs, `page.count=83`, `offersCount=4125` in this trial. Without going through the intermediate pages, a complete sync was not confirmed.
+- `/filtry/go;t`: 27 ads, `expectedTechnologies` confirmed in the filter. The scope is configurable.
+- A detail chosen from the first page: matching ID, seven text sections, technologies, `publicationDetails`, JSON-LD JobPosting.
+- The detail also contains the list's `offersResponse` — do not confuse it with the actual `pageProps.offer` when parsing.
 
-## Dodatkowy wariant Next.js JSON
+## An additional Next.js JSON variant
 
-Próba `/_next/data/{buildId}/companies/jobs.json` na Bulldogjob .pl dała 404 HTML. Odpowiednik `/_next/data/{buildId}/praca.json` na theprotocol dał 404 JSON. Warianty były wyprowadzone z buildId faktycznie zwróconego na stronie; nie potwierdzono dostępnego kontraktu tego kanału. Działający odczyt pozostaje HTML → `__NEXT_DATA__`. Nie ma potrzeby uzależniać connectora od tych nieudanych adresów ani dalej szukać alternatyw tylko dla usunięcia obecnego 403, ponieważ odczyt HTML już działa.
+A trial of `/_next/data/{buildId}/companies/jobs.json` on Bulldogjob .pl gave a 404 HTML. The equivalent `/_next/data/{buildId}/praca.json` on theprotocol gave a 404 JSON. The variants were derived from the buildId actually returned on the page; no available contract for this channel was confirmed. The working read remains HTML → `__NEXT_DATA__`. There is no need to make the connector depend on these failed addresses or to keep looking for alternatives just to remove the current 403, because the HTML read already works.
 
-## Materiał i odtwarzanie
+## Material and reproduction
 
-[dostep-http-proby](dostep-http-proby/) zawiera trzy skrypty i trzy pliki JSONL. Uruchamiać skrypty kolejno w tym samym kontenerze:
+[dostep-http-proby](dostep-http-proby/) contains three scripts and three JSONL files. Run the scripts in order in the same container:
 
 ```sh
 docker compose exec -T worker /opt/jobspy/bin/python - < docs/research/polskie-zrodla/dostep-http-proby/transport-probe.py
@@ -78,6 +78,6 @@ docker compose exec -T worker /opt/jobspy/bin/python - < docs/research/polskie-z
 docker compose exec -T worker /opt/jobspy/bin/python - < docs/research/polskie-zrodla/dostep-http-proby/nextdata-probe.py
 ```
 
-`access-validation.py` korzysta z próbek w `/tmp` zapisanych przez pierwszy skrypt. Numery ostatnich stron są wartościami tej próby; produkcyjny connector powinien wyprowadzać je z aktualnego licznika. Ponowne uruchomienie oznacza nowe żądania, nie test offline. Weryfikacja lokalnych artefaktów: parsowanie trzech skryptów, wszystkich 30 rekordów JSONL (29 odpowiedzi + porównanie domen), kontrola statusów i zgodności ID.
+`access-validation.py` uses the samples in `/tmp` saved by the first script. The last-page numbers are values of this trial; a production connector should derive them from the current counter. Running again means new requests, not an offline test. Verification of the local artefacts: parsing of the three scripts, all 30 JSONL records (29 responses + the domain comparison), a check of statuses and ID consistency.
 
-Następny etap wdrożenia: wspólna ograniczona warstwa curl_cffi, parsery list/szczegółów z walidacją kontraktu, paginacja i testy niepełnych przebiegów. Nie są potrzebne zależności od przeglądarki lub sesji właściciela na podstawie obecnego wyniku.
+Next implementation stage: a shared bounded curl_cffi layer, list/detail parsers with contract validation, pagination and tests of incomplete runs. Based on the current result, no dependencies on a browser or the owner's session are needed.

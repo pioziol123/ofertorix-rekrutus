@@ -1,133 +1,133 @@
-# Fork JobSpy dla osobistego systemu ofert pracy — PRD
+# JobSpy fork for the personal job offer system — PRD
 
-Status: **zaakceptowany do realizacji etapami**, 2026-11-02. Właściciel polecił wdrażać według dotychczasowego flow i zgłaszać wątpliwości. Otwarte warunki uruchomienia źródeł pozostają otwarte. Fork: [pioziol123/JobSpy](https://github.com/pioziol123/JobSpy). Postęp prac: `bd show oferty-pracy-y81`.
+Status: **accepted for implementation in stages**, 2026-11-02. The owner instructed us to implement following the existing flow and to raise doubts. The open conditions for running the sources remain open. Fork: [pioziol123/JobSpy](https://github.com/pioziol123/JobSpy). Progress: `bd show oferty-pracy-y81`.
 
-## Kontekst i źródła
+## Context and sources
 
-Właściciel chce wykorzystać własny fork [speedyapply/JobSpy](https://github.com/speedyapply/JobSpy) do rozszerzania źródeł ofert w osobistym systemie. Ten PRD rozwija propozycję zmian omówioną po [analizie repozytorium](../../research/jobspy.md). Analiza z 2026-11-02 obejmowała README i kod gałęzi `main`, bez prób pobierania ofert na żywo; nie potwierdzono konkretnego SHA ani sprawności adapterów.
+The owner wants to use their own fork of [speedyapply/JobSpy](https://github.com/speedyapply/JobSpy) to extend the offer sources in the personal system. This PRD develops the proposed changes discussed after the [repository analysis](../../research/jobspy.md). The analysis of 2026-11-02 covered the README and the code of the `main` branch, without attempts to fetch offers live; no specific SHA and no working state of the adapters was confirmed.
 
-To osobna inicjatywa rozwoju integracji. Nie zmienia kryteriów odbioru [pierwszej wersji aplikacji](../pierwsza-wersja/PRD.md), opartej na SOLID.Jobs, ani nie wymaga przebudowy działającego importera. Kolejność względem pozostałych prac nad aplikacją wymaga decyzji właściciela.
+This is a separate initiative to develop integrations. It does not change the acceptance criteria of the [first version of the application](../pierwsza-wersja/PRD.md), which is based on SOLID.Jobs, and it does not require rebuilding the working importer. The order relative to other work on the application requires an owner's decision.
 
-**Potwierdzone w rozmowie:** system jest osobisty, działa lokalnie lub na własnym VPS; obecny zakres poszukiwań to PHP na poziomie senior. Po przygotowaniu PRD właściciel zlecił jego wdrażanie etapami. Aktualna kolejność: Indeed na końcu, wcześniej podłączenie pozostałych adapterów z jawnym wskazaniem ograniczeń rynku i dostępu. Nie rozstrzyga to otwartych warunków dostępu do źródeł.
+**Confirmed in conversation:** the system is personal and runs locally or on the owner's own VPS; the current search scope is senior-level PHP. After the PRD was prepared, the owner ordered it implemented in stages. Current order: Indeed last; before that, connecting the other adapters with the market and access limitations stated explicitly. This does not settle the open conditions of access to the sources.
 
-## Problem i odbiorca
+## Problem and audience
 
-Właściciel chce pozyskiwać dodatkowe oferty bez samodzielnego tworzenia wszystkich scraperów. JobSpy oferuje gotowe adaptery, ale ich wspólny wynik nie przekazuje dostatecznej informacji o jakości i ograniczeniach pobierania. Przykładowo szacunek wynagrodzenia może wyglądać jak widełki pracodawcy, a przebieg z pominiętymi rekordami lub bez opisów może wyglądać na zakończony poprawnie. Są to obserwacje kodu opisane w analizie, nie wyniki pomiarów produkcyjnych.
+The owner wants to obtain additional offers without writing all the scrapers themselves. JobSpy offers ready-made adapters, but their common output does not carry enough information about the quality and limitations of fetching. For example, a salary estimate may look like an employer's salary range, and a run with skipped records or without descriptions may look like it completed correctly. These are observations of the code described in the analysis, not results of production measurements.
 
-Bez tych informacji aplikacja mogłaby błędnie filtrować oferty, sugerować kompletność zbioru lub uznać nieobserwowane ogłoszenia za wygasłe. Z kolei zbyt rozbudowany fork utrudni przejmowanie poprawek adapterów od autorów JobSpy.
+Without this information the application could filter offers wrongly, suggest that the set is complete, or treat unobserved ads as expired. On the other hand, an overly extended fork makes it harder to take in adapter fixes from the JobSpy authors.
 
-Bezpośrednim odbiorcą zmian jest integracja pobierania w naszej aplikacji oraz osoba ją utrzymująca. Końcowym użytkownikiem danych pozostaje jeden właściciel. Nie budujemy publicznego agregatora ani usługi dla innych użytkowników.
+The direct audience of the changes is the fetch integration in our application and the person who maintains it. The end user of the data remains the single owner. We are not building a public aggregator or a service for other users.
 
-## Oczekiwane rezultaty
+## Expected outcomes
 
-- Właściciel otrzymuje dodatkowe oferty ze znanym źródłem i widocznymi brakami danych.
-- Rozróżnia wynagrodzenie podane przez pracodawcę, oszacowane przez portal i o nieustalonym pochodzeniu.
-- Rozumie, czy odczyt ustalonego zapytania zakończono, ograniczono limitem, przerwano lub wykonano z brakami. Zakończenie zapytania nie jest obietnicą pobrania całego rynku ani wszystkich ofert portalu.
-- Utrzymujący integrację potrafi ustalić przyczynę braku danych i bezpiecznie wznowić pobieranie.
-- Kolejne aktualizacje JobSpy można ocenić przed wdrożeniem, a błędną wersję wycofać bez utraty już zapisanych ofert.
+- The owner receives additional offers with a known source and visible data gaps.
+- The owner can distinguish a salary given by the employer, one estimated by the portal, and one of undetermined origin.
+- The owner understands whether reading a fixed query completed, was limited by a cap, was interrupted, or was done with gaps. Completing a query is not a promise of fetching the whole market or all of the portal's offers.
+- The integration maintainer can determine why data is missing and safely resume fetching.
+- Further JobSpy updates can be assessed before deployment, and a faulty version can be rolled back without losing offers already saved.
 
-Dowodem użyteczności będzie kontrolowany import Indeed Polska dla zakresu PHP senior, przegląd jakości uzyskanych danych i porównanie z dotychczasowym zbiorem SOLID.Jobs. Raport z próby powinien pokazać dodatkowe oferty, duplikaty, trafność zakresu, braki opisów i płac, pochodzenie kwot oraz błędy pobierania. Nie ustalono minimalnej liczby nowych ofert, procentu kompletności ani oszczędności czasu. Te pomiary mają pomóc w decyzji o kontynuacji, a nie służyć jako nieuzgodniona obietnica.
+The evidence of usefulness will be a controlled import from Indeed Poland for the senior PHP scope, a review of the quality of the data obtained, and a comparison with the existing SOLID.Jobs set. The trial report should show additional offers, duplicates, scope accuracy, missing descriptions and salaries, the origin of amounts, and fetch errors. No minimum number of new offers, completeness percentage or time saving has been set. These measurements are meant to help decide whether to continue, not to serve as an unagreed promise.
 
-## Zakres proponowanej pierwszej wersji
+## Scope of the proposed first version
 
-### 1. Pochodzenie i znaczenie wynagrodzenia
+### 1. Origin and meaning of the salary
 
-Wynik pozwala odróżnić kwotę pracodawcy od szacunku portalu i nieznanego pochodzenia. Zachowuje walutę, okres oraz dostępny kontekst uzasadniający klasyfikację. Gdy portal dostarcza obie wartości, integracja nie traci informacji o ich odmiennym charakterze.
+The output makes it possible to tell an employer's amount from a portal's estimate and from an unknown origin. It keeps the currency, the period and the available context that justifies the classification. When the portal provides both values, the integration does not lose the information about their different nature.
 
-Brak danych o brutto/netto, VAT lub rodzaju umowy pozostaje niewiadomą. Typ `contract` nie jest automatycznie interpretowany jako B2B. Przeliczona kwota nie zastępuje wartości źródłowej. Pierwsza wersja nie obiecuje poprawnego wyodrębniania dowolnych polskich widełek z tekstu każdego portalu.
+Missing data about gross/net, VAT or contract type remains an unknown. The `contract` type is not automatically interpreted as B2B. A converted amount does not replace the source value. The first version does not promise correct extraction of arbitrary Polish salary ranges from the text of every portal.
 
-### 2. Jakość i wynik pobierania
+### 2. Quality and outcome of fetching
 
-Dane przekazywane do aplikacji obejmują wynik odczytu dla każdego wybranego źródła i zapytania, przyczynę jego zakończenia oraz znane ograniczenia. Pusty poprawny odczyt jest odróżnialny od blokady, błędu lub nierozpoznanej odpowiedzi.
+The data passed to the application includes the read outcome for each selected source and query, the reason it ended, and known limitations. An empty correct read is distinguishable from a block, an error or an unrecognised response.
 
-Widoczne są pominięte ogłoszenia, nieudane pobrania szczegółów i filtry, których źródło nie zastosowało. Brak opisu nie powoduje udawania pełnego rekordu. Jeśli dokładna liczba pominiętych wyników jest nieznana, wynik komunikuje tę niepewność.
+Skipped ads, failed detail fetches and filters the source did not apply are visible. A missing description does not lead to pretending the record is complete. If the exact number of skipped results is unknown, the output communicates this uncertainty.
 
-Nieobecność ogłoszenia w ograniczonym wyszukiwaniu nie jest dowodem wygaśnięcia. Fork dostarcza informacje o przebiegu; decyzje o stanie zapisanej oferty pozostają po stronie aplikacji.
+The absence of an ad in a limited search is not evidence of expiry. The fork provides information about the run; decisions about the state of a saved offer stay with the application.
 
-### 3. Dane przeznaczone do integracji
+### 3. Data intended for integration
 
-Aplikacja otrzymuje oferty i informacje o przebiegu w udokumentowanym, wersjonowanym formacie JSON. Zachowane są struktury danych, brakujące wartości, identyfikatory źródłowe i adresy ofert; listy nie są sprowadzane wyłącznie do tekstu rozdzielonego przecinkami.
+The application receives offers and run information in a documented, versioned JSON format. Data structures, missing values, source identifiers and offer URLs are preserved; lists are not reduced to comma-separated text only.
 
-Wynik wskazuje źródło, użyty zakres wyszukiwania, czas pobrania oraz wersję forka. Pozwala odtworzyć, skąd pochodzi zapisany rekord i dlaczego jego dane uznano za niepełne. Dane przetworzone przez JobSpy nie są przedstawiane jako oryginalna odpowiedź portalu. Diagnostyka nie zanieczyszcza eksportu ofert.
+The output names the source, the search scope used, the fetch time and the fork version. It makes it possible to reconstruct where a saved record came from and why its data was considered incomplete. Data processed by JobSpy is not presented as the portal's original response. Diagnostics do not pollute the offer export.
 
-Konkretny schemat, sposób uruchamiania oraz mapowanie do bazy zostaną określone przed implementacją danej funkcjonalności.
+The specific schema, the way of running and the mapping to the database will be defined before implementing the given feature.
 
-### 4. Kontrolowane pobieranie i ponowienia
+### 4. Controlled fetching and retries
 
-Można jawnie wybrać źródło, zakres zapytania i limity pracy. Pobieranie ma ograniczony czas i liczbę ponowień; nie kontynuuje bez końca po blokadzie lub zmianie formatu strony. Rozpoznane ograniczenia tempa są respektowane, a stan oczekiwania albo zatrzymania jest przekazywany do aplikacji.
+The source, the query scope and the work limits can be selected explicitly. Fetching has a bounded time and number of retries; it does not continue endlessly after a block or a change in page format. Recognised rate limits are respected, and the waiting or stopped state is passed to the application.
 
-Chwilowy błąd może zostać ponowiony bez ręcznego uruchamiania całego procesu. Błąd wymagający zmiany parsera nie wywołuje nieograniczonej serii identycznych żądań. Szczegółowa polityka limitów zależy od źródła i wymaga sprawdzenia przed jego uruchomieniem. Ponowne wykonanie nie może tworzyć duplikatów tej samej obserwacji w aplikacji; odpowiedzialność za zapis pozostaje w jej importerze.
+A transient error can be retried without manually rerunning the whole process. An error that requires a parser change does not trigger an unbounded series of identical requests. The detailed limit policy depends on the source and must be checked before that source is enabled. A repeated execution must not create duplicates of the same observation in the application; responsibility for saving stays with its importer.
 
-### 5. Utrzymanie forka
+### 5. Maintaining the fork
 
-Zmiany obejmują przede wszystkim informacje tracone przez obecny eksport, diagnostykę i kontrolę pobierania. Unikamy przebudowy adapterów niezwiązanej z tymi celami. Każdą używaną wersję da się powiązać z wersją bazową JobSpy i zestawem naszych zmian.
+The changes mainly cover information lost by the current export, diagnostics and fetch control. We avoid rebuilding adapters in ways unrelated to these goals. Every version in use can be tied to a JobSpy base version and to the set of our changes.
 
-Aktualizacje oryginalnego projektu są oceniane przed wdrożeniem. Przykłady odpowiedzi portali pozwalają wykrywać regresje parserów bez wykonywania żądań podczas zwykłego sprawdzania zmian. Zestaw obejmuje również odpowiedzi puste, błędne i niepełne oraz oba rodzaje wynagrodzeń. Materiały testowe nie zawierają sekretów ani zbędnych danych osobowych. Same testy na zapisanych przykładach nie potwierdzają bieżącej sprawności portalu.
+Updates of the original project are assessed before deployment. Samples of portal responses make it possible to detect parser regressions without making requests during the usual checking of changes. The set also includes empty, erroneous and incomplete responses and both kinds of salary. Test materials contain no secrets and no unnecessary personal data. Tests on saved samples alone do not confirm that the portal currently works.
 
-## Granica odpowiedzialności
+## Responsibility boundary
 
-| Fork JobSpy | Aplikacja ofert pracy |
+| JobSpy fork | Job offer application |
 | --- | --- |
-| Pobieranie i odczyt informacji z portali | Harmonogram oraz zlecanie i prezentacja operacji |
-| Identyfikatory i linki źródłowe | Trwały zapis, rewizje i historia |
-| Pochodzenie pól, braki i ograniczenia źródła | Kwalifikacja PHP senior i komunikowanie niewiadomych |
-| Wynik zapytania, błędy i kontrola żądań | Łączenie duplikatów między portalami i stan oferty |
-| Wersjonowany eksport | Profil, dopasowanie, rating, research i rekrutacje |
+| Fetching and reading information from portals | Scheduling, plus ordering and presenting operations |
+| Source identifiers and links | Durable storage, revisions and history |
+| Field origin, gaps and source limitations | Senior PHP qualification and communicating unknowns |
+| Query outcome, errors and request control | Merging duplicates across portals and offer state |
+| Versioned export | Profile, matching, rating, research and recruitments |
 
-Fork nie potrzebuje CV, prywatnego profilu ani historii rekrutacji. Dostaje jedynie parametry niezbędne do wyszukania ofert. Nie wprowadzamy zależności jego logiki od osobistych preferencji właściciela.
+The fork does not need a CV, a private profile or recruitment history. It receives only the parameters needed to search for offers. We do not make its logic depend on the owner's personal preferences.
 
-## Typowe przebiegi
+## Typical flows
 
-**Nowe źródło.** Właściciel uruchamia import ustalonego zakresu z Indeed Polska. Aplikacja zapisuje obserwacje źródłowe i sprawdza kwalifikację PHP senior. Samo dopasowanie frazy wyszukiwania nie jest potwierdzeniem technologii ani seniority; brak informacji pozostaje jawny zgodnie z regułami aplikacji.
+**New source.** The owner runs an import of a fixed scope from Indeed Poland. The application saves the source observations and checks the senior PHP qualification. A match of the search phrase alone does not confirm the technology or seniority; missing information stays explicit according to the application's rules.
 
-**Szacunek zamiast widełek.** Oferta zawiera kwotę oszacowaną przez portal. Informacja dociera do aplikacji razem z kwotą. Nie jest prezentowana jako deklaracja pracodawcy ani bezwarunkowo używana jako potwierdzenie spełnienia minimum finansowego. Zasady filtrowania takich wartości wymagają odrębnego doprecyzowania po stronie aplikacji.
+**Estimate instead of a salary range.** The offer contains an amount estimated by the portal. That information reaches the application together with the amount. It is not presented as the employer's declaration, nor used unconditionally as confirmation that the financial minimum is met. The rules for filtering such values need a separate clarification on the application side.
 
-**Częściowy odczyt.** Portal blokuje żądania po pobraniu części wyników. Pobrane rekordy pozostają dostępne, a wynik wskazuje przerwany odczyt i jego przyczynę. Aplikacja nie oznacza niewidzianych ogłoszeń jako wygasłe wyłącznie na tej podstawie.
+**Partial read.** The portal blocks requests after part of the results has been fetched. The fetched records stay available, and the output shows the interrupted read and its reason. The application does not mark unseen ads as expired on that basis alone.
 
-**Brak szczegółów.** Karta oferty jest dostępna, ale pobranie opisu się nie udaje. Oferta może zostać przekazana z oznaczeniem braków; utrzymujący integrację widzi, co można ponowić. Nie jest komunikowana pełna dostępność danych.
+**Missing details.** The offer card is available, but fetching the description fails. The offer may be passed on with the gaps marked; the integration maintainer sees what can be retried. Full availability of the data is not communicated.
 
-**Aktualizacja JobSpy.** Utrzymujący sprawdza wpływ nowej wersji na używany eksport i parsery. W razie regresji pozostaje przy poprzedniej wersji lub do niej wraca. Zapisane dane aplikacji pozostają dostępne.
+**JobSpy update.** The maintainer checks the effect of the new version on the export and parsers in use. In case of a regression, they stay on the previous version or return to it. The application's saved data stays available.
 
-## Ograniczenia i wyłączenia
+## Constraints and exclusions
 
-- Indeed odłożono na koniec. Pozostałe adaptery są podłączane osobno; obecny zakres pozostaje Senior PHP w Polsce.
-- Nie obiecujemy pełnego pokrycia portalu ani rynku pracy. Praca zdalna i lokalizacja nie są równoznaczne z potwierdzoną możliwością zatrudnienia osoby z Polski.
-- Zachowujemy informacje wymagane przez licencję JobSpy. Warunki dostępu do portali wymagają osobnego sprawdzenia przed próbą na żywo i regularnym użyciem; analiza repozytorium ich nie rozstrzyga.
-- W tej inicjatywie nie dodajemy płatnych usług ani zakupu proxy. Potrzeba takiego wydatku wymaga osobnej decyzji właściciela; dotychczasowy budżet AI nie jest domyślną zgodą na te koszty.
-- Poza zakresem: automatyczne aplikowanie, logowanie do kont portali, obsługa CAPTCHA, publiczna publikacja ofert i dodawanie polskich portali nieobecnych w oryginalnym projekcie.
-- Nie rozwijamy MCP, panelu użytkownika ani własnej bazy wewnątrz forka. Nie przenosimy do niego oceniania, researchu ani zarządzania rekrutacją.
-- Nie przepisujemy biblioteki na TypeScript. Wybór granicy procesu i sposobu dystrybucji pozostaje decyzją techniczną.
+- Indeed has been postponed to the end. The other adapters are connected separately; the current scope remains Senior PHP in Poland.
+- We do not promise full coverage of the portal or the job market. Remote work and location do not equal a confirmed possibility of employing a person from Poland.
+- We keep the information required by the JobSpy licence. The conditions of access to the portals need a separate check before a live trial and regular use; the repository analysis does not settle them.
+- In this initiative we do not add paid services or buy proxies. A need for such spending requires a separate owner's decision; the existing AI budget is not default consent to these costs.
+- Out of scope: automatic applying, logging in to portal accounts, CAPTCHA handling, public publishing of offers, and adding Polish portals absent from the original project.
+- We do not develop MCP, a user panel or a database of its own inside the fork. We do not move assessment, research or recruitment management into it.
+- We do not rewrite the library in TypeScript. The choice of process boundary and distribution method remains a technical decision.
 
-## Proponowane etapy
+## Proposed stages
 
-1. **Potwierdzenie wykonalności:** wybór konkretnej wersji bazowej, sprawdzenie dostępu do Indeed Polska, ustalenie sposobu utrzymania forka oraz kontrolowana próba. Wynik może uzasadnić rezygnację ze źródła przed dalszymi pracami.
-2. **Pierwsza użyteczna wersja forka:** Indeed z pochodzeniem wynagrodzeń, informacjami o jakości przebiegu, wersjonowanym eksportem i kontrolą żądań. Weryfikacja również na zapisanych przykładach.
-3. **Włączenie do aplikacji i ocena wartości:** zapis ofert z zachowaniem istniejących reguł historii oraz przegląd dodatkowych wyników. Adapter aplikacji jest pracą integracyjną, nie rozszerzeniem domeny forka.
-4. **Ewentualny LinkedIn:** osobna ocena opłacalności, dostępu i braków danych; bez automatycznego zobowiązania do rozszerzenia na pozostałe portale.
+1. **Feasibility confirmation:** choosing a specific base version, checking access to Indeed Poland, deciding how to maintain the fork, and a controlled trial. The result may justify dropping the source before further work.
+2. **First useful version of the fork:** Indeed with salary origin, run quality information, a versioned export and request control. Also verified on saved samples.
+3. **Integration into the application and value assessment:** saving offers while keeping the existing history rules, and reviewing the additional results. The application adapter is integration work, not an extension of the fork's domain.
+4. **Possibly LinkedIn:** a separate assessment of cost-effectiveness, access and data gaps; with no automatic commitment to extend to the other portals.
 
-## Niewiadome i warunki dalszych prac
+## Unknowns and conditions for further work
 
-| Kwestia | Co blokuje / następny krok |
+| Question | What it blocks / next step |
 | --- | --- |
-| Dostęp na żywo do Indeed jako pierwszego źródła | Kierunek implementacji zaakceptowany 2026-11-02; uruchomienie nadal wymaga rozstrzygnięcia warunków dostępu. |
-| Warunki i rzeczywista dostępność pobierania | Uruchomienie źródła; sprawdzić warunki i wykonać ograniczoną próbę. |
-| Konto, miejsce i wersja bazowa forka | Utworzenie repozytorium i odtwarzalne wydania; ustalić przed jego założeniem. |
-| Dopuszczalne tempo, czas i ponowienia | Regularne pobieranie; określić na podstawie ograniczeń źródła i próby. |
-| Wystarczająca jakość i liczba dodatkowych ofert | Decyzja o dalszym utrzymaniu; ocenić wyniki próby, bez z góry wymyślonego progu. |
-| Wpływ szacunków płacy na filtry aplikacji | Włączenie takich kwot do kwalifikacji finansowej; ustalić osobną regułę, zachowując pochodzenie w forku. |
+| Live access to Indeed as the first source | Implementation direction accepted 2026-11-02; enabling it still requires settling the access conditions. |
+| Terms and actual availability of fetching | Enabling the source; check the terms and run a limited trial. |
+| Account, location and base version of the fork | Creating the repository and reproducible releases; decide before it is created. |
+| Acceptable rate, time and retries | Regular fetching; determine from the source's limits and the trial. |
+| Sufficient quality and number of additional offers | Decision on further maintenance; assess the trial results, without a threshold invented in advance. |
+| Effect of salary estimates on application filters | Including such amounts in the financial qualification; set a separate rule, keeping the origin in the fork. |
 
-Dokument określa zaakceptowany kierunek prac, nie stanowi kompletnej specyfikacji implementacyjnej. Jednemu PRD odpowiada wiele par requirements/solution-design, np. dla danych płacowych, jakości przebiegu, eksportu oraz kontroli pobierania. Dopracowujemy wybraną parę dopiero przed realizacją danej funkcjonalności.
+This document sets the accepted direction of work; it is not a complete implementation specification. One PRD corresponds to many requirements/solution-design pairs, e.g. for salary data, run quality, export and fetch control. We refine a chosen pair only before implementing the given feature.
 
-Pierwsza wybrana para: [pochodzenie płacy — requirements](features/pochodzenie-placy/requirements.md) i [solution-design](features/pochodzenie-placy/solution-design.md). Organizacja lokalnej pracy i blokada uruchomienia źródła: [local-development](local-development.md).
+The first chosen pair: [salary origin — requirements](features/pochodzenie-placy/requirements.md) and [solution-design](features/pochodzenie-placy/solution-design.md). Organisation of local work and the block on enabling the source: [local-development](local-development.md).
 
-Kolejne realizowane funkcjonalności: [kontrakt przebiegu — requirements](features/kontrakt-przebiegu/requirements.md), [solution-design](features/kontrakt-przebiegu/solution-design.md) oraz [kontrola żądań — requirements](features/kontrola-zadan/requirements.md), [solution-design](features/kontrola-zadan/solution-design.md).
+Further features being implemented: [run contract — requirements](features/kontrakt-przebiegu/requirements.md), [solution-design](features/kontrakt-przebiegu/solution-design.md) and [request control — requirements](features/kontrola-zadan/requirements.md), [solution-design](features/kontrola-zadan/solution-design.md).
 
-Decyzja o kolejności z 2026-11-02: scraper HTML Indeed realizujemy na końcu. Wcześniej weryfikujemy paczkę, publikujemy zmiany forka (commit/push wyraźnie zatwierdzone osobno) i przygotowujemy [integrację aplikacji — requirements](features/integracja-aplikacji/requirements.md), [solution-design](features/integracja-aplikacji/solution-design.md). Integracja offline jest niezależna od rozstrzygnięcia dostępu live i pozostaje domyślnie wyłączona; pilot oraz zgoda na zakres danych nadal są otwarte.
+Order decision of 2026-11-02: we implement the Indeed HTML scraper last. Before that we verify the package, publish the fork changes (commit/push approved separately and explicitly) and prepare [application integration — requirements](features/integracja-aplikacji/requirements.md), [solution-design](features/integracja-aplikacji/solution-design.md). The offline integration is independent of settling live access and stays disabled by default; the pilot and consent to the data scope are still open.
 
-Rozszerzenie zlecone przez właściciela: [pozostałe źródła — requirements](features/pozostale-zrodla/requirements.md), [solution-design](features/pozostale-zrodla/solution-design.md). Katalog obejmuje wszystkie adaptery; podłączenie techniczne nie oznacza potwierdzonego importu na żywo.
+Extension ordered by the owner: [other sources — requirements](features/pozostale-zrodla/requirements.md), [solution-design](features/pozostale-zrodla/solution-design.md). The catalogue covers all adapters; a technical connection does not mean a confirmed live import.
 
-Decyzja 2026-11-02: dopuszczamy zagraniczne oferty w pełni zdalne; kraj portalu nie wyklucza pracy z Polski. [Wymagania](features/zdalne-zagraniczne/requirements.md) i [SD](features/zdalne-zagraniczne/solution-design.md) zastępują dotychczasową blokadę kraju w tym zakresie.
+Decision of 2026-11-02: we allow fully remote foreign offers; the portal's country does not exclude working from Poland. The [requirements](features/zdalne-zagraniczne/requirements.md) and [SD](features/zdalne-zagraniczne/solution-design.md) replace the previous country block in this respect.
 
-Aktualizacja 2026-11-02: właściciel potwierdził zgodę LinkedIn i Indeed na scraping do jednego query/s. [Kontrola żądań](features/kontrola-zadan/requirements.md#potwierdzona-zgoda-i-limit--2026-11-02) obejmuje wszystkie próby HTTP łącznie. LinkedIn przechodzi do ręcznego pilota; Indeed HTML pozostaje na końcu, a istniejący adapter GraphQL wyłączony. Wcześniejsze wzmianki o braku zgody są historyczne.
+Update of 2026-11-02: the owner confirmed LinkedIn's and Indeed's consent to scraping at up to one query/s. [Request control](features/kontrola-zadan/requirements.md#confirmed-consent-and-limit--2026-11-02) covers all HTTP attempts together. LinkedIn moves to a manual pilot; Indeed HTML stays last, and the existing GraphQL adapter is disabled. Earlier mentions of no consent are historical.
 
-Realizowany ostatni etap: [scraper HTML Indeed — requirements](features/scraper-html-indeed/requirements.md), [SD](features/scraper-html-indeed/solution-design.md). Osobna funkcja HTML zachowuje kontrakt i nie zastępuje publicznego adaptera GraphQL w bibliotece; aplikacja wybiera HTML. Próba 2026-11-02: HTTP 403, źródło pozostaje wyłączone.
+Last stage being implemented: [Indeed HTML scraper — requirements](features/scraper-html-indeed/requirements.md), [SD](features/scraper-html-indeed/solution-design.md). A separate HTML function keeps the contract and does not replace the public GraphQL adapter in the library; the application selects HTML. Trial of 2026-11-02: HTTP 403, the source stays disabled.

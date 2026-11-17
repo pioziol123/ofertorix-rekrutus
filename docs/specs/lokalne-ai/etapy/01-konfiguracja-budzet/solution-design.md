@@ -1,70 +1,70 @@
-# Etap 1: Wspólna konfiguracja i budżet — Solution design
+# Stage 1: Shared configuration and budget — Solution design
 
-Status: **przegląd techniczny zakończony**, 2026-11-05. Etap 1 z dziewięciu, przygotowany do implementacji równoważnego wydzielenia. Beads `oferty-pracy-334.2` określa stan realizacji; przygotowanie: `oferty-pracy-334.19`. Projektowane pliki poniżej nie są deklaracją istniejącego kodu ani wykonanych testów.
+Status: **technical review completed**, 2026-11-05. Stage 1 of nine, prepared for implementation of an equivalent extraction. Beads `oferty-pracy-334.2` holds the implementation status; preparation: `oferty-pracy-334.19`. The designed files below are not a statement about existing code or about tests that were run.
 
-Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md), [plan](../../README.md). Potwierdzone: lokalnie `gpt-oss:20b`, OpenCode dla agenta i brak kwot Ollamy. Te wybory nie rozszerzają etapu 1 o nowe wykonanie lokalne.
+Basis: [PRD](../../PRD.md), [cross-cutting requirements](../../requirements.md), [plan](../../README.md). Confirmed: `gpt-oss:20b` locally, OpenCode for the agent and no Ollama charges. These choices do not extend stage 1 with new local execution.
 
-Zakres normatywny zachowania: [Requirements](requirements.md), E01-R01–E01-R04. Stan sprawdzony: lokalny katalog z 2026-11-05, łącznie z zastanymi zmianami; nie jest to wyłącznie HEAD. Przy rozpoczęciu kodowania odświeżyć tę migawkę.
+Normative scope of behaviour: [Requirements](requirements.md), E01-R01–E01-R04. State checked: the local directory as of 2026-11-05, including the existing changes; this is not only HEAD. Refresh this snapshot when coding starts.
 
-## Podejście i granice
+## Approach and boundaries
 
-Źródłem wydzielenia jest [lib/profile/ai.ts](../../../../../lib/profile/ai.ts). Na dzień przeglądu docelowe configuration.ts i budget.ts nie istnieją; robocze lib/ai/models/model.ts i openai.ts już istnieją.
+The source of the extraction is [lib/profile/ai.ts](../../../../../lib/profile/ai.ts). As of the review, the target configuration.ts and budget.ts do not exist; the work-in-progress lib/ai/models/model.ts and openai.ts already exist.
 
-| Projektowany plik | Własność i zależności |
+| Designed file | Ownership and dependencies |
 | --- | --- |
-| lib/ai/configuration.ts | AiConfiguration i aiConfiguration; istniejący strict parsing Zod i odczyt env przy każdym wywołaniu, bez cache. Korzysta z wewnętrznego parsera kwot. Nie importuje budget.ts, profilu ani adaptera OpenAI. |
-| lib/ai/budget.ts | chargeCeiling, budgetMonth i reserve. Importuje AiConfiguration wyłącznie jako typ oraz wspólną arytmetykę. Nie tworzy klienta bazy ani kolejki. |
-| lib/ai/money.ts | Wewnętrzne dla lib/ai przeniesione million, ceil, decimal i money; jeden parser dziesiętny współdzielony przez walidację konfiguracji i obliczenia. Bez zależności od konfiguracji, bazy i domeny. Konsumenci domenowi nie importują tych szczegółów. |
+| lib/ai/configuration.ts | AiConfiguration and aiConfiguration; the existing strict Zod parsing and reading env on every call, without a cache. Uses the internal amount parser. Does not import budget.ts, profile or the OpenAI adapter. |
+| lib/ai/budget.ts | chargeCeiling, budgetMonth and reserve. Imports AiConfiguration only as a type, plus the shared arithmetic. Does not create a database client or a queue. |
+| lib/ai/money.ts | million, ceil, decimal and money, moved here and internal to lib/ai; one decimal parser shared by configuration validation and calculations. No dependency on configuration, the database or the domain. Domain consumers do not import these details. |
 
-Przełączyć wszystkie bezpośrednie importy wspólnych symboli, również importy samych typów:
+Switch all direct imports of the shared symbols, including type-only imports:
 
-- lib/profile/ai.ts — korzysta z configuration.ts i budget.ts, zachowując pozostały kod profilu i rozpoczętą integrację modelu.
-- lib/matching/store.ts, lib/matching/batch.ts i **lib/matching/list.ts** — ostatni plik pokazuje koszt w liście ofert i był pominięty w pierwotnym szkicu.
-- lib/companies/research.ts i lib/companies/research-provider.ts.
-- tests/profile.test.ts, tests/matching-batch.test.ts, tests/matching.integration.test.ts, tests/matching-groups.integration.test.ts, tests/company-research.integration.test.ts oraz tests/company-research.fixtures.ts.
+- lib/profile/ai.ts — uses configuration.ts and budget.ts, keeping the rest of the profile code and the started model integration.
+- lib/matching/store.ts, lib/matching/batch.ts and **lib/matching/list.ts** — the last file shows the cost in the offer list and was left out of the original draft.
+- lib/companies/research.ts and lib/companies/research-provider.ts.
+- tests/profile.test.ts, tests/matching-batch.test.ts, tests/matching.integration.test.ts, tests/matching-groups.integration.test.ts, tests/company-research.integration.test.ts and tests/company-research.fixtures.ts.
 
-matching/groups.ts na dzień przeglądu korzysta z finansowania przez matching/store.ts; nie ma własnego importu wspólnych symboli. Obejmuje go regresja grup, bez wymuszania nowej zależności. Importy executeAi, resumeAi i readAiProposal pozostają w profilu, także w testach i workerze. Przed zmianą ponowić wyszukiwanie konsumentów, gdyby katalog się zmienił. Wspólne moduły nie importują modułów domenowych; konfiguracja i budżet nie zależą od siebie cyklicznie.
+As of the review, matching/groups.ts uses funding through matching/store.ts; it has no import of its own of the shared symbols. The group regression covers it, without forcing a new dependency. The imports of executeAi, resumeAi and readAiProposal stay in profile, also in the tests and the worker. Before the change, repeat the search for consumers in case the directory has changed. The shared modules do not import domain modules; configuration and budget do not depend on each other cyclically.
 
-## Decyzja E01-D01 — Przeniesienie istniejących funkcji bez nowej abstrakcji
+## Decision E01-D01 — Move the existing functions without a new abstraction
 
-Pozostawienie wspólnych funkcji w profilu utrzymuje zależność innych modułów od profilu. Wydzielamy istniejące zachowanie, bez nowego systemu operacji, repozytoriów ani interfejsu dostawców. Wewnętrzny money.ts zapobiega duplikowaniu parsera pomiędzy konfiguracją i obliczeniami; nie tworzy nowego interfejsu dla domeny. Zmiany reguł lokalnego kosztu zero należą do etapu 5.
+Leaving the shared functions in profile keeps the other modules dependent on profile. We extract the existing behaviour, without a new operation system, repositories or a provider interface. The internal money.ts prevents duplicating the parser between configuration and calculations; it does not create a new interface for the domain. Changes to the rules for zero local cost belong to stage 5.
 
-Punkty integracji w obecnym katalogu: [lib/profile/ai.ts](../../../../../lib/profile/ai.ts), [lib/matching/store.ts](../../../../../lib/matching/store.ts), [lib/companies/research-provider.ts](../../../../../lib/companies/research-provider.ts). Wskazują miejsca zmiany, nie obowiązek przeniesienia wszystkich ich odpowiedzialności.
+Integration points in the current directory: [lib/profile/ai.ts](../../../../../lib/profile/ai.ts), [lib/matching/store.ts](../../../../../lib/matching/store.ts), [lib/companies/research-provider.ts](../../../../../lib/companies/research-provider.ts). They show where the change happens, not an obligation to move all of their responsibilities.
 
-## Kontrakty i niezmienniki etapu
+## Contracts and invariants of the stage
 
-Zachować publiczne sygnatury: aiConfiguration(variable = 'AI_PROFILE_PRICING_JSON'): AiConfiguration | null, chargeCeiling(config,input,output): string, budgetMonth(now?:Date): string, reserve(client:PoolClient,config:AiConfiguration,now?:Date,extraCost='0'): Promise<{month:string,cost:string,enough:boolean}>. Zmieniają się moduły importu, nie argumenty i znaczenie wyników.
+Keep the public signatures: aiConfiguration(variable = 'AI_PROFILE_PRICING_JSON'): AiConfiguration | null, chargeCeiling(config,input,output): string, budgetMonth(now?:Date): string, reserve(client:PoolClient,config:AiConfiguration,now?:Date,extraCost='0'): Promise<{month:string,cost:string,enough:boolean}>. The import modules change, not the arguments or the meaning of the results.
 
-AiConfiguration zachowuje model, version, inputUsdPerMillion, outputUsdPerMillion, usdPln, fxVersion, maxInputTokens i maxOutputTokens. Odczyt nadal wymaga OPENAI_API_KEY i wskazanej zmiennej *_PRICING_JSON. Pusty/błędny JSON, nieznane pola, niewłaściwe typy i niepoprawne kwoty dają null. Kwoty cennika i kurs muszą być dodatnie; maxInputTokens pozostaje dodatnim integerem do 2 000 000, maxOutputTokens do 6 000. Nie wprowadzamy tu konfiguracji Ollamy ani nowych env. Ograniczenia specyficzne dla matchingConfiguration i researchConfiguration zostają przy ich dotychczasowych właścicielach.
+AiConfiguration keeps model, version, inputUsdPerMillion, outputUsdPerMillion, usdPln, fxVersion, maxInputTokens and maxOutputTokens. Reading still requires OPENAI_API_KEY and the named *_PRICING_JSON variable. Empty/invalid JSON, unknown fields, wrong types and invalid amounts give null. Price amounts and the exchange rate must be positive; maxInputTokens stays a positive integer up to 2 000 000, maxOutputTokens up to 6 000. We do not introduce Ollama configuration or new env here. Constraints specific to matchingConfiguration and researchConfiguration stay with their existing owners.
 
-Kwoty są dziesiętnymi stringami i bigint w milionowych częściach. Zachować dotychczasowy parser (1–6 cyfr części całkowitej, opcjonalnie 1–6 cyfr ułamka), dwa kroki zaokrąglenia w górę i wynik z sześcioma miejscami po przecinku. Nie rozszerzać formatów wejścia ani nie zmieniać zaokrągleń przy przenoszeniu. chargeCeiling odrzuca ujemne, ułamkowe i niebezpieczne całkowite użycie tokenów, ale dopuszcza użycie zero.
+Amounts are decimal strings and bigint in millionths. Keep the existing parser (1–6 digits of the integer part, optionally 1–6 digits of the fraction), the two round-up steps and the result with six decimal places. Do not widen the input formats or change the rounding during the move. chargeCeiling rejects negative, fractional and unsafe integer token usage, but allows zero usage.
 
-**reserve nie zapisuje rezerwacji samodzielnie.** W transakcji rozpoczętej przez wywołującego tworzy w razie potrzeby miesiąc z dotychczasowym limitem 100 PLN, blokuje wiersz miesiąca FOR UPDATE i sprawdza dostępność na podstawie ai_attempts: actual_pln dla settled, reserved_pln dla pozostałych stanów. Koszt obejmuje chargeCeiling dla zapisanych pułapów tokenów i extraCost, zwracany jest także przy enough=false.
+**reserve does not write the reservation by itself.** In a transaction started by the caller, it creates the month with the existing 100 PLN limit when needed, locks the month row FOR UPDATE and checks availability based on ai_attempts: actual_pln for settled, reserved_pln for the other states. The cost includes chargeCeiling for the recorded token caps and extraCost, and it is returned also when enough=false.
 
-Wywołujący w tej samej transakcji zapisuje ai_attempts oraz zleca pracę przy użyciu tego samego klienta SQL. Blokada trwa do commit/rollback wywołującego. reserve nie wykonuje BEGIN/COMMIT/ROLLBACK, nie zwalnia klienta, nie wysyła pracy i nie wykonuje HTTP. Nie zmieniać kolejności finansowania ani savepointu all-or-none grup. Miesiąc wyznaczany jest w Europe/Warsaw i utrwalany przez wywołującego; rozliczenie zachowuje miesiąc próby, zamiast wyznaczać go ponownie. SQL i schemat danych pozostają bez zmian.
+In the same transaction, the caller writes ai_attempts and requests the work using the same SQL client. The lock lasts until the caller's commit/rollback. reserve does not run BEGIN/COMMIT/ROLLBACK, does not release the client, does not send work and does not make HTTP calls. Do not change the funding order or the all-or-none savepoint of groups. The month is determined in Europe/Warsaw and persisted by the caller; settlement keeps the attempt's month instead of determining it again. SQL and the data schema stay unchanged.
 
-Przełączenie jest lokalne i atomowe w obrębie zmiany: końcowy stan nie zostawia wspólnych symboli jako re-eksportów z profilu. Nie tworzyć ogólnego barrel export łączącego wspólny budżet z adapterami modeli lub domeną.
+The switch is local and atomic within the change: the final state does not leave the shared symbols as re-exports from profile. Do not create a general barrel export that combines the shared budget with model adapters or the domain.
 
-## Migracja i uruchomienie
+## Migration and rollout
 
-Brak migracji i nowych env, zmiany payloadów OpenAI, stanów prób, polityki retry, archiwum i publikacji. Cofnięcie samego wydzielenia nie wymaga zmiany danych; ewentualny revert musi zachować niezależne zastane zmiany adaptera. Obecne queued/waiting_budget próby korzystają z tych samych zapisanych konfiguracji. Etap jest częścią jednego wspólnego wdrożenia epiku, nie osobnym wydaniem.
+No migrations or new env, no change to OpenAI payloads, attempt states, retry policy, archive or publication. Reverting the extraction alone does not require a data change; any revert must keep the independent existing adapter changes. Current queued/waiting_budget attempts use the same recorded configurations. The stage is part of one shared deployment of the epic, not a separate release.
 
-## Weryfikacja
+## Verification
 
-Poniższe próby są warunkami zakończenia implementacji, nie wykonanym wynikiem tego przeglądu. Sprawdzenia HTTP używają atrap, bez płatnych wywołań. Testy PostgreSQL mają własne izolowane schematy i wymagają RUN_INTEGRATION=1; bez tej flagi pominięte testy nie stanowią dowodu spełnienia kryteriów.
+The checks below are conditions for finishing the implementation, not a result produced by this review. HTTP checks use fakes, with no paid calls. PostgreSQL tests have their own isolated schemas and require RUN_INTEGRATION=1; without this flag, skipped tests are not proof that the criteria are met.
 
-| Kryterium | Co musi wykazać weryfikacja |
+| Criterion | What verification must show |
 | --- | --- |
-| E01-AC01 | Macierz odczytu wszystkich trzech *_PRICING_JSON: poprawna konfiguracja, brak klucza/env, pusty/błędny JSON, obce pole, zły typ, zerowy lub błędny cennik/kurs, granice tokenów. Odczyt kolejnej zmiany env nie zwraca cache poprzedniej. Regresja dodatkowych ograniczeń researchConfiguration w tests/company-research.test.ts. Kontrola importów obejmuje także listę ofert i fixtures. |
-| E01-AC02 | Zachować asercje kwot i strefy z tests/profile.test.ts; sprawdzić zero użycia, zaokrąglenie niepełnej milionowej części oraz odrzucenie ułamków, wartości ujemnych i ponad MAX_SAFE_INTEGER. Koszt i searchFee/researchCeiling pozostają zgodne z tests/company-research.test.ts. Testować publiczne funkcje, bez osobnego testowania prostych delegacji. |
-| E01-AC03 | tests/profile.integration.test.ts: równoległe importy i rollback przy null kolejki; tests/matching-groups.integration.test.ts: finansowanie całej grupy albo żadnej pozycji; tests/matching.integration.test.ts i tests/company-research.integration.test.ts: wspólny budżet i zachowana rezerwa unknown. Uzupełnić sprawdzenie rozliczenia przez granicę miesiąca, jeśli brakuje takiej asercji. |
-| E01-AC04 | Regresje tests/profile.integration.test.ts, tests/matching.integration.test.ts, tests/matching-groups.integration.test.ts, tests/company-research.integration.test.ts; koszty listy w tests/matching-list.integration.test.ts oraz transport/archiwum w tests/matching-batch.test.ts i tests/matching-archive.integration.test.ts. Bez nowej rewizji profilu/oceny/raportu wynikającej z samego wydzielenia. |
+| E01-AC01 | A read matrix for all three *_PRICING_JSON: valid configuration, missing key/env, empty/invalid JSON, foreign field, wrong type, zero or invalid price/exchange rate, token limits. Reading after a further env change does not return a cache of the previous one. Regression of the additional researchConfiguration constraints in tests/company-research.test.ts. The import check also covers the offer list and fixtures. |
+| E01-AC02 | Keep the amount and time zone assertions from tests/profile.test.ts; check zero usage, rounding of an incomplete millionth, and rejection of fractions, negative values and values above MAX_SAFE_INTEGER. Cost and searchFee/researchCeiling stay consistent with tests/company-research.test.ts. Test the public functions, without separately testing simple delegations. |
+| E01-AC03 | tests/profile.integration.test.ts: concurrent imports and rollback when the queue returns null; tests/matching-groups.integration.test.ts: funding the whole group or no item; tests/matching.integration.test.ts and tests/company-research.integration.test.ts: shared budget and the preserved unknown reserve. Add a check of settlement across the month boundary if such an assertion is missing. |
+| E01-AC04 | Regressions in tests/profile.integration.test.ts, tests/matching.integration.test.ts, tests/matching-groups.integration.test.ts, tests/company-research.integration.test.ts; list costs in tests/matching-list.integration.test.ts and transport/archive in tests/matching-batch.test.ts and tests/matching-archive.integration.test.ts. No new profile/assessment/report revision caused by the extraction itself. |
 
-Brakującą macierz konfiguracji i przypadki arytmetyki umieścić w testach wspólnego AI, np. tests/ai-configuration.test.ts i tests/ai-budget.test.ts. Istniejące testy kwot można przenieść z profilu zamiast je dublować. Wskazane nazwy nowych testów są organizacją implementacji, nie nowym kontraktem domenowym.
+Put the missing configuration matrix and arithmetic cases in the shared AI tests, e.g. tests/ai-configuration.test.ts and tests/ai-budget.test.ts. Existing amount tests can be moved from profile instead of being duplicated. The suggested names of new tests are an implementation arrangement, not a new domain contract.
 
-Warunki jakości implementacji, zgodnie z [README](../../../../../README.md): `pnpm check`, `pnpm build`, a następnie potrzebne integracje z RUN_INTEGRATION=1; testy HTTP profilu wymagają świeżego builda. Projekt udostępnia te polecenia także przez docker compose run --rm tools. Nie włączać równoległego wykonywania plików integracyjnych: PostgreSQL advisory locks są globalne dla bazy, co uwzględnia vitest.config.ts.
+Implementation quality conditions, per the [README](../../../../../README.md): `pnpm check`, `pnpm build`, then the needed integrations with RUN_INTEGRATION=1; the profile HTTP tests require a fresh build. The project also provides these commands through docker compose run --rm tools. Do not enable parallel execution of integration files: PostgreSQL advisory locks are global to the database, which vitest.config.ts takes into account.
 
-Standardowa ścieżka projektu na przygotowanym środowisku Compose (polecenia wykonuje się podczas implementacji, nie w ramach przeglądu dokumentacji):
+The project's standard path on a prepared Compose environment (the commands are run during implementation, not as part of the documentation review):
 
 ```sh
 docker compose run --rm tools pnpm check
@@ -72,12 +72,12 @@ docker compose run --rm tools pnpm build
 docker compose run --rm -e RUN_INTEGRATION=1 tools pnpm test
 ```
 
-Przed edycją kodu zapisać bazowe wyniki sprawdzeń dla zastanego katalogu. Jeżeli niedokończony adapter już powoduje błąd, odróżnić go od regresji wydzielenia, zachować dowód i przypisać naprawę do właściwego zakresu etapu 2. Nie naprawiać adaptera po cichu w etapie 1 ani nie opisywać nieprzechodzącego sprawdzenia jako sukcesu. Blokadę środowiska i niewykonany zakres podać w Beads.
+Before editing code, record the baseline check results for the existing directory. If the unfinished adapter already causes a failure, distinguish it from a regression of the extraction, keep the evidence and assign the fix to the proper scope of stage 2. Do not silently fix the adapter in stage 1, and do not describe a failing check as a success. Report an environment blocker and the unexecuted scope in Beads.
 
-Przy implementacji zmieniającej zachowanie zastosować projektowy workflow `implement-with-tester`. Stan, dowody i ewentualne odchylenia aktualizować w Beads i tej parze; nie dopisywać niesprawdzonych sukcesów.
+For an implementation that changes behaviour, use the project workflow `implement-with-tester`. Update the status, evidence and any deviations in Beads and in this pair; do not add unverified successes.
 
-## Wynik przeglądu i warunki rozpoczęcia
+## Review result and start conditions
 
-O-L4 dla tego etapu wykonano 2026-11-05: porównano kontrakty z lib/profile/ai.ts, konsumentami i istniejącymi testami. Doprecyzowano współdzielony parser, brakujący import w liście ofert, obowiązki wywołującego reserve oraz obserwowalne kryteria odbioru. Nie zmieniono zachowania produktu ani zakresu etapu.
+O-L4 for this stage was done on 2026-11-05: the contracts were compared with lib/profile/ai.ts, its consumers and the existing tests. The shared parser, the missing import in the offer list, the obligations of the reserve caller and the observable acceptance criteria were clarified. Product behaviour and the stage scope were not changed.
 
-Nie ma otwartej materialnej decyzji blokującej implementację etapu 1. Bramki lokalnego runtime T01–T05 nie są jego zależnością. Aktualny stan wykonania pozostaje w Beads; ten przegląd nie zamyka zadania implementacyjnego i nie uruchamia kodowania.
+There is no open material decision blocking the implementation of stage 1. The local runtime gates T01–T05 are not its dependency. The current execution status stays in Beads; this review does not close the implementation task and does not start coding.

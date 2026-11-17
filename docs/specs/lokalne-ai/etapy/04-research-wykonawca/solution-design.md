@@ -1,77 +1,77 @@
-# Etap 4: Research niezależny od wykonawcy OpenAI — Solution design
+# Stage 4: Research independent of the OpenAI executor — Solution design
 
-Status: **przegląd wykonany, specyfikacja gotowa do implementacji**, 2026-11-05. Etap 4 z dziewięciu; przegląd w ramach `oferty-pracy-334.20`, bez implementacji i testów aplikacji. Beads: `oferty-pracy-334.5`.
+Status: **review done, specification ready for implementation**, 2026-11-05. Stage 4 of nine; review as part of `oferty-pracy-334.20`, without implementation or application tests. Beads: `oferty-pracy-334.5`.
 
-Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md), [plan](../../README.md). Potwierdzone: lokalnie `gpt-oss:20b`, OpenCode dla agenta i brak kwot Ollamy. Kontrakty SD są decyzjami technicznymi do realizacji w zatwierdzonym zakresie; weryfikacja działania pozostaje częścią implementacji.
+Basis: [PRD](../../PRD.md), [cross-cutting requirements](../../requirements.md), [plan](../../README.md). Confirmed: `gpt-oss:20b` locally, OpenCode for the agent and no Ollama charges. The SD contracts are technical decisions to be implemented within the approved scope; verifying that they work remains part of the implementation.
 
-Zakres normatywny zachowania: [Requirements](requirements.md), E04-R01–E04-R04. Stan bazowy: lokalny katalog z 2026-11-04, łącznie z zastanymi zmianami; nie jest to wyłącznie HEAD. Pliki projektowane poniżej nie są deklaracją istniejącej implementacji.
+Normative scope of behaviour: [Requirements](requirements.md), E04-R01–E04-R04. Baseline state: the local directory as of 2026-11-04, including the existing changes; this is not only HEAD. The designed files below are not a statement about an existing implementation.
 
-## Podejście i granice
+## Approach and boundaries
 
-lib/companies/research.ts posiada komendy, migawkę celu, kolejkę, reuse/refresh, próby i publikację. lib/companies/research-provider.ts staje się wykonawcą OpenAI za małym ResearchExecutor; lib/companies/research-model.ts pozostaje właścicielem researchDraft, ResearchEvidence i validateResearch. Nie rozbijamy web_search na fikcyjny uniwersalny provider wyszukiwania.
+lib/companies/research.ts owns the commands, the target snapshot, the queue, reuse/refresh, attempts and publication. lib/companies/research-provider.ts becomes the OpenAI executor behind a small ResearchExecutor; lib/companies/research-model.ts stays the owner of researchDraft, ResearchEvidence and validateResearch. We do not split web_search into a fictional universal search provider.
 
-## Decyzja E04-D01 — Wykonawca całego researchu OpenAI
+## Decision E04-D01 — An executor for the whole OpenAI research
 
-**Decyzja techniczna:** Zastąpienie wbudowanego wyszukiwania ogólnym pojedynczym modelem nie zachowuje źródeł i kosztów. Kontrakt całego wykonania pozwala później dołączyć OpenCode bez przepisywania domeny.
+**Technical decision:** Replacing the built-in search with a general single model does not preserve sources and costs. A contract for the whole execution allows OpenCode to be added later without rewriting the domain.
 
-Punkty integracji w obecnym katalogu: [lib/companies/research.ts](../../../../../lib/companies/research.ts), [lib/companies/research-provider.ts](../../../../../lib/companies/research-provider.ts), [lib/companies/research-model.ts](../../../../../lib/companies/research-model.ts). Wskazują miejsca zmiany, nie obowiązek przeniesienia wszystkich ich odpowiedzialności.
+Integration points in the current directory: [lib/companies/research.ts](../../../../../lib/companies/research.ts), [lib/companies/research-provider.ts](../../../../../lib/companies/research-provider.ts), [lib/companies/research-model.ts](../../../../../lib/companies/research-model.ts). They show where the change happens, not an obligation to move all of their responsibilities.
 
-## Kontrakty i niezmienniki
+## Contracts and invariants
 
-ResearchExecutor.execute przyjmuje zapisane operationId/target/configuration i opcje signal/onAccounting; dokładna unia wyniku jest określona poniżej. target odpowiada istniejącemu ResearchTarget, configuration jest zapisaną migawką. draft jest niezwalidowanym JSON, a evidence ma typ ResearchEvidence[] z research-model.ts; brak dowodów nie jest pustym udanym raportem.
+ResearchExecutor.execute takes the recorded operationId/target/configuration and the options signal/onAccounting; the exact result union is defined below. target corresponds to the existing ResearchTarget, configuration is the recorded snapshot. draft is unvalidated JSON, and evidence has the type ResearchEvidence[] from research-model.ts; missing evidence is not an empty successful report.
 
-accounting zawiera usage poszczególnych kroków, identyfikatory odpowiedzi i znany koszt albo null. Błąd wykonawcy również niesie dostępne accounting zgodnie z poniższym wynikiem rozłącznym, aby nie zgubić kosztu pierwszego kroku. Nie przesyłać surowych odpowiedzi jako publicznych komunikatów błędu.
+accounting contains the usage of the individual steps, the response identifiers and the known cost or null. An executor error also carries the available accounting according to the disjoint result below, so the cost of the first step is not lost. Do not pass raw responses as public error messages.
 
-Wykonawca nie zapisuje firmy, raportu ani ai_attempts. Koordynator zawsze wywołuje validateResearch przed atomową publikacją i rozliczeniem próby. Publikacja sprawdza terminalny stan i blokuje ponowny efekt. OpenAI zachowuje dwa kroki oraz bieżący limit/cennik wyszukiwania; żadna reguła płatnego wykonawcy nie staje się globalnym limitem przyszłej Ollamy.
+The executor does not write the company, the report or ai_attempts. The coordinator always calls validateResearch before the atomic publication and settlement of the attempt. Publication checks the terminal state and blocks a repeated effect. OpenAI keeps two steps and the current search limit/price list; no rule of the paid executor becomes a global limit for the future Ollama.
 
-## Migracja i uruchomienie
+## Migration and rollout
 
-Bez migracji, zmiany env i trasowania. researchConfiguration nadal rozpoznaje dotychczasowe modele. Stare rekordy recovery zachowują dotychczasową obsługę unknown. Nie dodajemy automatycznego researchu ani pogłębionego.
+No migration, no change to env or routing. researchConfiguration still recognises the existing models. Old recovery records keep the existing handling of unknown. We do not add automatic research or deep research.
 
-## Weryfikacja
+## Verification
 
-Wszystkie poniższe próby są planem, nie wykonanym wynikiem. Testy automatyczne z atrapami nie dowodzą sprawności usług live.
+All the checks below are a plan, not a result that has been produced. Automated tests with fakes do not prove that live services work.
 
-1. Atrapa OpenAI: te same dwa żądania, źródła, schemat i koszty.
-2. Zły URL/cytat, brak źródeł, niekompletne tematy i odmowa.
-3. Błąd drugiego kroku oraz nieznany koszt po pierwszym.
-4. Integracja reuse/refresh, idempotencja komendy, restart i zachowanie poprzedniej wersji.
+1. OpenAI fake: the same two requests, sources, schema and costs.
+2. Bad URL/quote, no sources, incomplete topics and refusal.
+3. Error in the second step and unknown cost after the first.
+4. Integration of reuse/refresh, command idempotency, restart and preservation of the previous version.
 
-| Kryterium | Co musi wykazać weryfikacja |
+| Criterion | What verification must show |
 | --- | --- |
-| E04-AC01 | Próby 4 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
-| E04-AC02 | Próby 2 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
-| E04-AC03 | Próby 3 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
-| E04-AC04 | Próby 4 powyżej; zaobserwować rezultat wskazany w odpowiadającym kryterium Requirements. |
+| E04-AC01 | Check 4 above; observe the outcome stated in the corresponding Requirements criterion. |
+| E04-AC02 | Check 2 above; observe the outcome stated in the corresponding Requirements criterion. |
+| E04-AC03 | Check 3 above; observe the outcome stated in the corresponding Requirements criterion. |
+| E04-AC04 | Check 4 above; observe the outcome stated in the corresponding Requirements criterion. |
 
-Przy implementacji zmieniającej zachowanie zastosować projektowy workflow `implement-with-tester`. Stan, dowody i ewentualne odchylenia aktualizować w Beads i tej parze; nie dopisywać niesprawdzonych sukcesów.
+For an implementation that changes behaviour, use the project workflow `implement-with-tester`. Update the status, evidence and any deviations in Beads and in this pair; do not add unverified successes.
 
-## Gotowość i kontrola zmian
+## Readiness and change control
 
-Kontrakt accounting określono poniżej; szczegóły ekstrakcji i zachowania dotychczasowego rozliczenia doprecyzowuje przegląd z 2026-11-05. Brak otwartej decyzji produktowej.
+The accounting contract is defined below; the review of 2026-11-05 clarifies the details of the extraction and of keeping the existing settlement. There is no open product decision.
 
-Przed kodem odświeżyć stan roboczy i zależności Beads. Przegląd specyfikacji wykonano 2026-11-05; nie zastępuje wyników testów ani kontroli zmian powstałych po przeglądzie.
+Before coding, refresh the working state and the Beads dependencies. The specification review was done on 2026-11-05; it does not replace test results or control of changes made after the review.
 
-## Wynik i accounting — doprecyzowanie 2026-11-05
+## Result and accounting — clarification 2026-11-05
 
-`ResearchExecutor.execute` zwraca unię: `{outcome:'completed', draft, evidence, accounting}` albo `{outcome:'failed'|'unknown'|'cancelled', error:{code,message}, accounting}`. Oczekiwane błędy transportu/dostawcy/formatu są wynikiem, nie wyjątkiem tracącym accounting. Nie zwracamy pozornego pustego raportu. Niespodziewany błąd programistyczny nie jest sukcesem ani potwierdzeniem zerowego kosztu; koordynator zachowuje dziennik wykonania i oznacza niepewne rozliczenie.
+`ResearchExecutor.execute` returns a union: `{outcome:'completed', draft, evidence, accounting}` or `{outcome:'failed'|'unknown'|'cancelled', error:{code,message}, accounting}`. Expected transport/provider/format errors are a result, not an exception that loses accounting. We do not return a seemingly empty report. An unexpected programming error is not a success or a confirmation of zero cost; the coordinator keeps the execution log and marks the settlement as uncertain.
 
-`accounting` zawiera uporządkowane kroki wykonane do chwili sukcesu/błędu, response ID lub null, usage z null dla nieznanych pomiarów oraz koszt kroku jako dziesiętny string PLN lub null. Łączny koszt jest znany tylko gdy wszystkie wykonane płatne kroki mają znany pomiar; w przeciwnym razie null. Dla OpenAI zachować dotychczasowe zagregowane zaokrąglenia, określone w przeglądzie poniżej. Brak drugiego kroku po błędzie pierwszego nie tworzy fikcyjnej opłaty. Błąd syntezy nie usuwa znanego kosztu wyszukiwania. Dla lokalnego modelu koszt API zawsze '0', także gdy usage lub wynik są nieznane; ewentualne płatne narzędzia są osobnymi krokami. W etapie4 zachować dotychczasowe reguły OpenAI.
+`accounting` contains the ordered steps executed up to the moment of success/error, the response ID or null, usage with null for unknown measurements, and the step cost as a decimal PLN string or null. The total cost is known only when all executed paid steps have a known measurement; otherwise null. For OpenAI, keep the existing aggregated rounding, defined in the review below. The absence of a second step after an error in the first does not create a fictional charge. A synthesis error does not remove the known search cost. For a local model, the API cost is always '0', also when usage or the result is unknown; any paid tools are separate steps. In stage 4, keep the existing OpenAI rules.
 
-Dziennik prób i publikację zapisuje koordynator; adapter nie mutuje ai_attempts. Test E04-AC03 sprawdza: pierwszy krok płatny zakończony, drugi błąd/utrata odpowiedzi, brak utraty znanej części kosztu i brak publikacji.
+The coordinator writes the attempt log and the publication; the adapter does not mutate ai_attempts. Test E04-AC03 checks: first paid step completed, second step error/lost response, no loss of the known part of the cost, and no publication.
 
-## Przegląd i kontrakt wykonawczy — 2026-11-05
+## Review and executor contract — 2026-11-05
 
-Przejrzano `runResearch` w research-provider.ts, executeCompanyResearch w research.ts i validateResearch w research-model.ts. Dzisiaj wykonawca zwraca już raport po walidacji; wydzielenie musi przenieść ostateczną walidację do koordynatora, zachowując oba żądania i kontrolę dowodów. Wykonawca nie publikuje raportu.
+Reviewed: `runResearch` in research-provider.ts, executeCompanyResearch in research.ts and validateResearch in research-model.ts. Today the executor already returns the report after validation; the extraction must move the final validation to the coordinator, keeping both requests and the evidence control. The executor does not publish the report.
 
-`ResearchExecutor.execute({operationId,target,configuration},{signal,onAccounting})` zwraca opisaną wyżej unię. Dla completed draft jest niezwalidowanym JSON (unknown), evidence ma ResearchEvidence[]. Domena posiada researchDraft i validateResearch, wykonawca nie wymusza deklaracji poprawnego draftu przed walidacją. W etapie 8 dodatkowy kontekst wykonania/sesji obsługuje adapter OpenCode, bez wtłaczania go do StructuredModel.
+`ResearchExecutor.execute({operationId,target,configuration},{signal,onAccounting})` returns the union described above. For completed, draft is unvalidated JSON (unknown), evidence has ResearchEvidence[]. The domain owns researchDraft and validateResearch; the executor does not force a declaration of a valid draft before validation. In stage 8, the additional execution/session context is handled by the OpenCode adapter, without forcing it into StructuredModel.
 
-Każdy krok accounting: `{step:'search'|'synthesis',requestId:UUID,status:'prepared'|'sent'|'completed'|'failed'|'unknown',responseId:string|null,usage:{inputTokens:number|null,outputTokens:number|null,searchCalls:number|null},knownCostPln:string|null}`. Kolejność odpowiada rzeczywistym wywołaniom. Nie tworzyć kroku syntezy, jeżeli nie rozpoczęto jego przygotowania. Znany koszt wyszukiwania pozostaje zachowany, nawet jeśli drugie żądanie ma niepewny koszt. Łączny `costPln:string|null` jest polem rozliczenia; null nie zeruje znanej części.
+Each accounting step: `{step:'search'|'synthesis',requestId:UUID,status:'prepared'|'sent'|'completed'|'failed'|'unknown',responseId:string|null,usage:{inputTokens:number|null,outputTokens:number|null,searchCalls:number|null},knownCostPln:string|null}`. The order matches the actual calls. Do not create a synthesis step if its preparation has not started. The known search cost stays preserved even if the second request has an uncertain cost. The total `costPln:string|null` is a settlement field; null does not zero the known part.
 
-**Zgodność arytmetyki OpenAI:** rozliczenie całości zachowuje obecną funkcję runResearch: sumy tokenów obu kroków, specjalny blok 8000 tokenów per search dla gpt-4.1-mini, searchFee i dotychczasowe zaokrąglenia. Nie sumować niezależnie zaokrąglonych kosztów kroków zamiast obecnej kalkulacji zagregowanej. Wcześniejsze ogólne zdanie o sumie kosztów należy czytać z tą regułą dla legacy OpenAI. Każdy wykonany płatny krok bez potwierdzonego pomiaru daje costPln=null i zachowanie rezerwacji; znane pomiary kroków pozostają w usage. Zachować max_tool_calls=3, format źródeł, dwa requesty i płatne timeouty 120 s; nie rozszerzać tych ograniczeń na lokalnego agenta.
+**OpenAI arithmetic compatibility:** settlement of the whole keeps the current runResearch function: token sums of both steps, the special block of 8000 tokens per search for gpt-4.1-mini, searchFee and the existing rounding. Do not sum independently rounded step costs instead of the current aggregated calculation. The earlier general sentence about the sum of costs should be read with this rule for legacy OpenAI. Every executed paid step without a confirmed measurement gives costPln=null and keeps the reservation; the known step measurements stay in usage. Keep max_tool_calls=3, the source format, two requests and the paid 120 s timeouts; do not extend these constraints to the local agent.
 
-`onAccounting` jest wewnętrznym punktem kontrolnym, nie uprawnieniem adaptera do bazy: koordynator zapisuje dziennik w istniejącym ai_attempts.usage (dotychczasowe pola agregatu plus `execution_steps` z wersją 1). Callback jest oczekiwany przed wysłaniem żądania i po zebraniu metadanych odpowiedzi, przed kolejnym krokiem. Błąd checkpointu przerywa wykonanie, bez kolejnego płatnego HTTP. Aktualizacja pod identyfikatorem próby, bez zmiany końcowego stanu i bez przedwczesnego zwolnienia rezerwacji. Na awarię po wysłaniu, przed checkpointem odpowiedzi, recovery zachowuje unknown; nie odtwarza wywołania. To rozszerzenie JSON, bez migracji tabel i bez przepisywania starej historii.
+`onAccounting` is an internal checkpoint, not a permission for the adapter to access the database: the coordinator writes the log in the existing ai_attempts.usage (the existing aggregate fields plus `execution_steps` with version 1). The callback is awaited before the request is sent and after the response metadata is collected, before the next step. A checkpoint error stops the execution, with no further paid HTTP. The update is made under the attempt identifier, without changing the final state and without releasing the reservation early. On a failure after sending and before the response checkpoint, recovery keeps unknown; it does not replay the call. This is a JSON extension, with no table migration and no rewriting of old history.
 
-Koordynator otrzymuje wykonawcę jako zależność; istniejący publiczny punkt wykonania może zachować fetcher jako fasadę zgodności. completed jest walidowane, dopiero potem pod blokadą operacji zapis raportu i ai_attempts. Walidacja odrzuca raport, ale nie kasuje accounting. Oczekiwane błędy to wynik failed/unknown/cancelled z bezpiecznym kodem; nieoczekiwany wyjątek zapisuje bezpieczny błąd i ostatni checkpoint, zachowuje niepewny koszt i brak publikacji. Identyfikatory odpowiedzi zachować w kolejności, również gdy nie ma raportu; zgodność dotychczasowego response_id i usage zostaje utrzymana.
+The coordinator receives the executor as a dependency; the existing public execution entry point can keep the fetcher as a compatibility facade. completed is validated, and only then, under the operation lock, the report and ai_attempts are written. Validation rejects the report but does not delete accounting. Expected errors are a failed/unknown/cancelled result with a safe code; an unexpected exception records a safe error and the last checkpoint, keeps the uncertain cost and no publication. Keep the response identifiers in order, also when there is no report; compatibility of the existing response_id and usage is maintained.
 
-Regresje: `tests/company-research.test.ts`, `tests/company-research.integration.test.ts` i istniejące fixtures. E04-AC01: reuse/refresh/command ID; AC02: brak topics/findings, cudzy dowód i cytat, walidacja po powrocie wykonawcy; AC03: znany koszt search + błąd/unknown syntezy, zgodność rounding całej próby, crash/checkpoint i brak drugiego HTTP po błędzie zapisu; AC04: restart/duplikaty i poprzedni raport. Testować przez ResearchExecutor oraz kontrakt HTTP, bez osobnego publicznego interfejsu sztucznego search provider.
+Regressions: `tests/company-research.test.ts`, `tests/company-research.integration.test.ts` and the existing fixtures. E04-AC01: reuse/refresh/command ID; AC02: missing topics/findings, foreign evidence and quote, validation after the executor returns; AC03: known search cost + synthesis error/unknown, rounding compatibility of the whole attempt, crash/checkpoint and no second HTTP after a write error; AC04: restart/duplicates and the previous report. Test through ResearchExecutor and the HTTP contract, without a separate public interface for an artificial search provider.

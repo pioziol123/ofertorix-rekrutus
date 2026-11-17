@@ -1,140 +1,140 @@
-# Zasady architektury i pisania kodu
+# Architecture and coding rules
 
-Punkty wejścia aplikacji przekazują polecenia i zapytania do modułów przez ich publiczne operacje.
+The application's entry points pass commands and queries to modules through the modules' public operations.
 
-## Reguły zależności
+## Dependency rules
 
-1. **Tylko moduł będący właścicielem danych wykonuje operacje na tych danych.** Inne moduły, API, CLI i worker przekazują zapytanie lub polecenie przez publiczny interfejs właściciela. Właściciel odczytuje dane, sprawdza reguły, wykonuje operację i zwraca wynik albo zdefiniowany błąd. Zapytania do tabel, w tym złączenia, repozytoria, adaptery i schemat zapisu są wewnętrzne. W TypeScripcie publiczne operacje i ich kontrakty eksportujemy jawnie z `modules/<moduł>/index.ts`.
+1. **Only the module that owns the data performs operations on that data.** Other modules, the API, the CLI and the worker pass a query or command through the owner's public interface. The owner reads the data, checks the rules, performs the operation and returns a result or a defined error. Table queries, including joins, repositories, adapters and the storage schema, are internal. In TypeScript we export public operations and their contracts explicitly from `modules/<module>/index.ts`.
 
-   - **Operacje są domyślnie wewnętrzne.** Przed dodaniem publicznej operacji wskazujemy konkretnego klienta spoza modułu i przypadek użycia, którego istniejący kontrakt nie obsługuje. Operacja wyraża cel klienta i udostępnia tylko potrzebne dane. Dopasowanie może odczytać aktywną zatwierdzoną wersję profilu wraz z jej identyfikatorem przez publiczny serwis Profilu. [Kontrakt Profilu zawodowego](../../modules/profile/README.md#publiczne-operacje)
-   - **Każda publiczna operacja chroni niezmienniki modułu.** Moduł sprawdza dopuszczalność polecenia w aktualnym stanie i zabezpiecza sprawdzenie oraz zapis przed równoległą zmianą. Gdy polecenie opiera się na stanie odczytanym wcześniej przez klienta, podaje oczekiwaną rewizję. Jeśli warunki przestały być spełnione, moduł zwraca konflikt bez częściowego zapisu. Przy zatwierdzeniu profilu Profil sprawdza rewizję szkicu, tworzy zatwierdzoną wersję i ustawia ją jako aktywną w jednej transakcji.
+   - **Operations are internal by default.** Before adding a public operation we name a specific client outside the module and a use case that the existing contract does not handle. The operation expresses the client's goal and exposes only the data needed. Matching may read the active confirmed profile version together with its ID through the Profile module's public service. [Professional profile contract](../../modules/profile/README.md#public-operations)
+   - **Every public operation protects the module's invariants.** The module checks whether the command is allowed in the current state and protects the check and the write against a concurrent change. When a command relies on state the client read earlier, it gives the expected revision. If the conditions no longer hold, the module returns a conflict without a partial write. When a profile is confirmed, the Profile module checks the draft revision, creates the confirmed version and sets it as active in one transaction.
 
-2. **Widoki składają dane przez publiczne operacje odczytu.** Każdy moduł udostępnia dane potrzebne do konkretnego widoku i sam wylicza wartości wynikające z jego reguł. Widok łączy odpowiedzi po identyfikatorach oraz odpowiada za prezentację, filtrowanie i sortowanie. Lista Ofert przekazuje identyfikatory ogłoszeń do zbiorczego odczytu Dopasowania. Dopasowanie zwraca rating, kompletność i aktualność oceny, a Oferty korzystają z ratingu przed sortowaniem i paginacją.
+2. **Views assemble data through public read operations.** Each module provides the data needed for a specific view and itself calculates the values that follow from its rules. The view joins the responses by ID and is responsible for presentation, filtering and sorting. The Offers list passes ad IDs to a bulk read of the Matching module. Matching returns the rating, completeness and staleness of the assessment, and the Offers module uses the rating before sorting and pagination.
 
-3. **Przypadek użycia wyznacza granicę transakcji.** Operacja realizująca przypadek użycia określa, które zmiany muszą zostać zatwierdzone albo wycofane razem, i koordynuje transakcję. Jeśli uczestniczy w niej kilka modułów, każdy zapisuje własne dane przez publiczną operację w tym samym kontekście transakcji. Mechanizm transakcji należy do wspólnej infrastruktury. [Martin Fowler, Service Layer](https://martinfowler.com/eaaCatalog/serviceLayer.html) · [Unit of Work](https://martinfowler.com/eaaCatalog/unitOfWork.html)
+3. **The use case sets the transaction boundary.** The operation that carries out a use case decides which changes must be committed or rolled back together, and coordinates the transaction. If several modules take part in it, each writes its own data through a public operation in the same transaction context. The transaction mechanism belongs to the shared infrastructure. [Martin Fowler, Service Layer](https://martinfowler.com/eaaCatalog/serviceLayer.html) · [Unit of Work](https://martinfowler.com/eaaCatalog/unitOfWork.html)
 
-## Zmiany danych podczas wykonywania procesu
+## Data changes while a process runs
 
-Proces może działać na danych, które między jego rozpoczęciem a zakończeniem zostaną zmienione lub usunięte przez inne operacje. Kolejne kroki mogą odczytać różne wersje tych samych danych albo powiązane informacje pochodzące z różnych momentów. Wcześniejsze ustalenia i warunki mogą przestać obowiązywać przed ich wykorzystaniem. Dotyczy to również pracy przekazywanej do wykonania asynchronicznego.
+A process may work on data that other operations change or delete between the start and the end of the process. Successive steps may read different versions of the same data, or related information from different moments. Earlier findings and conditions may stop holding before they are used. This also applies to work handed over for asynchronous execution.
 
-Podczas projektowania każdego procesu należy rozpoznać te sytuacje, opisać ich konsekwencje dla poprawności przebiegu i znaczenia wyniku oraz określić, które są dopuszczalne, a które wymagają obsługi. Sposób ich zaadresowania musi wynikać z wymagań danego procesu i uwzględniać pozostałe uwarunkowania architektoniczne.
+When designing each process, identify these situations, describe their consequences for the correctness of the run and the meaning of the result, and decide which are acceptable and which need handling. How they are addressed must follow from the requirements of the given process and take the other architectural constraints into account.
 
-Akceptacja konsekwencji współbieżnych zmian jest decyzją projektową i wymaga jawnego uzasadnienia, tak samo jak wprowadzenie zabezpieczeń.
+Accepting the consequences of concurrent changes is a design decision and requires an explicit justification, just like introducing safeguards.
 
-## Koszty decyzji projektowych
+## Costs of design decisions
 
-Niektóre rozwiązania działają poprawnie, a mimo to zostawiają koszt, który ujawnia się dopiero przy kolejnych zmianach. Poniższe koszty same w sobie nie są zakazami: każdy bywa uzasadniony. Nie łagodzą reguł z pozostałych sekcji: publiczna operacja nadal wymaga wskazanego klienta. Każdy wymaga jednak jawnej decyzji. Przy przygotowaniu zadania nazywamy go jako minus opcji, która go niesie, także opcji rekomendowanej, a wybraną opcję z takim kosztem zapisujemy w solution design razem z tym kosztem. Kosztu, którego solution design nie przyjął, implementacja nie wprowadza bez odnotowania go.
+Some solutions work correctly and still leave a cost that only shows up in later changes. The costs below are not prohibitions in themselves: each can be justified. They do not relax the rules in the other sections: a public operation still requires a named client. Each one does, however, require an explicit decision. When preparing a task, we name the cost as a minus of the option that carries it, including the recommended option, and we record a chosen option with such a cost in the solution design together with that cost. The implementation does not introduce a cost that the solution design has not accepted without recording it.
 
-1. **Funkcja bez odbiorcy.** Operacja, pole lub mechanizm dodany teraz, choć nic w zadaniu z niego nie korzysta. Powstaje bez kryterium akceptacji, a zadanie, które go potrzebuje, może mieć inne wymagania. Dla publicznych operacji modułu rozwija to zasadę, że [operacje są domyślnie wewnętrzne](#reguły-zależności). Uzasadnieniem bywa koszt późniejszego dodania, np. danych, których nie da się odtworzyć wstecz.
-2. **Zgodność wsteczna wewnętrznego interfejsu.** Zachowanie starego kształtu operacji lub kontraktu, choć wszyscy jego odbiorcy są w tym repozytorium. Utrzymujemy i testujemy wtedy dwie ścieżki zamiast zmienić odbiorców w tym samym zadaniu. Uzasadnieniem bywają odbiorcy spoza repozytorium albo dane zapisane w starym formacie.
-3. **Drugi mechanizm do tego samego.** Nowy sposób realizacji czegoś, co moduł lub wspólna infrastruktura już robi, np. drugi zapis historii albo druga kolejka. Każda kolejna zmiana musi wybierać między nimi, a mechanizmy się rozchodzą. Przed dodaniem szukamy istniejącego mechanizmu po jego znaczeniu, nie po nazwie, którą sami byśmy nadali. Uzasadnieniem jest wymaganie, którego istniejący mechanizm nie spełnia, nazwane w solution design.
-4. **Stała lista z dwoma właścicielami.** Ten sam zamknięty zbiór wartości zdefiniowany w dwóch miejscach, np. w module i w instrukcji dla modelu AI. Zmiana w jednym miejscu bez drugiego daje ciche niespójności. Każdy wspólny fakt ma jednego właściciela, a pozostałe miejsca od niego czytają; to ta sama zasada, którą [moduł stosuje do swoich danych](#reguły-zależności).
-5. **Zapisana kopia zamiast odwołania.** Wartość skopiowana z innego miejsca tam, gdzie wystarczyłby identyfikator odczytywany przy użyciu. Kopia się dezaktualizuje i wymaga synchronizacji. Uzasadnieniem jest wymóg zachowania stanu z danej chwili, np. treści ogłoszenia, do której odnosi się nieaktualna ocena dopasowania.
-6. **Reguła przeniesiona bez jej powodu.** Ograniczenie skopiowane z innego zadania, modułu lub starego kodu, którego powód w nowym miejscu nie obowiązuje. Wygląda na uzgodnione, choć nikt go dla tego przypadku nie ustalał. Przenosimy regułę razem z powodem, który sprawdziliśmy w nowym miejscu.
+1. **A feature without a consumer.** An operation, field or mechanism added now, although nothing in the task uses it. It is created without an acceptance criterion, and the task that needs it may have different requirements. For a module's public operations this extends the rule that [operations are internal by default](#dependency-rules). The justification may be the cost of adding it later, e.g. data that cannot be reconstructed retroactively.
+2. **Backward compatibility of an internal interface.** Keeping the old shape of an operation or contract, although all its consumers are in this repository. We then maintain and test two paths instead of changing the consumers in the same task. The justification may be consumers outside the repository or data stored in the old format.
+3. **A second mechanism for the same thing.** A new way of doing something that the module or the shared infrastructure already does, e.g. a second history record or a second queue. Every later change must choose between them, and the mechanisms drift apart. Before adding one, we look for an existing mechanism by its meaning, not by the name we would have given it. The justification is a requirement the existing mechanism does not meet, named in the solution design.
+4. **A fixed list with two owners.** The same closed set of values defined in two places, e.g. in a module and in an instruction for an AI model. A change in one place without the other gives silent inconsistencies. Every shared fact has one owner, and the other places read from it; this is the same rule that [a module applies to its data](#dependency-rules).
+5. **A stored copy instead of a reference.** A value copied from elsewhere where an ID read at the time of use would be enough. The copy goes out of date and needs synchronisation. The justification is a requirement to keep the state from a given moment, e.g. the ad content that a stale match assessment refers to.
+6. **A rule carried over without its reason.** A restriction copied from another task, module or old code, whose reason does not hold in the new place. It looks agreed, although nobody decided it for this case. We carry a rule over together with its reason, which we have checked in the new place.
 
-Akceptacja każdego z tych kosztów, tak jak akceptacja skutków współbieżnych zmian, jest decyzją projektową z jawnym uzasadnieniem.
+Accepting each of these costs, like accepting the effects of concurrent changes, is a design decision with an explicit justification.
 
-## Reguły struktury kodu
+## Code structure rules
 
-### Katalog modułu
+### Module directory
 
-Najmniejszy moduł ma opis odpowiedzialności, publiczne wejście i plik z implementacją operacji. Nazwa pliku mówi, co można zrobić, np. `read-active-profile.ts`.
+The smallest module has a description of its responsibility, a public entry and a file with the operation's implementation. The file name says what can be done, e.g. `read-active-profile.ts`.
 
 ```text
-modules/<moduł>/
+modules/<module>/
 ├── README.md
 ├── index.ts
-└── <nazwa-operacji>.ts
+└── <operation-name>.ts
 ```
 
-- **`README.md`** opisuje główny cel modułu i dane, za które odpowiada. Istotne warunki użycia publicznych operacji opisujemy przy ich kontraktach.
-- **`index.ts`** jawnie eksportuje operacje i typy potrzebne klientom modułu. Klienci importują stąd, a kod wewnętrzny korzysta bezpośrednio z plików implementacji. Typy wejścia i wyniku trzymamy przy operacji lub w osobnym pliku, jeśli korzysta z nich kilka operacji.
-- **Plik operacji** prowadzi przypadek użycia od przyjęcia polecenia lub zapytania do wyniku. Określa też, które zmiany muszą zostać zapisane razem. Powiązane operacje mogą współdzielić plik nazwany według ich odpowiedzialności.
+- **`README.md`** describes the module's main purpose and the data it is responsible for. We describe the significant conditions for using public operations next to their contracts.
+- **`index.ts`** explicitly exports the operations and types the module's clients need. Clients import from here, and internal code uses the implementation files directly. We keep input and result types next to the operation, or in a separate file if several operations use them.
+- **The operation file** carries the use case from receiving the command or query to the result. It also decides which changes must be saved together. Related operations may share a file named after their responsibility.
 
-Podkatalog dodajemy, gdy jest co w nim zebrać i można jasno nazwać jego odpowiedzialność.
+We add a subdirectory when there is something to gather in it and its responsibility can be named clearly.
 
-| Katalog | Kiedy pomaga | Przykład |
+| Directory | When it helps | Example |
 | --- | --- | --- |
-| `operations/` | Moduł ma kilka przypadków użycia i warto zebrać ich punkty wejścia w jednym miejscu. | `confirm-profile.ts`, `apply-cv-proposal.ts` |
-| `domain/` | Moduł ma reguły, które można wyrazić na podstawie przekazanych danych, bez odczytu bazy lub wywołania usługi. | Obliczenie ratingu z ocen i wag, sprawdzenie poprawności widełek wynagrodzenia |
+| `operations/` | The module has several use cases and it is worth gathering their entry points in one place. | `confirm-profile.ts`, `apply-cv-proposal.ts` |
+| `domain/` | The module has rules that can be expressed from the passed data, without reading the database or calling a service. | Calculating the rating from scores and weights, checking that a salary range is valid |
 
-`infrastructure/` zawiera kod, który łączy operacje modułu z bazą danych, usługami zewnętrznymi i mechanizmami uruchamiania. Dodajemy podkatalogi odpowiadające temu, czego moduł używa.
+`infrastructure/` contains the code that connects the module's operations with the database, external services and execution mechanisms. We add subdirectories matching what the module uses.
 
 ```text
 infrastructure/
-├── persistence/   # zapytania, zapis i mapowanie danych z bazy
-├── adapters/      # integracje i implementacje portów
-├── http/          # kontrolery HTTP
-├── worker/        # obsługa zadań z kolejki
-└── cli/           # polecenia CLI
+├── persistence/   # queries, writes and mapping of database data
+├── adapters/      # integrations and port implementations
+├── http/          # HTTP controllers
+├── worker/        # handling of queue jobs
+└── cli/           # CLI commands
 ```
 
-Operacja łączy odczyt, reguły domeny i zapis. Reguły domeny pracują na przekazanych danych. Kod w `persistence/` zna schemat danych własnego modułu. Adapter tłumaczy dane na kontrakt zdefiniowany przy operacji, która z niego korzysta.
+An operation combines reading, domain rules and writing. Domain rules work on passed data. Code in `persistence/` knows the data schema of its own module. An adapter translates data into the contract defined next to the operation that uses it.
 
-Kontroler, handler workera lub polecenie CLI przekazuje dane do publicznej operacji modułu i obsługuje jej wynik. Gdy kilka modułów zapisuje dane w jednej transakcji, operacja koordynująca wywołuje ich publiczne operacje wewnątrz wspólnej operacji transakcyjnej. Kontekst transakcji przechodzi niejawnie, a każdy moduł wykonuje własny zapis. [Dostęp do bazy danych](#dostęp-do-bazy-danych)
+A controller, worker handler or CLI command passes data to the module's public operation and handles its result. When several modules write data in one transaction, the coordinating operation calls their public operations inside a shared transactional operation. The transaction context passes implicitly, and each module performs its own write. [Database access](#database-access)
 
-### Operacja modułu prowadzi cały przypadek użycia
+### A module operation carries the whole use case
 
-Publiczna operacja odpowiada za pełny przebieg konkretnego polecenia. Odczytuje potrzebne dane, sprawdza warunki, wykonuje zmianę i zwraca wynik. Punkt wejścia aplikacji tłumaczy żądanie na polecenie i wynik na odpowiedź.
+A public operation is responsible for the full course of a specific command. It reads the data it needs, checks the conditions, makes the change and returns the result. The application's entry point translates the request into a command and the result into a response.
 
-Przy zastosowaniu propozycji z CV trasa przekazuje wybór pozycji i oczekiwaną rewizję szkicu. Profil odczytuje propozycję, sprawdza rewizje i zapisuje szkic w ramach jednej operacji. Dzięki temu każdy punkt wejścia stosuje te same reguły. [Service Layer](https://martinfowler.com/eaaCatalog/serviceLayer.html)
+When a proposal from a CV is applied, the route passes the choice of items and the expected draft revision. The Profile module reads the proposal, checks the revisions and saves the draft in one operation. This way every entry point applies the same rules. [Service Layer](https://martinfowler.com/eaaCatalog/serviceLayer.html)
 
-### Wymienni wykonawcy korzystają ze wspólnego kontraktu
+### Interchangeable executors use a shared contract
 
-Port opisuje, czego potrzebuje przypadek użycia. Adapter realizuje ten kontrakt przy pomocy konkretnej technologii. Implementację adaptera wybieramy w miejscu, które składa zależności. Kod przypadku użycia korzysta z kontraktu portu.
+A port describes what a use case needs. An adapter implements this contract with a specific technology. We choose the adapter implementation in the place that assembles the dependencies. The use case code uses the port's contract.
 
-W Źródłach port konektora przyjmuje zakres i dostarcza ogłoszenia oraz informację o kompletności pobrania. Adapter obsługuje szczegóły portalu, a operacja wykonania przebiegu używa tego samego portu do pobrania danych i ustalenia końcowego stanu. [Ports and Adapters](https://alistair.cockburn.us/hexagonal-architecture) · [The Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
+In the Sources module, the connector port takes a scope and delivers ads and information about whether the fetch was complete. The adapter handles the portal's details, and the operation that executes a run uses the same port to fetch the data and to settle the final state. [Ports and Adapters](https://alistair.cockburn.us/hexagonal-architecture) · [The Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
 
-### Dane zewnętrzne tłumaczymy przy integracji
+### We translate external data at the integration
 
-Warstwa antykorupcyjna zamienia model zewnętrznego systemu na pojęcia używane w aplikacji. Przy integracji portalu tłumaczenie należy do konektora. Kontrakt Źródeł określa znaczenie pól, a odbiorcy korzystają z tych znaczeń przy stosowaniu własnych reguł.
+An anti-corruption layer turns an external system's model into the concepts used in the application. For a portal integration, the translation belongs to the connector. The Sources contract defines the meaning of the fields, and consumers use these meanings when applying their own rules.
 
-Jeśli portal odróżnia widełki pracodawcy od własnego szacunku, konektor przekazuje kwotę wraz z pochodzeniem. Dopasowanie stosuje jedną regułę porównania wynagrodzenia na podstawie pochodzenia kwoty. Zmiana pola w odpowiedzi portalu dotyczy wtedy kodu tłumaczenia w konektorze. [Eric Evans, Domain-Driven Design Reference, s. 34](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
+If a portal distinguishes the employer's salary range from its own estimate, the connector passes the amount together with its origin. Matching applies one salary comparison rule based on the origin of the amount. A change to a field in the portal's response then concerns the translation code in the connector. [Eric Evans, Domain-Driven Design Reference, p. 34](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
 
-### Obiekt wartości grupuje dane, które mają wspólne znaczenie
+### A value object groups data that share a meaning
 
-Obiekt wartości reprezentuje pojęcie przez jego dane i reguły. Dwie takie wartości są równe, jeśli mają te same istotne cechy. Poprawność sprawdzamy przy tworzeniu wartości, a zmiana tworzy nową wartość.
+A value object represents a concept through its data and rules. Two such values are equal if they have the same significant attributes. We check validity when the value is created, and a change creates a new value.
 
-Widełki wynagrodzenia obejmują granice kwoty, walutę, okres, podstawę i rodzaj kontraktu. Reguła tworzenia widełek sprawdza między innymi kolejność granic, jeśli podano obie. Kod porównujący wynagrodzenia otrzymuje całe widełki, dzięki czemu może sprawdzić ich porównywalność. [Eric Evans, Domain-Driven Design Reference, s. 12](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
+A salary range covers the amount bounds, the currency, the period, the basis and the contract type. The rule that creates a salary range checks, among other things, the order of the bounds, if both are given. Code that compares salaries receives the whole salary range, so it can check whether they are comparable. [Eric Evans, Domain-Driven Design Reference, p. 12](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
 
-### Agregat chroni stan, który musi zmieniać się razem
+### An aggregate protects state that must change together
 
-Agregat grupuje dane, dla których określone warunki muszą być spełnione po każdej zmianie. Zmiany przechodzą przez główny obiekt agregatu, który pilnuje tych warunków. Zakres agregatu wyznacza stan potrzebny do sprawdzenia reguł i wykonania zmiany. Pełną historię można pobierać osobno.
+An aggregate groups data for which certain conditions must hold after every change. Changes go through the aggregate's root object, which enforces these conditions. The aggregate's scope is set by the state needed to check the rules and make the change. The full history can be fetched separately.
 
-Przy zatwierdzaniu profilu nowa wersja i wskazanie jej jako aktywnej są częścią jednej zmiany. Operacja zatwierdzenia sprawdza oczekiwaną rewizję szkicu i zapisuje oba elementy atomowo. [Eric Evans, Domain-Driven Design Reference, s. 16](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
+When a profile is confirmed, the new version and marking it as active are part of one change. The confirm operation checks the expected draft revision and saves both elements atomically. [Eric Evans, Domain-Driven Design Reference, p. 16](https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf)
 
-### Reguły obliczeniowe oddzielamy od odczytu i zapisu
+### We separate calculation rules from reading and writing
 
-Funkcja obliczeniowa otrzymuje dane potrzebne do podjęcia decyzji i zwraca wynik. Kod realizujący przypadek użycia pobiera wejście, wywołuje tę funkcję i decyduje o zapisie. To podział znany jako funkcyjny rdzeń i imperatywna otoczka.
+A calculation function receives the data needed to make a decision and returns the result. The code that carries out the use case fetches the input, calls this function and decides about the write. This split is known as functional core and imperative shell.
 
-Funkcja licząca rating przyjmuje oceny kryteriów i wagi. Zwraca rating i kompletność, które można sprawdzić na przekazanych danych. Operacja zapisująca ocenę odpowiada za odczyt wag i utrwalenie wyniku. [Functional Core, Imperative Shell](https://www.destroyallsoftware.com/screencasts/catalog/functional-core-imperative-shell)
+The function that calculates the rating takes the criterion scores and the weights. It returns the rating and completeness, which can be checked against the passed data. The operation that saves the assessment is responsible for reading the weights and persisting the result. [Functional Core, Imperative Shell](https://www.destroyallsoftware.com/screencasts/catalog/functional-core-imperative-shell)
 
-### Funkcja opisuje kroki na jednym poziomie szczegółowości
+### A function describes steps at one level of detail
 
-W funkcji prowadzącej przypadek użycia widać kolejność działań istotnych dla jego wyniku. Szczegół wydzielamy, gdy nazwana operacja pozwala zrozumieć krok bez czytania jej implementacji.
+In a function that carries a use case, you can see the order of the actions that matter for its result. We extract a detail when a named operation lets you understand the step without reading its implementation.
 
-Zatwierdzenie profilu można opisać jako sprawdzenie rewizji, zapis zatwierdzonej wersji i jej aktywację. Instrukcje SQL i mapowanie wierszy należą do kodu wykonującego te kroki. [Clean Code, rozdział Functions](https://www.informit.com/store/clean-code-a-handbook-of-agile-software-craftsmanship-9780132639408)
+Confirming a profile can be described as checking the revision, saving the confirmed version and activating it. SQL statements and row mapping belong to the code that performs these steps. [Clean Code, chapter Functions](https://www.informit.com/store/clean-code-a-handbook-of-agile-software-craftsmanship-9780132639408)
 
-## Dostęp do bazy danych
+## Database access
 
-Zasady obowiązują cały kod. Kod tworzony lub przenoszony po ich wprowadzeniu stosuje je od razu. Starsze zapytania, pomocnicze transakcje modułów i blokady sesyjne zostają do czasu zmiany danego kodu; przenosi je zadanie, które ten kod zmienia. Mechanizm należy do wspólnej infrastruktury poza modułami: [dostęp do bazy](../../lib/db.ts).
+The rules apply to all code. Code created or moved after they were introduced applies them at once. Older queries, modules' helper transactions and session locks stay until the given code changes; the task that changes this code moves them over. The mechanism belongs to the shared infrastructure outside the modules: [database access](../../lib/db.ts).
 
-1. **Pula.** Połączeniami zarządza pula `pg`, jedna na proces: w aplikacji webowej, w workerze i w każdym skrypcie CLI. Zapytanie poza transakcją pobiera połączenie na czas zapytania, transakcja na czas swojego trwania. Pula ma limit 5 połączeń i powstaje leniwie z `DATABASE_URL`. Test może ją podmienić przed pierwszym użyciem, np. na pulę izolowanego schematu; podmiana w trakcie transakcji zgłasza wyjątek. Zasada zastępuje wcześniejszą jedną sesję na proces.
-2. **Akcesor.** Kod modułu wykonuje zapytania przez akcesor wykonawcy zapytań (`db()`). W transakcji akcesor zwraca połączenie tej transakcji, a poza nią pulę. Kontekst transakcji przechodzi przez `AsyncLocalStorage`, więc sygnatury operacji domenowych nie zawierają typu połączenia, a punkt wejścia niczego nie przygotowuje. Kod modułu nie zależy od tego, czy działa w ramach większej operacji.
-3. **Operacja transakcyjna.** Granicę transakcji wyznacza wspólna operacja transakcyjna (`transaction(fn)`), która zwraca wynik funkcji. Poza transakcją pobiera połączenie, wysyła `BEGIN`, wykonuje funkcję w kontekście tego połączenia i wysyła `COMMIT`. Przy błędzie wysyła `ROLLBACK` i zgłasza pierwotny błąd; błąd samego `ROLLBACK` go nie zastępuje. Połączenie zawsze wraca do puli, a połączenie uszkodzone jest zwalniane z błędem, żeby pula je odrzuciła. W trwającej transakcji operacja wykonuje funkcję bez `BEGIN` i `COMMIT`, więc operacja modułu wywołana samodzielnie sama zatwierdza zmiany, a wywołana w trakcie innej staje się jej częścią. Równoległe operacje spoza transakcji mają osobne połączenia i są od siebie niezależne. Kod modułów nie pobiera połączeń z puli samodzielnie, nie trzyma ich między operacjami i nie wysyła ręcznie `BEGIN`, `COMMIT` ani `ROLLBACK`.
-4. **Błąd wycofuje całość.** Operacja przypadku użycia zapisuje się w całości albo wcale: błąd w dowolnym kroku wycofuje zapisy wszystkich modułów, także kroków zakończonych pomyślnie. Pracy nie kontynuuje się po błędzie SQL w tej samej transakcji. SAVEPOINT nie jest stosowany.
-5. **Repozytoria.** Dostęp do danych modułu realizują repozytoria w `infrastructure/persistence/` modułu, korzystające z akcesora. Repozytorium nie otwiera połączeń ani transakcji i nie jest częścią publicznego wejścia modułu. Przypada jedno na agregat, z metodami wynikającymi z przypadków użycia, bez ogólnych operacji CRUD dla każdej tabeli. Odczyty listowe z filtrowaniem i paginacją mogą mieć dedykowane zapytania.
-6. **Bez blokad wierszy dla wywołującego.** Publiczne operacje odczytu nie zakładają blokad wierszy na rzecz wywołującego, więc odczyt danych innego modułu nie blokuje ich zmiany. Przy publikacji oceny dopasowania akceptujemy, że profil lub ogłoszenie może zmienić się między sprawdzeniem aktualności oceny a jej zapisem: okno jest bardzo krótkie, a właściciel może ponownie zlecić ocenę (decyzja właściciela). Blokady wierszy innego modułu wymagają osobnej decyzji.
-7. **Kolejka w transakcji.** Zlecenie pracy w tle jest częścią operacji, która je zleca. Wspólna infrastruktura udostępnia adapter wykonawcy zapytań dla opcji `db` pg-boss (`queueDatabase`). Każde jego wywołanie przechodzi przez akcesor, więc zadanie wysłane w transakcji należy do niej: wycofanie operacji wycofuje zlecenie.
-8. **Bez blokad sesyjnych.** Blokady sesyjne PostgreSQL (`pg_advisory_lock`, `pg_try_advisory_lock`, `pg_advisory_unlock`) wymagają stałego połączenia, więc kod przenoszony na wspólny mechanizm z nich rezygnuje. Blokady transakcyjne (`pg_advisory_xact_lock`) są dopuszczalne. Ochrona przed podwójnym podjęciem tej samej pracy pozostaje jako warunkowa zmiana stanu w bazie. Rezygnujemy z mechanizmu, który wykrywał przerwanie pracy procesu w tle (decyzja właściciela); synchronizacja źródeł odzyskuje tę ochronę przez kolejkę, pozostałe zadania w tle w osobnym zadaniu.
-9. **Niezależność od biblioteki.** Implementacja korzysta z `pg`, a akcesor ma metodę `query` zgodną z `pg`, którą spełniają pula i połączenie. Późniejsza migracja na typowany konstruktor zapytań (rekomendacja: Kysely) nie zmienia sygnatur operacji ani repozytoriów.
-10. **Błędy nie wyczerpują zasobów.** Po dowolnej liczbie nieudanych operacji połączenia wracają do puli albo są odrzucane, a system obsługuje kolejne operacje.
+1. **Pool.** A `pg` pool manages connections, one per process: in the web application, in the worker and in each CLI script. A query outside a transaction takes a connection for the duration of the query, a transaction for its whole duration. The pool has a limit of 5 connections and is created lazily from `DATABASE_URL`. A test may replace it before first use, e.g. with the pool of an isolated schema; replacing it during a transaction throws an exception. This rule replaces the earlier single session per process.
+2. **Accessor.** Module code runs queries through the query executor accessor (`db()`). In a transaction the accessor returns that transaction's connection, and outside one it returns the pool. The transaction context passes through `AsyncLocalStorage`, so domain operation signatures do not contain a connection type, and the entry point prepares nothing. Module code does not depend on whether it runs inside a larger operation.
+3. **Transactional operation.** The transaction boundary is set by the shared transactional operation (`transaction(fn)`), which returns the function's result. Outside a transaction it takes a connection, sends `BEGIN`, runs the function in the context of that connection and sends `COMMIT`. On an error it sends `ROLLBACK` and raises the original error; an error of the `ROLLBACK` itself does not replace it. The connection always returns to the pool, and a broken connection is released with an error so that the pool discards it. In an ongoing transaction the operation runs the function without `BEGIN` and `COMMIT`, so a module operation called on its own commits its changes itself, and one called during another becomes part of it. Parallel operations outside a transaction have separate connections and are independent of each other. Module code does not take connections from the pool by itself, does not hold them between operations and does not send `BEGIN`, `COMMIT` or `ROLLBACK` by hand.
+4. **An error rolls back everything.** A use case operation is saved in full or not at all: an error in any step rolls back the writes of all modules, including steps that finished successfully. Work does not continue after an SQL error in the same transaction. SAVEPOINT is not used.
+5. **Repositories.** Repositories in the module's `infrastructure/persistence/`, using the accessor, provide access to the module's data. A repository does not open connections or transactions and is not part of the module's public entry. There is one per aggregate, with methods that follow from the use cases, without generic CRUD operations for each table. List reads with filtering and pagination may have dedicated queries.
+6. **No row locks for the caller.** Public read operations do not take row locks on behalf of the caller, so reading another module's data does not block changes to it. When publishing a match assessment, we accept that the profile or the ad may change between checking whether the assessment is current and saving it: the window is very short, and the owner can request the assessment again (owner's decision). Row locks on another module's data require a separate decision.
+7. **Queue in the transaction.** Requesting background work is part of the operation that requests it. The shared infrastructure provides a query executor adapter for the pg-boss `db` option (`queueDatabase`). Each of its calls goes through the accessor, so a job sent in a transaction belongs to it: rolling back the operation rolls back the request.
+8. **No session locks.** PostgreSQL session locks (`pg_advisory_lock`, `pg_try_advisory_lock`, `pg_advisory_unlock`) require a fixed connection, so code moved to the shared mechanism gives them up. Transaction locks (`pg_advisory_xact_lock`) are allowed. Protection against taking up the same work twice remains as a conditional state change in the database. We give up the mechanism that detected the interruption of a background process's work (owner's decision); source sync regains this protection through the queue, the other background jobs in a separate task.
+9. **Library independence.** The implementation uses `pg`, and the accessor has a `pg`-compatible `query` method, which both the pool and a connection satisfy. A later migration to a typed query builder (recommendation: Kysely) does not change the signatures of operations or repositories.
+10. **Errors do not exhaust resources.** After any number of failed operations, connections return to the pool or are discarded, and the system handles further operations.
 
-Testy na bazie działają na izolowanym schemacie PostgreSQL i pg-boss, a wspólną pulę ustawiają na pulę izolowanego schematu przed pierwszym użyciem. [Test mechanizmu](../../tests/db.integration.test.ts)
+Database tests run on an isolated PostgreSQL and pg-boss schema, and set the shared pool to the isolated schema's pool before first use. [Mechanism test](../../tests/db.integration.test.ts)
 
-## Zasady pisania kodu
+## Coding rules
 
-- **Nazwy opisują operację i przedmiot.** `enqueueMatching`, `publishAiRating` i `readRatings` wskazują, które wywołanie zleca pracę, zapisuje wynik lub czyta historię. Nazwy typów i statusów opieramy na pojęciach ze [słownika domeny](../../GLOSSARY.md).
-- **Dane wejściowe walidujemy przy wejściu.** Trasa sprawdza kształt żądania HTTP, adapter sprawdza odpowiedź zewnętrzną, moduł pilnuje reguł domeny. Po walidacji przekazujemy typowany wynik. Na przykład poprawny JSON oceny nadal wymaga sprawdzenia dowodów względem zapisanej wersji profilu i rewizji ogłoszenia.
-- **Diagnostyka zawiera tylko dane potrzebne do ustalenia, co się stało.** Zapisujemy stan, przyczynę i identyfikatory pozwalające powiązać zdarzenia. Komunikaty diagnostyczne i logi pomijają dane wrażliwe i sekrety. [OWASP, Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html#data-to-exclude)
-- **Nowa warstwa ma określoną odpowiedzialność.** Wydzielamy ją, jeśli ukrywa regułę lub szczegóły wykonania, które mogą się różnić między wykonawcami.
+- **Names describe the operation and its subject.** `enqueueMatching`, `publishAiRating` and `readRatings` show which call requests work, saves a result or reads history. We base type and status names on the concepts in the [domain glossary](../../GLOSSARY.md).
+- **We validate input data at the entry.** The route checks the shape of the HTTP request, the adapter checks the external response, the module enforces the domain rules. After validation we pass a typed result. For example, a valid assessment JSON still needs its evidence checked against the saved profile version and ad revision.
+- **Diagnostics contain only the data needed to establish what happened.** We record the state, the cause and IDs that let us link events. Diagnostic messages and logs leave out sensitive data and secrets. [OWASP, Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html#data-to-exclude)
+- **A new layer has a defined responsibility.** We extract one if it hides a rule or execution details that may differ between executors.

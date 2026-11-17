@@ -1,64 +1,64 @@
-# Panel zarządzania zadaniami — Solution design
+# Task management panel — Solution design
 
-Status: **przegląd wykonany, specyfikacja gotowa do implementacji**, 2026-11-05. Beads: `oferty-pracy-334.15`. Zakres PZ-01–PZ-08 zatwierdzony, implementacja nie została wykonana. Podstawa: [Requirements](requirements.md), [kontrakty runtime](../../kontrakty-runtime.md), stan kodu do sprawdzenia przed zmianami UI.
+Status: **review done, specification ready for implementation**, 2026-11-05. Beads: `oferty-pracy-334.15`. Scope PZ-01–PZ-08 approved; the implementation has not been carried out. Basis: [Requirements](requirements.md), [runtime contracts](../../kontrakty-runtime.md), the state of the code to be checked before UI changes.
 
-## Granice i kontrakt
+## Boundaries and contract
 
-Panel jest częścią obecnego Nuxt. API aplikacji autoryzuje komendę i przekazuje ją modułowi operacji, który używa adaptera wykonawcy. UI nie łączy się z OpenCode. Nie sterujemy surowymi jobami pg-boss; lista obejmuje zadania AI profilu, ocen i researchu.
+The panel is part of the current Nuxt app. The application API authorises the command and passes it to the operations module, which uses the executor adapter. The UI does not connect to OpenCode. We do not control raw pg-boss jobs; the list covers AI tasks of profile, assessments and research.
 
-Kanoniczny projekt endpointów, payloadu commandId/executionId/expectedRevision/action/scope/interventionId, statusów HTTP, trwałej intencji i deduplikacji jest w sekcji „Interwencja i polecenia panelu” [kontraktów runtime](../../kontrakty-runtime.md). Nie definiujemy drugiej odmiany payloadu w tym pliku. To projekt nowych endpointów, nie opis istniejących tras.
+The canonical design of the endpoints, the commandId/executionId/expectedRevision/action/scope/interventionId payload, HTTP statuses, durable intent and deduplication is in the section "Intervention and panel commands" of the [runtime contracts](../../kontrakty-runtime.md). We do not define a second variant of the payload in this file. This is a design of new endpoints, not a description of existing routes.
 
-## Stan i odczyt
+## State and reading
 
-Mapowanie per domena, bez wymuszenia nowego enuma na wszystkich tabelach. Widok oddziela logiczną disposition, ostatni zaobserwowany stan runtime z datą, aktualny wynik i zdolności adaptera. skipped+running oraz superseded+unknown są możliwe. Lista i szczegóły pokazują model/dostawcę, błędy, grupę, kolejkę/blokujące wykonanie i historię poleceń. Późne odpowiedzi są dostępne z powodem braku publikacji.
+Mapping per domain, without forcing a new enum on all tables. The view separates the logical disposition, the last observed runtime state with its date, the current result and the adapter capabilities. skipped+running and superseded+unknown are possible. The list and details show the model/provider, errors, group, queue/blocking execution and the command history. Late responses are available with the reason why they were not published.
 
-Dla direct Ollama brak zdalnego execution ID oznacza brak zdalnej inspekcji; pokaż to jawnie. check nie uruchamia generacji kontrolnej. Stop próbuje przerwać lokalne połączenie, ale nie deklaruje zatrzymania serwera bez potwierdzenia. OpenAI Batch zachowuje swój cykl: akcja pozycji odbiera tylko jej publikację; zdalne anulowanie całej partii wymaga odpowiadającego zakresu grupowego.
+For direct Ollama, the absence of a remote execution ID means no remote inspection; show this explicitly. check does not start a control generation. Stop tries to interrupt the local connection, but does not declare the server stopped without confirmation. OpenAI Batch keeps its cycle: an item action only revokes that item's publication; remote cancellation of the whole batch requires the corresponding group scope.
 
-## Publikacja, retry i wznowienie
+## Publication, retry and resumption
 
-Komenda i intencja w krótkiej transakcji; HTTP poza transakcją; osobny zapis obserwacji. Publikacja sprawdza token i dyspozycję pod tą samą blokadą co komendy. Wyniku już opublikowanego nie cofamy przez stop/skip.
+The command and intent in a short transaction; HTTP outside the transaction; a separate record of the observation. Publication checks the token and the disposition under the same lock as the commands. An already published result is not withdrawn by stop/skip.
 
-Jawne retry jest dozwolone dla running/unknown: atomowo odebrana publikacja starego wykonania, nowy ID/token/supersedes i kolejka. Nowy agent OpenCode czeka na potwierdzone zwolnienie globalnego slotu. Odpowiedź starego pozostaje zapisana, bez wpływu na aktualny raport. Koszt i historia obu wykonań pozostają niezależne.
+An explicit retry is allowed for running/unknown: publication of the old execution atomically revoked, new ID/token/supersedes and the queue. A new OpenCode agent waits for the confirmed release of the global slot. The old one's response stays recorded, with no effect on the current report. The cost and history of both executions stay independent.
 
-Resume wyłącznie dla konkretnej oczekującej interwencji; kontynuuje tę samą sesję i Chrome. Duplikat polecenia nie wysyła drugiej kontynuacji. Unknown wymaga inspekcji, nie nowego startu. Interwencję testujemy na kontrakcie modułu operacji/mostu etapu 8, UI nie prowadzi pętli agenta.
+Resume only for a specific pending intervention; it continues the same session and Chrome. A duplicate command does not send a second continuation. Unknown requires inspection, not a new start. We test the intervention against the contract of the operations module/the stage 8 bridge; the UI does not run the agent loop.
 
-## Weryfikacja
+## Verification
 
-| Kryterium | Scenariusz |
+| Criterion | Scenario |
 | --- | --- |
-| PZ-01/05 | Logiczną dyspozycję i runtime widać osobno, także błędne sprawdzenie, kolejka i blokujący skipped+unknown. |
-| PZ-02 | check nie tworzy sesji/inferencji; runtime niedostępny i direct bez zdalnej inspekcji. |
-| PZ-03/04 | Stop/skip przed startem i podczas pracy; późny wynik/koszt; miejsce nie zwalnia się od samego kliknięcia. |
-| PZ-06 | Retry running/unknown: nowe wykonanie queued, stara publikacja zablokowana, start dopiero po zwolnieniu slotu. |
-| PZ-07 | 30 pozycji jako 20+10, item/group bez akcji na całym zleceniu nadrzędnym; akcje nie cofają ukończonych, zgodność starych Batch >20. |
-| PZ-08 | Duplikat i zmiana payloadu, konflikt revision, wyścig z publikacją, duplikat resume i utrata odpowiedzi. |
+| PZ-01/05 | The logical disposition and the runtime are visible separately, also a failed check, the queue and a blocking skipped+unknown. |
+| PZ-02 | check does not create a session/inference; runtime unavailable and direct without remote inspection. |
+| PZ-03/04 | Stop/skip before start and during work; late result/cost; the place is not released by the click alone. |
+| PZ-06 | Retry of running/unknown: new execution queued, old publication blocked, start only after the slot is released. |
+| PZ-07 | 30 items as 20+10, item/group without an action on the whole parent request; actions do not undo completed items, compatibility with old Batch >20. |
+| PZ-08 | Duplicate and changed payload, revision conflict, race with publication, duplicate resume and loss of the response. |
 
-Migracje addytywne, historia bezterminowa. Pełna integracja panelu zależy od etapów 6 i 8; wcześniejsze makiety/warstwa odczytu nie oznaczają odbioru całości. Etap 8 testuje interwencję bez gotowego UI, aby uniknąć cyklu zależności. Panel jest wymagany przed odbiorem etapu 9. Żadna tabela ani endpoint w projekcie nie jest dowodem wykonania migracji lub sprawności runtime.
+Additive migrations, indefinite history. Full integration of the panel depends on stages 6 and 8; earlier mock-ups/the read layer do not mean acceptance of the whole. Stage 8 tests intervention without a ready UI, to avoid a dependency cycle. The panel is required before acceptance in stage 9. No table or endpoint in the design is proof that a migration was run or that the runtime works.
 
-## Uzgodnienie panelu po grill-me
+## Panel agreement after grill-me
 
-LA-11 i LA-16–18: panel jest wymagany we wspólnym wdrożeniu całego epiku. Oczekiwanie i blokujący execution ID dotyczą jednej wspólnej kolejki lokalnego profilu, ocen i researchu. Stop/check/retry są kontrolą zadania, nie naprawą usług; nie dodawać automatycznego restartu infrastruktury ani przycisku pomijającego niepewność runtime.
+LA-11 and LA-16–18: the panel is required in the shared deployment of the whole epic. Waiting and the blocking execution ID concern one shared queue of local profile, assessments and research. Stop/check/retry are task control, not service repair; do not add an automatic infrastructure restart or a button that skips runtime uncertainty.
 
-PZ-06 wymaga kopii starego wejścia/instrukcji/schematu/modelu/parametrów przy ręcznym retry, nawet po zmianie profilu i `.env`. Nowe dane wymagają nowego zlecenia. Błąd formatu/dowodu/raportu jest widoczny i nie uruchamia automatycznej generacji naprawczej. PZ-01/05/08 obejmują mieszane lokalne zadania i trwałe rozstrzygnięcie po ręcznej obsłudze awarii według instrukcji. Logowanie i parkowanie sesji z przejściem do kolejnych zadań pozostają w backlogu281; obecne resume dotyczy tylko interwencji w publicznym dostępie.
+PZ-06 requires a copy of the old input/instructions/schema/model/parameters on a manual retry, even after a change of profile and `.env`. New data requires a new request. A format/evidence/report error is visible and does not start an automatic repair generation. PZ-01/05/08 cover mixed local tasks and a durable resolution after manual handling of a failure according to the instructions. Login and parking of sessions with moving on to further tasks stay in backlog item 281; the current resume concerns only an intervention in public access.
 
-## Przegląd wykonawczy — 2026-11-05
+## Execution review — 2026-11-05
 
-Specyfikacja panelu przygotowana do implementacji w ramach `334.20`, po etapach 6/8. Pełny payload item/group, nullable legacy execution, capabilities, paginacja i odczyt artefaktów mają jedno miejsce: doprecyzowanie [kontraktów runtime](../../kontrakty-runtime.md). Nie wymuszać executionId grupy ani kierować UI do API dostawcy. Komendy domenowe powstają w etapie 5; panel integruje je ze starymi wykonawcami i istniejącą autoryzacją Nuxt.
+The panel specification was prepared for implementation as part of `334.20`, after stages 6/8. The full item/group payload, nullable legacy execution, capabilities, pagination and reading of artefacts have one place: the clarification in the [runtime contracts](../../kontrakty-runtime.md). Do not force a group executionId or direct the UI to the provider API. The domain commands are created in stage 5; the panel integrates them with the old executors and the existing Nuxt authorisation.
 
-Właściciele zmian: nowy `lib/ai/operations/read.ts` i adaptery widoków per domena; trasy `server/api/ai/`; strona zadań w istniejącym app/pages oraz komponenty listy/szczegółów. Ostateczne nazwy nowych plików są lokalnym wyborem, kontrakty i własność reguł pozostają ustalone. Warstwa UI odświeża widok po poleceniu i pokazuje status przyjęcia oraz ostatnią obserwację runtime oddzielnie; ponowne wysłanie po utracie odpowiedzi używa tego samego commandId. Przy 409 odświeża stan i nie ponawia z nowym ID bez decyzji użytkownika.
+Owners of the changes: a new `lib/ai/operations/read.ts` and view adapters per domain; routes `server/api/ai/`; the tasks page in the existing app/pages and the list/details components. The final names of the new files are a local choice; the contracts and the ownership of rules stay fixed. The UI layer refreshes the view after a command and shows the acceptance status and the last runtime observation separately; resending after a lost response uses the same commandId. On 409 it refreshes the state and does not retry with a new ID without the user's decision.
 
-Nie dodawać zbiorczego „retry wszystkich” na parent komendy. Group retry pomija opublikowane pozycje, pokazuje listę rzeczywiście ponowionych/pominiętych. Przy reused item pokazać wspólny request, aby zakres działania był widoczny. Stan nieznany starego superseded wykonania może blokować queued retry i całą kolejkę; szczegóły podają ID i instrukcję ręcznego rozstrzygnięcia. Brak zdalnej inspekcji direct to capability, nie błąd naprawiany generacją.
+Do not add a bulk "retry all" on the parent command. Group retry skips published items and shows the list of items actually retried/skipped. For a reused item, show the shared request so that the scope of the action is visible. The unknown state of an old superseded execution can block a queued retry and the whole queue; the details give the ID and the instructions for manual resolution. No remote inspection for direct is a capability, not an error repaired with a generation.
 
-Obsługa legacy jest pełną częścią zadania: leniwe powiązania i guardy publikacji muszą zostać użyte w profile/ai.ts, matching publication/store/groups i companies/research.ts; samo zablokowanie przycisku nie chroni przed wynikiem w tle. Koszt starej próby rozlicza się niezależnie od prawa publikacji. Akcja Batch item nie przerywa pozostałych elementów partii. Nie odtwarzać brakującego starego promptu z aktualnego kodu bez rozpoznanej wersji.
+Legacy handling is a full part of the task: lazy links and publication guards must be used in profile/ai.ts, matching publication/store/groups and companies/research.ts; blocking the button alone does not protect against a background result. The cost of an old attempt is settled independently of the right to publish. A Batch item action does not interrupt the other elements of the batch. Do not reconstruct a missing old prompt from the current code without a recognised version.
 
-| Kryteria | Minimalny zestaw testów |
+| Criteria | Minimum set of tests |
 | --- | --- |
-| PZ-01/05 | Read API dla legacy i nowych trzech domen, stable cursor, kolejka/blokujący ID, cancelled+running i superseded+unknown, brak sekretów. |
-| PZ-02 | check aktualizuje obserwację, awaria zachowuje datę poprzedniej; direct nie wykonuje generate. |
-| PZ-03/04/08 | Dwa połączenia PG: komenda kontra publikacja w obu kolejnościach, command duplikat i zmieniony target/payload; dokładnie jedna rewizja albo brak publikacji. |
-| PZ-06/07 | Retry po zmianie env/wejścia, group 20+10 bez akcji parent, ukończone pominięte, legacy >20 i część Batch nadal działa. |
-| PZ-08 i resume | Błędny interventionId, 409 revision, restart/utrata odpowiedzi, brak drugiego resume/start; 401/404/422 i ochrona cudzych artefaktów. |
+| PZ-01/05 | Read API for legacy and the three new domains, stable cursor, queue/blocking ID, cancelled+running and superseded+unknown, no secrets. |
+| PZ-02 | check updates the observation, a failure keeps the date of the previous one; direct does not run generate. |
+| PZ-03/04/08 | Two PG connections: command versus publication in both orders, duplicate command and changed target/payload; exactly one revision or no publication. |
+| PZ-06/07 | Retry after a change of env/input, group 20+10 without a parent action, completed items skipped, legacy >20 and the Batch part still works. |
+| PZ-08 and resume | Invalid interventionId, 409 revision, restart/loss of the response, no second resume/start; 401/404/422 and protection of foreign artefacts. |
 
-Dodać testy HTTP/read/commands na izolowanych schematach i test kluczowego przepływu UI; wykorzystać istniejące wzorce testów HTTP profilu. Dla artefaktów sprawdzić HTML jako tekst i brak traversal, a dla historii późny wynik bez publikacji. Check/build i integracje z RUN_INTEGRATION=1 wymagane; screenshot UI i scenariusz interwencji jako dowód odbioru, bez benchmarku treści LLM. Żadna makieta nie zastępuje testu wyścigu w bazie.
+Add HTTP/read/commands tests on isolated schemas and a test of the key UI flow; use the existing patterns of the profile HTTP tests. For artefacts, check HTML as text and no traversal, and for history a late result without publication. Check/build and integrations with RUN_INTEGRATION=1 are required; a UI screenshot and the intervention scenario as acceptance evidence, without an LLM content benchmark. No mock-up replaces a race test in the database.
 
-Wariant Chrome po doprecyzowaniu: headless w kontenerze. Panel udostępnia uwierzytelniony link do gotowego DevTools odpowiedniej karty podczas interwencji. To kanał właściciela, bez dostępu modelu do administracyjnego CDP i bez kont osobistych. Kwalifikacja oraz test UI muszą wykazać podgląd/input i Wznów tej samej sesji; sam screenshot nie spełnia interwencji.
+Chrome variant after clarification: headless in a container. During an intervention, the panel provides an authenticated link to the ready DevTools of the relevant tab. This is the owner's channel, with no model access to the administrative CDP and no personal accounts. The qualification and the UI test must show preview/input and "Wznów" (Resume) of the same session; a screenshot alone does not satisfy the intervention.

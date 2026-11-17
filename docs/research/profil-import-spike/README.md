@@ -1,24 +1,24 @@
-# Próba lokalnej ekstrakcji CV
+# Local CV extraction trial
 
-Data: 2026-11-01. Osobny eksperyment techniczny, bez zmian aplikacji, bez prawdziwego CV i bez wywołań AI. Syntetyczny scan.pdf jest pustą stroną bez warstwy tekstowej; nie jest testem OCR ani rzeczywistego skanu z obrazem.
+Date: 2026-11-01. A separate technical experiment, with no application changes, no real CV and no AI calls. The synthetic scan.pdf is a blank page without a text layer; it is not a test of OCR or of a real scan with an image.
 
-Wybrano `pdfjs-dist` 6.4.299 i `mammoth` 1.13.0. Wersje i silniki odczytano z npm; pierwsza wymaga Node >=22.13 lub >=24, druga >=12. Próba przeszła na Node 24.15.0 używanym przez projekt. Biblioteki są przypięte w osobnym package.json/lockfile, nie dodano ich do zależności aplikacji.
+`pdfjs-dist` 6.4.299 and `mammoth` 1.13.0 were chosen. Versions and engines were read from npm; the first requires Node >=22.13 or >=24, the second >=12. The trial passed on Node 24.15.0, which the project uses. The libraries are pinned in a separate package.json/lockfile; they were not added to the application's dependencies.
 
-Odtworzenie bez modyfikowania aplikacyjnego node_modules, z katalogu projektu:
+Reproduction without modifying the application's node_modules, from the project directory:
 
 ```sh
 docker compose run --rm --no-deps -v "$PWD/docs/research/profil-import-spike:/spike" tools sh -c 'cd /spike && pnpm install --ignore-scripts && node check.mjs'
 ```
 
-Wynik:
+Result:
 
-| Próbka | Obserwacja |
+| Sample | Observation |
 | --- | --- |
-| text.pdf | 1 strona, 43 znaki, zachowana kolejność dwóch kontrolnych wierszy. |
-| scan.pdf | 1 strona, 0 znaków — można wykryć potrzebę wklejenia tekstu. |
-| text.docx | 54 znaki, zachowane polskie litery, 0 komunikatów Mammoth. |
-| Niepoprawne bajty PDF | Odrzucone; diagnostyczny komunikat PDF.js o indeksowaniu błędnego dokumentu. |
+| text.pdf | 1 page, 43 characters, the order of two control lines preserved. |
+| scan.pdf | 1 page, 0 characters — the need to paste text can be detected. |
+| text.docx | 54 characters, Polish letters preserved, 0 Mammoth messages. |
+| Invalid PDF bytes | Rejected; a diagnostic PDF.js message about indexing a broken document. |
 
-PDF.js importuje wariant legacy dla Node; wskazano lokalny katalog standardowych fontów. Użyto getTextContent, bez renderowania stron. Mammoth wywołuje extractRawText, bez generowania HTML i bez dostępu do plików zewnętrznych. Podstawa: [przykład PDF.js dla Node](https://github.com/mozilla/pdf.js/blob/master/examples/node/getinfo.mjs), [API Mammoth](https://github.com/mwilliamson/mammoth.js#api).
+PDF.js imports the legacy variant for Node; a local directory of standard fonts was specified. getTextContent was used, without rendering pages. Mammoth calls extractRawText, without generating HTML and without access to external files. Basis: [PDF.js example for Node](https://github.com/mozilla/pdf.js/blob/master/examples/node/getinfo.mjs), [Mammoth API](https://github.com/mwilliamson/mammoth.js#api).
 
-Próba potwierdza kompatybilność podstawowej ścieżki. Nie dowodzi jakości odczytu CV wielokolumnowego, tabel, nietypowych fontów, zaszyfrowanych plików, limitów pamięci ani bezpieczeństwa każdego dokumentu. Te przypadki i zachowanie oryginału po awarii wymagają testów implementacji. Zewnętrzna usługa nie otrzymała żadnego CV.
+The trial confirms that the basic path is compatible. It does not prove reading quality for multi-column CVs, tables, unusual fonts, encrypted files, memory limits or the safety of every document. These cases, and keeping the original after a failure, require implementation tests. No external service received any CV.

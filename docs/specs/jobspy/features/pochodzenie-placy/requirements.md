@@ -1,13 +1,13 @@
-# Pochodzenie płacy Indeed — requirements
+# Indeed salary origin — requirements
 
-Status: wybrane do realizacji 2026-11-02 na podstawie [PRD](../../PRD.md). Zakres: odczyt danych już dostarczonych przez adapter, bez uruchamiania portalu i bez kwalifikacji finansowej w aplikacji.
+Status: selected for implementation 2026-11-02 on the basis of the [PRD](../../PRD.md). Scope: reading data already provided by the adapter, without running against the portal and without financial qualification in the application.
 
-## Reguły i kryteria akceptacji
+## Rules and acceptance criteria
 
-- **R-P01 — pochodzenie.** Wynagrodzenie ma niezależne oznaczenie: pracodawca, oszacowanie portalu lub nieustalone. Gdy wybrana kwota pochodzi z `baseSalary`, wynik wskazuje pracodawcę; gdy z `estimated.baseSalary`, wskazuje szacunek. Stare `salary_source` opisujące sposób ekstrakcji nie zastępuje tej informacji.
-- **R-P02 — wybór kwoty.** Poprawne dane pracodawcy mają pierwszeństwo. Przy braku jego obiektu płacy używany jest szacunek, jak dotychczas. Nie zmieniamy reguł wyboru dla niepoprawnego lub nieobsługiwanego okresu; nie wyprowadzamy wtedy wiarygodnej kwoty. Brak obu kwot pozostaje niewiadomą, a zero nie jest brakiem.
-- **R-P03 — dowód pochodzenia.** Jeżeli źródło przekazało dane płacy, wynik zachowuje oryginalne wartości, okres i walutę zarówno pracodawcy, jak i szacunku, jeśli są dostępne. Dotyczy to również nieobsługiwanego okresu. Przy braku wszystkich danych płacy dowód jest pusty. Nie przypisujemy brutto/netto, VAT ani rodzaju umowy na podstawie domysłów.
-- **R-P04 — eksport i przeliczenia.** Dane pochodzenia przechodzą z adaptera przez wynik `scrape_jobs` i pełny eksport JSON bez zmiany na tekst. Annualizacja kwot nie zmienia dowodu zawierającego ich oryginalne wartości i okres. Dotychczasowe pola pozostają dostępne; nowe są dodatkiem. Dla adapterów poza Indeed pochodzenie pozostaje nieustalone, dopóki nie zostaną osobno dostosowane.
-- **R-P05 — weryfikacja offline.** Przypadki: pracodawca, szacunek, oba, brak, kwota pojedyncza, zero i nieobsługiwany okres mają sprawdzalne wyniki bez dostępu do sieci. Test przekazania do tabeli i eksportu używa podstawionej odpowiedzi adaptera i nie odpytuje portalu.
+- **R-P01 — origin.** The salary has an independent mark: employer, portal estimate or undetermined. When the chosen amount comes from `baseSalary`, the output indicates the employer; when from `estimated.baseSalary`, it indicates an estimate. The old `salary_source`, which describes the extraction method, does not replace this information.
+- **R-P02 — amount selection.** Valid employer data takes precedence. When the employer's salary object is missing, the estimate is used, as before. We do not change the selection rules for an invalid or unsupported period; in that case we do not derive a credible amount. Missing both amounts remains an unknown, and zero is not a missing value.
+- **R-P03 — evidence of origin.** If the source passed salary data, the output keeps the original values, period and currency of both the employer's amount and the estimate, if available. This also applies to an unsupported period. When all salary data is missing, the evidence is empty. We do not assign gross/net, VAT or contract type on the basis of guesses.
+- **R-P04 — export and conversions.** The origin data passes from the adapter through the `scrape_jobs` output and the full JSON export without being turned into text. Annualising amounts does not change the evidence containing their original values and period. The existing fields stay available; the new ones are an addition. For adapters other than Indeed, the origin stays undetermined until they are adapted separately.
+- **R-P05 — offline verification.** The cases employer, estimate, both, none, single amount, zero and unsupported period have checkable results without network access. The test of passing data to the table and the export uses a substituted adapter response and does not query the portal.
 
-Poza zakresem: zmiana filtrów aplikacji, nowy eksport obejmujący jakość przebiegu, uzupełnianie walut/umów, parser polskich widełek z opisów oraz dostosowanie pozostałych portali. Dostęp live pozostaje osobnym warunkiem inicjatywy i nie blokuje tej zmiany offline.
+Out of scope: changing the application's filters, a new export covering run quality, filling in currencies/contracts, a parser for Polish salary ranges from descriptions, and adapting the other portals. Live access remains a separate condition of the initiative and does not block this offline change.

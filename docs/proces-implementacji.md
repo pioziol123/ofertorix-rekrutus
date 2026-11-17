@@ -1,472 +1,472 @@
-# Proces implementacji zadań przez agentów
+# How agents implement tasks
 
-## Streszczenie
+## Summary
 
-Ten dokument opisuje, jak praca przechodzi od pomysłu do kodu na `main` w projekcie oferty-pracy, gdy kod piszą agenci bez nadzoru. Proces ma dwie fazy oddzielone **hand-offem**:
+This document describes how work moves from an idea to code on `main` in the oferty-pracy project when agents write the code unsupervised. The process has two phases separated by a **hand-off**:
 
-- **przygotowanie**, które właściciel prowadzi razem z agentem `task-prep`;
-- **wykonanie**, które runner (`.sandcastle/runner.ts`) prowadzi samodzielnie: zadanie po zadaniu, w izolowanych kontenerach, z bramką testów, niezależnym review i automatycznym merge'em.
+- **preparation**, which the owner runs together with the `task-prep` agent;
+- **execution**, which the runner (`.sandcastle/runner.ts`) runs on its own: task by task, in isolated containers, with a test gate, an independent review and an automatic merge.
 
-Główna myśl: **decyzje zapadają przed wykonaniem, a automat może tylko zatrzymywać pracę, nigdy jej poszerzać.** Gdy agent trafi na sprzeczność w specyfikacji, nie zatrzymuje się na każdej. Rozstrzyga ją według stałej kolejności pierwszeństwa i zostawia ślad do decyzji właściciela. Zatrzymuje się tylko wtedy, gdy od odpowiedzi zależy reszta epika.
+The main idea: **decisions are made before execution, and the automation can only stop work, never widen it.** When an agent hits a contradiction in the specification, it does not stop at each one. It settles it by a fixed order of precedence and leaves a trace for the owner's decision. It stops only when the rest of the epic depends on the answer.
 
-Dokument służy do odświeżenia wiedzy o procesie i do opowiadania o nim. Umowa wiążąca agentów i runner jest w [docs/agents/implementation-workflow.md](agents/implementation-workflow.md). Gdy oba dokumenty się różnią, rozstrzyga tamten plik i kod runnera.
+The document serves to refresh knowledge of the process and to explain it to others. The contract that binds the agents and the runner is in [docs/agents/implementation-workflow.md](agents/implementation-workflow.md). When the two documents differ, that file and the runner code decide.
 
 ---
 
-## 1. Zasady, na których opiera się proces
+## 1. Principles the process rests on
 
-| Zasada | Co oznacza w praktyce |
+| Principle | What it means in practice |
 |---|---|
-| **Decyzje przed wykonaniem** | Wszystko, co wymaga osądu właściciela, trafia do dokumentów przed hand-offem. Wykonanie tylko je realizuje. |
-| **Automat tylko zawęża** | Runner może zwrócić zadanie, zabrać epik albo zablokować pracę. Oddać epik, zaakceptować założenie czy rozstrzygnąć follow-up może tylko człowiek. Błąd automatu kończy się więc zatrzymaniem, a nie złym kodem. |
-| **Każdy stan ma jednego właściciela** | Agent zapisuje tylko swoją gałąź i plik wyniku. bd, `main` i merge należą wyłącznie do runnera. Agent nie może sam siebie zaliczyć. |
-| **Blokada proporcjonalna** | Sprzeczność w specyfikacji zatrzymuje tylko pracę zależną od odpowiedzi. Lokalne sprawy idą dalej z jawnym śladem. |
-| **Skrypt liczy, agent ocenia** | Wszystko, co da się sprawdzić deterministycznie, sprawdza skrypt. Reviewer dostaje tylko to, czego policzyć się nie da. |
-| **Spójność epika** | Na `main` nie trafia fragment epika, którego reszta może jeszcze zmienić decyzje. |
+| **Decisions before execution** | Everything that needs the owner's judgement goes into the documents before the hand-off. Execution only carries them out. |
+| **The automation only narrows** | The runner can return a task, take back an epic or block work. Only a human can hand an epic over, accept an assumption or settle a follow-up. An automation error therefore ends in a stop, not in bad code. |
+| **Each state has one owner** | The agent writes only its branch and the result file. bd, `main` and the merge belong solely to the runner. The agent cannot pass itself. |
+| **Proportional blocking** | A contradiction in the specification stops only the work that depends on the answer. Local matters go ahead with an explicit trace. |
+| **The script counts, the agent judges** | Everything that can be checked deterministically is checked by a script. The reviewer gets only what cannot be computed. |
+| **Epic consistency** | No part of an epic reaches `main` while the rest of the epic can still change the decisions. |
 
 ---
 
-## 2. Uczestnicy i odpowiedzialności
+## 2. Participants and responsibilities
 
-| Uczestnik | Odpowiada za | Nie robi |
+| Participant | Responsible for | Does not |
 |---|---|---|
-| **Właściciel** (Ty) | decyzje produktowe, wskazanie wymagań nośnych (`load_bearing`), rozstrzyganie follow-upów i założeń, testowanie `main`, push | nie pisze kodu w trakcie wykonania |
-| **task-prep** (skill) | zamiana wejścia w PRD, wymagania, solution design i zadania bd; hand-off i ponowny hand-off epika po zgodzie właściciela | nie implementuje |
-| **Runner** (skrypt) | wybór i claim zadania, piaskownice, sprawdzenia, merge, zapisy w bd, zwroty do przygotowania | nie podejmuje decyzji merytorycznych, nie robi pushu, nie oddaje epika |
-| **Agent implementujący** (skill `implement-task`) | kod, testy, gate, commity, klasyfikacja konfliktów, plik `.agent-result.json` | nie dotyka bd, `main` ani merge'a |
-| **Reviewer** (osobny agent) | ocena diffu względem dokumentów, AC, założeń i odstępstw; plik `.agent-review.json` | nie commituje (runner to sprawdza) |
+| **Owner** (you) | product decisions, naming the load-bearing requirements (`load_bearing`), settling follow-ups and assumptions, testing `main`, push | does not write code during execution |
+| **task-prep** (skill) | turning the input into a PRD, requirements, solution design and bd tasks; the hand-off and a repeat hand-off of the epic after the owner agrees | does not implement |
+| **Runner** (script) | choosing and claiming a task, sandboxes, checks, merge, bd writes, returns to preparation | makes no decisions on substance, does not push, does not hand an epic over |
+| **Implementing agent** (skill `implement-task`) | code, tests, gate, commits, conflict classification, the `.agent-result.json` file | does not touch bd, `main` or the merge |
+| **Reviewer** (separate agent) | assessing the diff against the documents, ACs, assumptions and deviations; the `.agent-review.json` file | does not commit (the runner checks this) |
 
 ---
 
-## 3. Artefakty procesu
+## 3. Process artefacts
 
-### Dokumenty specyfikacji
+### Specification documents
 
-| Dokument | Poziom | Zawiera | Nie zawiera |
+| Document | Level | Contains | Does not contain |
 |---|---|---|---|
-| **PRD** | epik | problem, cele, zakres, etapy | rozwiązań technicznych i szczegółowych wymagań |
-| **Requirements** | zadanie | zachowanie i kryteria akceptacji (AC) ze stabilnymi ID, sposób sprawdzenia każdego AC | bibliotek, nazw plików i funkcji |
-| **Solution design** | zadanie | decyzje techniczne, kontrakty, semantyka danych | konkretnych ścieżek i nazw funkcji (wybiera je implementujący) |
+| **PRD** | epic | problem, goals, scope, stages | technical solutions and detailed requirements |
+| **Requirements** | task | behaviour and acceptance criteria (AC) with stable IDs, how each AC is checked | libraries, file and function names |
+| **Solution design** | task | technical decisions, contracts, data semantics | specific paths and function names (the implementer chooses them) |
 
-Dokumenty epika leżą w `docs/specs/<epik>-<slug>/`, np. `docs/specs/0mq-architektura-modulow/`. Specyfikacje są po polsku.
+An epic's documents live in `docs/specs/<epic>-<slug>/`, e.g. `docs/specs/0mq-architektura-modulow/`. Specifications are in English.
 
-### Zadanie w bd
+### Task in bd
 
-Jedno zadanie to jeden pionowy, demonstrowalny przyrost, który da się przejrzeć za jednym podejściem. Zadanie **wskazuje** dokumenty, ale nie kopiuje ich treści:
+One task is one vertical, demonstrable increment that can be reviewed in one go. A task **points to** the documents, but does not copy their content:
 
-- `metadata.prd`, `metadata.requirements`, `metadata.sd`: ścieżki, opcjonalnie z `#sekcją`;
-- `acceptance_criteria`: jedna linia na kryterium, `AC-ID: obserwowalny wynik`;
-- zależności jako krawędzie bd;
-- **small lane** (`metadata.lane=small`): zmiana bez decyzji behawioralnej i bez zmiany kontraktu, wystarczą PRD i własne AC.
+- `metadata.prd`, `metadata.requirements`, `metadata.sd`: paths, optionally with a `#section`;
+- `acceptance_criteria`: one line per criterion, `AC-ID: observable result`;
+- dependencies as bd edges;
+- **small lane** (`metadata.lane=small`): a change with no behavioural decision and no contract change; the PRD and the task's own ACs are enough.
 
-Zadanie dzielimy, gdy ma zachowania akceptowalne osobno, więcej niż ok. 15 AC albo zmienia publiczny kontrakt więcej niż jednego modułu.
+We split a task when it has behaviours that can be accepted separately, more than about 15 ACs, or when it changes the public contract of more than one module.
 
-### Etykiety
+### Labels
 
-| Etykieta | Znaczenie |
+| Label | Meaning |
 |---|---|
-| `ready-for-agent` | przygotowane; runner może wziąć zadanie (na epiku: epik oddany) |
-| `ready-for-human` | w trakcie implementacji potrzebny jest właściciel; runner pomija, ale epik nie stoi |
-| `needs-info` | brakuje decyzji albo runner zwrócił zadanie; runner pomija, a cały epik czeka |
-| `needs-triage` | nowe znalezisko do oceny (nowy zakres, zadanie z założeniami) |
+| `ready-for-agent` | prepared; the runner may take the task (on an epic: the epic has been handed over) |
+| `ready-for-human` | the owner is needed during implementation; the runner skips it, but the epic does not stall |
+| `needs-info` | a decision is missing or the runner returned the task; the runner skips it, and the whole epic waits |
+| `needs-triage` | a new finding to assess (new scope, a task with assumptions) |
 
-### Metadane, które czyta i zapisuje runner
+### Metadata the runner reads and writes
 
-| Gdzie | Klucz | Kto ustawia | Znaczenie |
+| Where | Key | Who sets it | Meaning |
 |---|---|---|---|
-| epik | `load_bearing` | przygotowanie | ID wymagań i AC, na których stoi epik; konflikt na nich nie może zostać odroczony |
-| epik | `follow_ups` | runner | `true`, gdy zostały otwarte już tylko follow-upy |
-| zadanie | `type=follow-up`, `marker`, `origin` | runner | follow-up z odstępstwa: jego znacznik w kodzie i zadanie źródłowe |
-| zadanie | `type=assumptions`, `epic` | runner | zadanie triage zbierające założenia agentów dla epika |
+| epic | `load_bearing` | preparation | IDs of the requirements and ACs the epic rests on; a conflict on them cannot be deferred |
+| epic | `follow_ups` | runner | `true` when only follow-ups remain open |
+| task | `type=follow-up`, `marker`, `origin` | runner | a follow-up from a deviation: its marker in the code and the source task |
+| task | `type=assumptions`, `epic` | runner | the triage task that collects the agents' assumptions for the epic |
 
-### Ślady wykonania
+### Execution traces
 
-- **Gałąź** `<epik>-<zadanie>-<slug>`, np. `0mq-1-ujednolicic-interfejs-konektorow-zrodel-ofert`. Po porażce zostaje do wglądu.
-- **`.agent-result.json`**: status, podsumowanie, dowody dla AC, założenia, odstępstwa i nowy zakres.
-- **`.agent-review.json`**: werdykt i uwagi reviewera.
-- **Znacznik w kodzie** `FOLLOW-UP(<id zadania>/DEV-<n>)` w każdym miejscu kodu tymczasowego.
-- **Logi** w `.sandcastle/logs/`: osobny log implementacji, log bramki z review i `runner.log`.
+- **Branch** `<epic>-<task>-<slug>`, e.g. `0mq-1-ujednolicic-interfejs-konektorow-zrodel-ofert`. After a failure it stays for inspection.
+- **`.agent-result.json`**: status, summary, evidence for the ACs, assumptions, deviations and new scope.
+- **`.agent-review.json`**: the reviewer's verdict and remarks.
+- **Code marker** `FOLLOW-UP(<task id>/DEV-<n>)` at every place of temporary code.
+- **Logs** in `.sandcastle/logs/`: a separate implementation log, a gate-and-review log and `runner.log`.
 
 ---
 
-## 4. Przebieg procesu
+## 4. Process flow
 
 ```mermaid
 flowchart LR
-  A[Wejście: epik, ticket, dokument, prośba] --> B[Przygotowanie z task-prep]
+  A[Input: epic, ticket, document, request] --> B[Preparation with task-prep]
   B --> C{Readiness checklist}
-  C -- nie --> B
-  C -- tak --> D[Hand-off: ready-for-agent]
-  D --> E[Runner: wybór i claim]
-  E --> F[Implementacja w ciepłej piaskownicy]
-  F --> G[Kontrola runnera]
-  G -- porażka --> F
-  G -- OK --> H[Gate + review w świeżej piaskownicy]
+  C -- no --> B
+  C -- yes --> D[Hand-off: ready-for-agent]
+  D --> E[Runner: choice and claim]
+  E --> F[Implementation in a warm sandbox]
+  F --> G[Runner check]
+  G -- failure --> F
+  G -- OK --> H[Gate + review in a fresh sandbox]
   H -- fail --> F
-  H -- pass --> I[Merge ff-only, zapis w bd, close]
-  F -. blocked / 3 tury / konflikt .-> J[Zwrot: needs-info]
+  H -- pass --> I[Merge ff-only, bd write, close]
+  F -. blocked / 3 rounds / conflict .-> J[Return: needs-info]
   J --> B
-  I --> K[Właściciel: test main, triage, push]
+  I --> K[Owner: test main, triage, push]
 ```
 
-### Etap 1. Przygotowanie
+### Stage 1. Preparation
 
-- **Wejście:** cokolwiek: epik w bd, ticket, dokument, prośba na czacie.
-- **Czynności:** `task-prep` z właścicielem pisze PRD, wymagania i solution design, tnie pracę na zadania, nadaje AC ze stabilnymi ID i podpina zależności.
-- **Kryterium wyjścia (readiness checklist):**
-  - każdy podlinkowany dokument istnieje na `main`, a kotwice się rozwiązują;
-  - każde AC jest obserwowalne i mówi, jak je sprawdzić;
-  - solution design opisuje kontrakty na tyle dokładnie, że nie trzeba zgadywać;
-  - żadne otwarte pytanie nie blokuje; nieblokujące założenia są zapisane w dokumentach;
-  - zależności są podpięte w bd.
+- **Input:** anything: an epic in bd, a ticket, a document, a request in chat.
+- **Activities:** `task-prep` with the owner writes the PRD, requirements and solution design, cuts the work into tasks, assigns ACs with stable IDs and wires the dependencies.
+- **Exit criterion (readiness checklist):**
+  - every linked document exists on `main`, and the anchors resolve;
+  - every AC is observable and says how to check it;
+  - the solution design describes the contracts precisely enough that no guessing is needed;
+  - no open question blocks; non-blocking assumptions are recorded in the documents;
+  - the dependencies are wired in bd.
 
-### Etap 2. Hand-off
+### Stage 2. Hand-off
 
-- **Zadanie poza epikiem:** właściciel nadaje mu `ready-for-agent`.
-- **Epik oddaje się w całości.** `ready-for-agent` na epiku pojawia się dopiero wtedy, gdy każde otwarte dziecko ma `ready-for-agent` albo `ready-for-human`. Do tego czasu runner nie weźmie żadnego zadania z epika, nawet gotowego.
-- **Przy hand-offie epika** właściciel wskazuje `load_bearing`: decyzje, na których buduje reszta epika (wspólny model statusów, kontrakty między modułami, limity).
+- **Task outside an epic:** the owner gives it `ready-for-agent`.
+- **An epic is handed over as a whole.** `ready-for-agent` appears on the epic only when every open child has `ready-for-agent` or `ready-for-human`. Until then the runner takes no task from the epic, even a ready one.
+- **At an epic's hand-off** the owner names `load_bearing`: the decisions the rest of the epic builds on (a shared status model, contracts between modules, limits).
 
-### Etap 3. Wykonanie (runner, bez nadzoru)
+### Stage 3. Execution (runner, unsupervised)
 
-Runner uruchamia się z głównego checkoutu, na czystym `main`:
+The runner starts from the main checkout, on a clean `main`:
 
-- `node .sandcastle/runner.ts --dry-run`: pokazuje kandydatów i werdykt gotowości, niczego nie zapisuje;
-- `node .sandcastle/runner.ts --once`: przetwarza najwyżej jedno zadanie;
-- bez `--once` sprawdza kolejkę co `--interval` minut (domyślnie 5);
-- `--task <id>`, `--model` (domyślnie `claude-opus-5-5`), `--effort` (domyślnie `medium`) i `--rebuild-image` nadpisują domyślne ustawienia.
+- `node .sandcastle/runner.ts --dry-run`: shows the candidates and the readiness verdict, writes nothing;
+- `node .sandcastle/runner.ts --once`: processes at most one task;
+- without `--once` it checks the queue every `--interval` minutes (default 5);
+- `--task <id>`, `--model` (default `claude-opus-5-5`), `--effort` (default `medium`) and `--rebuild-image` override the defaults.
 
-#### 3.1. Przed każdym przebiegiem: uzgodnienie epików
+#### 3.1. Before each pass: reconciling epics
 
-Runner aktualizuje stan każdego oddanego epika na podstawie jego dzieci (szczegóły w rozdziale 7).
+The runner updates the state of each handed-over epic based on its children (details in chapter 7).
 
-#### 3.2. Wybór zadania
+#### 3.2. Choosing a task
 
-1. Kandydaci to `bd ready` z etykietą `ready-for-agent`, bez `ready-for-human` i `needs-info`, z pominięciem epików.
-2. **Kontrola epika:** najbliższy epik nad zadaniem ma `ready-for-agent`, a żadne jego otwarte dziecko nie jest nieoznaczone ani w `needs-info`. Follow-upy są z tej kontroli wyłączone.
-3. **Deterministyczna kontrola gotowości:** wymagane linki w metadanych istnieją i ich pliki są na `main`, a `acceptance_criteria` nie jest puste. Jeśli nie, zadanie wraca jako `needs-info`.
-4. Claim zadania w bd. Gdy na `main` zmienił się `pnpm-lock.yaml` albo `.sandcastle/Dockerfile`, runner najpierw przebudowuje obraz piaskownicy.
+1. The candidates are `bd ready` with the label `ready-for-agent`, without `ready-for-human` and `needs-info`, skipping epics.
+2. **Epic check:** the nearest epic above the task has `ready-for-agent`, and none of its open children is unlabelled or in `needs-info`. Follow-ups are excluded from this check.
+3. **Deterministic readiness check:** the required links in the metadata exist and their files are on `main`, and `acceptance_criteria` is not empty. If not, the task goes back as `needs-info`.
+4. Claiming the task in bd. When `pnpm-lock.yaml` or `.sandcastle/Dockerfile` changed on `main`, the runner first rebuilds the sandbox image.
 
-#### 3.3. Implementacja w ciepłej piaskownicy
+#### 3.3. Implementation in a warm sandbox
 
-- Runner zapamiętuje SHA `main` i tworzy gałąź zadania z `main` w kontenerze Docker. Kontener ma toolchain, PostgreSQL z migracjami i Claude Code. Widzi tylko swój worktree: nie widzi Twojej bazy, Dockera ani plików spoza repo.
-- Agent dostaje zadanie, linki do dokumentów i **brief epika**: listę `load_bearing` oraz otwarte follow-upy, na których kodzie nie wolno budować.
-- Agent pracuje według skilli `implement-task`, `tdd` i `write-documents`. Na koniec sam uruchamia `scripts/gate.sh`, commituje i zapisuje `.agent-result.json`.
+- The runner records the `main` SHA and creates the task branch from `main` in a Docker container. The container has the toolchain, PostgreSQL with migrations and Claude Code. It sees only its own worktree: it does not see your database, Docker or files outside the repo.
+- The agent gets the task, links to the documents and the **epic brief**: the `load_bearing` list and the open follow-ups whose code must not be built on.
+- The agent works by the skills `implement-task`, `tdd` and `write-documents`. At the end it runs `scripts/gate.sh` itself, commits and writes `.agent-result.json`.
 
-#### 3.4. Kontrola runnera w tej samej piaskownicy
+#### 3.4. Runner check in the same sandbox
 
-Runner sprawdza po kolei:
+The runner checks in order:
 
-1. `main` się nie przesunął (piaskownica ma zapis do współdzielonych danych gita); jeśli się przesunął, runner go przywraca i przerywa;
-2. plik wyniku istnieje; status `blocked` kończy pracę od razu;
-3. worktree jest czysty, a gałąź ma commity;
-4. gałąź rebase'uje się czysto na `main`;
-5. kształt wyniku i odstępstwa przechodzą kontrole deterministyczne (rozdział 8);
-6. gate przechodzi.
+1. `main` has not moved (the sandbox has write access to the shared git data); if it has moved, the runner restores it and aborts;
+2. the result file exists; the status `blocked` ends the work at once;
+3. the worktree is clean, and the branch has commits;
+4. the branch rebases cleanly onto `main`;
+5. the shape of the result and the deviations pass the deterministic checks (chapter 8);
+6. the gate passes.
 
-#### 3.5. Weryfikacja w świeżej piaskownicy
+#### 3.5. Verification in a fresh sandbox
 
-- Runner robi kopię gałęzi i nową piaskownicę. Liczy się tylko to, co zostało zacommitowane.
-- Gate uruchamia się jeszcze raz. To łapie sytuację „u mnie działa”, czyli niezacommitowane pliki albo stan bazy.
-- Reviewer czyta dokumenty w całości, diff, AC, założenia i odstępstwa, po czym zapisuje werdykt:
-  - `pass`: wszystko spełnione, brak odstępstw;
-  - `pass-with-deferral`: wszystko spełnione poza odroczonymi AC, każde odstępstwo zaakceptowane;
-  - `fail`: lista uwag.
-- **Werdykt musi dokładnie pasować do wyniku:** z odstępstwami wymagany jest `pass-with-deferral`, bez odstępstw `pass`. Każdy inny werdykt to porażka. Commit reviewera na gałęzi też jest porażką.
+- The runner makes a copy of the branch and a new sandbox. Only what has been committed counts.
+- The gate runs once more. This catches the "works on my machine" situation, i.e. uncommitted files or database state.
+- The reviewer reads the documents in full, the diff, the ACs, the assumptions and the deviations, and then writes a verdict:
+  - `pass`: everything met, no deviations;
+  - `pass-with-deferral`: everything met except the deferred ACs, every deviation accepted;
+  - `fail`: a list of remarks.
+- **The verdict must match the result exactly:** with deviations `pass-with-deferral` is required, without deviations `pass`. Any other verdict is a failure. A reviewer commit on the branch is also a failure.
 
-#### 3.6. Pętla poprawek
+#### 3.6. Fix loop
 
-- Każda porażka z kroków 3.4 i 3.5 wraca jako raport **do tej samej sesji agenta** (Sandcastle resume), więc agent zachowuje kontekst.
-- Limit to **3 tury poprawek**, wspólny dla wszystkich rodzajów porażek: padnięty gate, brak wyniku, fail review.
-- Bez tur poprawek, od razu do zwrotu, kończą pracę: `blocked`, konflikt rebase'u, przesunięty `main` i commit reviewera.
+- Every failure from steps 3.4 and 3.5 goes back as a report **to the same agent session** (Sandcastle resume), so the agent keeps its context.
+- The limit is **3 fix rounds**, shared by all kinds of failure: a failed gate, a missing result, a review fail.
+- These end the work with no fix rounds, going straight to a return: `blocked`, a rebase conflict, a moved `main` and a reviewer commit.
 
-#### 3.7. Zakończenie
+#### 3.7. Completion
 
-**Sukces:**
-1. `merge --ff-only` gałęzi do `main`, o ile główny checkout jest na `main` i nie ma niezacommitowanych zmian w śledzonych plikach (eksport `.beads` się nie liczy);
-2. komentarz w zadaniu: podsumowanie, dowody dla AC, założenia i znane odstępstwa;
-3. dla każdego odstępstwa follow-up jako dziecko epika (`needs-info`, `type=follow-up`, `marker`, `origin`, `discovered-from`), podpięty jako bloker zadań, które wspominają jego ID;
-4. założenia dopisane do zadania triage epika (rozdział 5.6);
-5. nowy zakres jako zadania `needs-triage` z `discovered-from`;
-6. zamknięcie zadania i usunięcie gałęzi.
+**Success:**
+1. `merge --ff-only` of the branch into `main`, provided the main checkout is on `main` and has no uncommitted changes in tracked files (the `.beads` export does not count);
+2. a comment on the task: summary, evidence for the ACs, assumptions and known deviations;
+3. for each deviation a follow-up as a child of the epic (`needs-info`, `type=follow-up`, `marker`, `origin`, `discovered-from`), wired as a blocker of the tasks that mention its ID;
+4. assumptions added to the epic's triage task (section 5.6);
+5. new scope as `needs-triage` tasks with `discovered-from`;
+6. closing the task and deleting the branch.
 
-**Porażka (zwrot do przygotowania):** zadanie traci `ready-for-agent`, dostaje `needs-info` i komentarz z powodem. Zostaje odclaimowane, a gałąź zostaje do wglądu. **Cały epik czeka**, aż przygotowanie to rozwiąże.
+**Failure (return to preparation):** the task loses `ready-for-agent`, gets `needs-info` and a comment with the reason. It is unclaimed, and the branch stays for inspection. **The whole epic waits** until preparation resolves it.
 
-Runner nigdy nie robi pushu ani synchronizacji Dolt.
+The runner never pushes or runs a Dolt sync.
 
-### Etap 4. Po merge'u (właściciel)
+### Stage 4. After the merge (owner)
 
-- Testujesz `main`. Otwarte follow-upy epika to lista **znanych i zamierzonych** różnic, a nie bugi.
-- Defekt znaleziony na `main` to nowy bug z `discovered-from` do zadania źródłowego, który przechodzi przez przygotowanie.
-- Przed pushem przeglądasz otwarte follow-upy epika i jego zadanie z założeniami, zaczynając od założeń oznaczonych jako load-bearing.
+- You test `main`. The epic's open follow-ups are a list of **known and intended** differences, not bugs.
+- A defect found on `main` is a new bug with `discovered-from` pointing to the source task, and it goes through preparation.
+- Before pushing you review the epic's open follow-ups and its assumptions task, starting with the assumptions marked as load-bearing.
 
 ---
 
-## 5. Ścieżka wyjątków: konflikty w specyfikacji
+## 5. Exception path: conflicts in the specification
 
-Konflikt w specyfikacji to luka albo sprzeczność w dokumentach, którą agent odkrywa w trakcie pracy. Proces nie zatrzymuje się na każdym takim konflikcie, ale też nie pozwala agentowi rozstrzygnąć go po cichu.
+A conflict in the specification is a gap or a contradiction in the documents that an agent discovers while working. The process does not stop at every such conflict, but it does not let the agent settle it silently either.
 
-### 5.1. Klasyfikacja odkryć
+### 5.1. Classifying findings
 
-| Odkrycie | Co robi agent |
+| Finding | What the agent does |
 |---|---|
-| defekt kodu w ramach zadania | naprawia go w zadaniu |
-| konflikt w specyfikacji | klasyfikuje według drzewa (5.3): założenie, odstępstwo albo `blocked` |
-| nowy zakres poza zadaniem | zapisuje w `new_scope`; runner zakłada zadanie `needs-triage` |
+| a code defect within the task | fixes it in the task |
+| a conflict in the specification | classifies it by the tree (5.3): assumption, deviation or `blocked` |
+| new scope outside the task | records it in `new_scope`; the runner creates a `needs-triage` task |
 
-### 5.2. Kolejność pierwszeństwa (precedence)
+### 5.2. Order of precedence
 
-Gdy wymagania ciągną w różne strony, tymczasowy wybór idzie zawsze w tej kolejności:
+When requirements pull in different directions, the interim choice always follows this order:
 
-1. **niezmienniki i twarde limity:** limity czasu i rozmiaru, bezpieczeństwo danych, security;
-2. **istniejące zachowanie:** bez regresji tego, co aplikacja robi dziś;
-3. **nowe zachowanie** wprowadzane przez zadanie.
+1. **invariants and hard limits:** time and size limits, data safety, security;
+2. **existing behaviour:** no regression of what the application does today;
+3. **new behaviour** introduced by the task.
 
-Sformułowania „najwyżej N” i „do X s” to górne granice, które mają obowiązywać jednocześnie, a nie obowiązek osiągnięcia granicy.
+Phrases such as "at most N" and "up to X s" are upper bounds that must all hold at the same time, not an obligation to reach the bound.
 
-### 5.3. Drzewo decyzyjne
+### 5.3. Decision tree
 
-Agent przechodzi pytania po kolei i zatrzymuje się na pierwszym, które rozstrzyga:
+The agent goes through the questions in order and stops at the first one that decides:
 
 ```mermaid
 flowchart TD
-  Q1{"1. Czy przy jednej interpretacji wybranej wg precedence spełnione są WSZYSTKIE AC?"}
-  Q1 -- tak --> ASM[Założenie]
-  Q1 -- nie --> Q2{"2. Czy konflikt dotyka load_bearing?"}
-  Q2 -- tak --> BL[blocked]
-  Q2 -- nie --> Q3{"3. Czy kod tymczasowy byłby jednokierunkowy? schemat, znaczenie danych, publiczny kontrakt, integracja, security"}
-  Q3 -- tak --> BL
-  Q3 -- nie --> Q4{"4. Czy nie ma wariantu, w którym epik zostaje spójny?"}
-  Q4 -- tak --> BL
-  Q4 -- nie --> Q5{"5. Czy odstępstwo się kwalifikuje i mieści w limitach?"}
-  Q5 -- tak --> DEV[Odstępstwo + follow-up]
-  Q5 -- nie --> BL
+  Q1{"1. Under one interpretation chosen by precedence, are ALL ACs met?"}
+  Q1 -- yes --> ASM[Assumption]
+  Q1 -- no --> Q2{"2. Does the conflict touch load_bearing?"}
+  Q2 -- yes --> BL[blocked]
+  Q2 -- no --> Q3{"3. Would the temporary code be one-way? schema, data meaning, public contract, integration, security"}
+  Q3 -- yes --> BL
+  Q3 -- no --> Q4{"4. Is there no variant in which the epic stays consistent?"}
+  Q4 -- yes --> BL
+  Q4 -- no --> Q5{"5. Does the deviation qualify and fit within the limits?"}
+  Q5 -- yes --> DEV[Deviation + follow-up]
+  Q5 -- no --> BL
 ```
 
-**Ważny niuans kolejności:** pytanie 1 pada przed pytaniem 2. Założenie może więc dotyczyć wymagania z `load_bearing`, jeśli spełnia wszystkie AC. Takie założenie dostaje jednak ostrzejsze review i flagę w zadaniu triage (5.6), bo reszta epika buduje na tej interpretacji.
+**An important nuance of the order:** question 1 comes before question 2. An assumption may therefore concern a requirement from `load_bearing` if it meets all ACs. Such an assumption, however, gets a stricter review and a flag in the triage task (5.6), because the rest of the epic builds on this interpretation.
 
-### 5.4. Trzy wyniki
+### 5.4. Three outcomes
 
-| | Założenie | Odstępstwo (deviation) | Blocked |
+| | Assumption | Deviation | Blocked |
 |---|---|---|---|
-| **AC** | wszystkie spełnione | część świadomie odroczona | — |
-| **Warunki** | zgodne z precedence, lokalnie odwracalne, **pokryte testem przypadku, na którym się opiera** | kwalifikacja i limity (5.5) | — |
-| **Kod** | normalny | tymczasowy, ze znacznikiem `FOLLOW-UP(...)` | brak merge'a |
-| **Werdykt review** | `pass` | `pass-with-deferral` | — |
-| **Ślad w bd** | wpis w zadaniu triage z założeniami | follow-up jako dziecko epika, blokujący zadania zależne | zadanie w `needs-info`, epik stoi |
-| **Kto i kiedy decyduje** | właściciel, asynchronicznie, w solution design | właściciel, przez przygotowanie follow-upu | właściciel, zanim praca pójdzie dalej |
+| **AC** | all met | some deliberately deferred | — |
+| **Conditions** | consistent with precedence, locally reversible, **covered by a test of the case it relies on** | qualification and limits (5.5) | — |
+| **Code** | normal | temporary, with a `FOLLOW-UP(...)` marker | no merge |
+| **Review verdict** | `pass` | `pass-with-deferral` | — |
+| **Trace in bd** | an entry in the triage task with assumptions | a follow-up as a child of the epic, blocking dependent tasks | task in `needs-info`, the epic stalls |
+| **Who decides and when** | the owner, asynchronously, in the solution design | the owner, by preparing the follow-up | the owner, before work goes on |
 
-**Przykład założenia:** jedno wymaganie każe sortować listę po dacie, drugie stawia przypięte elementy na górze. Przypięte najpierw, a każda grupa po dacie, spełnia oba.
+**Example of an assumption:** one requirement says to sort the list by date, another puts pinned items at the top. Pinned first, and each group by date, meets both.
 
-**Przykład odstępstwa:** wspólna reguła mówi, że każdy eksport zawiera rekordy archiwalne, a AC zadania zabrania zmiany dzisiejszego eksportu dla jednego klienta. Precedence każe zachować dzisiejszy eksport, więc wspólna reguła dla tego klienta trafia do follow-upu.
+**Example of a deviation:** a shared rule says every export contains archived records, and the task's AC forbids changing today's export for one client. Precedence says to keep today's export, so the shared rule for this client goes to a follow-up.
 
-### 5.5. Kiedy odstępstwo się kwalifikuje
+### 5.5. When a deviation qualifies
 
-**Rodzaj** to jedno z:
-- sprzeczność między najwyżej dwoma wymaganiami;
-- jedno niedookreślone wymaganie bez wpływu na inne;
-- zależność od niezrobionego zadania, z tymczasową łatką albo wymaganiem niespełnionym do tego czasu.
+**The kind** is one of:
+- a contradiction between at most two requirements;
+- one underspecified requirement with no effect on others;
+- a dependency on an unfinished task, with a temporary patch or a requirement left unmet until then.
 
-**Wszystkie warunki muszą być spełnione:**
-- sprawa jest lokalna dla jednego modułu i dotyczy jednego wymagania (w wyniku 1–2 ID);
-- kod tymczasowy jest odizolowany, więc follow-up podmienia go bez przeróbek gdzie indziej;
-- zmiana dotyka najwyżej 3 plików, nie licząc jednolinijkowych zmian;
-- co najmniej jedno AC jest spełnione, a odroczone nie są głównym wynikiem zadania;
-- najwyżej 2 inne otwarte zadania epika wspominają te ID (stają się zablokowane przez follow-up).
+**All conditions must hold:**
+- the matter is local to one module and concerns one requirement (1–2 IDs in the result);
+- the temporary code is isolated, so the follow-up replaces it without rework elsewhere;
+- the change touches at most 3 files, not counting one-line changes;
+- at least one AC is met, and the deferred ones are not the main result of the task;
+- at most 2 other open tasks of the epic mention these IDs (they become blocked by the follow-up).
 
-**Limity:** najwyżej 2 odstępstwa na zadanie i najwyżej 3 otwarte follow-upy na epik. Po przekroczeniu zadanie kończy się jako `blocked`.
+**Limits:** at most 2 deviations per task and at most 3 open follow-ups per epic. Beyond that the task ends as `blocked`.
 
-### 5.6. Co zostaje po konflikcie
+### 5.6. What remains after a conflict
 
-- **Kod tymczasowy:** znacznik `FOLLOW-UP(<id>/DEV-<n>)` w komentarzu w każdym miejscu, które follow-up zmieni. Test tymczasowego zachowania ma znacznik w nazwie, a `it.todo` opisuje zachowanie docelowe.
-- **Opis follow-upu** (skill `write-documents`, dla osoby bez kontekstu):
-  - kontekst biznesowy i zacytowany konflikt z ID;
-  - obecne zachowanie z `plik:linia`;
-  - decyzja tymczasowa i dlaczego jest bezpieczna;
-  - dlaczego follow-up, a nie blokada;
-  - warianty docelowe z kompromisami, decyzja do podjęcia, znacznik i sposób weryfikacji.
-- **Założenie** w wyniku: wymagania, luka, decyzja, zastosowana reguła, skutek odwrócenia decyzji i test.
-- **Zadanie triage z założeniami:** jedno na epik, `type=assumptions`, `needs-triage`. Leży poza epikiem, więc niczego nie blokuje. Założenia na `load_bearing` są w nim pogrubione z dopiskiem „confirm it first”.
-- **Kolejne zadania epika** dostają otwarte follow-upy w prompcie i nie budują na kodzie tymczasowym. Gdy muszą go dotknąć, zostawiają znacznik i zgłaszają miejsce przez `new_scope`.
+- **Temporary code:** a `FOLLOW-UP(<id>/DEV-<n>)` marker in a comment at every place the follow-up will change. A test of the temporary behaviour has the marker in its name, and an `it.todo` describes the target behaviour.
+- **Follow-up description** (skill `write-documents`, for a person without context):
+  - the business context and the quoted conflict with IDs;
+  - the current behaviour with `file:line`;
+  - the interim decision and why it is safe;
+  - why a follow-up and not a block;
+  - the target variants with trade-offs, the decision to be made, the marker and how to verify.
+- **Assumption** in the result: the requirements, the gap, the decision, the rule applied, the effect of reversing the decision and the test.
+- **Triage task with assumptions:** one per epic, `type=assumptions`, `needs-triage`. It sits outside the epic, so it blocks nothing. Assumptions on `load_bearing` are in bold in it, with the note "confirm it first".
+- **Later tasks of the epic** get the open follow-ups in their prompt and do not build on temporary code. When they must touch it, they leave a marker and report the place through `new_scope`.
 
-### 5.7. Czego follow-up nie obejmuje
+### 5.7. What a follow-up does not cover
 
-Zmiana wymagania, która zmieniłaby wynik epika, nie jest follow-upem. Epik kończy się w spójnym wariancie, a zmianę przygotowuje się jako nowy epik.
+A requirement change that would change the epic's result is not a follow-up. The epic ends in a consistent variant, and the change is prepared as a new epic.
 
 ---
 
-## 6. Cykl życia zadania
+## 6. Task life cycle
 
 ```mermaid
 stateDiagram-v2
-  state "Przygotowanie" as Prep
-  state "Gotowe (ready-for-agent)" as Ready
-  state "Dla człowieka (ready-for-human)" as Human
-  state "W trakcie (claim)" as Work
-  state "Zamknięte" as Closed
-  state "Zwrócone (needs-info)" as Back
-  [*] --> Prep: utworzone
+  state "Preparation" as Prep
+  state "Ready (ready-for-agent)" as Ready
+  state "For a human (ready-for-human)" as Human
+  state "In progress (claim)" as Work
+  state "Closed" as Closed
+  state "Returned (needs-info)" as Back
+  [*] --> Prep: created
   Prep --> Ready: hand-off
-  Prep --> Human: wymaga właściciela
-  Ready --> Work: claim runnera
+  Prep --> Human: needs the owner
+  Ready --> Work: runner claim
   Work --> Closed: merge + close
-  Work --> Back: blocked / 3 tury / rebase / main się ruszył
-  Back --> Prep: właściciel rozstrzyga
-  Human --> Closed: właściciel zamyka
+  Work --> Back: blocked / 3 rounds / rebase / main moved
+  Back --> Prep: owner decides
+  Human --> Closed: owner closes
   Closed --> [*]
 ```
 
-Follow-up przechodzi ten sam cykl: rodzi się w `needs-info`, przechodzi przygotowanie (decyzja, aktualizacja dokumentów, AC obejmujące usunięcie znaczników) i dostaje `ready-for-agent`.
+A follow-up goes through the same cycle: it is born in `needs-info`, goes through preparation (decision, document update, ACs that cover removing the markers) and gets `ready-for-agent`.
 
 ---
 
-## 7. Cykl życia epika
+## 7. Epic life cycle
 
-Przed każdym przebiegiem runner uzgadnia stan każdego oddanego epika:
+Before each pass the runner reconciles the state of each handed-over epic:
 
-- `follow_ups=true` ustawia, gdy wszystkie dzieci poza follow-upami są zamknięte albo odroczone, a jakiś follow-up jest otwarty; w przeciwnym razie usuwa ten klucz;
-- gdy ta faza się zaczyna, a któryś follow-up nie ma jeszcze `ready-for-agent`, runner **zabiera epik**: zdejmuje `ready-for-agent` i nadaje `needs-info`.
+- it sets `follow_ups=true` when all children other than follow-ups are closed or deferred and some follow-up is open; otherwise it removes this key;
+- when this phase begins and some follow-up does not yet have `ready-for-agent`, the runner **takes back the epic**: it removes `ready-for-agent` and adds `needs-info`.
 
 ```mermaid
 stateDiagram-v2
-  state "Przygotowanie" as Prep
-  state "Oddany (ready-for-agent)" as Handed
-  state "Faza follow-upów (follow_ups=true)" as FU
-  state "Zabrany (needs-info, follow_ups=true)" as Taken
-  state "Pauza (bez ready-for-agent)" as Paused
-  state "Zakończony" as Done
+  state "Preparation" as Prep
+  state "Handed over (ready-for-agent)" as Handed
+  state "Follow-up phase (follow_ups=true)" as FU
+  state "Taken back (needs-info, follow_ups=true)" as Taken
+  state "Paused (no ready-for-agent)" as Paused
+  state "Done" as Done
   [*] --> Prep
-  Prep --> Handed: hand-off, wszystkie dzieci gotowe
-  Handed --> Handed: zadania się zamykają, powstają follow-upy
-  Handed --> FU: zostały same follow-upy, wszystkie gotowe
-  Handed --> Taken: zostały same follow-upy, któryś nierozstrzygnięty
-  Taken --> FU: task-prep oddaje ponownie po zgodzie właściciela
-  FU --> Taken: follow-up utworzył nierozstrzygnięty follow-up
-  FU --> Done: wszystkie follow-upy zamknięte
-  Handed --> Paused: właściciel zdejmuje ready-for-agent
-  Paused --> Handed: ponowny hand-off
+  Prep --> Handed: hand-off, all children ready
+  Handed --> Handed: tasks close, follow-ups are created
+  Handed --> FU: only follow-ups remain, all ready
+  Handed --> Taken: only follow-ups remain, one unresolved
+  Taken --> FU: task-prep hands over again after the owner agrees
+  FU --> Taken: a follow-up created an unresolved follow-up
+  FU --> Done: all follow-ups closed
+  Handed --> Paused: owner removes ready-for-agent
+  Paused --> Handed: repeat hand-off
   Done --> [*]
 ```
 
-Kluczowa asymetria: **runner tylko zabiera epik, nigdy go nie oddaje.** Ponowne oddanie zawsze przechodzi przez właściciela i `task-prep`. Zdjęcie `ready-for-agent` pauzuje epik w dowolnej fazie.
+The key asymmetry: **the runner only takes an epic back, it never hands it over.** Handing it over again always goes through the owner and `task-prep`. Removing `ready-for-agent` pauses the epic in any phase.
 
-Inne zachowania epika:
-- `needs-info` na którymkolwiek dziecku zatrzymuje pozostałe zadania epika;
-- `ready-for-human` nie zatrzymuje epika, ale zadania od niego zależne czekają w bd;
-- otwarty follow-up trzyma epik otwartym, ale nie pauzuje jego zwykłych zadań;
-- epik z otwartymi follow-upami nie jest skończony.
+Other epic behaviours:
+- `needs-info` on any child stops the epic's other tasks;
+- `ready-for-human` does not stop the epic, but the tasks that depend on it wait in bd;
+- an open follow-up keeps the epic open, but does not pause its regular tasks;
+- an epic with open follow-ups is not finished.
 
 ---
 
-## 8. Punkty kontrolne: co sprawdza skrypt, a co reviewer
+## 8. Checkpoints: what the script checks and what the reviewer checks
 
-| Skrypt (deterministycznie) | Reviewer (osąd) |
+| Script (deterministic) | Reviewer (judgement) |
 |---|---|
-| linki w metadanych i ich pliki na `main`, niepuste AC | czy każde wymaganie jest zrealizowane, a kontrakty zgodne z solution design |
-| `main` nieruszony, wynik obecny, czysty worktree, są commity, czysty rebase | czy nie ma zachowania, o które nikt nie prosił |
-| kształt wyniku | czy założenie naprawdę spełnia wszystkie AC i ma test swojego przypadku |
-| limity odstępstw i follow-upów, 1–2 ID na odstępstwo | czy założenie na `load_bearing` nie ustala znaczenia wymagania dla reszty epika |
-| odroczone AC należą do zadania, nie wszystkie, żadne z `load_bearing` | czy odstępstwo się kwalifikuje i czy nie powinno być wcześniejszym krokiem drzewa |
-| każde AC ma dowód albo odroczenie | czy wybór tymczasowy idzie zgodnie z precedence |
-| znacznik dodany w liniach `+` diffu zadania | czy opis follow-upu jest zrozumiały bez kontekstu |
-| ≤2 inne otwarte zadania wspominają ID odstępstwa (także wewnątrz zakresów typu `F2-01–F2-05`) | czy ID odstępstwa obejmują wszystkie dotknięte reguły epika |
-| gate w obu piaskownicach, dokładny werdykt | czy diff nie buduje na kodzie tymczasowym innego follow-upu |
+| links in the metadata and their files on `main`, non-empty ACs | whether every requirement is implemented and the contracts match the solution design |
+| `main` untouched, result present, clean worktree, commits exist, clean rebase | whether there is behaviour nobody asked for |
+| shape of the result | whether an assumption really meets all ACs and has a test of its case |
+| limits on deviations and follow-ups, 1–2 IDs per deviation | whether an assumption on `load_bearing` fixes the meaning of a requirement for the rest of the epic |
+| deferred ACs belong to the task, not all of them, none from `load_bearing` | whether a deviation qualifies and whether it should not be an earlier step of the tree |
+| every AC has evidence or a deferral | whether the interim choice follows precedence |
+| marker added in the `+` lines of the task's diff | whether the follow-up description is understandable without context |
+| ≤2 other open tasks mention the deviation ID (also inside ranges such as `F2-01–F2-05`) | whether the deviation IDs cover all affected rules of the epic |
+| gate in both sandboxes, exact verdict | whether the diff builds on another follow-up's temporary code |
 
-Nieudana kontrola skryptu wraca do agenta jako feedback, tak samo jak fail review.
-
----
-
-## 9. Czynności właściciela
-
-**Przy hand-offie epika**
-1. Upewnij się, że każde otwarte dziecko ma `ready-for-agent` albo `ready-for-human`.
-2. Wskaż `load_bearing`. Pytanie pomocnicze: na interpretacji których wymagań oprze się więcej niż jedno zadanie?
-3. Sprawdź `node .sandcastle/runner.ts --dry-run`.
-
-**Po przebiegu runnera**
-1. Zadania zamknięte: komentarz z dowodami, założeniami i odstępstwami.
-2. Zadania w `needs-info`: komentarz z powodem i zachowana gałąź. Rozstrzygnij w przygotowaniu, potem przywróć `ready-for-agent`.
-3. Nowe zadania `needs-triage`: oceń nowy zakres.
-
-**Triage założeń**
-1. Zacznij od założeń oznaczonych jako load-bearing.
-2. Każde założenie potwierdź w solution design albo zamień w zmianę (nowe zadanie).
-
-**Follow-upy**
-1. Podejmij decyzję opisaną w follow-upie i zaktualizuj dokumenty.
-2. Przygotuj follow-up przez `task-prep`: AC obejmują usunięcie znaczników.
-3. Gdy runner zabrał epik, a wszystkie follow-upy są gotowe, oddaj epik ponownie przez `task-prep`.
-
-**Przed pushem `main`**
-1. Przetestuj `main`.
-2. Przejrzyj otwarte follow-upy (znane różnice) i zadanie z założeniami.
+A failed script check goes back to the agent as feedback, just like a review fail.
 
 ---
 
-## 10. Przykład: przebieg zadania 0mq.1
+## 9. Owner's activities
 
-Zadanie `oferty-pracy-0mq.1` (wspólny interfejs konektorów źródeł ofert) było pierwszym testem procesu z obsługą konfliktów:
+**At an epic's hand-off**
+1. Make sure every open child has `ready-for-agent` or `ready-for-human`.
+2. Name `load_bearing`. A helper question: the interpretation of which requirements will more than one task rely on?
+3. Check `node .sandcastle/runner.ts --dry-run`.
 
-1. **Implementacja.** Agent napisał 15 konektorów i zgłosił `done`: 0 odstępstw, 4 założenia (wszystkie „precedence 2: istniejące zachowanie”) i 2 pozycje nowego zakresu.
-2. **Spodziewana blokada nie nastąpiła i to było poprawne.** Konflikt statusu JobSpy z regułą A5-R03 dotyczył wymagań load-bearing. Zadanie 0mq.1 nie musiało jednak zmieniać statusu, a A5-R03 należy do zadania 0mq.5. Zachowanie dzisiejszego zachowania spełniało wszystkie AC, więc decydowało pytanie 1 drzewa: założenie plus zgłoszenie w nowym zakresie.
-3. **Pierwsze review: `fail`.** Żadne założenie nie miało testu swojego przypadku. Reviewer znalazł też realną wadę: `Retry-After` w Himalayas mógł wydłużyć przebieg do ok. 136 s przy limicie 120 s, czego stary kod nie dopuszczał.
-4. **Tura poprawek:** agent ograniczył ponowienia pozostałym czasem przebiegu i dopisał testy przypadków brzegowych.
-5. **Drugie review: `pass`.** Runner zmergował zadanie, zamknął je i utworzył:
-   - zadanie triage z założeniami (`oferty-pracy-abe`);
-   - dwa zadania `needs-triage`: ładowanie `modules/*/index.ts` przez Nuxt (`oferty-pracy-8mc`) oraz status pustego przebiegu JobSpy wobec A5-R03 (`oferty-pracy-mqc`).
+**After a runner pass**
+1. Closed tasks: a comment with evidence, assumptions and deviations.
+2. Tasks in `needs-info`: a comment with the reason and a kept branch. Settle it in preparation, then restore `ready-for-agent`.
+3. New `needs-triage` tasks: assess the new scope.
 
-Wnioski z przebiegu zmieniły proces:
-- wymóg testu dla założenia trafił do dokumentu i skilla (wcześniej był tylko w prompcie reviewera);
-- założenia na `load_bearing` dostały flagę i ostrzejsze review;
-- wyszukiwanie zadań zależnych rozumie zakresy ID.
+**Assumption triage**
+1. Start with the assumptions marked as load-bearing.
+2. Confirm each assumption in the solution design or turn it into a change (a new task).
 
----
+**Follow-ups**
+1. Make the decision described in the follow-up and update the documents.
+2. Prepare the follow-up through `task-prep`: the ACs cover removing the markers.
+3. When the runner has taken back the epic and all follow-ups are ready, hand the epic over again through `task-prep`.
 
-## 11. Mocne strony
-
-1. **Proporcjonalna blokada.** Lokalny konflikt nie zatrzymuje nocnej pracy, a konflikt w fundamentach epika zatrzymuje.
-2. **Każda decyzja agenta zostawia ślad do przejrzenia.** Założenia trafiają do triage, odstępstwa do follow-upów ze znacznikami, nowy zakres do `needs-triage`. Nic nie znika w kodzie bez śladu.
-3. **Brak samooceny.** Werdykt wydaje inny agent w świeżym kontekście, gate działa w czystym środowisku, a merge i bd należą do skryptu.
-4. **Spójność `main`.** Hand-off całego epika, `load_bearing` i zakaz budowania na kodzie tymczasowym.
-5. **Brak cichych porażek.** Każda porażka kończy się `needs-info` z powodem i zachowaną gałęzią.
-6. **Testowalne reguły.** Logika odstępstw i etykiet epika to czyste funkcje w `.sandcastle/followups.ts` z testami (`npm test` w `.sandcastle/`).
+**Before pushing `main`**
+1. Test `main`.
+2. Review the open follow-ups (known differences) and the assumptions task.
 
 ---
 
-## 12. Znane luki i ryzyka
+## 10. Example: the run of task 0mq.1
 
-| Luka | Skutek | Możliwe zabezpieczenie |
+Task `oferty-pracy-0mq.1` (a shared interface for offer source connectors) was the first test of the process with conflict handling:
+
+1. **Implementation.** The agent wrote 15 connectors and reported `done`: 0 deviations, 4 assumptions (all "precedence 2: existing behaviour") and 2 new scope items.
+2. **The expected block did not happen, and that was correct.** The conflict between the JobSpy status and rule A5-R03 concerned load-bearing requirements. Task 0mq.1, however, did not have to change the status, and A5-R03 belongs to task 0mq.5. Keeping today's behaviour met all ACs, so question 1 of the tree decided: an assumption plus a new scope report.
+3. **First review: `fail`.** No assumption had a test of its case. The reviewer also found a real defect: `Retry-After` in Himalayas could extend a run to about 136 s with a limit of 120 s, which the old code did not allow.
+4. **Fix round:** the agent limited retries to the remaining run time and added tests for the edge cases.
+5. **Second review: `pass`.** The runner merged the task, closed it and created:
+   - the triage task with assumptions (`oferty-pracy-abe`);
+   - two `needs-triage` tasks: loading `modules/*/index.ts` through Nuxt (`oferty-pracy-8mc`) and the status of an empty JobSpy run with respect to A5-R03 (`oferty-pracy-mqc`).
+
+Lessons from the run changed the process:
+- the requirement of a test for an assumption went into the document and the skill (before, it was only in the reviewer's prompt);
+- assumptions on `load_bearing` got a flag and a stricter review;
+- the search for dependent tasks understands ID ranges.
+
+---
+
+## 11. Strengths
+
+1. **Proportional blocking.** A local conflict does not stop the overnight work, and a conflict in the epic's foundations does.
+2. **Every agent decision leaves a trace to review.** Assumptions go to triage, deviations to follow-ups with markers, new scope to `needs-triage`. Nothing disappears into the code without a trace.
+3. **No self-assessment.** Another agent in a fresh context gives the verdict, the gate runs in a clean environment, and the merge and bd belong to the script.
+4. **Consistency of `main`.** Handing over the whole epic, `load_bearing` and the ban on building on temporary code.
+5. **No silent failures.** Every failure ends in `needs-info` with a reason and a kept branch.
+6. **Testable rules.** The logic of deviations and epic labels is pure functions in `.sandcastle/followups.ts` with tests (`npm test` in `.sandcastle/`).
+
+---
+
+## 12. Known gaps and risks
+
+| Gap | Effect | Possible safeguard |
 |---|---|---|
-| **Reviewer nie ma pamięci między turami.** Każda tura to nowy reviewer. | Może zgłaszać nowe uwagi zamiast sprawdzić poprawki do starych; przy limicie 3 tur grozi zwrotem mimo postępu. | Przekazywać reviewerowi poprzednie uwagi i kazać najpierw je zweryfikować. |
-| **Ten sam model ocenia ten sam model.** | Ślepe plamy implementującego i reviewera są skorelowane. | Inny model albo inny effort dla review. |
-| **Zapis po merge'u nie jest atomowy.** Follow-upy powstają po merge'u, a błędy części zapisów są tylko logowane. | Na `main` może zostać znacznik bez follow-upu. | Okresowe uzgadnianie: każdy `FOLLOW-UP(...)` w kodzie ma otwarte zadanie. |
-| **Klasyfikację robi strona zainteresowana.** Agent sam decyduje, że coś jest „tylko założeniem”. | Na kroku 1 drzewa nie ma bariery deterministycznej, jedyną kontrolą jest reviewer. | Wymóg testu (już jest) i ostrzejsze review dla load-bearing (już jest); dalej np. limit liczby założeń. |
-| **Założenia są na `main` przed akceptacją.** | Błędna interpretacja może pójść dalej, jeśli triage się opóźni. | Przegląd zadania z założeniami przed pushem (wpisany w proces). |
-| **Kontrola gotowości nie sprawdza kotwic.** Runner sprawdza istnienie pliku, ale nie `#sekcji`, choć umowa mówi o kotwicach. | Link do nieistniejącej sekcji przejdzie. | Sprawdzanie nagłówka w pliku. |
-| **Jedno zablokowane zadanie zatrzymuje epik.** | Mniejsza przepustowość przy dużych epikach. | Świadomy wybór na rzecz spójności; ewentualnie dzielenie epików. |
-| **Infrastruktura procesu mieszka w repo, którego pilnuje.** | Testy runnera mogą zepsuć gate projektu; tak było z vitest, naprawione w 0mq.1. | Trzymać testy `.sandcastle/` poza głównym runnerem testów (obecny stan). |
-| **Wykrywanie zadań zależnych opiera się na tekście.** | Zadanie, które opisuje regułę słowami bez ID, nie zostanie znalezione. | Wymagać ID reguł w zadaniach (już praktyka przygotowania). |
+| **The reviewer has no memory between rounds.** Each round is a new reviewer. | It may raise new remarks instead of checking the fixes to the old ones; with the limit of 3 rounds, a return threatens despite progress. | Pass the previous remarks to the reviewer and have it verify them first. |
+| **The same model assesses the same model.** | The blind spots of the implementer and the reviewer are correlated. | A different model or a different effort for the review. |
+| **The write after the merge is not atomic.** Follow-ups are created after the merge, and errors in some writes are only logged. | A marker without a follow-up may remain on `main`. | Periodic reconciliation: every `FOLLOW-UP(...)` in the code has an open task. |
+| **The interested party does the classification.** The agent itself decides that something is "only an assumption". | There is no deterministic barrier at step 1 of the tree; the only check is the reviewer. | The test requirement (already in place) and a stricter review for load-bearing (already in place); next, e.g. a limit on the number of assumptions. |
+| **Assumptions are on `main` before acceptance.** | A wrong interpretation may spread if triage is delayed. | Reviewing the assumptions task before pushing (written into the process). |
+| **The readiness check does not check anchors.** The runner checks that the file exists, but not the `#section`, although the contract talks about anchors. | A link to a non-existent section will pass. | Checking the heading in the file. |
+| **One blocked task stops the epic.** | Lower throughput for large epics. | A deliberate choice in favour of consistency; possibly splitting epics. |
+| **The process infrastructure lives in the repo it guards.** | The runner's tests may break the project gate; this happened with vitest, fixed in 0mq.1. | Keep the `.sandcastle/` tests outside the main test runner (current state). |
+| **Detecting dependent tasks relies on text.** | A task that describes a rule in words without an ID will not be found. | Require rule IDs in tasks (already a preparation practice). |
 
 ---
 
-## 13. Granice i niuanse
+## 13. Boundaries and nuances
 
-- **Granicą follow-upu jest odwracalność i zasięg, a nie wielkość problemu.** Mała zmiana schematu blokuje. Spora, ale lokalna i odizolowana zmiana zachowania może być odstępstwem.
-- **„Konflikt dotyka load-bearing” nie oznacza automatycznie blokady.** Blokada przychodzi dopiero wtedy, gdy trzeba z czegoś zrezygnować (odroczyć). Interpretacja spełniająca wszystkie AC to założenie, choć pod ostrzejszą kontrolą.
-- **Follow-up to nie bug.** Otwarte follow-upy to znana i zamierzona lista różnic na `main`.
-- **Runner nie oddaje epika.** Automat poszerza zakres pracy tylko po decyzji człowieka.
-- **Pauza jest zawsze możliwa:** zdjęcie `ready-for-agent` z epika zatrzymuje go w dowolnej fazie.
-- **Runner nie robi pushu ani synchronizacji Dolt.** `.beads/issues.jsonl` jest tylko eksportem; prawdziwy stan bd jest w lokalnej bazie Dolt.
-- **Werdykt review jest ścisły.** `pass` przy wyniku z odstępstwami to porażka, tak samo jak `pass-with-deferral` bez odstępstw.
+- **The boundary of a follow-up is reversibility and reach, not the size of the problem.** A small schema change blocks. A sizeable but local and isolated behaviour change may be a deviation.
+- **"The conflict touches load-bearing" does not automatically mean a block.** A block comes only when something has to be given up (deferred). An interpretation that meets all ACs is an assumption, though under stricter checking.
+- **A follow-up is not a bug.** Open follow-ups are a known and intended list of differences on `main`.
+- **The runner does not hand an epic over.** The automation widens the scope of work only after a human decision.
+- **A pause is always possible:** removing `ready-for-agent` from an epic stops it in any phase.
+- **The runner does not push or run a Dolt sync.** `.beads/issues.jsonl` is only an export; the real bd state is in the local Dolt database.
+- **The review verdict is strict.** `pass` on a result with deviations is a failure, just like `pass-with-deferral` without deviations.
 
 ---
 
-## Podsumowanie
+## Summary
 
-Proces przenosi osąd tam, gdzie jest tani: przed wykonaniem (przygotowanie, `load_bearing`) i po nim (triage założeń, follow-upy, test `main`). Samo wykonanie zostawia automatowi, który może tylko zatrzymywać pracę. Konflikty w specyfikacji nie zatrzymują wszystkiego. Lokalne rozstrzyga się według stałej kolejności pierwszeństwa i zostawia jawny ślad, a nośne blokują.
+The process moves judgement to where it is cheap: before execution (preparation, `load_bearing`) and after it (assumption triage, follow-ups, testing `main`). It leaves the execution itself to an automation that can only stop work. Conflicts in the specification do not stop everything. Local ones are settled by a fixed order of precedence and leave an explicit trace, and load-bearing ones block.
 
-Na co dzień właściciel ma trzy obowiązki:
-- dobrze przygotować epik i wskazać jego wymagania nośne;
-- regularnie rozstrzygać założenia i follow-upy;
-- przed pushem sprawdzić, jakie znane różnice zawiera `main`.
+Day to day, the owner has three duties:
+- prepare the epic well and name its load-bearing requirements;
+- settle assumptions and follow-ups regularly;
+- before pushing, check which known differences `main` contains.
 
-Największe pozostałe ryzyko leży w kroku „to tylko założenie”, bo to jedyne miejsce, gdzie agent decyduje bez deterministycznej bariery. Dalsze wzmacnianie procesu warto zaczynać właśnie tam.
+The biggest remaining risk lies in the "it's only an assumption" step, because it is the only place where the agent decides without a deterministic barrier. Further strengthening of the process is best started there.

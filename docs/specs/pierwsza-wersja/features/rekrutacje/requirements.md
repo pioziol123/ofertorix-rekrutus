@@ -1,25 +1,25 @@
-# Zarządzanie rekrutacjami — wymagania
+# Managing recruitments — requirements
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **roboczy szkic — do dopracowania przed realizacją tej funkcjonalności**, 2026-10-31. Funkcjonalność pod wspólnym [PRD](../../PRD.md). Źródła i decyzje właściciela: [PRD](../../PRD.md#źródła-i-odpowiedzialność-dokumentów). Projekt techniczny: [solution-design.md](solution-design.md). Terminologia: [słownik](../../../../../GLOSSARY.md).
+Status: **working draft — to be refined before this feature is implemented**, 2026-10-31. A feature under the shared [PRD](../../PRD.md). Sources and owner's decisions: [PRD](../../PRD.md#sources-and-document-responsibilities). Technical design: [solution-design.md](solution-design.md). Terminology: [glossary](../../../../../GLOSSARY.md).
 
-## Zakres i zależności
+## Scope and dependencies
 
-Ten dokument jest właścicielem wymagań R-22, R-23 i odpowiadających im AC. Powiązania: [oferty](../oferty/requirements.md), [firmy-research](../firmy-research/requirements.md). Nie przejmuje reguł innych funkcjonalności. Aktorem jest właściciel; scenariusze są przyszłymi kryteriami, nie wynikiem testów.
+This document owns requirements R-22, R-23 and their ACs. Related: [offers](../oferty/requirements.md), [companies-research](../firmy-research/requirements.md). It does not take over the rules of other features. The actor is the owner; the scenarios are future criteria, not test results.
 
-### R-22 — aplikacje i etapy
+### R-22 — applications and stages
 
-Jednej rekrutacji odpowiada jeden bieżący proces aplikacji niezależnie od portalu, z zapisanym kanałem wysłania. Przy łączeniu ofert z istniejącymi aktywnymi aplikacjami właściciel wskazuje, czy to ten sam proces, czy odrębne rekrutacje; odrębne procesy pozostają zachowane i nie są automatycznie scalane. Kolejne podejście po zamknięciu może być osobną aplikacją. Etapy: do rozważenia → planuję aplikować → aplikacja wysłana → rozmowy → decyzja. Właściciel może ręcznie zmienić etap, a na każdym etapie zakończyć proces jako: zatrudnienie, odmowa firmy, rezygnacja albo odrzucenie oferty przez właściciela. Poszczególne rozmowy i zadania zapisuje się oddzielnie.
+One recruitment corresponds to one current application process regardless of the portal, with the sending channel recorded. When merging offers that have existing active applications, the owner indicates whether it is the same process or separate recruitments; separate processes are kept and are not merged automatically. A further attempt after closing can be a separate application. Stages: to consider → planning to apply → application sent → interviews → decision. The owner can change the stage manually, and at any stage end the process as: hired, rejected by the company, withdrawn, or offer declined by the owner. Individual interviews and tasks are recorded separately.
 
-**AC-22:** dodanie kolejnego ogłoszenia tej samej oferty nie tworzy nowej aplikacji. Ponowne podejście zachowuje poprzednią aplikację i jej wynik. Zmiana oceny lub niedostępność ogłoszenia nie zmienia etapu. Historia pokazuje ręczne zmiany z datą. Każdy uzgodniony etap i wynik zakończenia można zapisać; ręczna zmiana etapu nie wymaga odbycia fikcyjnych rozmów pośrednich. Zakończenie zachowuje rozmowy, terminy, zadania i notatki.
+**AC-22:** adding another ad of the same offer does not create a new application. A new attempt keeps the previous application and its outcome. A change of assessment or the unavailability of an ad does not change the stage. The history shows manual changes with a date. Every agreed stage and closing outcome can be recorded; a manual stage change does not require holding fictitious intermediate interviews. Ending keeps the interviews, dates, tasks and notes.
 
-### R-23 — informacje rekrutacyjne
+### R-23 — recruitment information
 
-Właściciel zapisuje notatki, tagi, kontakty rekruterów, wiele rozmów, terminy i zadania rekrutacyjne. Zmiany są zachowywane w historii.
+The owner records notes, tags, recruiter contacts, multiple interviews, dates and recruitment tasks. Changes are kept in the history.
 
-**AC-23:** dla jednej aplikacji można zapisać dwie rozmowy z różnymi terminami, kontakt, zadanie i notatkę, następnie je poprawić bez utraty wcześniejszej historii. Zmiany są dostępne po ponownym uruchomieniu. Pierwsza wersja pozwala archiwizować oferty i procesy oraz poprawiać dane z historią, bez funkcji trwałego kasowania. Archiwalne dane można nadal przeglądać. Archiwizacja nie usuwa powiązanych rozmów, zadań, kontaktów, notatek ani historii.
+**AC-23:** for one application you can record two interviews with different dates, a contact, a task and a note, then correct them without losing the earlier history. The changes are available after a restart. The first version allows archiving offers and processes and correcting data with history, with no permanent deletion feature. Archived data can still be browsed. Archiving does not remove related interviews, tasks, contacts, notes or history.
 
-## Otwarte kwestie
+## Open questions
 
-Powiązane: O-03, O-07. Szczegóły, konsekwencje i sposób zamknięcia: [wspólny rejestr](../../open-decisions.md). Otwarte kwestie rozpatrujemy przy podejmowaniu tej funkcjonalności; sam szkic nie oznacza gotowości implementacji.
+Related: O-03, O-07. Details, consequences and how to close them: [shared register](../../open-decisions.md). We consider open questions when taking up this feature; the draft alone does not mean the implementation is ready.

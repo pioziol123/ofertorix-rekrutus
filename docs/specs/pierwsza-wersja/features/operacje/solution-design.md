@@ -1,72 +1,72 @@
-# Operacje w tle i kontrola kosztów — projekt rozwiązania
+# Background operations and cost control — solution design
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **roboczy szkic — do dopracowania przed realizacją tej funkcjonalności**, 2026-10-31. Uzasadnienie: [wymagania tej funkcjonalności](requirements.md) → [PRD](../../PRD.md). Pokrycie: R-24/AC-24, R-25/AC-25, R-26/AC-26, R-29/AC-29.
+Status: **working draft — to be refined before this feature is implemented**, 2026-10-31. Rationale: [this feature's requirements](requirements.md) → [PRD](../../PRD.md). Coverage: R-24/AC-24, R-25/AC-25, R-26/AC-26, R-29/AC-29.
 
-## Granice i decyzje
+## Boundaries and decisions
 
-Potwierdzone wybory D-01–D-06 i proponowane D-07–D-08 są utrzymywane we [wspólnej architekturze](../../architecture.md). Pozostałe mechanizmy w tym pliku są **propozycjami SD**, a nie zatwierdzonymi decyzjami właściciela. Nazwy encji i komend opisują plan, nie istniejący kod. Wspólna semantyka null, wersji i komend obowiązuje przez odnośnik, nie przez kopię.
+The confirmed choices D-01–D-06 and the proposed D-07–D-08 are maintained in the [shared architecture](../../architecture.md). The other mechanisms in this file are **SD proposals**, not approved owner's decisions. Entity and command names describe the plan, not existing code. The shared semantics of null, versions and commands apply by reference, not by copy.
 
-## Własność danych i kontrakty
+## Data ownership and contracts
 
-| Encja / grupa | Istotne pola i niezmienniki |
+| Entity / group | Relevant fields and invariants |
 | --- | --- |
-| Operation / Attempt | Typ, cel, wejściowe wersje, trigger `manual/automatic`, stan, checkpoint, dedup key, generation, próby i błąd. To trwałe źródło statusu, nie rekord zadania pg-boss. |
-| BudgetMonth / Reservation / Usage | Miesiąc, limit, rezerwacje i wydatki; każda płatna próba powiązana z modelem, wersją cennika, limitem, użyciem, walutą/przelicznikiem i identyfikatorem dostawcy. |
+| Operation / Attempt | Type, target, input versions, trigger `manual/automatic`, state, checkpoint, dedup key, generation, attempts and error. This is the durable source of status, not a pg-boss job record. |
+| BudgetMonth / Reservation / Usage | Month, limit, reservations and spending; each paid attempt linked to the model, price list version, limit, usage, currency/conversion rate and the provider's identifier. |
 
-## Wykonanie i transakcje
+## Execution and transactions
 
-Proponowane stany trwałej operacji: `queued`, `running`, `waiting_budget`, `needs_attention`, `succeeded`, `superseded`. Próba ma osobno stan wykonania i rozliczenia `reserved/settled/unknown/released`. Sukces merytoryczny może współistnieć z kosztem do wyjaśnienia; nie udajemy, że wszystko jest jednym statusem.
+Proposed states of a durable operation: `queued`, `running`, `waiting_budget`, `needs_attention`, `succeeded`, `superseded`. An attempt has a separate execution state and a settlement state `reserved/settled/unknown/released`. Substantive success can coexist with a cost still to be clarified; we do not pretend that everything is one status.
 
-Dedup key zawiera typ pracy, cel oraz wersje wejścia. Dla odświeżenia na żądanie zawiera dodatkową generację, aby jawne nowe wykonanie nie zostało zablokowane jako dawny duplikat. Przycisk ponowienia istniejącej operacji kontynuuje jej checkpoint, nie udaje nowego niezależnego procesu.
+The dedup key contains the type of work, the target and the input versions. For an on-demand refresh it contains an additional generation, so that an explicit new execution is not blocked as an old duplicate. The retry button of an existing operation continues its checkpoint; it does not pretend to be a new independent process.
 
-1. W transakcji zapisać mutację, zdarzenie historii, operację i zlecenie pg-boss z identyfikatorem operacji. Integracja SQL kolejki musi użyć tego samego połączenia i transakcji; jeśli to nie jest zapewnione, nie wolno opisać wysłania jako atomowego. Alternatywa do osobnego przeglądu: transactional outbox.
-2. Worker blokuje/claimuje operację i generację. Jeśli już ukończona albo nieaktualna, kończy techniczne zadanie bez ponownego efektu.
-3. Przed płatnym etapem krótka transakcja blokuje rekord budżetu, sprawdza limit i zakłada rezerwację dla próby. Następnie commit.
-4. Wywołanie sieciowe poza transakcją. Zapisać request/response id, limity i użycie bez sekretów; nie zakładać, że request id dowodzi braku drugiego obciążenia.
-5. Wynik i rozliczenie zapisać atomowo z checkpointem. Warunkowo aktualizować wskaźnik bieżącego wyniku tylko, jeśli generacja i wersje wejścia są nadal właściwe. Stary wynik może pozostać historyczny, ale nie zastępuje nowego.
-6. Przy utracie workera sprawdzić checkpoint i stan próby. Po niepewnym wywołaniu nie zwalniać rezerwacji; retry wymaga osobnych środków. Awaria po odebraniu odpowiedzi, a przed trwałym zapisem może wymagać ponowienia i ponownej opłaty — nie ma gwarancji exactly-once AI.
+1. In a transaction, save the mutation, the history event, the operation and the pg-boss job with the operation identifier. The queue's SQL integration must use the same connection and transaction; if that is not ensured, the sending must not be described as atomic. An alternative for a separate review: transactional outbox.
+2. The worker locks/claims the operation and the generation. If it is already completed or stale, it ends the technical job without a repeated effect.
+3. Before a paid stage, a short transaction locks the budget record, checks the limit and creates a reservation for the attempt. Then commit.
+4. The network call outside the transaction. Save the request/response id, limits and usage without secrets; do not assume that a request id proves there was no second charge.
+5. Save the result and the settlement atomically with the checkpoint. Update the pointer to the current result conditionally, only if the generation and the input versions are still correct. An old result may remain historical, but it does not replace the new one.
+6. If a worker is lost, check the checkpoint and the attempt state. After an uncertain call do not release the reservation; a retry requires separate funds. A failure after receiving the response but before the durable save may require a retry and a repeated charge — there is no exactly-once guarantee for AI.
 
-Aktualnie sprawdzona [dokumentacja pg-boss](https://pgboss.io/introduction) opisuje długowieczną instancję na proces i własny schemat. [Opcje jobs](https://pgboss.io/api/jobs), odczyt 2026-10-31, mają domyślnie dwa retry i wyłączony heartbeat; nie odpowiada to automatycznie kontraktowi aplikacji. Nie polegamy na domyślnych ustawieniach.
+The currently checked [pg-boss documentation](https://pgboss.io/introduction) describes a long-lived instance per process and its own schema. The [jobs options](https://pgboss.io/api/jobs), read on 2026-10-31, have two retries by default and the heartbeat turned off; this does not automatically match the application's contract. We do not rely on the default settings.
 
-Propozycja SD: retry płatnych etapów kontroluje trwała operacja (maksymalnie jedna dodatkowa automatyczna próba po błędzie przejściowym); techniczne ponowne dostarczenie nie resetuje licznika. Aktywny heartbeat i expiry są jawne. Oczekujące operacje aplikacji odtwarzają brakujące zadania kolejki, więc retencja pg-boss nie może po cichu zgubić pracy czekającej na budżet. Retry po 429/5xx/timeout stosuje opóźnienie i informację dostawcy; błędy autoryzacji/konfiguracji wymagają uwagi. Nie ma nieskończonej naprawy JSON.
+SD proposal: retries of paid stages are controlled by the durable operation (at most one additional automatic attempt after a transient error); a technical redelivery does not reset the counter. The active heartbeat and expiry are explicit. Pending application operations recreate missing queue jobs, so pg-boss retention cannot silently lose work waiting for budget. A retry after 429/5xx/timeout applies a delay and the provider's information; authorisation/configuration errors require attention. There is no endless JSON repair.
 
-**Priorytet:** wspólna kolejka płatnych etapów z priorytetem ręcznym wyższym od automatycznego researchu. Prace bez środków nie zajmują wykonawcy; wznawiane po zdarzeniu zmiany miesiąca/limitu. Długiej aktywnej operacji nie przerywa nowa ręczna. Reguła priorytetu jest sprawdzana przy pobieraniu kolejnego zadania, nie tylko w kolejności utworzenia.
+**Priority:** a shared queue of paid stages with manual priority higher than automatic research. Work without funds does not occupy the executor; it resumes after a month/limit change event. A new manual operation does not interrupt a long active one. The priority rule is checked when the next job is fetched, not only in order of creation.
 
-## Budżet i ograniczenia
+## Budget and limits
 
-Dziennik kosztów przechowuje cennik obowiązujący przy próbie i przyjęty przelicznik PLN. To rachunek aplikacji, nie gwarancja identyczności z fakturą, podatkami lub innym użyciem konta.
+The cost log stores the price list in force at the attempt and the PLN conversion rate adopted. This is the application's accounting, not a guarantee that it matches the invoice, taxes or other use of the account.
 
-Rezerwacja musi pokrywać wyznaczoną górną granicę danej próby: wejście, wyjście, narzędzia i ewentualne osobne formatowanie. Prompt „nie przekrocz” nie jest kontrolą. Jeśli API nie daje technicznego ograniczenia danego kosztu, dany wariant płatnego etapu nie jest gotowy do włączenia. Przed startem ustalić limity tokenów, źródeł, search i rund oraz sposób ich egzekwowania, a nie wyłącznie estymację średniej.
+The reservation must cover the determined upper bound of the given attempt: input, output, tools and any separate formatting. A prompt saying "do not exceed" is not a control. If the API gives no technical limit on a given cost, that variant of the paid stage is not ready to be enabled. Before launch, set the limits on tokens, sources, search and rounds and how they are enforced, not only an estimate of the average.
 
-`dostępne = limit - rozliczone wydatki - aktywne rezerwacje` dla uzgodnionego miesiąca, z kontrolą współbieżności. Nadwyżkę rezerwy zwalnia się po wiarygodnym rozliczeniu. Nieznany koszt pozostaje aktywny; panel musi umożliwić wyjaśnienie na podstawie danych dostawcy. Zmiana limitu ma historię. **Potwierdzone Q13:** próba ma niezmienny miesiąc rezerwacji. Zakończenie lub wyjaśnienie jej kosztu później aktualizuje ten miesiąc; nowa próba w kolejnym miesiącu ma własną rezerwację. Stare rezerwacje nie przechodzą jako nowe wydatki do bieżącego limitu, ale pozostają widoczne jako nierozliczone historyczne zobowiązania. Propozycja SD: Reservation i Usage wskazują jawny budget_month_id, a rozliczenie nie wylicza miesiąca ponownie z czasu zakończenia. Zmiana miesiąca zakłada nowy rekord limitu, nie zeruje starego dziennika. Przelicznik i cennik zapisane przy próbie pozostają wersjonowane; dobór ich wartości jest techniczną częścią przeglądu O-04/O-06.
+`available = limit - settled spending - active reservations` for the agreed month, with concurrency control. The surplus of a reservation is released after a reliable settlement. An unknown cost stays active; the panel must allow clarifying it based on the provider's data. A limit change has a history. **Confirmed Q13:** an attempt has an unchangeable reservation month. Completing it or clarifying its cost later updates that month; a new attempt in the following month has its own reservation. Old reservations do not carry over as new spending into the current limit, but remain visible as unsettled historical commitments. SD proposal: Reservation and Usage point to an explicit budget_month_id, and the settlement does not recompute the month from the completion time. A month change creates a new limit record and does not reset the old log. The conversion rate and price list saved with an attempt stay versioned; choosing their values is a technical part of the O-04/O-06 review.
 
-## Podsumowanie operacji
+## Operations summary
 
-Propozycja SD: widok operacji korzysta z Operation/Attempt, a podsumowanie z odczytów zapisanych wyników, nowych ofert i terminów aplikacji. Link do zdarzenia prowadzi do właściwej oferty/firmy/raportu. Błąd późniejszego etapu nie usuwa wcześniejszych wyników; ręczne RetryOperation rozpoczyna się od trwałego checkpointu z ponowną kontrolą kosztu.
+SD proposal: the operations view uses Operation/Attempt, and the summary uses reads of saved results, new offers and application dates. A link to an event leads to the right offer/company/report. An error in a later stage does not remove earlier results; a manual RetryOperation starts from the durable checkpoint with a repeated cost check.
 
 
-## Komendy
+## Commands
 
-Nazwy logiczne, nie zamrożone endpointy. Wspólny kontrakt walidacji/wersji/odpowiedzi: [architektura](../../architecture.md#wspólny-kontrakt-komend).
+Logical names, not frozen endpoints. Shared validation/version/response contract: [architecture](../../architecture.md#shared-command-contract).
 
-| Komenda | Wejście i skutek |
+| Command | Input and effect |
 | --- | --- |
-| ChangeBudget / RetryOperation | Limit lub operation id, expected version; historia i ponowna kontrola budżetu. |
+| ChangeBudget / RetryOperation | Limit or operation id, expected version; history and a repeated budget check. |
 
-## Integracja z pozostałymi funkcjonalnościami
+## Integration with other features
 
-[uruchomienie](../uruchomienie/requirements.md). Ten moduł zapewnia status wykonania, rezerwacje i ponowienia pozostałym funkcjonalnościom; prywatny dostęp i trwałe uruchomienie określa [uruchomienie](../uruchomienie/solution-design.md). Zależności te są kontraktami, nie listą kolejności ticketów implementacyjnych.
+[launch](../uruchomienie/requirements.md). This module provides execution status, reservations and retries to the other features; private access and durable launch are set by [launch](../uruchomienie/solution-design.md). These dependencies are contracts, not a list of the order of implementation tickets.
 
-## Weryfikacja funkcjonalności
+## Feature verification
 
-Równoległe rezerwacje, timeout po przyjęciu płatnego requestu, granica miesiąca, dwa błędy przejściowe, priorytet ręczny, kill przed/po commit i retencja kolejki. Sprawdzić licznik prób, koszty i brak duplikacji skutków. Pokrycie obejmuje wszystkie R/AC wskazane na początku dokumentu. [Odbiór integracyjny](../odbior/solution-design.md) sprawdza współpracę modułów; nie zastępuje ich kryteriów. Testów produktu jeszcze nie wykonano.
+Concurrent reservations, a timeout after a paid request was accepted, the month boundary, two transient errors, manual priority, a kill before/after commit and queue retention. Check the attempt counter, the costs and that effects are not duplicated. Coverage includes all R/ACs listed at the start of the document. [Integration acceptance](../odbior/solution-design.md) checks how the modules work together; it does not replace their criteria. No product tests have been run yet.
 
-## Otwarte decyzje i gotowość
+## Open decisions and readiness
 
-O-04, O-06 — [rejestr i skutki](../../open-decisions.md). Przed oznaczeniem tej pary jako gotowej należy rozstrzygnąć dotyczące jej kontrakty i przejrzeć zgodność z wymaganiami. Samo utworzenie dokumentów nie zatwierdza propozycji.
+O-04, O-06 — [register and consequences](../../open-decisions.md). Before marking this pair as ready, settle the contracts that concern it and review conformance with the requirements. Creating the documents alone does not approve the proposals.
 
-## Pierwszy konsument płatnych operacji: profil — 2026-11-01
+## First consumer of paid operations: profile — 2026-11-01
 
-Projekt [profilu](../profil/solution-design.md#koszt-i-uruchomienie-płatnej-próby) potrzebuje minimalnego wykonania wspólnych kontraktów Operation/Attempt i rezerwacji przed przygotowaniem propozycji AI. Nie tworzy osobnego budżetu. Przed włączeniem tego adaptera wymagane są atomowa rezerwacja, rzeczywiste usage, stan nieznanego kosztu, niezmienny miesiąc oraz nowa rezerwacja retry. Szczegółowe wartości limitów dla profilu należą do jego SD. Ten dopisek nie oznacza ukończenia modułu operacji ani implementacji researchu.
+The [profile](../profil/solution-design.md#cost-and-launching-a-paid-attempt) design needs a minimal implementation of the shared Operation/Attempt and reservation contracts before preparing the AI proposal. It does not create a separate budget. Before this adapter is enabled, the following are required: atomic reservation, real usage, the unknown-cost state, an unchangeable month and a new reservation for a retry. The detailed limit values for the profile belong to its SD. This addendum does not mean the operations module is complete or that research is implemented.

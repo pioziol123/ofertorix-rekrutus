@@ -1,85 +1,85 @@
-# Architektura i kontrakty wspólne
+# Architecture and shared contracts
 
-Status: **kierunek architektury i robocze propozycje kontraktów**, 2026-10-31. Uzupełnienie projektów funkcjonalności pod [PRD](PRD.md), nie solution design całej wersji. Granice i odnośniki: [indeks](README.md). Potwierdzone wybory pochodzą z decyzji właściciela, propozycje SD wymagają przeglądu. Nazwy encji i komend opisują plan, nie istniejący kod.
+Status: **architecture direction and working contract proposals**, 2026-10-31. A supplement to the feature designs under the [PRD](PRD.md), not a solution design for the whole version. Boundaries and links: [index](README.md). Confirmed choices come from the owner's decisions; SD proposals require review. Entity and command names describe the plan, not existing code.
 
-## Decyzje i granice
+## Decisions and boundaries
 
-| ID | Stan | Decyzja i konsekwencje |
+| ID | State | Decision and consequences |
 | --- | --- | --- |
-| D-01 | Potwierdzone | Nuxt + TypeScript + Nuxt UI; przeglądarkowy interfejs jednego właściciela. Kierunek A dla ofert, C dla firm, bez tablicy B w v1. |
-| D-02 | Potwierdzone | Jeden projekt z modułami, wspólna baza PostgreSQL i osobny proces workera pg-boss. Nie wprowadzamy mikroserwisów. |
-| D-03 | Potwierdzone | Docker Compose: WWW, worker, PostgreSQL. Trwały wolumen bazy. Local loopback; później VPS przez SSH tunnel. Backup poza aplikacją. |
-| D-04 | Potwierdzone | SOLID.Jobs API jako pierwszy adapter. Kolejne źródła później. |
-| D-05 | Potwierdzone | OpenAI Responses API, startowo `gpt-6-luna`, modele konfigurowalne według etapu; wyszukiwanie tylko w researchu. Dostęp konta i jakość do sprawdzenia. |
-| D-06 | Potwierdzone | Reguły domenowe, wersje, historia i koszty w danych aplikacji, niezależnie od retencji pg-boss. Sieć poza transakcją. |
-| D-07 | Propozycja SD | SQL przez `pg` i wersjonowane migracje SQL, bez ORM w pierwszym szkicu. Ułatwia wspólną transakcję danych i zlecenia pracy; kosztem ręcznego mapowania i walidacji typów. |
-| D-08 | Propozycja SD | Jeden wykonawca płatnej pracy na start; pobieranie źródła ma odrębnego wykonawcę. Zmniejsza ryzyko kosztowe bez blokowania bezpłatnej synchronizacji. |
+| D-01 | Confirmed | Nuxt + TypeScript + Nuxt UI; a browser interface for one owner. Direction A for offers, C for companies, no board B in v1. |
+| D-02 | Confirmed | One project with modules, a shared PostgreSQL database and a separate pg-boss worker process. We do not introduce microservices. |
+| D-03 | Confirmed | Docker Compose: WWW, worker, PostgreSQL. A persistent database volume. Local loopback; later a VPS through an SSH tunnel. Backup outside the application. |
+| D-04 | Confirmed | SOLID.Jobs API as the first adapter. Further sources later. |
+| D-05 | Confirmed | OpenAI Responses API, initially `gpt-6-luna`, models configurable per stage; search only in research. Account access and quality to be checked. |
+| D-06 | Confirmed | Domain rules, versions, history and costs in the application's data, independent of pg-boss retention. Network outside the transaction. |
+| D-07 | SD proposal | SQL through `pg` and versioned SQL migrations, no ORM in the first draft. Makes a shared transaction of data and work requests easier, at the cost of manual mapping and type validation. |
+| D-08 | SD proposal | One executor of paid work to start; source fetching has a separate executor. Reduces cost risk without blocking free sync. |
 
-Potwierdzone wybory zastępują wcześniejsze rozważania Django/Huey, SvelteKit i SQLite. bethinkpl/design-system pominięty na życzenie właściciela. Uzasadnienie PostgreSQL/pg-boss z rozmowy: gotowa trwała kolejka i możliwość atomowego zlecenia wraz z danymi, za cenę obsługi PostgreSQL. Nie przenosimy marketingowego „exactly once” kolejki na płatne wywołania zewnętrzne.
+The confirmed choices replace earlier considerations of Django/Huey, SvelteKit and SQLite. bethinkpl/design-system was skipped at the owner's request. The rationale for PostgreSQL/pg-boss from the conversation: a ready, durable queue and the ability to enqueue a request atomically together with the data, at the cost of running PostgreSQL. We do not carry the queue's marketing "exactly once" over to paid external calls.
 
-## Moduły i przepływ
+## Modules and flow
 
 ```mermaid
 flowchart LR
-    U[Właściciel] --> W[Nuxt / Nuxt UI]
-    W --> M[Moduły aplikacji]
-    M --> P[(PostgreSQL: dane, historia, budżet)]
+    U[Owner] --> W[Nuxt / Nuxt UI]
+    W --> M[Application modules]
+    M --> P[(PostgreSQL: data, history, budget)]
     M --> Q[pg-boss]
-    Q --> K[Osobny worker]
+    Q --> K[Separate worker]
     K --> P
     K --> S[SOLID.Jobs API]
-    K --> A[Adapter AI / search]
+    K --> A[AI / search adapter]
 ```
 
-Diagram pokazuje logiczne zależności; schemat pg-boss mieści się w tym samym PostgreSQL. Moduły są wspólne dla WWW i workera, ale wywołania zewnętrzne wykonuje worker.
+The diagram shows logical dependencies; the pg-boss schema lives in the same PostgreSQL. The modules are shared by WWW and the worker, but the worker makes the external calls.
 
-| Moduł | Odpowiedzialność |
+| Module | Responsibility |
 | --- | --- |
-| Źródła | Adapter, zakresy, przebiegi, identyfikatory i wersje ogłoszeń, dostępność i sugestie podobieństwa. |
-| Profil i dopasowanie | Wersje profilu, kryteria, kwalifikacja, triage, kalkulacja i historia ocen. |
-| Firmy i research | Organizacje/marki/grupy/role, twierdzenia i dowody, technologie, raporty i przygotowania. |
-| Rekrutacje | Własna decyzja, aplikacje, rozmowy, zadania, kontakty, notatki, tagi. |
-| Operacje i budżet | Zlecenia, próby, rezerwacje, koszty, priorytety, harmonogram i podsumowanie błędów. |
+| Sources | Adapter, scopes, runs, ad identifiers and versions, availability and similarity suggestions. |
+| Profile and matching | Profile versions, criteria, qualification, triage, calculation and assessment history. |
+| Companies and research | Organisations/brands/groups/roles, claims and evidence, technologies, reports and preparations. |
+| Recruitments | Own decision, applications, interviews, tasks, contacts, notes, tags. |
+| Operations and budget | Requests, attempts, reservations, costs, priorities, schedule and error summary. |
 
-Przebieg: synchronizacja → zachowanie danych → kwalifikacja → triage → kalkulacja → ewentualny podstawowy research firmy. Ręczne przygotowanie korzysta z aktualnych, jawnie wskazanych wersji researchu i oferty; nie uruchamia automatycznie ponownego badania firmy.
+Flow: sync → saving data → qualification → triage → calculation → possible basic research of the company. Manual preparation uses the current, explicitly indicated versions of the research and the offer; it does not automatically start a new study of the company.
 
-## Wspólne konwencje danych
+## Shared data conventions
 
-Propozycja SD: wewnętrzne identyfikatory UUID, daty zdarzeń jako UTC `timestamptz`, kwoty jako dokładne wartości dziesiętne lub jednostki całkowite o jawnej skali, nigdy zmiennoprzecinkowe pieniądze. Miesiąc budżetowy i godzina harmonogramu wyznaczane w `Europe/Warsaw`, a nie strefie kontenera. Wszystkie rekordy należą do jednego właściciela; brak modelu tenantów.
+SD proposal: internal UUID identifiers, event dates as UTC `timestamptz`, amounts as exact decimal values or integer units with an explicit scale, never floating-point money. The budget month and the schedule time are determined in `Europe/Warsaw`, not in the container's time zone. All records belong to one owner; there is no tenant model.
 
-| Encja wspólna | Kontrakt |
+| Shared entity | Contract |
 | --- | --- |
-| DomainEvent | Typ, czas, autor, podmiot, operation id i zmienione wartości/powiązania. Zapis atomowy z mutacją; nie pełny event sourcing. |
+| DomainEvent | Type, time, author, subject, operation id and changed values/links. Saved atomically with the mutation; not full event sourcing. |
 
-Propozycja SD: komendy aktualizacji są częściowe — pominięte pole oznacza „bez zmiany”; jawne `null` oznacza „wartość nieznana/wyczyszczona”, wyłącznie w polach dopuszczających brak. W danych domenowych `[]` oznacza potwierdzony pusty zbiór, `null` brak wiedzy. Adapter nie zamienia pominiętej listy technologii na „brak technologii”. Nie używać tego samego `null` do braku wiedzy i błędu ekstrakcji: błąd należy do stanu operacji.
+SD proposal: update commands are partial — an omitted field means "no change"; an explicit `null` means "value unknown/cleared", only in fields that allow absence. In domain data `[]` means a confirmed empty set, `null` means no knowledge. The adapter does not turn an omitted technology list into "no technologies". Do not use the same `null` for no knowledge and for an extraction error: the error belongs to the operation's state.
 
-Mutacje właściciela przekazują oczekiwaną wersję rekordu. Konflikt równoległych zmian zwraca jawny konflikt i bieżącą wersję, zamiast cicho nadpisać notatkę. Odniesienia do źródeł/dowodów muszą istnieć; daty i skale walidowane po stronie serwera.
+Owner mutations pass the expected record version. A conflict of concurrent changes returns an explicit conflict and the current version, instead of silently overwriting a note. References to sources/evidence must exist; dates and scales are validated on the server side.
 
-Kontrakty konkretnych encji należą do projektów funkcjonalności; nie utrzymujemy drugiego pełnego modelu w tym pliku.
+The contracts of specific entities belong to the feature designs; we do not maintain a second full model in this file.
 
-## Wspólny adapter AI
+## Shared AI adapter
 
-D-05 zapisuje wybór, nie nową weryfikację dostępu do API. Podstawa dokumentacyjna i ograniczenia przechowywania: [weryfikacja usług](../../research/ai-uslugi-weryfikacja.md). Dawne kalkulacje w [badaniu budżetu](../../research/ai-research-budzet.md) są scenariuszami, nie aktualną ofertą cenową. Bieżący cennik i dostęp konta wymagają sprawdzenia przed płatnymi próbami. Niniejszy szkic nie utrwala stawek na stałe.
+D-05 records the choice, not a new verification of API access. Documentary basis and storage limitations: [service verification](../../research/ai-uslugi-weryfikacja.md). The old calculations in the [budget study](../../research/ai-research-budzet.md) are scenarios, not a current price offer. The current price list and account access need to be checked before paid trials. This draft does not fix rates permanently.
 
-Propozycja SD: adapter AI oddziela:
+SD proposal: the AI adapter separates:
 
-- ekstrakcję z opisu, tylko gdy dane strukturalne nie wystarczają;
-- triage — profil zawodowy i dane ogłoszeń bez narzędzi WWW;
-- research — pozyskanie i syntezę z cytowaniami;
-- przygotowanie — oferta/aplikacja i wskazane raporty firmy, nowe badanie firmy tylko na żądanie.
+- extraction from the description, only when structured data is not enough;
+- triage — the professional profile and ad data, without web tools;
+- research — gathering and synthesis with citations;
+- preparation — the offer/application and the indicated company reports; a new study of the company only on demand.
 
-Wejście jest budowane z jawnej listy pól profilu; surowy CV nie jest bezpośrednio przekazywany do usługi. Treść ogłoszeń i stron jest niezaufanym materiałem, nie instrukcją sterującą workerem. Model nie otrzymuje sekretów ani narzędzi do mutacji aplikacji/kontaktowania się z firmą.
+The input is built from an explicit list of profile fields; the raw CV is not passed directly to the service. The content of ads and pages is untrusted material, not an instruction that controls the worker. The model receives no secrets and no tools for mutating the application or contacting a company.
 
-Wyjście przechodzi walidację schematu oraz semantyki: liczby 0–100 lub jawny brak, istnienie wskazanych wersji/dowodów, zakres organizacji/projektu, poprawne rodzaje twierdzeń. Sama zgodność JSON nie dowodzi prawdziwości. Odmowa, obcięcie, niepoprawny wynik i błąd transportu to odrębne przyczyny nieukończenia, nie „niedopasowana oferta”.
+The output goes through schema and semantic validation: numbers 0–100 or an explicit absence, existence of the indicated versions/evidence, organisation/project scope, correct kinds of claims. JSON conformance alone does not prove truth. A refusal, a truncation, an invalid result and a transport error are separate reasons for non-completion, not a "non-matching offer".
 
-Kalkulator i historia ocen: [dopasowanie](features/dopasowanie/solution-design.md). Cykl raportów i dowody: [firmy i research](features/firmy-research/solution-design.md).
+Calculator and assessment history: [matching](features/dopasowanie/solution-design.md). Report cycle and evidence: [companies and research](features/firmy-research/solution-design.md).
 
-## Wspólny kontrakt komend
+## Shared command contract
 
-Propozycja SD: operacje asynchroniczne zwracają status przyjęcia i identyfikator; UI odczytuje trwały stan. Dostęp lokalny bez logowania (decyzja 2026-10-31), niepoprawne dane — błąd walidacji, konflikt wersji — konflikt, brak budżetu — jawne oczekiwanie zamiast nieudanego dopasowania. Odświeżenie strony po komendzie nie może samo zlecać drugiej płatnej pracy.
+SD proposal: asynchronous operations return an acceptance status and an identifier; the UI reads the durable state. Local access without login (decision 2026-10-31), invalid data — validation error, version conflict — conflict, no budget — explicit waiting instead of a failed match. Refreshing the page after a command must not by itself request a second paid piece of work.
 
-Komendy domenowe są opisane wyłącznie w odpowiednich projektach funkcjonalności. Sesje i konfigurację usług określa [uruchomienie](features/uruchomienie/solution-design.md); trwałe wykonanie i transakcje określają [operacje](features/operacje/solution-design.md).
+Domain commands are described only in the relevant feature designs. Sessions and service configuration are set by [launch](features/uruchomienie/solution-design.md); durable execution and transactions are set by [operations](features/operacje/solution-design.md).
 
-## Moment dopracowania kontraktów
+## When contracts are refined
 
-Wybrane technologie i jawnie potwierdzone decyzje pozostają aktualne. Pozostałe wspólne konwencje są robocze; dopracowujemy je na potrzeby podejmowanej funkcjonalności, przed jej kodowaniem, zamiast finalizować cały model na zapas. Przed zmianą kontraktu sprawdzamy wpływ na już istniejące moduły. Obowiązuje [cykl pracy](README.md#cykl-pracy-nad-funkcjonalnością).
+The chosen technologies and explicitly confirmed decisions remain current. The other shared conventions are working ones; we refine them for the feature being taken up, before it is coded, instead of finalising the whole model in advance. Before changing a contract we check its impact on modules that already exist. The [work cycle](README.md#feature-work-cycle) applies.

@@ -1,54 +1,54 @@
-# Przeglądanie ofert i firm — projekt rozwiązania
+# Browsing offers and companies — solution design
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **bieżący wycinek listy zrealizowany; pozostałe moduły szkic**, 2026-10-31. Uzasadnienie: [wymagania tej funkcjonalności](requirements.md) → [PRD](../../PRD.md). Pokrycie: R-20/AC-20, R-21/AC-21.
+Status: **current list slice implemented; the other modules are a draft**, 2026-10-31. Rationale: [this feature's requirements](requirements.md) → [PRD](../../PRD.md). Coverage: R-20/AC-20, R-21/AC-21.
 
-## Granice i decyzje
+## Boundaries and decisions
 
-Potwierdzone wybory D-01–D-06 i proponowane D-07–D-08 są utrzymywane we [wspólnej architekturze](../../architecture.md). Pozostałe mechanizmy w tym pliku są **propozycjami SD**, a nie zatwierdzonymi decyzjami właściciela. Nazwy encji i komend opisują plan, nie istniejący kod. Wspólna semantyka null, wersji i komend obowiązuje przez odnośnik, nie przez kopię.
+The confirmed choices D-01–D-06 and the proposed D-07–D-08 are maintained in the [shared architecture](../../architecture.md). The other mechanisms in this file are **SD proposals**, not approved owner's decisions. Entity and command names describe the plan, not existing code. The shared semantics of null, versions and commands apply by reference, not by copy.
 
-## Widoki i nawigacja
+## Views and navigation
 
-Propozycja SD: strony `/offers`, `/offers/:id`, `/companies`, `/companies/:id`, `/profile`, `/operations`. Panel szczegółów w tabeli może mieć URL oferty i umożliwiać bezpośrednie wejście. Na mniejszym ekranie przechodzi w widok szczegółów. Nuxt UI dostarcza komponenty, ale nie kopiujemy kodu makiety jako produkcji.
+SD proposal: pages `/offers`, `/offers/:id`, `/companies`, `/companies/:id`, `/profile`, `/operations`. The details panel in the table can have the offer's URL and allow direct entry. On a smaller screen it turns into a details view. Nuxt UI provides the components, but we do not copy the mock-up's code as production code.
 
-## Odczyt, filtry i sortowanie
+## Reading, filters and sorting
 
-Propozycja SD: listy korzystają z zapytań serwerowych z paginacją, stabilnym sortowaniem i dodatkowym kluczem id przy remisie. Filtry oraz wybór oferty są reprezentowane w URL, aby powrót ze szczegółów zachował kontekst. Nie zapisują preferencji profilu ani zakresu importu. Filtry technologii wykonują jawne any/all/excluded z rozróżnieniem wymagane/opcjonalne; brak danych jest osobno widoczny i ma uzgodnione zachowanie dla konkretnego filtra.
+SD proposal: the lists use server queries with pagination, stable sorting and an extra id key on a tie. The filters and the offer selection are represented in the URL, so that going back from the details keeps the context. They do not save profile preferences or the import scope. Technology filters perform explicit any/all/excluded with a required/optional distinction; missing data is visible separately and has an agreed behaviour for the specific filter.
 
-Tabela pokazuje rating, kompletność, aktualność i własną decyzję osobno. Profil firmy pobiera technologie z zakresem, nie płaską sumę przypisaną każdemu stanowisku. Kwalifikację minimum płacy określa [SD dopasowania](../dopasowanie/solution-design.md#porównanie-wynagrodzenia); UI nie ukrywa tego za nieuzgodnioną konwersją walut/netto/brutto.
+The table shows the rating, completeness, freshness and own decision separately. The company profile takes technologies with their scope, not a flat sum assigned to every position. Qualification against the pay minimum is set by the [matching SD](../dopasowanie/solution-design.md#pay-comparison); the UI does not hide it behind an unagreed conversion of currencies/net/gross.
 
-Mutacje w panelach wywołują komendy modułów ofert, rekrutacji i researchu. Ten moduł nie jest drugim właścicielem tych reguł ani kopią ich modeli zapisu.
+Mutations in the panels call commands of the offers, recruitments and research modules. This module is not a second owner of those rules or a copy of their write models.
 
 
-## Integracja z pozostałymi funkcjonalnościami
+## Integration with other features
 
-[oferty](../oferty/requirements.md), [firmy-research](../firmy-research/requirements.md), [dopasowanie](../dopasowanie/requirements.md), [rekrutacje](../rekrutacje/requirements.md). Status wykonania, rezerwacje i ponowienia zapewnia [kontrakt operacji](../operacje/solution-design.md); prywatny dostęp i trwałe uruchomienie określa [uruchomienie](../uruchomienie/solution-design.md). Zależności te są kontraktami, nie listą kolejności ticketów implementacyjnych.
+[offers](../oferty/requirements.md), [companies-research](../firmy-research/requirements.md), [matching](../dopasowanie/requirements.md), [recruitments](../rekrutacje/requirements.md). Execution status, reservations and retries are provided by the [operations contract](../operacje/solution-design.md); private access and durable launch are set by [launch](../uruchomienie/solution-design.md). These dependencies are contracts, not a list of the order of implementation tickets.
 
-## Weryfikacja funkcjonalności
+## Feature verification
 
-Przejść oferta → firma → inna oferta i wrócić z filtrami. Sprawdzić wszystkie wymiary R-21, any/all/excluded, sortowanie z remisami, odrzucone/wygasłe/niewiadome i odrębne rating/kompletność/decyzję. Pokrycie obejmuje wszystkie R/AC wskazane na początku dokumentu. [Odbiór integracyjny](../odbior/solution-design.md) sprawdza współpracę modułów; nie zastępuje ich kryteriów. Testów produktu jeszcze nie wykonano.
+Go offer → company → another offer and come back with filters. Check all R-21 dimensions, any/all/excluded, sorting with ties, rejected/expired/unknown and the separate rating/completeness/decision. Coverage includes all R/ACs listed at the start of the document. [Integration acceptance](../odbior/solution-design.md) checks how the modules work together; it does not replace their criteria. No product tests have been run yet.
 
-## Otwarte decyzje i gotowość
+## Open decisions and readiness
 
-O-02 — [rejestr i skutki](../../open-decisions.md). Przed oznaczeniem tej pary jako gotowej należy rozstrzygnąć dotyczące jej kontrakty i przejrzeć zgodność z wymaganiami. Samo utworzenie dokumentów nie zatwierdza propozycji.
+O-02 — [register and consequences](../../open-decisions.md). Before marking this pair as ready, settle the contracts that concern it and review conformance with the requirements. Creating the documents alone does not approve the proposals.
 
-## Wykonanie bieżącego wycinka listy — 2026-10-31
+## Implementation of the current list slice — 2026-10-31
 
-`/offers` z query URL i panelem szczegółów, bez logowania (najnowsza decyzja właściciela). `/api/offers` zwraca paginowane projekcje bieżących source_ads/revisions, opcje filtrów i metadane ostatniego importu. `/api/offers/:id` zwraca aktualne szczegóły oraz daty rewizji, bez dawnych payloadów. Normalizacja danych zachowuje null; opis HTML konwertowany do tekstu (bez v-html). Link źródłowy tylko https/http i rel noopener/noreferrer. Firma to nadal etykieta źródła.
+`/offers` with a URL query and a details panel, without login (the owner's latest decision). `/api/offers` returns paginated projections of the current source_ads/revisions, filter options and metadata of the last import. `/api/offers/:id` returns the current details and the revision dates, without old payloads. Data normalisation keeps null; the HTML description is converted to text (no v-html). The source link only https/http and rel noopener/noreferrer. The company is still the source's label.
 
-Moduł `lib/offers.ts` jest wspólnym kontraktem projekcji i filtrowania. Przy jednej osobie i jednym źródle odczytuje projekcje z bazy, filtruje i stabilnie sortuje po stronie serwera, następnie paginuje. Nie wysyła całego katalogu/payloadów do klienta. Limit bezpieczeństwa 10000 rekordów wymaga później zastąpienia filtrowania zapytaniem SQL przed zwiększeniem wolumenu. Nie dodajemy ORM. Parametry zapytań mają walidację, błędne wartości dają 400. Szczegóły UUID dają 404 gdy brak.
+The `lib/offers.ts` module is the shared contract for projection and filtering. With one person and one source it reads the projections from the database, filters and sorts stably on the server side, then paginates. It does not send the whole catalogue/payloads to the client. A safety limit of 10000 records requires later replacing the filtering with an SQL query before the volume grows. We do not add an ORM. Query parameters are validated; invalid values give 400. Details for a missing UUID give 404.
 
-Dostęp: bez kont i sesji, zgodnie z decyzją właściciela z 2026-10-31. Compose nadal publikuje tylko 127.0.0.1; na VPS pozostaje tunel SSH. Próbną implementację logowania usunięto przed oddaniem funkcji. Health i domenowe API nie wymagają sesji.
+Access: no accounts and sessions, in line with the owner's decision of 2026-10-31. Compose still publishes only 127.0.0.1; on a VPS the SSH tunnel remains. The trial implementation of login was removed before the feature was handed over. Health and the domain API do not require a session.
 
-Weryfikacja: tester modułu odczytu/filtrowania i rzeczywistego PostgreSQL; HTTP bez logowania, bezpieczny opis i URL; wizualny przegląd tabeli/panelu na desktopie i telefonie; regresja importera/setupu, lint/typy/build. Nie uznajemy za ukończone R-20/R-21 zależne od przyszłych ratingów, firm czy procesów.
+Verification: a tester of the read/filtering module and real PostgreSQL; HTTP without login, a safe description and URL; a visual review of the table/panel on desktop and phone; regression of the importer/setup, lint/types/build. We do not consider R-20/R-21 parts that depend on future ratings, companies or processes as completed.
 
-### Wynik weryfikacji bieżącego wycinka
+### Verification result of the current slice
 
-2026-10-31: komplet 54 testów przechodzi (adapter/importer, projekcja/filtry, odczyt PostgreSQL w izolowanym schemacie, HTTP bez logowania, setup i worker); lint/typecheck oraz build poprawne. Tester dodał początkowe testy jednostkowe; po przerwaniu jego pracy limitem usługi główny agent uzupełnił przypadki rozbieżności i integrację bazy/HTTP. W przeglądarce sprawdzono 31 ofert, otwarcie panelu, odświeżenie z zachowaniem wyboru i pusty wynik. Wąski widok panelu układa szczegóły nad tabelą, tabela przewija się wewnętrznie. Pełny automatyczny zestaw testów E2E przeglądarki nie jest częścią tego etapu.
+2026-10-31: the full set of 54 tests passes (adapter/importer, projection/filters, PostgreSQL read in an isolated schema, HTTP without login, setup and worker); lint/typecheck and build are correct. The tester added the initial unit tests; after its work was interrupted by the service limit, the main agent added the discrepancy cases and the database/HTTP integration. In the browser the following were checked: 31 offers, opening the panel, refreshing while keeping the selection, and an empty result. In a narrow view the panel places the details above the table, and the table scrolls internally. A full automated browser E2E test suite is not part of this stage.
 
-Nieznany poziom technologii nie jest oznaczany jako wymagany: osobna sekcja bez określonej roli. Jednoczesne oznaczenie źródła remote+hybrid pokazuje obie wartości z informacją o rozbieżności i pasuje do obu filtrów. Brak logowania zastępuje wcześniejszy projekt sesji; zastosowana historyczna migracja sesji jest zachowana, a kolejna migracja usuwa nieużywaną tabelę.
+An unknown technology level is not marked as required: a separate section without a specified role. A source marked remote+hybrid at the same time shows both values with a discrepancy note and matches both filters. No login replaces the earlier session design; the historical session migration that was applied is kept, and a later migration removes the unused table.
 
-### Korekta formularza — 2026-11-01
+### Form correction — 2026-11-01
 
-Przełącznik filtra wynagrodzenia oddziela zachowany szkic pól od aktywnych warunków. Wyłączone pola są disabled i pomijane przez offerFilterQuery; hasSalaryFilter przywraca stan z URL, ignorując dawny domyślny includeUnknownSalary=true bez innych warunków płacy. Serwerowa walidacja minimum względem waluty/okresu pozostaje. Regresja obejmuje niezmienione inne filtry oraz zachowany szkic płacy po wyłączeniu.
+The pay filter switch separates the kept draft of the fields from the active conditions. Turned-off fields are disabled and skipped by offerFilterQuery; hasSalaryFilter restores the state from the URL, ignoring the old default includeUnknownSalary=true without other pay conditions. Server-side validation of the minimum against currency/period remains. The regression covers unchanged other filters and the kept pay draft after turning it off.

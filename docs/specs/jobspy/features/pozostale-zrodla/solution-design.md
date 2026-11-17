@@ -1,25 +1,25 @@
-# Pozostałe źródła JobSpy — solution design
+# Other JobSpy sources — solution design
 
-Projekt 2026-11-02, [R-S01–R-S06](requirements.md). Fork bazuje na 0f2540e, nowa paczka 1.4.1+oferty.2. Dotychczasowe collect_indeed / schema1 pozostają kompatybilne. Nie wymagamy migracji danych.
+Design of 2026-11-02, [R-S01–R-S06](requirements.md). The fork is based on 0f2540e, new package 1.4.1+oferty.2. The existing collect_indeed / schema1 stay compatible. We do not require a data migration.
 
 ## Fork
 
-Nowy moduł `jobspy.multi_source` udostępnia `SourceRequest` i `collect_source`: jedno jawne źródło na proces. Rejestr mapuje wszystkie adaptery poza Indeed. Kraj walidowany przed wywołaniem scrape: Glassdoor według swojej mapy domen, ZipRecruiter USA/Kanada, Naukri Indie, BDJobs Bangladesz, HelloWork Francja; Google oznaczone jako niedostępne według README. LinkedIn globalny i Bayt z jawną lokalizacją. Dla aplikacji query nadal Poland/Senior PHP.
+The new module `jobspy.multi_source` provides `SourceRequest` and `collect_source`: one explicit source per process. The registry maps all adapters except Indeed. The country is validated before calling scrape: Glassdoor according to its domain map, ZipRecruiter USA/Canada, Naukri India, BDJobs Bangladesh, HelloWork France; Google marked as unavailable according to the README. LinkedIn global and Bayt with an explicit location. For the application, the query is still Poland/Senior PHP.
 
-Schema2 wyniku: jak schema1 z rozszerzonym source, fork_revision=oferty-contract-2 i kodami `unsupported_scope`, `unsupported_source`, `blocked`, `adapter_error`, `unverified`. Query zawiera source i fetch_description. Pełny rekord zachowuje prefiks ID i site, nie przechodzi przez DataFrame. Pochodzenie płacy poza Indeed domyślnie unknown. Nie przenosimy source ani konfiguracji do danych profilu.
+Output schema2: like schema1 with an extended source, fork_revision=oferty-contract-2 and the codes `unsupported_scope`, `unsupported_source`, `blocked`, `adapter_error`, `unverified`. Query contains source and fetch_description. The full record keeps the ID prefix and site, and does not pass through the DataFrame. Salary origin outside Indeed is unknown by default. We do not move source or configuration into profile data.
 
-Scope kontrolera HTTP jest lokalny dla wywołania (ContextVar). `create_session` dekoruje żądanie rzeczywistej sesji, zachowując jej nagłówki i własności transportu; wspólny budżet obejmuje strony i szczegóły, niezależnie od requests/curl. Bez powłoki, proxy i automatycznych redirectów. Bayt 404 kończy odczyt przed fallbackiem lokalizacji. Utrzymujemy zgodność istniejącego ControlledRequests z testami Indeed. Kontroler zapisuje bezpieczny powód przerwania i liczbę prób.
+The HTTP controller scope is local to the call (ContextVar). `create_session` decorates the request of the real session, keeping its headers and transport properties; the shared budget covers pages and details, regardless of requests/curl. No shell, proxies or automatic redirects. Bayt 404 ends the read before the location fallback. We keep the existing ControlledRequests compatible with the Indeed tests. The controller records a safe reason for stopping and the number of attempts.
 
-Istniejące logi adapterów są przechwytywane w obrębie pojedynczego procesu i redukowane do bezpiecznych kodów i liczników; nie wypisujemy raw wyjątków/URL/payloadów. Pominięcia oraz brak opisów dają partial. Bez błędów, ale bez dowodu pełności stronicowania: limited/unverified (także przy zerze ofert). Nie używamy tego jako dowodu wygaśnięcia. Proces nadal ma twardy timeout i ograniczenie wyjścia po stronie Node.
+Existing adapter logs are captured within a single process and reduced to safe codes and counters; we do not print raw exceptions/URLs/payloads. Skips and missing descriptions give partial. No errors but no evidence of complete paging: limited/unverified (also with zero offers). We do not use this as evidence of expiry. The process still has a hard timeout and an output limit on the Node side.
 
-## Aplikacja
+## Application
 
-`jobspy-catalog.ts` zawiera identyfikatory źródeł, nazwy, prefiksy, hosty URL, wsparcie Polski i powód ograniczenia. `JOBSPY_SOURCES` to jawna lista aktywnych źródeł poza Indeed; domyślnie pusta. Poprzedni JOBSPY_ENABLED dotyczy wyłącznie Indeed. Osobna informacja `requires_access` dla LinkedIn; nie obchodzimy tego przez przypadkowe użycie starej flagi.
+`jobspy-catalog.ts` contains source identifiers, names, prefixes, URL hosts, Poland support and the limitation reason. `JOBSPY_SOURCES` is an explicit list of active sources other than Indeed; empty by default. The previous JOBSPY_ENABLED applies only to Indeed. Separate information `requires_access` for LinkedIn; we do not circumvent this by accidental use of the old flag.
 
-Funkcje parametrów/fingerprint/queue przyjmują source, zachowując dotychczasowe domyślne Indeed dla zgodności API/testów. executeJobspy dopasowuje przebieg do źródła kolejki; enqueue/recovery/locks/status działają per source. Worker rejestruje każdą kolejkę, ale bez harmonogramu. CLI przyjmuje --source; status bez source pokazuje katalog. API statusu dodaje listę sources, zachowując stare pola Indeed. Lista ofert pokazuje źródło i statusy wszystkich uruchomionych adapterów.
+The parameter/fingerprint/queue functions take source, keeping the existing Indeed defaults for API/test compatibility. executeJobspy matches the run to the queue's source; enqueue/recovery/locks/status work per source. The worker registers every queue, but without a schedule. The CLI takes --source; status without source shows the catalogue. The status API adds a sources list, keeping the old Indeed fields. The offer list shows the source and the statuses of all enabled adapters.
 
-Po testach nowa paczka, eksport lock i manifest zastępują używaną dystrybucję. Komit/push nowych zmian wymaga osobnej wyraźnej autoryzacji; publikacja poprzedniej paczki nie jest automatyczną zgodą na następny push. Sprawność sprawdzamy bez mylenia testów fixture i live. Źródła ograniczone geograficznie pozostają podłączone z kodem unsupported_scope; nie zmieniamy ich kraju na chybił trafił.
+After the tests, the new package, the lock export and the manifest replace the distribution in use. Commit/push of the new changes requires separate explicit authorisation; publishing the previous package is not automatic consent to the next push. We check working state without confusing fixture tests with live ones. Geographically restricted sources stay connected with the code unsupported_scope; we do not change their country at random.
 
-Parser aplikacji pomija rekordy z jawnym krajem innym niż Polska i zlicza `outsideScope`. Brak kraju (również oznaczenie unknown/worldwide/remote) zachowuje jako niewiadomą; nie wywodzi możliwości pracy z Polski z samej flagi remote.
+The application parser skips records with an explicit country other than Poland and counts `outsideScope`. A missing country (including the marks unknown/worldwide/remote) is kept as an unknown; it does not derive the possibility of working from Poland from the remote flag alone.
 
-Aktualizacja: geograficzną blokadę aplikacji dla pięciu źródeł i odrzucanie zagranicznych rekordów zdalnych zastępuje [SD ofert zdalnych](../zdalne-zagraniczne/solution-design.md).
+Update: the application's geographic block for the five sources and the rejection of foreign remote records are superseded by the [remote offers SD](../zdalne-zagraniczne/solution-design.md).

@@ -1,12 +1,12 @@
-# Kontrakt przebiegu Indeed — requirements
+# Indeed run contract — requirements
 
-Wybrane do realizacji 2026-11-02; [PRD](../../PRD.md), zakres diagnostyki i strukturalnego eksportu. Jeden odczyt dotyczy jednego jawnego źródła i zapytania; pierwsza wersja wyłącznie Indeed.
+Selected for implementation 2026-11-02; [PRD](../../PRD.md), scope of diagnostics and structured export. One read concerns one explicit source and query; the first version is Indeed only.
 
-- **R-K01:** wynik wskazuje źródło, parametry niezbędne do interpretacji wyszukiwania, czas rozpoczęcia/zakończenia, wersję kontraktu i forka. Nie zawiera konfiguracji proxy, sekretów ani profilu właściciela.
-- **R-K02:** odczyt rozróżnia zakończenie zapytania, wynik ograniczony/niepewny, wynik częściowy oraz niepowodzenie. Powód limitu, braku postępu, błędu strony i niepoprawnych rekordów jest odróżnialny. Zakończenie zapytania nie dowodzi pełnego pokrycia źródła.
-- **R-K03:** poprawna odpowiedź bez wyników daje zakończony odczyt z pustą listą; blokada/błąd przed pierwszą ofertą daje niepowodzenie. Błąd po poprawnych ofertach zachowuje je i daje wynik częściowy. Pominięte błędne rekordy są liczone; nie zakładamy, że nieznana liczba pozostałych wyników wynosi zero.
-- **R-K04:** brak opisu jest jawny per oferta oraz podsumowany. Jeżeli klient żąda filtra, którego ten kontrakt nie obsługuje, wejście jest odrzucane przed siecią zamiast cichego ignorowania.
-- **R-K05:** strukturalny JSON zachowuje lokalizację jako obiekt, listy jako listy, datę jako ISO, niewiadome jako null oraz nowe informacje o płacach. Normalizowany rekord nie udaje oryginalnej odpowiedzi portalu.
-- **R-K06:** nieoczekiwany błąd nie przenosi do wyniku/logów surowej odpowiedzi, tokenów ani treści wyjątków transportu. Standardowy interfejs `scrape_jobs` i jego istniejące pola pozostają dostępne; nowy kontrakt jest dodatkowym wejściem bibliotecznym.
+- **R-K01:** the output names the source, the parameters needed to interpret the search, the start/finish time, and the contract and fork versions. It does not contain proxy configuration, secrets or the owner's profile.
+- **R-K02:** a read distinguishes a completed query, a limited/uncertain result, a partial result and a failure. The reason — limit, no progress, page error or invalid records — is distinguishable. Completing the query does not prove full coverage of the source.
+- **R-K03:** a valid response without results gives a completed read with an empty list; a block/error before the first offer gives a failure. An error after valid offers keeps them and gives a partial result. Skipped invalid records are counted; we do not assume that an unknown number of remaining results is zero.
+- **R-K04:** a missing description is explicit per offer and summarised. If the client requests a filter this contract does not support, the input is rejected before the network instead of being silently ignored.
+- **R-K05:** structured JSON keeps the location as an object, lists as lists, the date as ISO, unknowns as null, and the new salary information. The normalised record does not pretend to be the portal's original response.
+- **R-K06:** an unexpected error does not carry the raw response, tokens or transport exception content into the output/logs. The standard `scrape_jobs` interface and its existing fields stay available; the new contract is an additional library entry point.
 
-Odbiór na syntetycznych stronach obejmuje: pusty zbiór, limit wyników, błąd pierwszej/kolejnej strony, błędny rekord pomiędzy poprawnymi, brak postępu kursora, brak opisu i eksport zagnieżdżonych pól. Nie wykonujemy prób live. Nie wdrażamy tu zapisu do Postgresa ani automatycznego wygaszania ofert.
+Acceptance on synthetic pages covers: an empty set, a result limit, an error on the first/a later page, an invalid record between valid ones, no cursor progress, a missing description, and export of nested fields. We make no live attempts. We do not implement saving to Postgres or automatic expiry of offers here.

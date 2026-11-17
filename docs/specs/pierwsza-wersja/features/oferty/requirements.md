@@ -1,37 +1,37 @@
-# Tożsamość ofert, rozbieżności i historia — wymagania
+# Offer identity, discrepancies and history — requirements
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **roboczy szkic — do dopracowania przed realizacją tej funkcjonalności**, 2026-10-31. Funkcjonalność pod wspólnym [PRD](../../PRD.md). Źródła i decyzje właściciela: [PRD](../../PRD.md#źródła-i-odpowiedzialność-dokumentów). Projekt techniczny: [solution-design.md](solution-design.md). Terminologia: [słownik](../../../../../GLOSSARY.md).
+Status: **working draft — to be refined before this feature is implemented**, 2026-10-31. A feature under the shared [PRD](../../PRD.md). Sources and owner's decisions: [PRD](../../PRD.md#sources-and-document-responsibilities). Technical design: [solution-design.md](solution-design.md). Terminology: [glossary](../../../../../GLOSSARY.md).
 
-## Zakres i zależności
+## Scope and dependencies
 
-Ten dokument jest właścicielem wymagań R-08, R-09, R-10, R-11 i odpowiadających im AC. Powiązania: [pobieranie](../pobieranie/requirements.md), [dopasowanie](../dopasowanie/requirements.md), [rekrutacje](../rekrutacje/requirements.md). Nie przejmuje reguł innych funkcjonalności. Aktorem jest właściciel; scenariusze są przyszłymi kryteriami, nie wynikiem testów.
+This document owns requirements R-08, R-09, R-10, R-11 and their ACs. Related: [fetching](../pobieranie/requirements.md), [matching](../dopasowanie/requirements.md), [recruitments](../rekrutacje/requirements.md). It does not take over the rules of other features. The actor is the owner; the scenarios are future criteria, not test results.
 
-### R-08 — oferta i ogłoszenia
+### R-08 — offer and ads
 
-Główna lista pokazuje ofertę pracy, do której przypisane są ogłoszenia źródłowe. Ponowny odczyt tego samego wpisu aktualizuje go, zamiast tworzyć nową ofertę. Podobne wpisy i ponowne publikacje o niepewnej tożsamości pozostają oddzielne z sugestią połączenia.
+The main list shows the job offer to which the source ads are assigned. Reading the same entry again updates it instead of creating a new offer. Similar entries and re-publications of uncertain identity stay separate, with a merge suggestion.
 
-**AC-08:** wielokrotne odczytanie jednego klucza źródłowego nie zwiększa liczby ofert. Dwa podobne wpisy o innych kluczach nie zostają automatycznie połączone tylko na podstawie nazwy stanowiska/firmy. Właściciel widzi sugestię oraz źródła każdej oferty.
+**AC-08:** reading one source key many times does not increase the number of offers. Two similar entries with different keys are not merged automatically based only on the position/company name. The owner sees the suggestion and the sources of each offer.
 
-### R-09 — odwracalne połączenie
+### R-09 — reversible merge
 
-Właściciel zatwierdza połączenie ofert i może je cofnąć. Historia odnotowuje obie operacje. Ogłoszenia, notatki i historia pozostają zachowane; przy rozdzieleniu wskazuje przypisanie istniejących aplikacji.
+The owner approves an offer merge and can undo it. The history records both operations. Ads, notes and history are kept; on a split the owner indicates the assignment of existing applications.
 
-**AC-09:** po połączeniu główna lista ma jedną ofertę i dostęp do wszystkich źródeł. Po rozdzieleniu źródła wracają do wskazanych ofert, wcześniejsze notatki i historia są dostępne z pochodzeniem, a każda aplikacja ma wybrane przypisanie. Operacja nie gubi żadnej aplikacji. Jeśli obie oferty mają aktywne aplikacje, przed połączeniem właściciel wskazuje, czy są to ten sam proces, czy odrębne rekrutacje. Do tej decyzji połączenie nie jest wykonywane. Żadna aplikacja, termin ani notatka nie znika automatycznie; wskazanie odrębnych procesów nie powoduje ich scalenia.
+**AC-09:** after a merge the main list has one offer and access to all sources. After a split the sources return to the indicated offers, earlier notes and history are available with their provenance, and each application has the chosen assignment. The operation does not lose any application. If both offers have active applications, before the merge the owner indicates whether they are the same process or separate recruitments. Until that decision the merge is not performed. No application, date or note disappears automatically; indicating separate processes does not merge them.
 
-### R-10 — rozbieżności i informacje ręczne
+### R-10 — discrepancies and manual information
 
-Sprzeczne dane mają widoczne wartości i źródła. Właściciel może wskazać wartość obowiązującą, bez usuwania danych źródłowych. Ręczna informacja korzysta z jednego mechanizmu ze wskazaniem pochodzenia, również przy rozmowie z rekruterem.
+Conflicting data have visible values and sources. The owner can indicate the value that applies, without deleting the source data. Manual information uses one mechanism with the provenance indicated, also for an interview with a recruiter.
 
-**AC-10:** dla dwóch różnych widełek/trybów pracy ekran pokazuje rozbieżność, zamiast po cichu wybierać korzystniejszą wartość. Ręcznie wskazana obowiązująca informacja jest odróżnialna od odczytów i pozostaje widoczna po synchronizacji; historia odtwarza zmianę. Research nie zastępuje jej bez jawnej operacji. Dopóki rozbieżność nie została rozstrzygnięta, zachowujemy oba warianty; ich wpływ na kwalifikację określa [R-03](../dopasowanie/requirements.md#r-03--brak-informacji-i-wykluczenia). Nie sprowadzamy rozbieżności do braku danych. Właściciel może archiwizować ofertę z zachowaniem danych i historii; trwałe kasowanie nie jest częścią pierwszej wersji (Q15).
+**AC-10:** for two different salary ranges/work modes the screen shows the discrepancy instead of silently picking the more favourable value. Manually indicated applicable information is distinguishable from reads and stays visible after a sync; the history reconstructs the change. Research does not replace it without an explicit operation. Until the discrepancy is resolved, we keep both variants; their effect on qualification is set by [R-03](../dopasowanie/requirements.md#r-03--missing-information-and-exclusions). We do not reduce a discrepancy to missing data. The owner can archive an offer while keeping its data and history; permanent deletion is not part of the first version (Q15).
 
-### R-11 — aktualna treść i zmiany
+### R-11 — current content and changes
 
-Szczegóły pokazują aktualną treść i historię zmian poniżej. Istotne zmiany technologii, wynagrodzenia, seniority lub trybu pracy uruchamiają ponowną ocenę w granicach budżetu. Zmiany samego formatowania nie uruchamiają AI.
+The details show the current content, and the change history below it. Material changes of technologies, pay, seniority or work mode start a reassessment within the budget. Changes of formatting alone do not start AI.
 
-**AC-11:** po zmianie wynagrodzenia treść jest aktualna, historia wskazuje zmianę, a poprzednia ocena oznaczona jako nieaktualna do ukończenia nowej. Przy braku budżetu pozostaje nieaktualna z powodem oczekiwania. Korekta białych znaków nie powoduje wywołania AI. Decyzje, notatki i wcześniejsze oceny nie znikają. Nie wymaga się przeglądarki dawnych pełnych treści.
+**AC-11:** after a pay change the content is current, the history shows the change, and the previous assessment is marked as stale until the new one completes. With no budget it stays stale with a waiting reason. A whitespace correction does not cause an AI call. Decisions, notes and earlier assessments do not disappear. A browser of past full contents is not required.
 
-## Otwarte kwestie
+## Open questions
 
-Powiązane: O-02, O-03. Szczegóły, konsekwencje i sposób zamknięcia: [wspólny rejestr](../../open-decisions.md). Otwarte kwestie rozpatrujemy przy podejmowaniu tej funkcjonalności; sam szkic nie oznacza gotowości implementacji.
+Related: O-02, O-03. Details, consequences and how to close them: [shared register](../../open-decisions.md). We consider open questions when taking up this feature; the draft alone does not mean the implementation is ready.

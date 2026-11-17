@@ -1,46 +1,46 @@
-# Etap 8: OpenCode jako agent researchu z gpt-oss:20b — Requirements
+# Stage 8: OpenCode as the research agent with gpt-oss:20b — Requirements
 
-Status: **przegląd wykonany, specyfikacja gotowa do implementacji**, 2026-11-05. Etap 8 z dziewięciu; przegląd w ramach 334.20, bez wykonania implementacji. Beads: `oferty-pracy-334.9`.
+Status: **review done, specification ready for implementation**, 2026-11-05. Stage 8 of nine; review as part of 334.20, without carrying out the implementation. Beads: `oferty-pracy-334.9`.
 
-Podstawa: [PRD](../../PRD.md), [wymagania przekrojowe](../../requirements.md), [plan](../../README.md). Potwierdzone: lokalnie `gpt-oss:20b`, OpenCode dla agenta i brak kwot Ollamy. Kontrakty techniczne doprecyzowano w SD, runtime i kwalifikacji; ich sprawność wymaga testów.
+Basis: [PRD](../../PRD.md), [cross-cutting requirements](../../requirements.md), [plan](../../README.md). Confirmed: `gpt-oss:20b` locally, OpenCode for the agent and no Ollama charges. The technical contracts were clarified in the SD, runtime and qualification; whether they work requires tests.
 
-## Cel i granice
+## Goal and boundaries
 
-Zintegrowanie gotowego runtime OpenCode z ręcznym researchem podstawowym. OpenCode prowadzi rozmowę i używa narzędzi; aplikacja odpowiada za zlecenie, dowody, koszty, walidację i publikację. Bez własnej pętli agenta.
+Integrate the ready OpenCode runtime with the manual basic research. OpenCode runs the conversation and uses the tools; the application is responsible for the request, evidence, costs, validation and publication. No agent loop of our own.
 
-Pokrycie przekrojowe: LA-01, LA-03, LA-06, LA-07, LA-08, LA-09. Aktorzy: właściciel zlecający lub przeglądający operację oraz worker wykonujący jej zapisany zakres; mechanizm dostępu pozostaje zgodny z istniejącą prywatną aplikacją.
+Cross-cutting coverage: LA-01, LA-03, LA-06, LA-07, LA-08, LA-09. Actors: the owner who requests or reviews an operation, and the worker that executes its recorded scope; the access mechanism stays consistent with the existing private application.
 
-## Warunki wejścia
+## Entry conditions
 
-Etapy 4, 5 i 7 (w tym kwalifikacja 334.21); sprawdzenie kontraktu sesji O-L3/T01/T02 w implementacji. Należy przeczytać aktualny kod i istniejące niezacommitowane zmiany przed realizacją.
+Stages 4, 5 and 7 (including qualification 334.21); checking the session contract O-L3/T01/T02 during implementation. Read the current code and the existing uncommitted changes before implementation.
 
-## Wymagania i kryteria akceptacji
+## Requirements and acceptance criteria
 
-Identyfikatory w wierszu łączą wymaganie z jego obserwowalnym kryterium. Oba pozostają stabilne przy kolejnych przeglądach.
+The identifiers in each row link a requirement to its observable criterion. Both stay stable across later reviews.
 
-| Wymaganie / kryterium | Zachowanie | Warunek akceptacji |
+| Requirement / criterion | Behaviour | Acceptance condition |
 | --- | --- | --- |
-| E08-R01 / E08-AC01 | Lokalny agent bez OpenAI | Research używa OpenCode i gpt-oss:20b w Ollamie bez klucza OpenAI; nie włącza chmury ani alternatywnych modeli automatycznie. |
-| E08-R02 / E08-AC02 | Kontrolowana sesja | Każde zlecenie jest powiązane z konkretną sesją i wersją runtime. Zmiana konfiguracji lub restart nie wybiera ostatniej globalnej sesji i nie tworzy drugiego aktywnego researchu. |
-| E08-R03 / E08-AC03 | Raport sprawdzany przez domenę | Zakończenie sesji bez prawidłowego raportu jest błędem. Nieznane dowody, URL i cytaty są odrzucane; poprzedni raport pozostaje dostępny. |
-| E08-R04 / E08-AC04 | Brak kwot i możliwość anulowania | Długi research nie jest ucinany przez limit rund, wywołań, tokenów ani stały deadline. Anulowanie zatrzymuje publikację i jest odróżnialne od ukończenia oraz niepewnego stanu sesji. |
-| E08-R05 / E08-AC05 | Wyłącznie uzgodnione uprawnienia | Agent może używać tylko narzędzi etapu 7, nie powłoki, plików, delegacji lub interaktywnych pytań; nie dziedziczy osobistych pluginów, sekretów i konfiguracji. |
-| E08-R06 / E08-AC06 | Oddzielne koszty i retencja | Koszt modelu pozostaje zero, narzędzia płatne są rozliczane mimo błędu raportu. Sesje, rozmowy, zdarzenia, dowody i raporty są zachowywane bezterminowo, bez automatycznego usuwania; restart i wymiana runtime zachowują dane. |
+| E08-R01 / E08-AC01 | Local agent without OpenAI | Research uses OpenCode and gpt-oss:20b in Ollama without an OpenAI key; it does not enable the cloud or alternative models automatically. |
+| E08-R02 / E08-AC02 | Controlled session | Each request is linked to a specific session and runtime version. A configuration change or a restart does not pick the last global session and does not create a second active research. |
+| E08-R03 / E08-AC03 | Report checked by the domain | Ending a session without a valid report is an error. Unknown evidence, URLs and quotes are rejected; the previous report stays available. |
+| E08-R04 / E08-AC04 | No quotas and the ability to cancel | A long research is not cut off by a limit on rounds, calls or tokens, or by a fixed deadline. Cancellation stops publication and is distinguishable from completion and from an uncertain session state. |
+| E08-R05 / E08-AC05 | Only the agreed permissions | The agent can use only the tools of stage 7, not a shell, files, delegation or interactive questions; it does not inherit personal plugins, secrets and configuration. |
+| E08-R06 / E08-AC06 | Separate costs and retention | The model cost stays zero; paid tools are settled despite a report error. Sessions, conversations, events, evidence and reports are kept indefinitely, without automatic deletion; a restart and a runtime replacement keep the data. |
 
-## Zależności i gotowość
+## Dependencies and readiness
 
-O-L3 opisano w kontraktach runtime; przed live wymagane T01/T02: wersja i korelacja sesji, rozpoznanie startu/wyniku, anulowanie, odtwarzanie. Retencja jest zamknięta: materiały bezterminowo, profil Chrome usuwalny po końcu i archiwizacji. Proponowana tabela nie dowodzi, że obecne API spełnia kontrakt. O-L2 ma zamknięte decyzje produktowe; etap 7 dostarcza weryfikację T03–T05. Nie ma otwartej decyzji o modelu, runtime ani kwotach Ollamy.
+O-L3 is described in the runtime contracts; before live, T01/T02 are required: version and session correlation, recognising start/result, cancellation, recovery. Retention is closed: materials indefinitely, the Chrome profile removable after the end and archiving. The proposed table does not prove that the current API meets the contract. O-L2 has closed product decisions; stage 7 delivers the verification of T03–T05. There is no open decision about the model, the runtime or Ollama quotas.
 
-Rozwiązanie i mapowanie weryfikacji: [SD](solution-design.md). Reguły LA zachowują jedno miejsce utrzymania w wymaganiach przekrojowych; ta para określa ich zakres dla etapu. Nie zmienia reguł domenowych poza jawnym zakresem.
+Solution and verification mapping: [SD](solution-design.md). The LA rules keep a single place of maintenance in the cross-cutting requirements; this pair defines their scope for the stage. It does not change domain rules outside its explicit scope.
 
-## Kolejka i wznowienie — potwierdzone 2026-11-05
+## Queue and resumption — confirmed 2026-11-05
 
-E08-AC02/04 obejmują [LA-11 i LA-15](../../requirements.md): trwała wspólna kolejka profilu, ocen i researchu, z jednym aktywnym lokalnym wykonaniem w całej instalacji, także przy wielu workerach. Kolejne czeka na potwierdzone zakończenie poprzedniego; waiting-for-user, cancelling i unknown nie zwalniają miejsca. Jawne retry zapisujemy od razu, lecz jego uruchomienie czeka na zwolnienie miejsca. Wznów kontynuuje to samo wykonanie; restart najpierw sprawdza istniejącą sesję. Bezpośrednie inferencje profilu/ocen korzystają z tej samej kolejki i slotu. E08-AC01/02 obejmują uruchomienie osobnych usług według LA-14. Nadal bez kwot modelu i stałego deadline całej pracy.
+E08-AC02/04 cover [LA-11 and LA-15](../../requirements.md): a durable shared queue of profile, assessments and research, with one active local execution in the whole installation, also with several workers. The next one waits for the confirmed end of the previous one; waiting-for-user, cancelling and unknown do not free the place. We record an explicit retry immediately, but its start waits for the place to be freed. Resume continues the same execution; a restart first checks the existing session. Direct profile/assessment inferences use the same queue and slot. E08-AC01/02 cover running separate services according to LA-14. Still no model quotas and no fixed deadline for the whole work.
 
-## Zakończenie researchu i zakres wydania — po grill-me
+## Ending research and release scope — after grill-me
 
-E08-AC03 obejmuje LA-19–21: dowody wyłącznie odczytanych stron, próba sprawdzenia każdej kategorii i jawne niewiadome, bez wymogu znalezienia wszystkich odpowiedzi. Brak podstaw do poprawnego raportu nie zastępuje poprzedniego raportu. E08-AC04 obejmuje bezwzględnie wspólny slot ze ścieżkami direct; interwencja blokuje również profil i oceny. LA-17/18: błędny wynik wymaga ręcznego retry z tą samą migawką, awarie infrastruktury nie powodują automatycznych restartów. Logowanie/parkowanie sesji poza epikiem w backlogu281. Wydanie obejmuje komplet epiku i panel (LA-16).
+E08-AC03 covers LA-19–21: evidence only from pages that were read, an attempt to check each category and explicit unknowns, without a requirement to find all the answers. Lack of grounds for a valid report does not replace the previous report. E08-AC04 covers an unconditionally shared slot with the direct paths; an intervention also blocks profile and assessments. LA-17/18: an invalid result requires a manual retry with the same snapshot; infrastructure failures do not cause automatic restarts. Login/parking of sessions is outside the epic, in backlog item 281. The release covers the whole epic and the panel (LA-16).
 
-## Gotowość wykonawcza po przeglądzie
+## Execution readiness after the review
 
-Przegląd 2026-11-05 rozstrzyga kontrakty techniczne, w tym headless Chrome w kontenerze z prywatnym DevTools do ręcznej interwencji. [Kwalifikacja](../../kwalifikacja-runtime.md) określa wersje i zabezpieczenia oraz dowody wymagane przed integracją. Nie ma otwartego wyboru modelu, przeglądarki lub kwot; działanie sprawdza wykonawca. Negatywny test blokuje włączenie, nie uprawnia do obejścia kryteriów.
+The review of 2026-11-05 resolves the technical contracts, including headless Chrome in a container with private DevTools for manual intervention. The [qualification](../../kwalifikacja-runtime.md) defines the versions and safeguards and the evidence required before integration. There is no open choice of model, browser or quotas; the implementer checks that it works. A negative test blocks enabling; it does not authorise working around the criteria.

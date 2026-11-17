@@ -1,108 +1,108 @@
-# AI i research przy limicie 100 zł miesięcznie
+# AI and research within a limit of 100 PLN a month
 
-Stan źródeł: **2026-10-30**. Research dla `oferty-pracy-v4t.2`, na podstawie oficjalnych dokumentacji; bez płatnych wywołań, zakupów i sekretów. To materiał do decyzji, nie wybór dostawcy ani zatwierdzony kontrakt oceniania. Punktem odniesienia są [ustalenia produktu](../product/ustalenia.md).
+Sources as of: **2026-10-30**. Research for `oferty-pracy-v4t.2`, based on official documentation. No paid calls, purchases or secrets were used. This is material for a decision. It is not a choice of provider and not an approved assessment contract. The reference point is the [product decisions](../product/ustalenia.md).
 
-## Wniosek
+## Conclusion
 
-**Opisane scenariusze małego i średniego napływu ofert mieszczą się rachunkowo w 100 zł miesięcznie**, przy założonych tokenach, cenach i liczbie wyszukiwań oraz bez nieznanych dopłat za prawa storage. To warunkowa kalkulacja kosztów, jeszcze nie potwierdzenie wykonalności produkcyjnej: nie sprawdzono dostępu na koncie, kosztu wymaganych uprawnień ani jakości wyników. Nie dowodzi to jakości dopasowania ani kompletności researchu. Niewiadome obejmują jakość ekstrakcji polskich ogłoszeń, liczbę ponowień, tokeny narzędzi i prawa do utrwalania wyników. Żadne API wyszukiwania nie jest tutaj traktowane jako pełne przeszukanie internetu ani gwarancja prawdziwości znalezionych informacji.
+**The described scenarios of small and medium offer inflow fit arithmetically within 100 PLN a month**, given the assumed tokens, prices and number of searches, and excluding unknown surcharges for storage rights. This is a conditional cost calculation, not yet a confirmation of production feasibility: account access, the cost of the required rights and the quality of results were not checked. It does not prove the quality of matching or the completeness of research. The unknowns include the quality of extraction from Polish ads, the number of retries, tool tokens and the rights to persist results. No search API is treated here as a full search of the internet or as a guarantee that the information found is true.
 
-Do porównania nadają się OpenAI z własnym wyszukiwaniem, OpenAI z Brave oraz Gemini z Brave. Google Search Grounding ma ograniczenia kolidujące z trwałą bazą researchu firm. Warianty Brave wymagają potwierdzenia praw do przechowywania w konkretnym planie. Żaden układ nie jest tu wybrany.
+OpenAI with its own search, OpenAI with Brave, and Gemini with Brave are suitable for comparison. Google Search Grounding has restrictions that conflict with a persistent company research database. The Brave variants need confirmation of storage rights in a specific plan. No setup is chosen here.
 
-## Trzy układy API
+## Three API setups
 
-Ceny USD, standardowe przetwarzanie tekstu, bez rabatów batch/cache i podatków dostawcy. Odświeżyć przed podłączeniem usługi.
+Prices in USD, standard text processing, without batch/cache discounts and provider taxes. Refresh before connecting the service.
 
-| Układ | Model: USD / 1 mln tokenów wejścia → wyjścia | Search | Niewiadome |
+| Setup | Model: USD / 1M input tokens → output | Search | Unknowns |
 | --- | --- | --- | --- |
-| A. OpenAI Responses API + `web_search` | `gpt-6-luna`: **0,10 → 0,50** | **10 / 1000 wywołań search**, dodatkowo tokeny kontekstu według modelu | Prawa do utrwalania wyników niezweryfikowane; limity konta, tokeny i jakość dowodów |
-| B. OpenAI Responses API + Brave Search | Ten sam model i ceny | **5 / 1000 żądań**, publikowane **5 USD kredytów/mies.**; kontekst przekazany modelowi płatny osobno | Dwa konta, prawa storage, własne mapowanie dowodów |
-| C. Gemini Developer API + Brave Search | `gemini-3.1-flash-lite`: **0,25 → 1,50**, wyjście obejmuje thinking | Brave jak w B | Prawa storage, zgodność schematu i narzędzi |
+| A. OpenAI Responses API + `web_search` | `gpt-6-luna`: **0.10 → 0.50** | **10 / 1000 search calls**, plus context tokens at the model rate | Rights to persist results unverified; account limits, tokens and evidence quality |
+| B. OpenAI Responses API + Brave Search | Same model and prices | **5 / 1000 requests**, published **5 USD credits/month**; context passed to the model paid separately | Two accounts, storage rights, own evidence mapping |
+| C. Gemini Developer API + Brave Search | `gemini-3.1-flash-lite`: **0.25 → 1.50**, output includes thinking | Brave as in B | Storage rights, compatibility of schema and tools |
 
-Źródła: [OpenAI pricing](https://developers.openai.com/api/docs/pricing), [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing), [Brave Search API](https://brave.com/search/api/). A używa standardowego `web_search`, nie preview. Taryfy stałego bloku 8000 tokenów dla GPT-4.1 mini nie należy przenosić na Lunę.
+Sources: [OpenAI pricing](https://developers.openai.com/api/docs/pricing), [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing), [Brave Search API](https://brave.com/search/api/). A uses the standard `web_search`, not the preview. The fixed 8000-token block rate for GPT-4.1 mini must not be carried over to Luna.
 
-**A — status weryfikacji praw: nie zweryfikowano, czy warunki OpenAI web search pozwalają w tym przepływie trwale przechowywać i ponownie wykorzystywać twierdzenia researchu, URL cytowań oraz fragmenty źródeł. Jest to otwarte ograniczenie, a nie potwierdzona alternatywa bez ograniczeń storage; dokumentacja funkcji cytowania nie rozstrzyga tych praw.**
+**A — status of rights verification: it was not verified whether the OpenAI web search terms allow this flow to persistently store and reuse research claims, citation URLs and source excerpts. This is an open restriction, not a confirmed alternative free of storage restrictions; the documentation of the citation feature does not settle these rights.**
 
-A daje adnotacje cytowań URL i listę źródeł. Dokumentacja rozróżnia płatne działanie `search` od `open_page` i `find_in_page` dostępnych modelom reasoning. Cytowania w interfejsie muszą być widoczne i klikalne. Kontekst wyszukiwania Responses ma limit 128 tys. tokenów. [OpenAI: web search](https://developers.openai.com/api/docs/guides/tools-web-search).
+A provides URL citation annotations and a list of sources. The documentation distinguishes the paid `search` action from `open_page` and `find_in_page`, which are available to reasoning models. Citations in the interface must be visible and clickable. The Responses search context is limited to 128k tokens. [OpenAI: web search](https://developers.openai.com/api/docs/guides/tools-web-search).
 
-B/C oddzielają wyszukiwanie od syntezy. Brave zwraca URL i fragmenty/treść, a aplikacja przypisuje dowody. Search ma publikowany limit 50 zapytań/s; osobny produkt Answers ma inne ceny i nie jest liczony. FAQ warunkuje przechowywanie wyników planem z prawami storage; otwarta strona nie potwierdza tutaj ceny tych uprawnień. To warunek do wyjaśnienia przed trwałym cache, nie przyznane prawo do zapisu. [Brave: plany i FAQ](https://brave.com/search/api/), [warunki API](https://api-dashboard.search.brave.com/documentation/resources/terms-of-service).
+B/C separate search from synthesis. Brave returns URLs and excerpts/content, and the application assigns the evidence. Search has a published limit of 50 queries/s; the separate Answers product has different prices and is not counted. The FAQ makes storing results conditional on a plan with storage rights; the opened page does not confirm the price of these rights here. This is a condition to clarify before a persistent cache, not a granted right to store. [Brave: plans and FAQ](https://brave.com/search/api/), [API terms](https://api-dashboard.search.brave.com/documentation/resources/terms-of-service).
 
-Odczyt stron można realizować aplikacją lub, w C, URL Context. Ten ostatni obsługuje do 20 podanych URL/żądanie, nie podąża automatycznie za podstronami i nie obsługuje paywalli/logowania. Pobrana treść jest płatnym wejściem modelu. Nie zakładamy kosztownego renderera JavaScript ani omijania blokad; prawa stron pozostają osobnym warunkiem. [Google: URL Context](https://ai.google.dev/gemini-api/docs/url-context).
+Pages can be read by the application or, in C, by URL Context. URL Context handles up to 20 given URLs per request, does not follow subpages automatically and does not handle paywalls or logins. The fetched content is paid model input. We do not assume an expensive JavaScript renderer or bypassing blocks; the rights of the pages remain a separate condition. [Google: URL Context](https://ai.google.dev/gemini-api/docs/url-context).
 
-### Dlaczego nie oprzeć bazy firm na Google Search Grounding
+### Why not base the company database on Google Search Grounding
 
-Technicznie Grounding zwraca cytowania, zapytania i sugestie. Dla Gemini 3+ obejmuje 5000 zapytań/mies. bez dopłaty, potem 14 USD/1000, z domyślnym limitem 1500/dzień/projekt. Jedna odpowiedź może wygenerować wiele zapytań. [Google: Grounding](https://ai.google.dev/gemini-api/docs/google-search).
+Technically, Grounding returns citations, queries and suggestions. For Gemini 3+ it includes 5000 queries/month at no extra charge, then 14 USD/1000, with a default limit of 1500/day/project. One response can generate many queries. [Google: Grounding](https://ai.google.dev/gemini-api/docs/google-search).
 
-Warunki ograniczają cache, analizę, automatyczne zbieranie linków i tworzenie bazy. Wyjątek historii czatu nie daje ogólnego prawa do ponownego używania researchu firmy. Obowiązują też wymagania wyświetlania wyników i sugestii. **Wniosek projektowy: Grounding nie jest zatwierdzonym backendem trwałej bazy firm** bez rozwiązania zgodności konkretnego przepływu. To zidentyfikowana kolizja wymagań, nie pełna opinia prawna. [Google: Additional Terms, Grounding with Google Search](https://ai.google.dev/gemini-api/terms#grounding-with-google-search).
+The terms restrict caching, analysis, automated link collection and building a database. The chat history exception does not give a general right to reuse company research. Requirements for displaying results and suggestions also apply. **Design conclusion: Grounding is not an approved backend for a persistent company database** until the compliance of the specific flow is resolved. This is an identified conflict of requirements, not a full legal opinion. [Google: Additional Terms, Grounding with Google Search](https://ai.google.dev/gemini-api/terms#grounding-with-google-search).
 
-## Przebieg i kontrakt danych — propozycja
+## Flow and data contract — proposal
 
-1. **Ekstrakcja:** pola dostępne w API/RSS mapować w kodzie; model stosować do opisu. Pole ma wartość albo `null`, źródło i fragment dowodu. Osobno technologie wymagane/opcjonalne, waluta/okres/podstawa wynagrodzenia i role firm.
-2. **Triage:** profil bez kontaktów z CV, oferta i jawne kryteria. Wynik: ocena 0–100, składowe, uzasadnienie, mocne strony, braki i niewiadome. Nowy profil/prompt tworzy nową ocenę; decyzja właściciela pozostaje osobna.
-3. **Research podstawowy:** po kwalifikacji ograniczony zestaw źródeł o działalności, produktach, projekcie, warunkach i technologiach. Współdzielić wynik firmy tylko przy poprawnej identyfikacji, aktualności i odpowiednich prawach. Nie przenosić technologii klienta na pośrednika ani innego projektu na ofertę.
-4. **Pogłębiony:** na żądanie połączyć ofertę, znany zespół/projekt, informacje rekrutera i źródła. Wynik: firma/projekt, mapa technologii z zakresem, priorytety powtórki, pytania do ćwiczeń i do firmy, uzasadnione wymaganiem lub dowodem. Pytania to propozycje, nie znany zestaw z rzeczywistej rozmowy.
+1. **Extraction:** map fields available in the API/RSS in code; use the model for the description. A field has a value or `null`, a source and an evidence excerpt. Separately: required/optional technologies, currency/period/basis of pay, and company roles.
+2. **Triage:** the profile without CV contact details, the offer and explicit criteria. Result: an assessment of 0–100, components, justification, strengths, gaps and unknowns. A new profile/prompt creates a new assessment; the owner's decision stays separate.
+3. **Basic research:** after qualification, a limited set of sources on the business, products, project, conditions and technologies. Share a company result only with correct identification, freshness and appropriate rights. Do not carry a client's technologies over to an intermediary, or another project over to the offer.
+4. **Deep research:** on request, combine the offer, a known team/project, recruiter information and sources. Result: company/project, a technology map with scope, review priorities, practice questions and questions for the company, each justified by a requirement or evidence. The questions are proposals, not a known set from a real interview.
 
-Proponowana jednostka twierdzenia: `claim_id`, `text`, `kind` (`fact`/`opinion`/`inference`/`unknown`), `subject`, `scope`, `source_ids`, `evidence_excerpt`, `published_at?`, `retrieved_at`, `conflicts[]`. Źródło ma stabilny identyfikator, URL, tytuł, datę odczytu i — gdy wolno — fragment lub hash treści. Rozróżniać pełną stronę od samego fragmentu wyszukiwarki. Opinie pracowników pozostają opiniami; brak wyników nie dowodzi braku problemów.
+Proposed claim unit: `claim_id`, `text`, `kind` (`fact`/`opinion`/`inference`/`unknown`), `subject`, `scope`, `source_ids`, `evidence_excerpt`, `published_at?`, `retrieved_at`, `conflicts[]`. A source has a stable identifier, URL, title, read date and — where allowed — an excerpt or content hash. Distinguish a full page from a bare search engine snippet. Employee opinions remain opinions; the absence of results does not prove the absence of problems.
 
-OpenAI i Gemini obsługują wynik strukturalny oparty na podzbiorze JSON Schema. **Schemat nie gwarantuje prawdziwości ani kompletności.** Obsłużyć odmowę, przerwanie, semantyczny błąd i niewiadomą. Google opisuje wspólne użycie schematu z narzędziami jako preview; alternatywą są osobne etapy zebrania dowodów i JSON, z kosztem obu. Aplikacja sprawdza istnienie identyfikatorów źródeł, zakres oceny i zgodność fragmentu z dowodem. [OpenAI: Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [Google: Structured Outputs](https://ai.google.dev/gemini-api/docs/structured-output).
+OpenAI and Gemini support structured output based on a subset of JSON Schema. **A schema guarantees neither truth nor completeness.** Handle refusal, interruption, semantic error and unknown. Google describes combined use of a schema with tools as preview; the alternative is separate stages for gathering evidence and for JSON, paying for both. The application checks that source identifiers exist, the assessment range, and that the excerpt matches the evidence. [OpenAI: Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [Google: Structured Outputs](https://ai.google.dev/gemini-api/docs/structured-output).
 
-### Dwie możliwości ratingu, bez rozstrzygnięcia
+### Two rating options, undecided
 
-- **Modelowa:** AI proponuje składowe i sumę; kod kontroluje skalę i jawne wagi. Zgodna z „AI proponuje ocenę”, wymaga kalibracji i może zmieniać się między uruchomieniami.
-- **Deterministyczna suma składowych AI:** model proponuje poziomy dopasowania z dowodami, kod oblicza sumę z wag. Ułatwia odtworzenie i zmianę wag bez kolejnego wywołania. Normalizacja i obsługa niewiadomych wymagają decyzji. Czysto regułowy rating zastępujący rekomendację AI oznaczałby zmianę wymagań.
+- **Model-based:** AI proposes the components and the total; code controls the scale and explicit weights. Consistent with "AI proposes the assessment", needs calibration and may change between runs.
+- **Deterministic sum of AI components:** the model proposes match levels with evidence, code computes the total from the weights. Makes it easier to reproduce and to change weights without another call. Normalisation and handling of unknowns need a decision. A purely rule-based rating replacing the AI recommendation would mean a change of requirements.
 
-Kompletność danych pozostaje osobna. Wagi, próg automatycznego researchu i sumowanie przy brakach nie są ustalone.
+Data completeness stays separate. Weights, the automatic research threshold and summing with gaps are not decided.
 
-## Miesięczne scenariusze
+## Monthly scenarios
 
-**Założenie, nie kurs NBP: efektywny 1 USD = 5,00 PLN**, mający pomieścić przewalutowanie i ewentualne narzuty rozliczenia. Nie jest to zweryfikowany kurs ani wyliczenie konkretnej faktury. Wyższy rzeczywisty koszt efektywny wymaga zmniejszenia limitu USD. VPS pozostaje poza budżetem AI + search.
+**Assumption, not the NBP rate: effective 1 USD = 5.00 PLN**, meant to cover currency conversion and possible settlement surcharges. It is not a verified rate or a calculation of a specific invoice. A higher actual effective cost requires lowering the USD limit. The VPS stays outside the AI + search budget.
 
-Miesiąc ma 30 dni. Liczymy nowe/zmienione oferty po deduplikacji. To propozycje wolumenu, nie zmierzony napływ z portalu.
+A month has 30 days. We count new/changed offers after deduplication. These are volume proposals, not a measured inflow from a portal.
 
-| Pakiet | Łączne wejście / wyjście na jednostkę | Search | Zakres |
+| Package | Total input / output per unit | Search | Scope |
 | --- | --- | --- | --- |
-| Oferta | 6000 / 1000 tokenów | 0 | Ekstrakcja i triage razem |
-| Podstawowy research nowej firmy | 20 000 / 2500 | 2 | Źródła, synteza i ewentualny osobny JSON |
-| Pogłębione przygotowanie | 60 000 / 8000 | 8 | Wszystkie przebiegi i dodatkowe źródła |
+| Offer | 6000 / 1000 tokens | 0 | Extraction and triage together |
+| Basic research of a new company | 20 000 / 2500 | 2 | Sources, synthesis and a possible separate JSON |
+| Deep preparation | 60 000 / 8000 | 8 | All runs and additional sources |
 
-Wejście obejmuje cały płatny kontekst narzędzi, prompty, źródła i ponownie przekazywane odpowiedzi. Wyjście obejmuje płatne rozumowanie. To hipoteza do pomiaru, nie narzucony dostawcy limit; tych samych tokenów narzędzi nie doliczać drugi raz.
+Input includes all paid tool context, prompts, sources and responses passed again. Output includes paid reasoning. This is a hypothesis to measure, not a limit imposed by the provider; do not count the same tool tokens twice.
 
-| Wolumen | Oferty | Podstawowy | Pogłębiony | Wejście / wyjście | Search |
+| Volume | Offers | Basic | Deep | Input / output | Search |
 | --- | --- | --- | --- | --- | --- |
-| Mały | 10/dzień = 300/mies. | 20/mies. | 4/mies. | 2,44 mln / 0,382 mln | 72 |
-| Średni | 50/dzień = 1500/mies. | 60/mies. | 8/mies. | 10,68 mln / 1,714 mln | 184 |
+| Small | 10/day = 300/month | 20/month | 4/month | 2.44M / 0.382M | 72 |
+| Medium | 50/day = 1500/month | 60/month | 8/month | 10.68M / 1.714M | 184 |
 
-Wzór: `USD = wejście_mln × cena_wejścia + wyjście_mln × cena_wyjścia + search`. PLN poniżej zawierają dodatkowe **30% zapasu scenariuszowego** na ponowienia i tokeny. To nie gwarantowany limit kosztu zlecenia.
+Formula: `USD = wejście_mln × cena_wejścia + wyjście_mln × cena_wyjścia + search` (input in millions × input price + output in millions × output price + search). The PLN figures below include an extra **30% scenario margin** for retries and tokens. This is not a guaranteed cost limit per request.
 
-| Układ | Mały: USD bez zapasu | Mały: PLN z 30% | Średni: USD bez zapasu | Średni: PLN z 30% |
+| Setup | Small: USD without margin | Small: PLN with 30% | Medium: USD without margin | Medium: PLN with 30% |
 | --- | --- | --- | --- | --- |
-| A | 0,435 + 0,720 = **1,155** | **7,51** | 1,925 + 1,840 = **3,765** | **24,47** |
-| B, przed kredytami | 0,435 + 0,360 = **0,795** | **5,17** | 1,925 + 0,920 = **2,845** | **18,49** |
-| C, przed kredytami | 1,183 + 0,360 = **1,543** | **10,03** | 5,241 + 0,920 = **6,161** | **40,05** |
+| A | 0.435 + 0.720 = **1.155** | **7.51** | 1.925 + 1.840 = **3.765** | **24.47** |
+| B, before credits | 0.435 + 0.360 = **0.795** | **5.17** | 1.925 + 0.920 = **2.845** | **18.49** |
+| C, before credits | 1.183 + 0.360 = **1.543** | **10.03** | 5.241 + 0.920 = **6.161** | **40.05** |
 
-Ceny pochodzą z powyższych cenników; reszta to własne rachunki. Przy rzeczywiście dostępnych 5 USD kredytów Brave search mieści się w grancie: B wynosi **2,83 / 12,51 PLN**, C **7,69 / 34,07 PLN**. Nie policzono nieznanej dopłaty za prawa storage, płatnego pobierania stron ani innych zastosowań tego samego konta.
+Prices come from the price lists above; the rest is our own arithmetic. With the 5 USD of Brave credits actually available, search fits within the grant: B comes to **2.83 / 12.51 PLN**, C to **7.69 / 34.07 PLN**. Not counted: an unknown surcharge for storage rights, paid page fetching and other uses of the same account.
 
-Wrażliwość: średni A przy czterokrotnie większym koszcie całego pakietu to **97,89 PLN** z zapasem; średni C przy trzykrotnie większym koszcie to **120,14 PLN**, ponad limit. Ponowna ocena 1500 ofert to osobna partia: konserwatywnie 1,65 USD w B przy powtórzeniu całego pakietu oferty, około **10,73 PLN** z zapasem. Swobodne pętle researchu i długie strony mogą wyczerpać budżet mimo małej liczby ofert.
+Sensitivity: medium A at four times the cost of the whole package is **97.89 PLN** with margin; medium C at three times the cost is **120.14 PLN**, over the limit. Re-assessing 1500 offers is a separate batch: conservatively 1.65 USD in B when repeating the whole offer package, about **10.73 PLN** with margin. Unconstrained research loops and long pages can exhaust the budget even with a small number of offers.
 
-## Rozliczanie i zatrzymanie — propozycja
+## Settlement and stopping — proposal
 
-OpenAI raportuje `usage.input_tokens`, `output_tokens` i szczegóły; Gemini raportuje użycie, w tym myślenie. Historia rozmowy ponownie zużywa wejście. Zachować metryki i identyfikator odpowiedzi; nazwy pól zależą od wybranego API/SDK. [OpenAI: przykład usage](https://developers.openai.com/api/docs/guides/structured-outputs), [Google: tokeny](https://ai.google.dev/gemini-api/docs/tokens).
+OpenAI reports `usage.input_tokens`, `output_tokens` and details; Gemini reports usage, including thinking. Conversation history consumes input again. Keep the metrics and the response identifier; field names depend on the chosen API/SDK. [OpenAI: usage example](https://developers.openai.com/api/docs/guides/structured-outputs), [Google: tokens](https://ai.google.dev/gemini-api/docs/tokens).
 
-Rejestr operacji powinien wiązać ofertę/firmę z etapem, próbą, dostawcą/modelem, wersją cennika, tokenami wejścia/cache/wyjścia/rozumowania, liczbą search, kosztem USD/PLN, przelicznikiem i rezerwacją. Kredyty oddzielić od zużycia według cennika.
+The operation log should link the offer/company to the stage, attempt, provider/model, price list version, input/cache/output/reasoning tokens, number of searches, USD/PLN cost, conversion rate and reservation. Keep credits separate from usage at list prices.
 
-Proponowane zasady:
+Proposed rules:
 
-1. Przed zleceniem atomowo rezerwować koszt górnego ograniczenia wejścia, wyjścia i narzędzi, również dla równoległych zadań.
-2. Ograniczać rozmiar źródeł, wyjście i rundy; narzędzia uruchamiać w kontrolowanych porcjach. Sam prompt „maksymalnie 2 wyszukania” nie gwarantuje limitu.
-3. Po odpowiedzi rozliczyć użycie i zwolnić różnicę. Timeout po przyjęciu żądania ma nieznany koszt: zachować rezerwację do wyjaśnienia, nie wpisywać zera.
-4. Naprawa JSON, ponowienie i fallback mają osobny koszt/rezerwację. Propozycja: najwyżej jedno automatyczne ponowienie, potem „wymaga sprawdzenia”. Nie powtarzać całego researchu z powodu końcowego formatu.
-5. Gdy brakuje środków, wstrzymać płatną kolejkę do zwiększenia/odnowienia budżetu; bezpłatne pobieranie i odczyt bazy trwają. Panel dostawcy nie zastępuje wspólnego limitu AI + search.
+1. Before a request, atomically reserve the cost of the upper bound of input, output and tools, also for parallel tasks.
+2. Limit source size, output and rounds; run tools in controlled portions. A prompt saying "at most 2 searches" does not by itself guarantee the limit.
+3. After the response, settle usage and release the difference. A timeout after the request was accepted has an unknown cost: keep the reservation until clarified, do not record zero.
+4. JSON repair, retry and fallback have a separate cost/reservation. Proposal: at most one automatic retry, then "needs checking". Do not repeat the whole research because of the final format.
+5. When funds run out, pause the paid queue until the budget is increased/renewed; free fetching and database reads continue. The provider's dashboard does not replace the shared AI + search limit.
 
-Kwoty rezerw i zasady retry nie są zatwierdzone. Zapas 30% z tabeli nie dowodzi, że dowolne żądanie nie przekroczy rezerwacji.
+Reservation amounts and retry rules are not approved. The 30% margin from the table does not prove that an arbitrary request will not exceed its reservation.
 
-## Subskrypcje i dalsza decyzja
+## Subscriptions and the next decision
 
-Abonament aplikacji nie jest automatycznie saldem dowolnej organizacji API. Aktualna dokumentacja OpenAI opisuje warunkowy benefit API dla uprawnionych Pro/Business, wymagający aktywacji i powiązania organizacji, z wygasaniem kredytów. Nie zakładamy planu właściciela ani aktywacji; kalkulacja nie korzysta z tych grantów. [OpenAI: API credits for ChatGPT subscribers](https://developers.openai.com/api/docs/guides/chatgpt-api-credits).
+An app subscription is not automatically a balance for an arbitrary API organisation. Current OpenAI documentation describes a conditional API benefit for eligible Pro/Business users, requiring activation and linking an organisation, with expiring credits. We do not assume the owner's plan or activation; the calculation does not use these grants. [OpenAI: API credits for ChatGPT subscribers](https://developers.openai.com/api/docs/guides/chatgpt-api-credits).
 
-Przed wyborem potrzebny jest później autoryzowany pomiar: kilkadziesiąt zróżnicowanych ofert z Polski, kilka firm o niejednoznacznych nazwach i dwa przygotowania do rozmowy. Porównać błędy ekstrakcji, oceny właściciela, pokrycie dowodami, niewiadome i koszt całości z ponowieniami. Tutaj nie wykonano takiego testu; dokumentacja funkcji nie dowodzi jakości modelu.
+Before choosing, an authorised measurement is needed later: a few dozen varied offers from Poland, several companies with ambiguous names and two interview preparations. Compare extraction errors, the owner's assessments, evidence coverage, unknowns and the total cost including retries. No such test was run here; feature documentation does not prove model quality.
 
-Do decyzji pozostają dostawca i prawa planu, model/wersja API, próg researchu, metoda ratingu, ważność danych firmy, twarde limity operacji i nieznany koszt po timeout. Cennik nie potwierdza dostępności na konkretnym koncie. Dla Luny karta modelu nie przewiduje darmowego tieru; dostęp i przepustowość zależą od tieru organizacji. Nie zakładamy darmowego konta do pracy cyklicznej. [OpenAI: limity modelu](https://developers.openai.com/api/docs/models/gpt-6-luna). Wynik to wykonalność warunkowa, nie zatwierdzona architektura.
+Still to decide: the provider and plan rights, the model/API version, the research threshold, the rating method, the validity of company data, hard operation limits and the unknown cost after a timeout. A price list does not confirm availability on a specific account. For Luna, the model card provides no free tier; access and throughput depend on the organisation's tier. We do not assume a free account for recurring work. [OpenAI: model limits](https://developers.openai.com/api/docs/models/gpt-6-luna). The result is conditional feasibility, not an approved architecture.

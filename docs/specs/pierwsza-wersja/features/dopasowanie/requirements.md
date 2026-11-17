@@ -1,76 +1,76 @@
-# Triage i ocena dopasowania — wymagania
+# Triage and match assessment — requirements
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **roboczy szkic — do dopracowania przed realizacją tej funkcjonalności**, 2026-10-31. Funkcjonalność pod wspólnym [PRD](../../PRD.md). Źródła i decyzje właściciela: [PRD](../../PRD.md#źródła-i-odpowiedzialność-dokumentów). Projekt techniczny: [solution-design.md](solution-design.md). Terminologia: [słownik](../../../../../GLOSSARY.md).
+Status: **working draft — to be refined before this feature is implemented**, 2026-10-31. A feature under the shared [PRD](../../PRD.md). Sources and owner's decisions: [PRD](../../PRD.md#sources-and-document-responsibilities). Technical design: [solution-design.md](solution-design.md). Terminology: [glossary](../../../../../GLOSSARY.md).
 
-## Zakres i zależności
+## Scope and dependencies
 
-Ten dokument jest właścicielem wymagań R-03, R-12, R-13, R-14 i odpowiadających im AC. Powiązania: [profil](../profil/requirements.md), [oferty](../oferty/requirements.md), [operacje](../operacje/requirements.md). Nie przejmuje reguł innych funkcjonalności. Aktorem jest właściciel; scenariusze są przyszłymi kryteriami, nie wynikiem testów.
+This document owns requirements R-03, R-12, R-13, R-14 and their ACs. Related: [profile](../profil/requirements.md), [offers](../oferty/requirements.md), [operations](../operacje/requirements.md). It does not take over the rules of other features. The actor is the owner; the scenarios are future criteria, not test results.
 
-### R-03 — brak informacji i wykluczenia
+### R-03 — missing information and exclusions
 
-Niewiadoma sama nie odrzuca oferty. Potwierdzona sprzeczność z wymaganiem koniecznym blokuje dalszą automatyczną ocenę; zapisany powód jest widoczny. Nie oznacza to własnej decyzji właściciela o odrzuceniu. Gdy źródła podają sprzeczne warianty i co najmniej jeden spełnia wymaganie, to kryterium traktujemy jako spełnione, zachowując warianty oraz jawny komunikat o rozbieżności. Taki przypadek nie jest niewiadomą ani potwierdzonym wykluczeniem.
+An unknown alone does not reject an offer. A confirmed conflict with a must-have requirement blocks further automatic assessment; the saved reason is visible. This is not the owner's own decision to reject. When sources give conflicting variants and at least one meets the requirement, we treat that criterion as met, keeping the variants and an explicit discrepancy message. Such a case is neither an unknown nor a confirmed exclusion.
 
-**AC-03:** oferta bez widełek lub potwierdzenia pracy z Polski pozostaje zapisana z komunikatem do sprawdzenia. Potwierdzona niezgodność ma wskazane kryterium i dowód; automatyczna ocena nie jest zlecana. Każda już pobrana oferta pozostaje dostępna niezależnie od kwalifikacji, błędu AI lub wygaśnięcia. Dla sprzecznych wariantów „zdalnie” i „hybrydowo”, przy wymaganej pracy zdalnej, kryterium jest spełnione, a rozbieżność pozostaje widoczna wraz ze źródłami. Nie obniżamy tej kwalifikacji do „nieznane” ani nie wymagamy ręcznego rozstrzygnięcia przed jej uznaniem.
+**AC-03:** an offer without a salary range or without confirmation of working from Poland stays saved, with a message to check it. A confirmed mismatch has the criterion and the evidence indicated; no automatic assessment is requested. Every offer already fetched remains available regardless of qualification, an AI error or expiry. For conflicting variants "remote" and "hybrid", with remote work required, the criterion is met, and the discrepancy stays visible together with the sources. We do not downgrade this qualification to "unknown" and do not require a manual resolution before it is accepted.
 
-### R-12 — składowe i uzasadnienia
+### R-12 — components and justifications
 
-Triage wykorzystuje profil i ogłoszenia, bez wyszukiwania WWW. AI proponuje składowe: technologie, doświadczenie, warunki i kierunek zawodowy. Każda wskazuje podstawę w ogłoszeniu i profilu, dopasowanie/potwierdzony brak/niewiadomą, uzasadnienie, mocne strony i luki.
+Triage uses the profile and the ads, without web search. AI proposes components: technologies, experience, conditions and career direction. Each shows the basis in the ad and the profile, match/confirmed absence/unknown, a justification, strengths and gaps.
 
-**AC-12:** można prześledzić uzasadnienia do wejściowych wersji profilu/ogłoszeń. Technologia nieobecna w CV nie jest opisana jako potwierdzony brak. Błąd AI nie zmienia decyzji na „odrzucona”. Research firmy pozostaje osobnym wynikiem, nie zmienia po cichu znaczenia ratingu triage.
+**AC-12:** justifications can be traced to the input versions of the profile/ads. A technology absent from the CV is not described as a confirmed absence. An AI error does not change the decision to "rejected". Company research remains a separate result and does not silently change the meaning of the triage rating.
 
-### R-13 — rating i kompletność
+### R-13 — rating and completeness
 
-Kod oblicza rating 0–100 z ocen możliwych do ustalenia, według konfigurowalnych wag: początkowo 40% technologie, 25% doświadczenie, 20% warunki, 15% kierunek zawodowy. Niewiadome nie otrzymują zera ani zgadywanej oceny. Kompletność jest oddzielną miarą; bez podstaw rating pozostaje nieokreślony. Wymagania konieczne sprawdzane są osobno.
+Code calculates a rating of 0–100 from the assessments that can be established, using configurable weights: initially 40% technologies, 25% experience, 20% conditions, 15% career direction. Unknowns get neither a zero nor a guessed assessment. Completeness is a separate measure; with no basis the rating stays undetermined. Must-have requirements are checked separately.
 
-**AC-13:** te same składowe i wagi dają ten sam wynik. Zmiana samych wag przelicza rating bez wywołania AI i zachowuje poprzedni wynik. Dla całkowitego braku podstaw widoczny jest brak oceny, a nie 0/100. Wysoki rating nie znosi wykluczenia. Kompletność uwzględnia wagi ocenialnych kryteriów: przy w pełni ocenialnych technologiach (40%) i doświadczeniu (25%) oraz nieznanych warunkach i kierunku wynosi 65%. Rating normalizujemy do ocenialnej części bez zer za niewiadome. Kompletność uwzględnia również rozpoznaną część wewnątrz składowej: znajomość umowy i trybu pracy przy nieznanych płacy/godzinach nie daje pełnej kompletności warunków. Pominięte i jawnie obojętne kryteria rozróżnia się zgodnie z profilem; brak danych nie staje się oceną zerową.
+**AC-13:** the same components and weights give the same result. Changing the weights alone recalculates the rating without an AI call and keeps the previous result. With a complete lack of basis, the absence of an assessment is visible, not 0/100. A high rating does not cancel an exclusion. Completeness takes into account the weights of the assessable criteria: with fully assessable technologies (40%) and experience (25%) and unknown conditions and direction it is 65%. We normalise the rating to the assessable part, with no zeros for unknowns. Completeness also takes into account the recognised part within a component: knowing the contract and the work mode while the pay/hours are unknown does not give full completeness of conditions. Skipped and explicitly indifferent criteria are distinguished according to the profile; missing data does not become a zero assessment.
 
-#### Wynagrodzenie a oczekiwane minimum (Q10)
+#### Pay and the expected minimum (Q10)
 
-Jeśli oferta ma porównywalną walutę, okres, umowę i podstawę kwoty, kryterium minimum jest spełnione, gdy widełki obejmują kwotę co najmniej równą oczekiwaniu. Przy minimum 25 tys. i widełkach 20–28 tys. oferta spełnia kryterium, ale pokazujemy częściowe pokrycie oraz brak gwarancji uzyskania 25 tys. Zakres w całości poniżej minimum nie spełnia kryterium; brak wystarczających danych pozostaje niewiadomą.
+If an offer has a comparable currency, period, contract and amount basis, the minimum criterion is met when the salary range includes an amount at least equal to the expectation. With a minimum of 25k and a salary range of 20–28k the offer meets the criterion, but we show partial coverage and that getting 25k is not guaranteed. A range entirely below the minimum does not meet the criterion; insufficient data stays an unknown.
 
-**Dodatkowe warunki AC-13:** minimum 25 i widełki 20–28 dają spełnienie z komunikatem o częściowym pokryciu; widełki 20–24 nie spełniają, 25–28 spełniają. Porównanie nie konwertuje domyślnie netto/brutto, walut ani okresów.
+**Additional AC-13 conditions:** a minimum of 25 and a salary range of 20–28 give a met criterion with a partial coverage message; a range of 20–24 does not meet it, 25–28 meets it. The comparison does not convert net/gross, currencies or periods by default.
 
-### R-14 — historia i ręczne oceny
+### R-14 — history and manual assessments
 
-Każda ocena ma wersje wejścia i historię do wglądu. Właściciel może zmienić ocenę. Kolejna ocena AI może zastąpić ręczną, zachowując wcześniejsze wartości. Decyzja właściciela i stan aplikacji są niezależne.
+Each assessment has input versions and a history to view. The owner can change an assessment. A later AI assessment can replace a manual one, keeping the earlier values. The owner's decision and the application state are independent.
 
-**AC-14:** po ręcznej ocenie i ponownej ocenie AI widoczny jest aktualny wynik AI oraz obie poprzednie operacje w historii z autorem i datą. Notatki, decyzja i etap aplikacji pozostają bez zmian. Wynik dla starego wejścia nie może zostać przedstawiony jako aktualny dla nowego.
+**AC-14:** after a manual assessment and a reassessment by AI, the current AI result and both previous operations are visible in the history with the author and date. Notes, the decision and the application stage remain unchanged. A result for an old input cannot be presented as current for a new one.
 
-## Otwarte kwestie
+## Open questions
 
-Powiązane: O-02, O-05, O-06. Szczegóły, konsekwencje i sposób zamknięcia: [wspólny rejestr](../../open-decisions.md). Otwarte kwestie rozpatrujemy przy podejmowaniu tej funkcjonalności; sam szkic nie oznacza gotowości implementacji.
+Related: O-02, O-05, O-06. Details, consequences and how to close them: [shared register](../../open-decisions.md). We consider open questions when taking up this feature; the draft alone does not mean the implementation is ready.
 
-## Etap wykonawczy — ocena na żądanie, 2026-11-03
+## Execution stage — assessment on demand, 2026-11-03
 
-Właściciel potwierdził jednakowe wagi kryteriów wewnątrz grup. Pierwszy pionowy etap obejmuje ocenę pojedynczego ogłoszenia źródłowego na żądanie z aktywnym, zatwierdzonym profilem. Każde zlecenie jest osobną partią Batch, również dla jednej oferty; przyszłe grupowanie nie zmienia kontraktu wyników. Bez automatycznego researchu i harmonogramu triage w tym etapie. Przyszłe połączenia ofert zachowają oddzielne wersje ogłoszeń.
+The owner confirmed equal weights of criteria within groups. The first vertical stage covers the assessment of a single source ad on demand with an active, approved profile. Each request is a separate Batch batch, also for one offer; future grouping does not change the result contract. No automatic research and no triage schedule in this stage. Future offer merges will keep separate ad versions.
 
-- AC-B1: zlecenie wymaga aktywnego profilu i jawnej konfiguracji cen Batch; brak konfiguracji nie wysyła danych. Zapisane są wersje wejść, kryteria oraz konfiguracja modelu i cennika.
-- AC-B2: rezerwacja korzysta ze wspólnego budżetu z CV. Brak środków pozostawia zlecenie oczekujące. Wyniki rozliczamy w miesiącu rezerwacji. Wątpliwy koszt zachowuje rezerwację.
-- AC-B3: stan wysyłania jest trwały przed żądaniem utworzenia partii. Po przerwaniu lub niejednoznacznym błędzie nie ponawiamy płatnego zlecenia automatycznie. Znany identyfikator partii umożliwia dalszy odczyt po restarcie.
-- AC-B4: wyniki przypisujemy przez custom_id, nigdy kolejność. Błąd/wygaśnięcie/odmowa/niepełna odpowiedź pozostawiają poprzednie oceny i decyzje bez zmian. Poprawny wynik ma dowody w obu wersjach wejść; brak umiejętności w CV jest niewiadomą.
-- AC-B5: szczegóły pokazują stan (w tym możliwość oczekiwania do24h), wynik, składowe, kompletność, uzasadnienia i historię. Zmiana wersji wejść oznacza nieaktualność bez usuwania oceny.
-- AC-B6: pliki wejściowe i wynikowe mają ograniczoną retencję; po trwałym odbiorze terminalnego wyniku sprzątamy zdalne pliki, a błąd sprzątania jest ponawiany niezależnie od oceny.
+- AC-B1: a request requires an active profile and an explicit Batch price configuration; missing configuration sends no data. The input versions, the criteria and the model and price list configuration are saved.
+- AC-B2: the reservation uses the budget shared with the CV. No funds leaves the request pending. Results are settled in the reservation month. A doubtful cost keeps the reservation.
+- AC-B3: the sending state is durable before the request to create a batch. After an interruption or an ambiguous error we do not retry the paid request automatically. A known batch identifier allows further reading after a restart.
+- AC-B4: results are assigned by custom_id, never by order. An error/expiry/refusal/incomplete response leaves previous assessments and decisions unchanged. A correct result has evidence in both input versions; a skill missing from the CV is an unknown.
+- AC-B5: the details show the state (including that waiting may take up to 24h), the result, components, completeness, justifications and history. A change of input versions marks the assessment as stale without removing it.
+- AC-B6: input and output files have limited retention; after the terminal result has been durably received we clean up the remote files, and a cleanup error is retried independently of the assessment.
 
-Lokalna kontrola koniecznych warunków rozpoznaje jednoznaczne, strukturalne porównania płacy i trybu pracy. Dowolny tekst pozostałych wymagań pozostaje do sprawdzenia, jeżeli nie można bez zgadywania potwierdzić sprzeczności. Ocena nie jest potwierdzeniem spełnienia wszystkich wymagań koniecznych. Jawna sprzeczność rozpoznana lokalnie blokuje zlecenie. Ręczne oceny, zmiana wag, oceny zbiorcze i filtrowanie listy ocen stanowią dalsze fragmenty R-13/R-14, nie są uznawane za ukończone przez ten etap.
+The local check of must-have conditions recognises unambiguous, structured comparisons of pay and work mode. Free text of the other requirements stays to be checked if a conflict cannot be confirmed without guessing. An assessment is not a confirmation that all must-have requirements are met. An explicit conflict recognised locally blocks the request. Manual assessments, weight changes, bulk assessments and filtering the list by assessments are further parts of R-13/R-14 and are not considered completed by this stage.
 
-## Oceny na liście i zlecenia zbiorcze — 2026-11-03
+## Assessments on the list and bulk requests — 2026-11-03
 
-Zakres zadania8kt.2: właściciel porównuje zapisane oferty i zleca do100ocen w jednej operacji. Obejmuje R-12–R-14 oraz przegląd listy; ręczne oceny i edycja wag pozostają8kt.3.
+Scope of task 8kt.2: the owner compares saved offers and requests up to 100 assessments in one operation. It covers R-12–R-14 and the list review; manual assessments and weight editing remain in 8kt.3.
 
-- AC-G1: lista pokazuje rating, kompletność, składowe i aktualność najnowszej udanej oceny oraz stan ostatniego zlecenia. Nowe oczekiwanie/błąd nie usuwa wcześniejszego wyniku.
-- AC-G2: można filtrować po minimalnym ratingu, kompletności i czterech składowych oraz stanie oceny. Niewiadome nie spełniają progu0; stare oceny nie przechodzą progów bez jawnego wybrania stanu nieaktualne. Sortowanie po dopasowaniu pokazuje aktualne znane wyniki przed nieaktualnymi i bez ratingu; równe wartości mają stałą kolejność.
-- AC-G3: zaznaczenie całej strony obejmuje wyłącznie widoczne pozycje; właściciel widzi łączną liczbę oraz maksymalną rezerwację przed zleceniem. Można zaznaczać na kolejnych stronach, a zmiana filtrów czyści zaznaczenie. Nie ma domyślnego zlecenia całej bazy.
-- AC-G4: operacja ma identyfikator zapobiegający ponownej wysyłce po utracie odpowiedziHTTP. Oferta już oczekująca jest wykorzystana ponownie; lokalnie wykluczona otrzymuje uzasadnienie bez kosztu. Nowe dopuszczone oferty trafiają do wspólnej partii, każda ma osobne wejście, historię i rezerwację.
-- AC-G5: rezerwacja nowych dopuszczonych pozycji jest atomowa dla grupy. Jeśli budżet nie wystarcza na całość, grupa czeka bez częściowo zajętych środków. Po zwiększeniu/odnowieniu budżetu worker wznawia grupę. Nie automatyzuje ponawiania zakończonych ocen.
-- AC-G6: nieuporządkowane wyniki są przypisywane przez custom_id. Błąd jednej oceny nie blokuje poprawnych ocen pozostałych pozycji. Po przerwaniu odbioru już rozliczone pozycje nie są rozliczane drugi raz. Pliki partii usuwamy dopiero po trwałym zakończeniu wszystkich jej pozycji.
-- AC-G7: przekroczenie100pozycji lub2MiBJSONL jest odrzucane bez nowych rezerwacji i zleceń. Starsze zlecenia pojedynczych ofert oraz importCV nadal działają.
+- AC-G1: the list shows the rating, completeness, components and freshness of the latest successful assessment, and the state of the last request. A new pending state/error does not remove an earlier result.
+- AC-G2: you can filter by minimum rating, completeness and the four components, and by assessment state. Unknowns do not meet a threshold of 0; old assessments do not pass thresholds unless the stale state is explicitly selected. Sorting by match shows current known results before stale ones and those without a rating; equal values have a stable order.
+- AC-G3: selecting the whole page covers only the visible items; the owner sees the total count and the maximum reservation before the request. Items can be selected on further pages, and changing the filters clears the selection. There is no default request for the whole database.
+- AC-G4: the operation has an identifier that prevents re-sending after an HTTP response is lost. An offer already pending is reused; a locally excluded one gets a justification at no cost. New admitted offers go into a shared batch, each with a separate input, history and reservation.
+- AC-G5: the reservation of the new admitted items is atomic for the group. If the budget is not enough for all of them, the group waits without partially reserved funds. After the budget is increased/renewed, the worker resumes the group. It does not automate retries of completed assessments.
+- AC-G6: unordered results are assigned by custom_id. An error in one assessment does not block correct assessments of the other items. After an interrupted receipt, items already settled are not settled a second time. We delete the batch files only after all its items are durably completed.
+- AC-G7: exceeding 100 items or 2 MiB of JSONL is rejected without new reservations and requests. Older single-offer requests and the CV import still work.
 
-## Ręczne oceny i edycja wag — etap8kt.3, 2026-11-03
+## Manual assessments and weight editing — stage 8kt.3, 2026-11-03
 
-- AC-M1: właściciel może utworzyć ocenę bez wcześniejszejAI lub skorygować istniejącą na poziomie kryteriów. Każde kryterium ma ocenę0–100 albo niewiadomą; znana ocena wymaga uzasadnienia. Własna informacja może pozwolić ocenić niewiadomą profilu — pozostaje jawnie oceną właściciela, nie potwierdzeniemAI ani zmianą profilu. Decyzja o aplikowaniu pozostaje odrębna.
-- AC-M2: każda operacja tworzy niezmienną rewizję z autoremAI/właściciel/system, wersjami wejść i wag, uzasadnieniem oraz poprzednikiem. Bieżący wynik na liście i w szczegółach korzysta z tej samej rewizji. Poprzednie wartości można przeglądać.
-- AC-M3: zapis ręczny wymaga wskazania bieżącej rewizji i wersji wejść; równoległa zmiana powoduje konflikt bez utraty własnego formularza. Powtórzona ta sama komenda nie tworzy kolejnej rewizji. Świeży wynikAI może zastąpić ocenę ręczną, zgodnie z wcześniejszą decyzją właściciela. Wynik starego wejścia pozostaje w historii i nie zastępuje aktualnej oceny dla nowego profilu/ogłoszenia.
-- AC-M4: globalne wagi czterech grup można ustawić jako całkowite procenty0–100 sumujące się do100. Początek40/25/20/15, kryteria wewnętrzne równe. Zmiana tworzy wersję wag i przelicza bieżące oceny bezAI i bez nowej rezerwacji budżetu. Historia i źródło składowych pozostają zachowane; niewiadome nie stają się zerami. Nowe wynikiAI korzystają z wag aktualnych w momencie publikacji.
-- AC-M5: edycja wag ma kontrolę wersji i idempotencję. Identyczne wagi nie powodują zbędnego przeliczania. Wyniki historyczne zachowują dawne wagi. Przeliczenie nie zmienia treści ocen, profilu, wersji oferty, decyzji ani procesów rekrutacji.
+- AC-M1: the owner can create an assessment without a prior AI one, or correct an existing one at the criterion level. Each criterion has an assessment of 0–100 or an unknown; a known assessment requires a justification. The owner's own information can allow assessing a profile unknown — it stays explicitly the owner's assessment, not an AI confirmation or a profile change. The decision to apply stays separate.
+- AC-M2: each operation creates an immutable revision with the author AI/owner/system, the input and weight versions, a justification and a predecessor. The current result in the list and in the details uses the same revision. Previous values can be browsed.
+- AC-M3: a manual save requires indicating the current revision and the input versions; a concurrent change causes a conflict without losing the owner's own form. Repeating the same command does not create another revision. A fresh AI result can replace a manual assessment, in line with the owner's earlier decision. A result for an old input stays in the history and does not replace the current assessment for a new profile/ad.
+- AC-M4: the global weights of the four groups can be set as integer percentages 0–100 summing to 100. Initially 40/25/20/15, internal criteria equal. A change creates a weights version and recalculates current assessments without AI and without a new budget reservation. The history and the source of the components are kept; unknowns do not become zeros. New AI results use the weights current at the time of publication.
+- AC-M5: weight editing has version control and idempotency. Identical weights do not cause unnecessary recalculation. Historical results keep the old weights. Recalculation does not change the content of assessments, the profile, the offer version, decisions or recruitment processes.

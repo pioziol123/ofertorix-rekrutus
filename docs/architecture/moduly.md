@@ -1,12 +1,12 @@
-# Mapa modułów
+# Module map
 
-**Ogłoszenie** to wpis opublikowany na portalu. **Oferta pracy** grupuje ogłoszenia dotyczące tej samej rekrutacji. Za to grupowanie odpowiada moduł Oferty.
+An **ad** is an entry published on a portal. A **job offer** groups the ads about the same recruitment. The Offers module is responsible for this grouping.
 
-| Moduł                                              | Główny cel                                                                                          | Docelowy katalog     |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------- | -------------------- |
-| [Źródła ofert](../../modules/sources/README.md)    | Pobiera ogłoszenia z portali i śledzi zmiany ich treści oraz dostępności.                           | `modules/sources/`   |
-| [Oferty](../../modules/offers/README.md)           | Umożliwia przeglądanie ofert pracy i grupuje ogłoszenia dotyczące tej samej rekrutacji.             | `modules/offers/`    |
-| [Profil zawodowy](../../modules/profile/README.md) | Pozwala opracować i zatwierdzić opis doświadczenia, umiejętności i oczekiwań wobec przyszłej pracy. | `modules/profile/`   |
-| Dopasowanie                                        | Ocenia, na ile ogłoszenie pasuje do zatwierdzonego profilu zawodowego, i uzasadnia wynik.           | `modules/matching/`  |
-| Firmy                                              | Gromadzi informacje o firmach i zapisuje ich role w rekrutacjach.                                   | `modules/companies/` |
-| [AI](../../modules/ai/README.md)                   | Wykonuje zadania AI na zlecenie innych modułów, zwraca wyniki i rozlicza koszty.                    | `modules/ai/`        |
+| Module                                                  | Main purpose                                                                                         | Target directory     |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------- |
+| [Offer sources](../../modules/sources/README.md)        | Fetches ads from portals and tracks changes to their content and availability.                       | `modules/sources/`   |
+| [Offers](../../modules/offers/README.md)                | Lets the owner browse job offers and groups the ads about the same recruitment.                      | `modules/offers/`    |
+| [Professional profile](../../modules/profile/README.md) | Lets the owner draft and confirm a description of experience, skills and expectations of a future job. | `modules/profile/`   |
+| Matching                                                | Assesses how well an ad fits the confirmed professional profile, and justifies the result.           | `modules/matching/`  |
+| Companies                                               | Gathers information about companies and records their roles in recruitments.                         | `modules/companies/` |
+| [AI](../../modules/ai/README.md)                        | Runs AI tasks requested by other modules, returns the results and settles the costs.                 | `modules/ai/`        |

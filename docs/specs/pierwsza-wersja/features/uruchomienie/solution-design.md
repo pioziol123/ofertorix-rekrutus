@@ -1,47 +1,46 @@
-# Prywatny dostęp i lokalne uruchomienie — projekt rozwiązania
+# Private access and local launch — solution design
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **roboczy szkic — do dopracowania przed realizacją tej funkcjonalności**, 2026-10-31. Uzasadnienie: [wymagania tej funkcjonalności](requirements.md) → [PRD](../../PRD.md). Pokrycie: R-27/AC-27, R-28/AC-28.
+Status: **working draft — to be refined before this feature is implemented**, 2026-10-31. Rationale: [this feature's requirements](requirements.md) → [PRD](../../PRD.md). Coverage: R-27/AC-27, R-28/AC-28.
 
-## Granice i decyzje
+## Boundaries and decisions
 
-Potwierdzone wybory D-01–D-06 i proponowane D-07–D-08 są utrzymywane we [wspólnej architekturze](../../architecture.md). Pozostałe mechanizmy w tym pliku są **propozycjami SD**, a nie zatwierdzonymi decyzjami właściciela. Nazwy encji i komend opisują plan, nie istniejący kod. Wspólna semantyka null, wersji i komend obowiązuje przez odnośnik, nie przez kopię.
+The confirmed choices D-01–D-06 and the proposed D-07–D-08 are maintained in the [shared architecture](../../architecture.md). The other mechanisms in this file are **SD proposals**, not approved owner's decisions. Entity and command names describe the plan, not existing code. The shared semantics of null, versions and commands apply by reference, not by copy.
 
-## Dostęp bez logowania
+## Access without login
 
-Decyzja właściciela 2026-10-31 zastępuje wcześniejszą propozycję konta/sesji: brak logowania i rejestracji. UI/API dostępne przez loopback lokalnie, na VPS przez tunel SSH. Klucze usług pozostają po stronie serwera. Reguły ograniczania danych CV do wejścia AI pozostają dla przyszłego modułu.
+The owner's decision of 2026-10-31 replaces the earlier account/session proposal: no login and no registration. UI/API available through loopback locally, on a VPS through an SSH tunnel. Service keys stay on the server side. The rules limiting CV data in the AI input remain for a future module.
 
-## Usługi i trwałość
+## Services and durability
 
-Compose udostępnia tylko port WWW na `127.0.0.1`. PostgreSQL wyłącznie w sieci wewnętrznej, worker bez portów hosta. Sekrety w niewersjonowanej konfiguracji hosta lub plikach sekretów, nigdy w publicznym runtime config Nuxt. Kontenery mają politykę restartu i kontrole gotowości; na Macu runtime uruchamia się po zalogowaniu. Przy starcie/okresowym sprawdzeniu worker porównuje ostatnie wykonanie z planem i atomowo zleca jeden zaległy przebieg.
+Compose exposes only the WWW port on `127.0.0.1`. PostgreSQL only on the internal network, the worker without host ports. Secrets in unversioned host configuration or secret files, never in Nuxt's public runtime config. The containers have a restart policy and readiness checks; on the Mac the runtime starts after login. At startup/on a periodic check the worker compares the last execution with the plan and atomically requests one overdue run.
 
-Migracje aplikacji i schematu pg-boss mają określoną kolejność przed uruchomieniem konsumentów. Nie uruchamiać konkurencyjnych migratorów z WWW i workera. Usunięcie/odtworzenie kontenerów zachowuje nazwany wolumen; procedura startu nie używa kasowania wolumenów. Odtworzenie kontenera nie jest testem odtworzenia backupu.
+Migrations of the application and of the pg-boss schema have a defined order before consumers start. Do not run competing migrators from WWW and the worker. Removing/recreating containers keeps the named volume; the startup procedure does not delete volumes. Recreating a container is not a backup restore test.
 
-Proponowane wartości do prób integracyjnych, **nie potwierdzone parametry produkcyjne**:
+Proposed values for integration trials, **not confirmed production parameters**:
 
-| Parametr | Punkt startowy / warunek |
+| Parameter | Starting point / condition |
 | --- | --- |
-| Równoległość | 1 import danego źródła, 1 płatny etap globalnie |
-| Timeout HTTP źródła | 30 s na żądanie |
-| Timeout AI | dobrać po pomiarze i granicach API; mniejszy niż expiry zadania |
-| Heartbeat | 30 s, aktywny mechanizm workera |
-| Expiry etapu | dobrać osobno dla importu/AI, powyżej ograniczonego czasu pracy |
-| Retry | licznik aplikacji: maks. 1 dodatkowa automatyczna próba, budżet przed każdą |
-| Retencja kolejki | jawna konfiguracja po wyborze wersji; nigdy źródło historii lub jedyna kopia oczekującej operacji |
-| Przegląd zaległości | na starcie i okresowo; unikalność operacji zapobiega powielaniu |
+| Concurrency | 1 import of a given source, 1 paid stage globally |
+| Source HTTP timeout | 30 s per request |
+| AI timeout | choose after measurement and API limits; lower than the job expiry |
+| Heartbeat | 30 s, an active worker mechanism |
+| Stage expiry | choose separately for import/AI, above the bounded working time |
+| Retry | application counter: at most 1 additional automatic attempt, budget before each |
+| Queue retention | explicit configuration after choosing the version; never the source of history or the only copy of a pending operation |
+| Overdue check | at startup and periodically; operation uniqueness prevents duplication |
 
-Nie wybrano exact wersji Node/Nuxt/Nuxt UI/PostgreSQL/SDK ani narzędzia migracji. Przed pierwszą implementacją infrastruktury dobrać kompatybilne wersje, przypiąć je w obrazach i lockfile, sprawdzić build i współpracę pg-boss ze wspólną transakcją. To warunek techniczny, nie potrzeba nowej decyzji produktowej.
+The exact versions of Node/Nuxt/Nuxt UI/PostgreSQL/SDK and the migration tool were not chosen. Before the first infrastructure implementation, choose compatible versions, pin them in the images and lockfile, and check the build and how pg-boss works with a shared transaction. This is a technical condition, not a need for a new product decision.
 
-## Integracja z pozostałymi funkcjonalnościami
+## Integration with other features
 
-brak dodatkowego modułu domenowego jako warunku projektu. Status wykonania, rezerwacje i ponowienia zapewnia [kontrakt operacji](../operacje/solution-design.md); ten moduł zapewnia prywatny dostęp i trwałe uruchomienie. Zależności te są kontraktami, nie listą kolejności ticketów implementacyjnych.
+No additional domain module as a condition of the design. Execution status, reservations and retries are provided by the [operations contract](../operacje/solution-design.md); this module provides private access and durable launch. These dependencies are contracts, not a list of the order of implementation tickets.
 
-## Weryfikacja funkcjonalności
+## Feature verification
 
-Dostęp lokalny bez logowania, sieć hosta/Compose, brak sekretów w bundle/logach, odtworzenie kontenerów bez skasowania wolumenu, autostart runtime i praca po zamknięciu karty. Pokrycie obejmuje wszystkie R/AC wskazane na początku dokumentu. [Odbiór integracyjny](../odbior/solution-design.md) sprawdza współpracę modułów; nie zastępuje ich kryteriów. Testów produktu jeszcze nie wykonano.
+Local access without login, host/Compose network, no secrets in the bundle/logs, recreating containers without deleting the volume, runtime autostart and work after the tab is closed. Coverage includes all R/ACs listed at the start of the document. [Integration acceptance](../odbior/solution-design.md) checks how the modules work together; it does not replace their criteria. No product tests have been run yet.
 
-## Otwarte decyzje i gotowość
+## Open decisions and readiness
 
-O-06 — [rejestr i skutki](../../open-decisions.md). Przed oznaczeniem tej pary jako gotowej należy rozstrzygnąć dotyczące jej kontrakty i przejrzeć zgodność z wymaganiami. Samo utworzenie dokumentów nie zatwierdza propozycji.
-
+O-06 — [register and consequences](../../open-decisions.md). Before marking this pair as ready, settle the contracts that concern it and review conformance with the requirements. Creating the documents alone does not approve the proposals.

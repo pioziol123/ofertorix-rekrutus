@@ -1,89 +1,89 @@
-# Firmy, research i przygotowanie do rozmowy — projekt rozwiązania
+# Companies, research and interview preparation — solution design
 
-Potwierdzone decyzje właściciela zachowują ważność. Pozostały opis i propozycje techniczne wymagają aktualizacji względem wybranego zakresu i stanu aplikacji zgodnie z [cyklem pracy](../../README.md#cykl-pracy-nad-funkcjonalnością). Wcześniejsza akceptacja pakietu nie oznacza zamrożenia tego szkicu.
+The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
-Status: **roboczy szkic — do dopracowania przed realizacją tej funkcjonalności**, 2026-10-31. Uzasadnienie: [wymagania tej funkcjonalności](requirements.md) → [PRD](../../PRD.md). Pokrycie: R-15/AC-15, R-16/AC-16, R-17/AC-17, R-18/AC-18, R-19/AC-19.
+Status: **working draft — to be refined before this feature is implemented**, 2026-10-31. Rationale: [this feature's requirements](requirements.md) → [PRD](../../PRD.md). Coverage: R-15/AC-15, R-16/AC-16, R-17/AC-17, R-18/AC-18, R-19/AC-19.
 
-## Granice i decyzje
+## Boundaries and decisions
 
-Potwierdzone wybory D-01–D-06 i proponowane D-07–D-08 są utrzymywane we [wspólnej architekturze](../../architecture.md). Pozostałe mechanizmy w tym pliku są **propozycjami SD**, a nie zatwierdzonymi decyzjami właściciela. Nazwy encji i komend opisują plan, nie istniejący kod. Wspólna semantyka null, wersji i komend obowiązuje przez odnośnik, nie przez kopię.
+The confirmed choices D-01–D-06 and the proposed D-07–D-08 are maintained in the [shared architecture](../../architecture.md). The other mechanisms in this file are **SD proposals**, not approved owner's decisions. Entity and command names describe the plan, not existing code. The shared semantics of null, versions and commands apply by reference, not by copy.
 
-## Własność danych i kontrakty
+## Data ownership and contracts
 
-| Encja / grupa | Istotne pola i niezmienniki |
+| Entity / group | Relevant fields and invariants |
 | --- | --- |
-| Organization / Brand / Group / PartyLink | Odrębne podmioty i relacje. Rola `publisher/employer/client` przy ogłoszeniu/ofercie z dowodem. Brak rozpoznanej organizacji jest jawnym stanem, nie fikcyjną spółką. |
-| ResearchReport | Typowany cel organizacja/marka (Q11), etap `basic/deep`, wersja, wynik/claims, operation id, daty; oddzielny wskaźnik ukończonej aktualnej wersji dla każdego etapu. Nie ma TTL uruchamiającego zlecenie. |
-| Claim / Evidence / TechnologyAssertion | Rodzaj, treść, organizacja/projekt/oferta, źródła z URL/tytułem/datą odczytu, data publikacji opcjonalna, pochodzenie `page/search_snippet/manual/ad`. Cytat opcjonalny wraz z podstawą utrwalenia. Technologia ma zakres i required/nice/unknown tam, gdzie dotyczy oferty. |
-| Preparation | Oferta/aplikacja/projekt, użyte wersje raportów i profilu, tematy/prioritety/pytania/uzasadnienia. Odrębne od raportu firmy i ratingu. |
+| Organization / Brand / Group / PartyLink | Separate entities and relations. The role `publisher/employer/client` on an ad/offer, with evidence. An unrecognised organisation is an explicit state, not a fictitious company. |
+| ResearchReport | A typed target organisation/brand (Q11), stage `basic/deep`, version, result/claims, operation id, dates; a separate pointer to the completed current version for each stage. There is no TTL that triggers a request. |
+| Claim / Evidence / TechnologyAssertion | Kind, content, organisation/project/offer, sources with URL/title/read date, optional publication date, provenance `page/search_snippet/manual/ad`. An optional quote together with the basis for persisting it. A technology has a scope and required/nice/unknown where it concerns an offer. |
+| Preparation | Offer/application/project, the report and profile versions used, topics/priorities/questions/justifications. Separate from the company report and the rating. |
 
-## Raporty, tożsamość i dowody
+## Reports, identity and evidence
 
-Propozycja SD: raporty w dwóch osobnych strumieniach wersji, deduplikacja automatycznego podstawowego badania po typowanym celu organizacja/marka. Przed zleceniem sprawdzić istniejący raport i aktywną operację w jednej transakcji. Po ukończeniu wskazać nowy raport atomowo; nieudane odświeżenie nie usuwa poprzedniego. Nie istnieje scheduler TTL researchu.
+SD proposal: reports in two separate version streams, deduplication of automatic basic research by the typed target organisation/brand. Before a request, check the existing report and the active operation in one transaction. After completion, point to the new report atomically; a failed refresh does not remove the previous one. There is no research TTL scheduler.
 
-Twierdzenia zachowują cytowania powiązane z konkretną treścią. Lista wszystkich odwiedzonych URL jest informacją o przebiegu, nie automatycznym uzasadnieniem każdego faktu. UI pokazuje klikalne źródła przy twierdzeniach, ich daty i rodzaj dowodu. Fragment źródła jest opcjonalny; domyślnie własna synteza, URL i metadane. Treść wydawcy utrwalać tylko przy ustalonej podstawie, zgodnie z badaniem usług. Nie robić z niepewnej identyfikacji firmy potwierdzonego profilu prawnego.
+Claims keep citations linked to specific content. A list of all visited URLs is information about the run, not an automatic justification of every fact. The UI shows clickable sources next to claims, their dates and the kind of evidence. A source fragment is optional; by default our own synthesis, the URL and metadata. Persist the publisher's content only with an established basis, in line with the service research. Do not turn an uncertain company identification into a confirmed legal profile.
 
-**Potwierdzone Q11:** brak ustalonego pracodawcy/klienta nie blokuje researchu dostępnej marki lub agencji; raport zachowuje ten zakres i jawne nieustalone role. Propozycja SD: cel operacji jest typowanym odwołaniem do organizacji albo marki, bez tworzenia fikcyjnej spółki. Raport, jego wersje i klucz ponownego użycia wskazują dokładnie ten cel; nie współdzielimy raportu marki jako potwierdzonego raportu konkretnej spółki. Gdy tożsamość zostanie doprecyzowana, zachowujemy wcześniejsze raporty i ich zakres, zamiast cicho zmieniać ich podmiot. Dobór i mapowanie celu badań należy ująć w przeglądzie modelu danych.
+**Confirmed Q11:** an unestablished employer/client does not block research of the available brand or agency; the report keeps that scope and the explicitly unestablished roles. SD proposal: the operation target is a typed reference to an organisation or a brand, without creating a fictitious company. The report, its versions and the reuse key point to exactly this target; we do not share a brand report as a confirmed report of a specific company. When the identity is clarified, we keep the earlier reports and their scope instead of silently changing their subject. The choice and mapping of the research target must be covered in the data model review.
 
-## Przygotowanie do rozmowy
+## Interview preparation
 
-Propozycja SD: PrepareApplication wskazuje ofertę/aplikację, projekt, wersję profilu oraz wersje raportów basic/deep. Wynik Preparation przechowuje priorytety tematów, mapę technologii, pytania ćwiczeniowe i pytania do firmy z uzasadnieniami oraz odnośnikami do dowodów. Nowe przygotowanie nie jest cichym odświeżeniem researchu firmy; szersze pozyskanie wymaga jawnego zakresu.
+SD proposal: PrepareApplication points to the offer/application, the project, the profile version and the basic/deep report versions. The Preparation result stores topic priorities, a technology map, practice questions and questions for the company, with justifications and links to evidence. A new preparation is not a silent refresh of the company research; wider gathering requires an explicit scope.
 
-Ręczne uzupełnienia używają wspólnego mechanizmu informacji z pochodzeniem. Nie wprowadzamy osobnego typu procesu dla informacji od rekrutera. Tożsamość oraz role publisher/employer/client ustalamy na dowodach; dane marki zachowują niepewność co do podmiotu prawnego.
+Manual additions use the shared mechanism for information with provenance. We do not introduce a separate process type for information from a recruiter. Identity and the publisher/employer/client roles are established from evidence; brand data keeps the uncertainty about the legal entity.
 
 
-## Komendy
+## Commands
 
-Nazwy logiczne, nie zamrożone endpointy. Wspólny kontrakt walidacji/wersji/odpowiedzi: [architektura](../../architecture.md#wspólny-kontrakt-komend).
+Logical names, not frozen endpoints. Shared validation/version/response contract: [architecture](../../architecture.md#shared-command-contract).
 
-| Komenda | Wejście i skutek |
+| Command | Input and effect |
 | --- | --- |
-| ResearchCompany | Typowany identyfikator znanej organizacji lub marki, basic/deep, tryb reuse lub jawne refresh; żadnego cichego ponowienia raportu. |
-| PrepareApplication | Oferta/aplikacja i wskazane wersje raportów, jawny zakres nowego pozyskania. |
+| ResearchCompany | A typed identifier of a known organisation or brand, basic/deep, reuse mode or explicit refresh; no silent repetition of a report. |
+| PrepareApplication | Offer/application and the indicated report versions, an explicit scope of new gathering. |
 
-## Integracja z pozostałymi funkcjonalnościami
+## Integration with other features
 
-[dopasowanie](../dopasowanie/requirements.md), [oferty](../oferty/requirements.md), [operacje](../operacje/requirements.md), [rekrutacje](../rekrutacje/requirements.md). Status wykonania, rezerwacje i ponowienia zapewnia [kontrakt operacji](../operacje/solution-design.md); prywatny dostęp i trwałe uruchomienie określa [uruchomienie](../uruchomienie/solution-design.md). Zależności te są kontraktami, nie listą kolejności ticketów implementacyjnych.
+[matching](../dopasowanie/requirements.md), [offers](../oferty/requirements.md), [operations](../operacje/requirements.md), [recruitments](../rekrutacje/requirements.md). Execution status, reservations and retries are provided by the [operations contract](../operacje/solution-design.md); private access and durable launch are set by [launch](../uruchomienie/solution-design.md). These dependencies are contracts, not a list of the order of implementation tickets.
 
-## Weryfikacja funkcjonalności
+## Feature verification
 
-Dwie spółki o tej samej nazwie/domenie, agencja i nieznany klient, równoczesna kwalifikacja, reuse po długim czasie i refresh, błąd odświeżenia. Prześledzić źródła twierdzeń i zakres technologii oraz uzasadnienia przygotowania. Pokrycie obejmuje wszystkie R/AC wskazane na początku dokumentu. [Odbiór integracyjny](../odbior/solution-design.md) sprawdza współpracę modułów; nie zastępuje ich kryteriów. Testów produktu jeszcze nie wykonano.
+Two companies with the same name/domain, an agency and an unknown client, concurrent qualification, reuse after a long time and a refresh, a refresh error. Trace the sources of claims and the scope of technologies and the justifications of the preparation. Coverage includes all R/ACs listed at the start of the document. [Integration acceptance](../odbior/solution-design.md) checks how the modules work together; it does not replace their criteria. No product tests have been run yet.
 
-## Otwarte decyzje i gotowość
+## Open decisions and readiness
 
-O-03, O-05, O-06 — [rejestr i skutki](../../open-decisions.md). Przed oznaczeniem tej pary jako gotowej należy rozstrzygnąć dotyczące jej kontrakty i przejrzeć zgodność z wymaganiami. Samo utworzenie dokumentów nie zatwierdza propozycji.
+O-03, O-05, O-06 — [register and consequences](../../open-decisions.md). Before marking this pair as ready, settle the contracts that concern it and review conformance with the requirements. Creating the documents alone does not approve the proposals.
 
-## Realizowany etap F1 — 2026-11-04
+## Stage F1 being implemented — 2026-11-04
 
-Uściślenie mechanizmu dla AC-F1–F5; powyższy projekt raportów pozostaje szkicem późniejszych etapów. Obecnie `source_ads` i `source_ad_revisions.payload.company` przechowują ogłoszenia i nazwę publikującego; brak potwierdzonej tożsamości firmy.
+A refinement of the mechanism for AC-F1–F5; the report design above remains a draft of later stages. Currently `source_ads` and `source_ad_revisions.payload.company` store the ads and the publisher's name; there is no confirmed company identity.
 
-- Migracja 10 dodaje `companies` (UUID, name, kind organization/brand/unknown, website nullable, description, created_at), `company_ad_links` (ad_id, role publisher/employer/client, company_id, evidence, revision_id; PK ad_id+role), `company_link_history` i `company_commands` (commandId + fingerprint + wynik). Nie ma unikalności po nazwie ani domenie. Brak automatycznego backfillu tożsamości.
-- Komendy: create `{commandId,name,kind,website,description}`; link `{commandId,adId,role,expectedCompanyId,action:link|unlink,evidence}`. UUID walidowane, reason 1–2000 znaków, input strict. expectedCompanyId null oznacza brak powiązania; konflikt 409, nieistniejący profil/ogłoszenie 404, błędne wartości 422. Link snapshotuje aktualną wersję ogłoszenia jako źródło kontekstu decyzji, nie jako automatyczny dowód tożsamości.
-- Zapis komendy, profilu/powiązania i historii jest transakcyjny; advisory lock komendy i ogłoszenia serializuje ponowienia/zmiany. Odpowiedź zapisana przy komendzie zapewnia idempotencję; identyczny commandId z inną treścią daje 409. Odpięcie zachowuje profil, ogłoszenie i historię.
-- GET `/api/companies` zwraca wyszukiwalną paginowaną listę (25), GET `/api/companies/:id` profil, role, bieżące oferty, technologie z dowodami per oferta, historię; GET `/api/offers/:id/companies` aktualne role i sugestie zgodnej nazwy. Żaden GET nie tworzy danych. POST przez kontrolę Origin i limit treści istniejących handlerów. Linki zewnętrzne tylko http/https bez poświadczeń.
-- `/companies` lista; `/companies/:id` szczegóły; komponent w szczegółach ogłoszenia tworzy/wybiera profile i jawnie wiąże/odpina role. Wspólna nawigacja prowadzi do firm. Rozróżnienie technologii opcjonalnych false/true/null zachowane.
-- Weryfikacja: izolowany PostgreSQL (duplikaty nazw, wszystkie role, idempotencja i konflikty, zmiana ogłoszenia, źródła technologii, historia), HTTP odrzucenie niedozwolonego Origin i zły input, render listy i szczegółów, przegląd UI bez zapisywania fikcyjnych profili w bazie właściciela.
+- Migration 10 adds `companies` (UUID, name, kind organization/brand/unknown, nullable website, description, created_at), `company_ad_links` (ad_id, role publisher/employer/client, company_id, evidence, revision_id; PK ad_id+role), `company_link_history` and `company_commands` (commandId + fingerprint + result). There is no uniqueness by name or domain. No automatic identity backfill.
+- Commands: create `{commandId,name,kind,website,description}`; link `{commandId,adId,role,expectedCompanyId,action:link|unlink,evidence}`. UUIDs validated, reason 1–2000 characters, strict input. expectedCompanyId null means no link; conflict 409, a non-existent profile/ad 404, invalid values 422. A link snapshots the current ad version as the source of the decision's context, not as automatic evidence of identity.
+- Saving the command, the profile/link and the history is transactional; an advisory lock on the command and the ad serialises retries/changes. The response saved with the command ensures idempotency; an identical commandId with different content gives 409. Unlinking keeps the profile, the ad and the history.
+- GET `/api/companies` returns a searchable paginated list (25), GET `/api/companies/:id` the profile, roles, current offers, technologies with evidence per offer, history; GET `/api/offers/:id/companies` the current roles and suggestions of a matching name. No GET creates data. POST goes through the Origin check and the content limit of the existing handlers. External links only http/https without credentials.
+- `/companies` list; `/companies/:id` details; a component in the ad details creates/chooses profiles and explicitly links/unlinks roles. The shared navigation leads to companies. The distinction of optional technologies false/true/null is kept.
+- Verification: isolated PostgreSQL (duplicate names, all roles, idempotency and conflicts, an ad change, technology sources, history), HTTP rejection of a disallowed Origin and bad input, rendering of the list and details, a UI review without saving fictitious profiles in the owner's database.
 
-### Weryfikacja F1 — wykonana 2026-11-04
+### F1 verification — done 2026-11-04
 
-Migracja10 zastosowana lokalnie. `pnpm check`: 347 testów domyślnych PASS, typy i lint bez błędów (dwa wcześniejsze ostrzeżenia kolejności atrybutów w edytorach ocen). Zestawy PG/HTTP: firmy10, oferty4, lista ocen7, rewizje ocen15, oceny pojedyncze14 i grupowe12 PASS (62 testy). Osobny tester dopisał regresje powiązań i diagnostyki. Build produkcyjny PASS. Obejrzano listę, formularz przy ofercie i szczegóły; utworzenie firmy przez UI wykonano na osobnym schemacie i chwilowym serwerze, następnie je usunięto. Nie utworzono profili ani powiązań w danych właściciela. F1 nie oznacza realizacji R-16–R-19 dotyczących automatycznego researchu i przygotowania.
+Migration 10 applied locally. `pnpm check`: 347 default tests PASS, types and lint without errors (two earlier attribute order warnings in the assessment editors). PG/HTTP suites: companies 10, offers 4, assessment list 7, assessment revisions 15, single assessments 14 and group assessments 12 PASS (62 tests). A separate tester added regressions for links and diagnostics. Production build PASS. The list, the form on an offer and the details were inspected; creating a company through the UI was done on a separate schema and a temporary server, then removed. No profiles or links were created in the owner's data. F1 does not mean that R-16–R-19, about automatic research and preparation, are implemented.
 
-## Realizowany etap F2 — 2026-11-04
+## Stage F2 being implemented — 2026-11-04
 
-AC-F6–F9: osobny moduł researchu, kolejka pg-boss, wspólny ledger `ai_attempts` z `operation_type=research`. Migracja11 dodaje operacje ze snapshotem celu, konfiguracją i wynikiem oraz komendy idempotencyjne. Indeks unikalny celu dla aktywnych stanów. Advisory lock celu serializuje reuse/refresh; komenda zachowuje wynik. Raport aktualny to ostatnia ukończona operacja, poprzednie pozostają dostępne; brak TTL. Recovery wznawia tylko niedostarczone i oczekujące na budżet, przerwaną próbę oznacza jako unknown.
+AC-F6–F9: a separate research module, a pg-boss queue, the shared ledger `ai_attempts` with `operation_type=research`. Migration 11 adds operations with a target snapshot, configuration and result, and idempotent commands. A unique target index for active states. An advisory lock on the target serialises reuse/refresh; the command keeps its result. The current report is the last completed operation, the previous ones stay available; no TTL. Recovery resumes only undelivered ones and those waiting for budget, and marks an interrupted attempt as unknown.
 
-Provider: Responses API, wyszukiwanie `web_search` i osobna synteza structured-output. Osobna konfiguracja cen `AI_RESEARCH_PRICING_JSON`, startowo uzgodniony gpt-6-luna; dodatkowo adapter obsługuje gpt-4.1-mini do testów porównawczych. Maksymalnie trzy wywołania narzędzia; wyszukiwanie i synteza po połowie limitu wyjścia. Rezerwacja obejmuje tokeny oraz trzy opłaty po 0.01 USD. Luna rozlicza kontekst wyszukiwania z usage, bez doliczania bloków mini. Dla mini ostrożnie doliczamy stałe bloki 8000 tokenów nawet gdy usage już je uwzględnia; UI opisuje kwotę jako konserwatywny koszt, nie fakturę. Dolne rezerwy wejścia: Luna500000, mini100000 tokenów dla dwóch przebiegów i maksymalnie trzech wywołań wyszukiwania. Brak pewnej telemetrii pozostawia rezerwację. Żadnego automatycznego retry po rozpoczęciu requestu. Nie korzystamy z Batch: aktywne pozyskiwanie źródeł jest odrębną operacją od masowych ocen ofert.
+Provider: Responses API, `web_search` search and a separate structured-output synthesis. A separate price configuration `AI_RESEARCH_PRICING_JSON`, initially the agreed gpt-6-luna; in addition the adapter supports gpt-4.1-mini for comparison tests. At most three tool calls; search and synthesis each get half of the output limit. The reservation covers tokens and three fees of 0.01 USD. Luna settles the search context from usage, without adding the mini blocks. For mini we cautiously add fixed blocks of 8000 tokens even when usage already includes them; the UI describes the amount as a conservative cost, not an invoice. Lower input reservations: Luna 500000, mini 100000 tokens for two runs and at most three search calls. Missing reliable telemetry keeps the reservation. No automatic retry after a request has started. We do not use Batch: active gathering of sources is a separate operation from bulk offer assessments.
 
-Wyszukiwanie zwraca treść z adnotacjami cytowań. Synteza otrzymuje wyłącznie akapity z cytowaniami i ich identyfikatory. Dowody ustaleń muszą wskazywać istniejące identyfikatory i dokładny fragment akapitu. Lista odwiedzonych URL nie jest dowodem twierdzenia. Oznaczenie `page` wyłącznie przy telemetrii open_page, inaczej `search_snippet`. Nie zapisujemy pełnych stron ani pełnego wyniku wyszukiwania; zapisujemy syntezę, URL/tytuły/daty i typ dowodu. Teksty zewnętrzne i profil firmy traktowane jako dane, nigdy instrukcje. UI renderuje tekst przez interpolację, bez HTML.
+Search returns content with citation annotations. The synthesis receives only paragraphs with citations and their identifiers. The evidence for findings must point to existing identifiers and an exact paragraph fragment. A list of visited URLs is not evidence for a claim. The `page` marker only with open_page telemetry, otherwise `search_snippet`. We do not save full pages or the full search result; we save the synthesis, URLs/titles/dates and the evidence type. External texts and the company profile are treated as data, never instructions. The UI renders text through interpolation, without HTML.
 
-GET/POST `/api/companies/:id/research`; POST `{commandId,refresh:boolean}`. GET tylko odczyt, konfiguracja i limit kosztu; POST kontrola Origin i istniejący limit treści. Błędny UUID 404, input422, konflikt komendy409, brak konfiguracji422. UI w profilu: stan, uruchom/odśwież, aktualny raport, poprzednie wersje i błędy.
+GET/POST `/api/companies/:id/research`; POST `{commandId,refresh:boolean}`. GET is read-only, configuration and the cost limit; POST has the Origin check and the existing content limit. An invalid UUID 404, input 422, command conflict 409, missing configuration 422. UI in the profile: state, start/refresh, the current report, previous versions and errors.
 
-Źródła kontraktu adaptera: [OpenAI Web search](https://developers.openai.com/api/docs/guides/tools-web-search), [cennik](https://developers.openai.com/api/docs/pricing), sprawdzone 2026-11-04. Weryfikacja planowana: parser dowodów i fałszywych URL, idempotencja/równoczesność, wspólny budżet, przerwanie i brak automatycznego retry, wersje i zachowanie starego raportu, API Origin, UI i pełne sprawdzenie projektu.
+Sources of the adapter contract: [OpenAI Web search](https://developers.openai.com/api/docs/guides/tools-web-search), [pricing](https://developers.openai.com/api/docs/pricing), checked 2026-11-04. Planned verification: the evidence parser and false URLs, idempotency/concurrency, the shared budget, interruption and no automatic retry, versions and keeping the old report, API Origin, UI and a full project check.
 
-### Weryfikacja F2 — wykonana 2026-11-04
+### F2 verification — done 2026-11-04
 
-Migracja11 zastosowana lokalnie, kolejka utworzona. Tester:11 jednostkowych i8 PG/API PASS (mock provider); regresja wspólnego budżetu/profilu/ocen/firm71 PG/API PASS. `pnpm check`:357 PASS, typy i lint bez błędów (dwa wcześniejsze ostrzeżenia). Build PASS. Wizualnie sprawdzono raport i źródła na osobnym schemacie; podgląd i dane usunięto.
+Migration 11 applied locally, the queue created. Tester: 11 unit and 8 PG/API PASS (mock provider); regression of the shared budget/profile/assessments/companies 71 PG/API PASS. `pnpm check`: 357 PASS, types and lint without errors (two earlier warnings). Build PASS. The report and sources were checked visually on a separate schema; the preview and the data were removed.
 
-Próby API na publicznych danych OpenAI, bez CV: mini odrzucił jeden raport z błędem dowodów, następny ukończył; Luna ukończyła dwa przebiegi HTTP200. Łączny konserwatywny koszt ukończonych prób0.262205 PLN. Jeden proces diagnostyczny przerwano exit137 bez telemetrii; pozostaje unknown z rezerwacją0.415 PLN, zapisane w zadaniu wyjaśniania kosztów. Nie wykonano prób jakości na konkretnych pracodawcach właściciela ani nie utworzono fikcyjnych profili w publicznej części lokalnej bazy. Brak źródeł pozostaje dopuszczalnym wynikiem „niewiadoma”; próba połączenia nie dowodzi kompletności researchu.
+API trials on public OpenAI data, without a CV: mini rejected one report with an evidence error and completed the next; Luna completed two runs with HTTP 200. The total conservative cost of the completed trials was 0.262205 PLN. One diagnostic process was interrupted with exit 137 without telemetry; it stays unknown with a reservation of 0.415 PLN, recorded in the cost clarification task. No quality trials were run on the owner's specific employers, and no fictitious profiles were created in the public part of the local database. No sources remains an allowed "unknown" result; a connection trial does not prove the research is complete.
 
-F2 oznacza gotowy ręczny research podstawowy; automatyzacja po progach (`oferty-pracy-363`) i przygotowanie pogłębione (`oferty-pracy-a9b`) pozostają oddzielne.
+F2 means manual basic research is ready; automation after thresholds (`oferty-pracy-363`) and deep preparation (`oferty-pracy-a9b`) remain separate.
