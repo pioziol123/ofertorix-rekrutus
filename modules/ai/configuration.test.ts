@@ -60,7 +60,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs()
   for (const key of Object.keys(ai.settings))
-    if (!realKeys.includes(key)) delete ai.settings[key]
+    if (!realKeys.includes(key)) Reflect.deleteProperty(ai.settings, key)
 })
 
 describe('A14-AC08: settings validation', () => {

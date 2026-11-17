@@ -26,6 +26,17 @@ import {
 import { defaultWeights } from '../lib/matching/weights.ts'
 import type { Assessment, MatchingInput } from '../lib/matching/model.ts'
 import { readMatching } from '../lib/matching/store.ts'
+import { usePricing } from './ai-test-configuration.ts'
+
+// The settings and price lists AI keeps in code, replaced for the test.
+vi.mock(
+  '../modules/ai/client-settings.ts',
+  () => import('./ai-test-configuration.ts'),
+)
+vi.mock(
+  '../modules/ai/model-catalog.ts',
+  () => import('./ai-test-configuration.ts'),
+)
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
 integration(
@@ -63,7 +74,7 @@ integration(
     })
     beforeEach(async () => {
       vi.stubEnv('OPENAI_API_KEY', '')
-      vi.stubEnv('AI_MATCHING_PRICING_JSON', '')
+      usePricing('matching', null)
       await pool.query(
         'TRUNCATE matching_rating_heads,matching_rating_revisions,matching_weight_head,matching_weight_versions,matching_groups,matching_requests,ai_attempts,ai_budget_months,profile_head,profile_versions,source_ads,source_scopes CASCADE',
       )

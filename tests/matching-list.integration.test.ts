@@ -23,6 +23,17 @@ import {
 } from '../lib/matching/ratings.ts'
 import { emptyProfile } from '../lib/profile/model.ts'
 import { listOffers, parseFilters } from '../modules/offers/index.ts'
+import { usePricing } from './ai-test-configuration.ts'
+
+// The settings and price lists AI keeps in code, replaced for the test.
+vi.mock(
+  '../modules/ai/client-settings.ts',
+  () => import('./ai-test-configuration.ts'),
+)
+vi.mock(
+  '../modules/ai/model-catalog.ts',
+  () => import('./ai-test-configuration.ts'),
+)
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -71,7 +82,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
   beforeEach(async () => {
     vi.unstubAllEnvs()
     vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-    vi.stubEnv('AI_MATCHING_PRICING_JSON', JSON.stringify(pricing))
+    usePricing('matching', pricing, 'batch')
     await pool.query(
       'TRUNCATE matching_requests,matching_batches,matching_groups,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
     )
@@ -333,7 +344,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
       pending: 1,
       maximumCostPln: '0.020500',
     })
-    vi.stubEnv('AI_MATCHING_PRICING_JSON', '')
+    usePricing('matching', null)
     await pool.query('UPDATE profile_head SET active_version_id=NULL')
     expect(await matchingListStatus(pool)).toEqual({
       configured: false,

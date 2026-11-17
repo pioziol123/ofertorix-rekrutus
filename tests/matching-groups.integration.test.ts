@@ -35,6 +35,17 @@ import {
   recoverMatchingGroups,
   matchingGroupQueue,
 } from '../lib/matching/groups.ts'
+import { usePricing } from './ai-test-configuration.ts'
+
+// The settings and price lists AI keeps in code, replaced for the test.
+vi.mock(
+  '../modules/ai/client-settings.ts',
+  () => import('./ai-test-configuration.ts'),
+)
+vi.mock(
+  '../modules/ai/model-catalog.ts',
+  () => import('./ai-test-configuration.ts'),
+)
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -88,7 +99,7 @@ integration(
     beforeEach(async () => {
       vi.unstubAllEnvs()
       vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-      vi.stubEnv('AI_MATCHING_PRICING_JSON', JSON.stringify(pricing))
+      usePricing('matching', pricing, 'batch')
       send.mockClear()
       await pool.query(
         'TRUNCATE matching_groups,matching_requests,matching_batches,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
@@ -533,7 +544,7 @@ integration(
     })
     it('rolls back a group whose JSONL exceeds2MiB without reserving or queueing', async () => {
       const larger = { ...pricing, maxInputTokens: 1000000 }
-      vi.stubEnv('AI_MATCHING_PRICING_JSON', JSON.stringify(larger))
+      usePricing('matching', larger, 'batch')
       const ids = await Promise.all(
         Array.from({ length: 12 }, () =>
           anotherAd('PHP backend '.repeat(18000)),

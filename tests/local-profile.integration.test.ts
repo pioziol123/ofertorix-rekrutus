@@ -19,6 +19,17 @@ import {
   recoverLocalProfiles,
 } from '../lib/profile/local-ai.ts'
 import { createTextImport } from '../lib/profile/imports.ts'
+import { useLocalModel, usePricing } from './ai-test-configuration.ts'
+
+// The settings and price lists AI keeps in code, replaced for the test.
+vi.mock(
+  '../modules/ai/client-settings.ts',
+  () => import('./ai-test-configuration.ts'),
+)
+vi.mock(
+  '../modules/ai/model-catalog.ts',
+  () => import('./ai-test-configuration.ts'),
+)
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -26,17 +37,9 @@ integration('local profile executions in PostgreSQL', () => {
   const schema = `local_profile_${randomUUID().replaceAll('-', '')}`
   let admin: Pool, pool: Pool
   const boss = { send: vi.fn(async () => randomUUID()) } as unknown as PgBoss
-  const selection = {
-    version: 1,
-    provider: 'ollama',
-    execution: 'direct',
-    model: 'gpt-oss:20b',
-    endpointRef: 'local',
-    endpointVersion: 1,
-    runtimeParameters: { numCtx: 8192 },
-  }
+  const selection = { model: 'gpt-oss:20b' }
   const endpoint = {
-    ref: 'local',
+    ref: 'ollama',
     version: 1,
     url: 'http://ollama.test',
     credentialEnv: null,
@@ -86,6 +89,7 @@ integration('local profile executions in PostgreSQL', () => {
     for (const migration of [
       '1770000000004_profiles',
       '1770000000013_local_ai',
+      '1770000000016_ai_execution_requests',
     ])
       require(`../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),
@@ -94,8 +98,7 @@ integration('local profile executions in PostgreSQL', () => {
   })
   beforeEach(async () => {
     vi.stubEnv('OPENAI_API_KEY', '')
-    vi.stubEnv('AI_PROFILE_PRICING_JSON', '')
-    vi.stubEnv('AI_PROFILE_EXECUTION_JSON', JSON.stringify(selection))
+    useLocalModel('profile')
     vi.stubEnv('AI_ENDPOINTS_JSON', JSON.stringify([endpoint]))
     await pool.query(
       'TRUNCATE ai_executions, profile_imports, ai_budget_months CASCADE',
@@ -117,7 +120,8 @@ integration('local profile executions in PostgreSQL', () => {
       budgetMonth(),
     ])
     const task = await enqueue()
-    vi.stubEnv('AI_PROFILE_EXECUTION_JSON', '{broken')
+    // The settings change after the request; the saved snapshot is used.
+    usePricing('profile', null)
     const mock = fetcher()
     await executeAi(pool, boss, task.id, mock)
     expect(await attempt(task.id)).toMatchObject({
@@ -158,10 +162,7 @@ integration('local profile executions in PostgreSQL', () => {
         )
       ).rows[0]?.content,
     ).toContain('{invalid')
-    vi.stubEnv(
-      'AI_PROFILE_EXECUTION_JSON',
-      JSON.stringify({ ...selection, runtimeParameters: { numCtx: 4096 } }),
-    )
+    useLocalModel('profile', 4096)
     const next = await retryLocalProfile(
       pool,
       boss,

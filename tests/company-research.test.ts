@@ -21,6 +21,17 @@ import {
   searchResponse,
   synthesisResponse,
 } from './company-research.fixtures.ts'
+import { usePricing } from './ai-test-configuration.ts'
+
+// The settings and price lists AI keeps in code, replaced for the test.
+vi.mock(
+  '../modules/ai/client-settings.ts',
+  () => import('./ai-test-configuration.ts'),
+)
+vi.mock(
+  '../modules/ai/model-catalog.ts',
+  () => import('./ai-test-configuration.ts'),
+)
 
 afterEach(() => vi.unstubAllEnvs())
 const unknownDraft = (): ResearchDraft => ({
@@ -345,10 +356,10 @@ describe('mocked research provider and accounting', () => {
       { ...pricing, maxInputTokens: 99999 },
       { ...pricing, maxOutputTokens: 3999 },
     ]) {
-      vi.stubEnv('AI_RESEARCH_PRICING_JSON', JSON.stringify(invalid))
+      usePricing('research', invalid)
       expect(researchConfiguration()).toBeNull()
     }
-    vi.stubEnv('AI_RESEARCH_PRICING_JSON', JSON.stringify(pricing))
+    usePricing('research', pricing)
     expect(researchConfiguration()).toEqual(pricing)
   })
   it('uses Luna reasoning and reported search tokens without charging the mini search block again', async () => {
@@ -358,10 +369,10 @@ describe('mocked research provider and accounting', () => {
       { ...luna, maxInputTokens: 499999 },
       { ...luna, maxOutputTokens: 3999 },
     ]) {
-      vi.stubEnv('AI_RESEARCH_PRICING_JSON', JSON.stringify(invalid))
+      usePricing('research', invalid)
       expect(researchConfiguration()).toBeNull()
     }
-    vi.stubEnv('AI_RESEARCH_PRICING_JSON', JSON.stringify(luna))
+    usePricing('research', luna)
     expect(researchConfiguration()).toEqual(luna)
     const fetcher = vi
       .fn<typeof fetch>()

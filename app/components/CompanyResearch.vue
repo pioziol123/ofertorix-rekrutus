@@ -92,8 +92,8 @@ onBeforeUnmount(() => clearInterval(timer))
     </p>
     <p v-if="message" role="alert" class="notice">{{ message }}</p>
     <p v-if="data && !data.configured" class="notice">
-      Research wymaga skonfigurowania modelu i cen na serwerze
-      (AI_RESEARCH_PRICING_JSON). Zapisane raporty pozostają dostępne.
+      Research wymaga klucza OpenAI na serwerze (OPENAI_API_KEY). Zapisane
+      raporty pozostają dostępne.
     </p>
     <p v-if="data?.ceiling" class="muted">
       Maksymalna rezerwacja: {{ money(data.ceiling) }} ze wspólnego miesięcznego

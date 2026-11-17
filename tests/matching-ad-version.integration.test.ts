@@ -32,6 +32,17 @@ import {
 } from '../lib/matching/store.ts'
 import { defaultWeights } from '../lib/matching/weights.ts'
 import { emptyProfile } from '../lib/profile/model.ts'
+import { usePricing } from './ai-test-configuration.ts'
+
+// The settings and price lists AI keeps in code, replaced for the test.
+vi.mock(
+  '../modules/ai/client-settings.ts',
+  () => import('./ai-test-configuration.ts'),
+)
+vi.mock(
+  '../modules/ai/model-catalog.ts',
+  () => import('./ai-test-configuration.ts'),
+)
 
 // A change of the ad injected between reading its current version and
 // reading that version's content, the window an assessment must survive
@@ -108,7 +119,7 @@ integration(
 
     beforeEach(async () => {
       vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-      vi.stubEnv('AI_MATCHING_PRICING_JSON', JSON.stringify(pricing))
+      usePricing('matching', pricing, 'batch')
       injected.change = null
       await pool.query(
         'TRUNCATE matching_rating_heads,matching_rating_revisions,matching_weight_head,matching_weight_versions,matching_groups,matching_requests,matching_batches,ai_attempts,ai_budget_months,profile_head,profile_versions,source_ads,source_scopes CASCADE',

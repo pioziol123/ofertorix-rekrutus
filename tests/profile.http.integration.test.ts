@@ -68,7 +68,6 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
         DOCUMENTS_DIR: root,
         PG_BOSS_SCHEMA: queueSchema,
         OPENAI_API_KEY: '',
-        AI_PROFILE_PRICING_JSON: '',
         NITRO_HOST: '127.0.0.1',
         NITRO_PORT: String(port),
       },

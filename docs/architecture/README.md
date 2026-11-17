@@ -226,7 +226,7 @@ flowchart TB
 
 | Area | State in the current code |
 | --- | --- |
-| Professional profile | The preparation route and the `profile-ai` handler lead to the local executor when the snapshot is Ollama. [Compose](../../compose.yaml) passes `AI_PROFILE_EXECUTION_JSON` and `AI_ENDPOINTS_JSON` to web and the worker. A configuration example is in the [environment file](../../.env.example). Model availability and connectivity from the containers need separate verification. |
+| Professional profile | The preparation route and the `profile-ai` handler lead to the local executor when the snapshot is Ollama. The profile settings in the AI module choose the local model; [Compose](../../compose.yaml) passes `AI_ENDPOINTS_JSON` to web and the worker. A configuration example is in the [environment file](../../.env.example). Model availability and connectivity from the containers need separate verification. |
 | Local queue and recovery | The [local AI migration](../../migrations/1770000000013_local_ai.cjs) adds operation, queue and slot data. The [local profile module](../../lib/profile/local-ai.ts) wakes pending jobs after the end of a generation is confirmed. The [worker](../../worker/index.ts) calls `recoverLocalProfiles` at start and in the schedule cycle. |
 | Offer matching | The connected worker uses OpenAI Batch. The local assessment path is described in the [solution design](../specs/lokalne-ai/solution-design.md). |
 | Employer research | The connected basic research uses OpenAI Responses and web search. OpenCode and the browser for local research are described in the [solution design](../specs/lokalne-ai/solution-design.md). |

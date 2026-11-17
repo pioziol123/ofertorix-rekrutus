@@ -26,6 +26,17 @@ import {
   searchResponse,
   synthesisResponse,
 } from './company-research.fixtures.ts'
+import { usePricing } from './ai-test-configuration.ts'
+
+// The settings and price lists AI keeps in code, replaced for the test.
+vi.mock(
+  '../modules/ai/client-settings.ts',
+  () => import('./ai-test-configuration.ts'),
+)
+vi.mock(
+  '../modules/ai/model-catalog.ts',
+  () => import('./ai-test-configuration.ts'),
+)
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -63,7 +74,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
   })
   beforeEach(async () => {
     vi.stubEnv('OPENAI_API_KEY', 'mock-key-never-send')
-    vi.stubEnv('AI_RESEARCH_PRICING_JSON', JSON.stringify(pricing))
+    usePricing('research', pricing)
     send.mockClear()
     await pool.query(
       'TRUNCATE company_research_commands,company_research,ai_attempts,ai_budget_months,company_commands,companies CASCADE',
@@ -135,7 +146,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
       response_id: 'search-id,synthesis-id',
       usage: { input_tokens: 8300, output_tokens: 120, search_calls: 1 },
     })
-    vi.stubEnv('AI_RESEARCH_PRICING_JSON', '')
+    usePricing('research', null)
     expect(await requestResearch(pool, boss, companyId, command())).toEqual({
       id: op.id,
       reused: true,

@@ -30,6 +30,17 @@ import {
   parseQueue,
 } from '../lib/profile/imports.ts'
 import { executeAi, prepareProposal, resumeAi } from '../lib/profile/ai.ts'
+import { usePricing } from './ai-test-configuration.ts'
+
+// The settings and price lists AI keeps in code, replaced for the test.
+vi.mock(
+  '../modules/ai/client-settings.ts',
+  () => import('./ai-test-configuration.ts'),
+)
+vi.mock(
+  '../modules/ai/model-catalog.ts',
+  () => import('./ai-test-configuration.ts'),
+)
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -76,7 +87,7 @@ integration(
     beforeEach(async () => {
       vi.unstubAllEnvs()
       vi.stubEnv('OPENAI_API_KEY', 'test-key-never-send')
-      vi.stubEnv('AI_PROFILE_PRICING_JSON', JSON.stringify(pricing))
+      usePricing('profile', pricing)
       await pool.query(
         'TRUNCATE profile_import_texts,ai_attempts,ai_budget_months,profile_imports,profile_drafts,profile_head,profile_versions CASCADE',
       )
@@ -297,15 +308,12 @@ integration(
       )
     })
     it('reserves the monthly 100 PLN cap atomically for concurrent imports', async () => {
-      vi.stubEnv(
-        'AI_PROFILE_PRICING_JSON',
-        JSON.stringify({
-          ...pricing,
-          inputUsdPerMillion: '60000',
-          maxInputTokens: 1000,
-          maxOutputTokens: 1,
-        }),
-      )
+      usePricing('profile', {
+        ...pricing,
+        inputUsdPerMillion: '60000',
+        maxInputTokens: 1000,
+        maxOutputTokens: 1,
+      })
       const ids = await Promise.all([
         createTextImport(pool, 'PHP'),
         createTextImport(pool, 'PHP'),
@@ -494,17 +502,15 @@ integration(
       'settles valid usage even when the proposal is rejected with a safe explanation',
       async (payload, message) => {
         const { id, attemptId } = await readyAttempt(),
-          fetcher = vi
-            .fn<typeof fetch>()
-            .mockResolvedValue(
-              new Response(
-                JSON.stringify({
-                  ...payload,
-                  usage: { input_tokens: 100, output_tokens: 50 },
-                }),
-                { status: 200 },
-              ),
-            )
+          fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(
+              JSON.stringify({
+                ...payload,
+                usage: { input_tokens: 100, output_tokens: 50 },
+              }),
+              { status: 200 },
+            ),
+          )
         await executeAi(pool, boss, attemptId, fetcher)
         const attempt = (
             await pool.query(

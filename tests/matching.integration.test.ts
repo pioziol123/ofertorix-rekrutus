@@ -27,6 +27,17 @@ import {
   readMatching,
   recoverMatching,
 } from '../lib/matching/store.ts'
+import { usePricing } from './ai-test-configuration.ts'
+
+// The settings and price lists AI keeps in code, replaced for the test.
+vi.mock(
+  '../modules/ai/client-settings.ts',
+  () => import('./ai-test-configuration.ts'),
+)
+vi.mock(
+  '../modules/ai/model-catalog.ts',
+  () => import('./ai-test-configuration.ts'),
+)
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -79,7 +90,7 @@ integration(
     beforeEach(async () => {
       vi.unstubAllEnvs()
       vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-      vi.stubEnv('AI_MATCHING_PRICING_JSON', JSON.stringify(pricing))
+      usePricing('matching', pricing, 'batch')
       send.mockClear()
       await pool.query(
         'TRUNCATE matching_requests,matching_batches,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
@@ -254,13 +265,14 @@ integration(
         request_payload: { model: 'test-only', max_output_tokens: 500 },
       })
       expect(snapshot.request_payload).not.toHaveProperty('Authorization')
-      vi.stubEnv(
-        'AI_MATCHING_PRICING_JSON',
-        JSON.stringify({
+      usePricing(
+        'matching',
+        {
           ...pricing,
           model: 'changed-model',
           maxOutputTokens: 50,
-        }),
+        },
+        'batch',
       )
       const provider = new Provider()
       await executeMatching(pool, boss, request.id, provider)
@@ -587,7 +599,7 @@ integration(
       await expect(enqueueMatching(pool, boss, ad)).rejects.toThrow(
         'zatwierdź profil',
       )
-      vi.stubEnv('AI_MATCHING_PRICING_JSON', '')
+      usePricing('matching', null)
       await expect(enqueueMatching(pool, boss, ad)).rejects.toThrow(
         'cennik Batch',
       )
