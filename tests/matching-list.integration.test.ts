@@ -22,6 +22,7 @@ import {
   saveWeights,
 } from '../lib/matching/ratings.ts'
 import { emptyProfile } from '../lib/profile/model.ts'
+import { listOffers, parseFilters } from '../modules/offers/index.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -152,6 +153,51 @@ integration('list matching projections in isolated PostgreSQL', () => {
       { group: 'direction', score: 0 },
     ],
   }
+  it('reads the offer list with assessments in a fixed number of queries, whatever the number of offers (A6-AC05)', async () => {
+    /** The list page and the number of queries sent to read it. */
+    const countedList = async () => {
+      const spy = vi.spyOn(pool, 'query')
+      try {
+        const list = await listOffers(parseFilters({}))
+        return { list, queries: spy.mock.calls.length }
+      } finally {
+        spy.mockRestore()
+      }
+    }
+    await request('completed', '2026-01-01', calculation)
+    const one = await countedList()
+    expect(one.list.total).toBe(1)
+    const scope = (
+      await pool.query(
+        'SELECT last_seen_scope_id FROM source_ads WHERE id=$1',
+        [ad],
+      )
+    ).rows[0].last_seen_scope_id
+    for (let n = 0; n < 5; n++) {
+      ad = randomUUID()
+      revision = randomUUID()
+      await pool.query(
+        "INSERT INTO source_ads(id,source,external_id,last_seen_scope_id) VALUES($1,'solid',$2,$3)",
+        [ad, randomUUID(), scope],
+      )
+      await pool.query(
+        "INSERT INTO source_ad_revisions(id,source_ad_id,content_hash,payload) VALUES($1,$2,'test','{}')",
+        [revision, ad],
+      )
+      await pool.query(
+        'UPDATE source_ads SET current_revision_id=$2 WHERE id=$1',
+        [ad, revision],
+      )
+      await request('completed', '2026-01-01', calculation)
+    }
+    const six = await countedList()
+    expect(six.list.total).toBe(6)
+    expect(
+      six.list.items.every((offer) => offer.assessment?.rating === 80),
+    ).toBe(true)
+    expect(six.queries).toBe(one.queries)
+    expect(one.queries).toBeLessThanOrEqual(4)
+  })
   it('keeps an empty catalog and unassessed offers free of fabricated scores', async () => {
     expect(await decorateMatching(pool, [])).toEqual([])
     expect((await decorateMatching(pool, offers()))[0]).not.toHaveProperty(

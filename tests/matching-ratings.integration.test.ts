@@ -15,6 +15,7 @@ import { emptyProfile } from '../lib/profile/model.ts'
 import { confirmProfile, saveDraft } from '../lib/profile/store.ts'
 import {
   activeProfileVersion,
+  currentAdVersions,
   manualContext,
   publishAiRating,
   readRatings,
@@ -173,8 +174,12 @@ integration(
       })),
     })
     async function publish(request: Awaited<ReturnType<typeof newRequest>>) {
-      // As the AI result path: the active version is read before the transaction.
+      // As the AI result path: the active version and the ad's current
+      // version are read before the transaction.
       const active = (await activeProfileVersion())?.id ?? null
+      const current = (await currentAdVersions([request.ad_id])).get(
+        request.ad_id,
+      )
       const client = await pool.connect()
       try {
         await client.query('BEGIN')
@@ -183,6 +188,7 @@ integration(
           request,
           unknownResult(request.input),
           active,
+          current,
         )
         await client.query('COMMIT')
         return result
@@ -376,6 +382,9 @@ integration(
     it('confirms a new profile version and changes the ad without waiting for an AI rating being published (A10-AC04)', async () => {
       const request = await newRequest()
       const active = (await activeProfileVersion())?.id ?? null
+      const current = (await currentAdVersions([request.ad_id])).get(
+        request.ad_id,
+      )
       const publisher = await pool.connect()
       try {
         await publisher.query('BEGIN')
@@ -384,6 +393,7 @@ integration(
           request,
           unknownResult(request.input),
           active,
+          current,
         )
         // The publication's transaction is still open while the owner confirms.
         const draft = await saveDraft(pool, emptyProfile(), 0)

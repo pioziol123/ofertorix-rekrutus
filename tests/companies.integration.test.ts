@@ -373,6 +373,70 @@ integration('company profiles in isolated PostgreSQL', () => {
       'Company 26',
     )
   })
+  describe('title and company name in the unified form of the Sources read (A6-R07)', () => {
+    /** Makes a new version with the given title and company current. */
+    async function changeAd(title: unknown, company: unknown) {
+      const version = randomUUID()
+      await pool.query(
+        'INSERT INTO source_ad_revisions(id,source_ad_id,content_hash,payload) VALUES($1,$2,$3,$4)',
+        [version, adId, randomUUID(), { title, company }],
+      )
+      await pool.query(
+        'UPDATE source_ads SET current_revision_id=$2 WHERE id=$1',
+        [adId, version],
+      )
+    }
+    it.each([
+      ['empty', ''],
+      ['only spaces', '   '],
+      ['not text', 42],
+      ['absent', undefined],
+      ['the fixed text of a missing title', 'Stanowisko bez nazwy'],
+    ])(
+      'shows a version with a missing title (%s) as "Oferta" in the link history',
+      async (_case, title) => {
+        await changeAd(title, 'Same name')
+        const company = await create()
+        await changeCompanyLink(pool, company.id, link())
+        const detail = await readCompany(pool, company.id)
+        expect(detail!.history[0]!.title).toBe('Oferta')
+      },
+    )
+    it('ignores spaces at the ends of a title in the link history', async () => {
+      await changeAd('  PHP role  ', 'Same name')
+      const company = await create()
+      await changeCompanyLink(pool, company.id, link())
+      expect((await readCompany(pool, company.id))!.history[0]!.title).toBe(
+        'PHP role',
+      )
+    })
+    it.each([
+      ['empty', ''],
+      ['only spaces', '   '],
+      ['not text', 42],
+      ['absent', undefined],
+      ['the fixed text of a missing company', 'Firma niepodana'],
+    ])(
+      'suggests no company profile for an ad with a missing company name (%s)',
+      async (_case, name) => {
+        await changeAd('PHP role', name)
+        await create('Firma niepodana')
+        await create('42')
+        expect(await offerCompanies(pool, adId)).toEqual({
+          name: null,
+          links: [],
+          suggestions: [],
+        })
+      },
+    )
+    it('suggests a profile whose name differs from the ad company only by spaces at the ends', async () => {
+      await changeAd('PHP role', '  Same name  ')
+      const company = await create('Same name')
+      const offer = await offerCompanies(pool, adId)
+      expect(offer!.name).toBe('Same name')
+      expect(offer!.suggestions.map((s) => s.id)).toEqual([company.id])
+    })
+  })
 })
 
 function http(
