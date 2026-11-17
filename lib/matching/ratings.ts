@@ -2,8 +2,13 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { tx } from '../profile/store.ts'
-import { profileSchema } from '../profile/model.ts'
 import { projectOffer } from '../offers.ts'
+import type { ProfileData } from '../../modules/profile/index.ts'
+import {
+  activeProfileVersion,
+  profileVersionNumbers,
+  withProfileNumbers,
+} from './profile-versions.ts'
 import {
   assessmentSchema,
   calculate,
@@ -125,18 +130,17 @@ async function insertRevision(
     )
   return { id, calculation }
 }
-async function versions(client: PoolClient, adId: string) {
+// The ad keeps its row lock until 0mq.6 moves the read to Sources; the profile
+// version comes from the caller's lock-free read of the active version.
+async function currentAdRevision(client: PoolClient, adId: string) {
   const row = (
     await client.query(
-      'SELECT a.current_revision_id,h.active_version_id FROM source_ads a CROSS JOIN profile_head h WHERE a.id=$1 FOR SHARE OF a,h',
+      'SELECT current_revision_id FROM source_ads WHERE id=$1 FOR SHARE',
       [adId],
     )
   ).rows[0]
   if (!row) throw new RatingConflict('Nie znaleziono oferty.')
-  return row as {
-    current_revision_id: string
-    active_version_id: string | null
-  }
+  return row.current_revision_id as string
 }
 async function head(client: PoolClient, adId: string) {
   return (
@@ -149,6 +153,8 @@ async function head(client: PoolClient, adId: string) {
   )
 }
 // The caller owns the transaction: AI cost, request result and rating publish commit together.
+// The caller reads the active profile version before its transaction, without a
+// lock; a confirmation in between is accepted (owner's decision in 0mq.13).
 export async function publishAiRating(
   client: PoolClient,
   request: {
@@ -159,6 +165,7 @@ export async function publishAiRating(
     input: MatchingInput
   },
   result: Assessment,
+  activeProfileVersionId: string | null,
 ) {
   await lock(client)
   const existing = (
@@ -171,9 +178,9 @@ export async function publishAiRating(
     return existing as { id: string; calculation: ReturnType<typeof calculate> }
   const weights = await activeWeights(client),
     previous = await head(client, request.ad_id),
-    current = await versions(client, request.ad_id)
+    adRevisionId = await currentAdRevision(client, request.ad_id)
   const isFresh = (profile: string, ad: string) =>
-    profile === current.active_version_id && ad === current.current_revision_id
+    profile === activeProfileVersionId && ad === adRevisionId
   const promote =
     isFresh(request.profile_version_id, request.ad_revision_id) ||
     !previous ||
@@ -197,11 +204,7 @@ export async function publishAiRating(
   )
 }
 export async function manualContext(pool: Pool, adId: string) {
-  const profile = (
-    await pool.query(
-      'SELECT v.* FROM profile_head h JOIN profile_versions v ON v.id=h.active_version_id WHERE h.singleton',
-    )
-  ).rows[0]
+  const profile = await activeProfileVersion()
   if (!profile) return null
   const ad = (
     await pool.query(
@@ -213,7 +216,7 @@ export async function manualContext(pool: Pool, adId: string) {
   const client = await pool.connect()
   try {
     const previous = await head(client, adId),
-      input = matchingInput(profileSchema.parse(profile.data), projectOffer(ad))
+      input = matchingInput(profile.data, projectOffer(ad))
     const same =
       previous?.profile_version_id === profile.id &&
       previous?.ad_revision_id === ad.current_revision_id
@@ -252,6 +255,8 @@ export async function saveManualRating(
 ) {
   const command = manualRatingCommand.parse(value),
     hash = fingerprint({ adId: adId.toLowerCase(), ...command })
+  // Read before the transaction holds a connection; the read takes no lock.
+  const profile = await activeProfileVersion()
   const client = await pool.connect()
   try {
     return await tx(client, async () => {
@@ -268,20 +273,16 @@ export async function saveManualRating(
         return { id: String(duplicate.id), reused: true }
       }
       const previous = await head(client, adId),
-        current = await versions(client, adId)
+        adRevisionId = await currentAdRevision(client, adId)
       if (
         (previous?.id ?? null) !== command.expectedRevisionId ||
-        current.active_version_id !== command.profileVersionId ||
-        current.current_revision_id !== command.adRevisionId
+        profile?.id !== command.profileVersionId ||
+        adRevisionId !== command.adRevisionId
       )
         throw new RatingConflict(
           'Ocena, profil lub ogłoszenie zmieniły się. Wczytaj aktualne dane przed zapisem; Twój formularz nie został zapisany.',
         )
-      const context = await manualContextOnClient(
-        client,
-        adId,
-        command.profileVersionId,
-      )
+      const context = await manualContextOnClient(client, adId, profile.data)
       let result: Assessment
       try {
         result = validateAssessment(command.assessment, context, 'owner')
@@ -321,20 +322,15 @@ export async function saveManualRating(
 async function manualContextOnClient(
   client: PoolClient,
   adId: string,
-  profileVersionId: string,
+  profile: ProfileData,
 ) {
-  const profile = (
-    await client.query('SELECT data FROM profile_versions WHERE id=$1', [
-      profileVersionId,
-    ])
-  ).rows[0]
   const ad = (
     await client.query(
       'SELECT a.*,r.payload FROM source_ads a JOIN source_ad_revisions r ON r.id=a.current_revision_id WHERE a.id=$1',
       [adId],
     )
   ).rows[0]
-  return matchingInput(profileSchema.parse(profile.data), projectOffer(ad))
+  return matchingInput(profile, projectOffer(ad))
 }
 export async function saveWeights(pool: Pool, value: unknown) {
   const command = weightCommand.parse(value),
@@ -432,16 +428,32 @@ export type RatingView = {
   stale: boolean
 }
 export async function readRatings(pool: Pool, adId: string) {
-  const rows = (
-    await pool.query<RatingView>(
-      `SELECT r.id,r.request_id,r.result,r.calculation,r.author,r.assessment_author,r.reason,r.profile_version_id,r.ad_revision_id,v.number AS profile_number,ar.retrieved_at AS offer_version_at,
+  return readRatingsAgainst(
+    pool,
+    adId,
+    (await activeProfileVersion())?.id ?? null,
+  )
+}
+/** The rating history of an ad, stale against the given active profile version. */
+export async function readRatingsAgainst(
+  pool: Pool,
+  adId: string,
+  activeProfileVersionId: string | null,
+) {
+  const found = (
+    await pool.query<Omit<RatingView, 'profile_number'>>(
+      `SELECT r.id,r.request_id,r.result,r.calculation,r.author,r.assessment_author,r.reason,r.profile_version_id,r.ad_revision_id,ar.retrieved_at AS offer_version_at,
     r.weights_version_id,w.number AS weights_number,w.weights,r.created_at,r.input->'criteria' AS criteria,r.input->'checks' AS checks,(h.revision_id=r.id) AS is_current,
-    (r.profile_version_id IS DISTINCT FROM p.active_version_id OR r.ad_revision_id IS DISTINCT FROM a.current_revision_id) AS stale
-    FROM matching_rating_revisions r JOIN source_ads a ON a.id=r.ad_id CROSS JOIN profile_head p
-    JOIN profile_versions v ON v.id=r.profile_version_id JOIN source_ad_revisions ar ON ar.id=r.ad_revision_id JOIN matching_weight_versions w ON w.id=r.weights_version_id
+    (r.profile_version_id IS DISTINCT FROM $2::uuid OR r.ad_revision_id IS DISTINCT FROM a.current_revision_id) AS stale
+    FROM matching_rating_revisions r JOIN source_ads a ON a.id=r.ad_id
+    JOIN source_ad_revisions ar ON ar.id=r.ad_revision_id JOIN matching_weight_versions w ON w.id=r.weights_version_id
     LEFT JOIN matching_rating_heads h ON h.ad_id=r.ad_id WHERE r.ad_id=$1 ORDER BY r.sequence DESC`,
-      [adId],
+      [adId, activeProfileVersionId],
     )
   ).rows
+  const rows: RatingView[] = withProfileNumbers(
+    found,
+    await profileVersionNumbers(found.map((row) => row.profile_version_id)),
+  )
   return { current: rows.find((row) => row.is_current) ?? null, ratings: rows }
 }

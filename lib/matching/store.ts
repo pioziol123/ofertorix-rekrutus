@@ -1,4 +1,4 @@
-import { publishAiRating, readRatings } from './ratings.ts'
+import { publishAiRating, readRatingsAgainst } from './ratings.ts'
 import { batchArchive } from './archive.ts'
 import { randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
@@ -6,7 +6,12 @@ import type { PgBoss } from 'pg-boss'
 import { aiConfiguration, type AiConfiguration } from '../ai/configuration.ts'
 import { chargeCeiling, reserve } from '../ai/budget.ts'
 import { tx } from '../profile/store.ts'
-import { profileSchema } from '../profile/model.ts'
+import type { ProfileVersion } from '../../modules/profile/index.ts'
+import {
+  activeProfileVersion,
+  profileVersionNumbers,
+  withProfileNumbers,
+} from './profile-versions.ts'
 import { projectOffer } from '../offers.ts'
 import { requireQueued } from '../queue.ts'
 import {
@@ -78,7 +83,9 @@ export async function prepareMatching(
   boss: PgBoss,
   adId: string,
   config: AiConfiguration,
-  suppliedProfile?: { id: string; data: unknown },
+  // The active version read before the transaction; one read per enqueue, so a
+  // group uses one version for all its offers.
+  profile: ProfileVersion | null,
   dispatch = true,
 ): Promise<{ id: string; state: string; reused: boolean }> {
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
@@ -91,13 +98,6 @@ export async function prepareMatching(
     )
   ).rows[0]
   if (previous) return { ...previous, reused: true }
-  const profile =
-    suppliedProfile ??
-    (
-      await client.query(
-        'SELECT v.* FROM profile_head h JOIN profile_versions v ON v.id=h.active_version_id WHERE h.singleton',
-      )
-    ).rows[0]
   if (!profile) throw new MatchingError('Najpierw zatwierdź profil zawodowy.')
   const ad = (
     await client.query(
@@ -106,10 +106,7 @@ export async function prepareMatching(
     )
   ).rows[0]
   if (!ad) throw new MatchingError('Nie znaleziono oferty.')
-  const input = matchingInput(
-    profileSchema.parse(profile.data),
-    projectOffer(ad),
-  )
+  const input = matchingInput(profile.data, projectOffer(ad))
   const id = randomUUID()
   const excluded = input.checks.some((c) => c.state === 'conflict')
   const payload = excluded ? null : batchRequest(id, input, config).body
@@ -143,9 +140,12 @@ export async function enqueueMatching(pool: Pool, boss: PgBoss, adId: string) {
     throw new MatchingError(
       'Skonfiguruj model i cennik Batch przed oceną ofert.',
     )
+  const profile = await activeProfileVersion()
   const client = await pool.connect()
   try {
-    return await tx(client, () => prepareMatching(client, boss, adId, config))
+    return await tx(client, () =>
+      prepareMatching(client, boss, adId, config, profile),
+    )
   } catch (e) {
     if (e instanceof BatchError && e.code === 'limit')
       throw new MatchingError(
@@ -249,10 +249,15 @@ export async function applyMatchingLine(
       if (error instanceof AssessmentError) diagnostic = error.code
       /* Keep usage settlement even if content failed validation. */
     }
+    // Read outside the transaction: this connection holds it, and the read
+    // takes no lock, so it needs no part in it.
+    const profile = result ? await activeProfileVersion() : null
     await tx(client, async () => {
       await settle(client, row.attempt_id, cost, usage, responseId)
       if (result)
-        calculation = (await publishAiRating(client, row, result)).calculation
+        calculation = (
+          await publishAiRating(client, row, result, profile?.id ?? null)
+        ).calculation
       await client.query(
         'UPDATE matching_requests SET state=$2,result=$3,calculation=$4,error=$5,updated_at=now() WHERE id=$1',
         [
@@ -548,26 +553,24 @@ export type MatchingHistory = {
   stale: boolean
 }
 export async function readMatching(pool: Pool, adId: string) {
-  const result = await pool.query<MatchingHistory>(
-    `SELECT r.id,r.state,r.result,r.calculation,r.error,r.created_at,r.updated_at,r.profile_version_id,r.ad_revision_id,r.input->'checks' AS checks,r.input->'criteria' AS criteria,v.number AS profile_number,ar.retrieved_at AS offer_version_at,coalesce(g.batch_id,b.batch_id) AS batch_id,coalesce(g.status,b.status) AS batch_status,coalesce(g.cleaned,b.cleaned) AS cleaned,
-    (r.profile_version_id IS DISTINCT FROM h.active_version_id OR r.ad_revision_id IS DISTINCT FROM a.current_revision_id) AS stale
-    FROM matching_requests r JOIN source_ads a ON a.id=r.ad_id JOIN profile_versions v ON v.id=r.profile_version_id JOIN source_ad_revisions ar ON ar.id=r.ad_revision_id CROSS JOIN profile_head h LEFT JOIN matching_batches b ON b.request_id=r.id LEFT JOIN matching_groups g ON g.id=r.group_id WHERE r.ad_id=$1 ORDER BY r.created_at DESC,r.id DESC`,
-    [adId],
+  const activeId = (await activeProfileVersion())?.id ?? null
+  const result = await pool.query<Omit<MatchingHistory, 'profile_number'>>(
+    `SELECT r.id,r.state,r.result,r.calculation,r.error,r.created_at,r.updated_at,r.profile_version_id,r.ad_revision_id,r.input->'checks' AS checks,r.input->'criteria' AS criteria,ar.retrieved_at AS offer_version_at,coalesce(g.batch_id,b.batch_id) AS batch_id,coalesce(g.status,b.status) AS batch_status,coalesce(g.cleaned,b.cleaned) AS cleaned,
+    (r.profile_version_id IS DISTINCT FROM $2::uuid OR r.ad_revision_id IS DISTINCT FROM a.current_revision_id) AS stale
+    FROM matching_requests r JOIN source_ads a ON a.id=r.ad_id JOIN source_ad_revisions ar ON ar.id=r.ad_revision_id LEFT JOIN matching_batches b ON b.request_id=r.id LEFT JOIN matching_groups g ON g.id=r.group_id WHERE r.ad_id=$1 ORDER BY r.created_at DESC,r.id DESC`,
+    [adId, activeId],
+  )
+  const numbers = await profileVersionNumbers(
+    result.rows.map((row) => row.profile_version_id),
   )
   const config = matchingConfiguration()
-  const profileReady =
-    (
-      await pool.query(
-        'SELECT active_version_id IS NOT NULL AS ready FROM profile_head WHERE singleton',
-      )
-    ).rows[0]?.ready === true
   return {
     configured: config !== null,
-    profileReady,
+    profileReady: activeId !== null,
     maximumCostPln: config
       ? chargeCeiling(config, config.maxInputTokens, config.maxOutputTokens)
       : null,
-    history: result.rows,
-    ...(await readRatings(pool, adId)),
+    history: withProfileNumbers(result.rows, numbers),
+    ...(await readRatingsAgainst(pool, adId, activeId)),
   }
 }

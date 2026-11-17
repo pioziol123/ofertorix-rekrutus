@@ -19,8 +19,7 @@ export type ProfileVersion = ProfileVersionMetadata & { data: ProfileData }
 
 /** The active confirmed version, or an explicit "no active version". */
 export type ActiveProfileVersion =
-  | { active: true; version: ProfileVersion }
-  | { active: false }
+  { active: true; version: ProfileVersion } | { active: false }
 
 /**
  * Reads the active confirmed profile version with its id. The read takes no

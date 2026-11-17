@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
+import { closePool, setPool } from '../lib/db.ts'
 import {
   afterAll,
   beforeAll,
@@ -62,6 +63,8 @@ integration('list matching projections in isolated PostgreSQL', () => {
       })
     }
     await pool.query(statements.join('\n'))
+    // Profile reads go through the shared accessor (T-03).
+    setPool(pool)
   })
   beforeEach(async () => {
     vi.unstubAllEnvs()
@@ -101,7 +104,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
   })
   afterAll(async () => {
     vi.unstubAllEnvs()
-    await pool?.end()
+    await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
       await admin.end()

@@ -1,6 +1,6 @@
 import { defaultWeights, weightsSchema, type Weights } from './weights.ts'
 import { z } from 'zod'
-import type { ProfileData } from '../profile/model.ts'
+import type { ProfileData } from '../../modules/profile/index.ts'
 import type { OfferView } from '../offers.ts'
 import { scrubContacts } from '../profile/imports.ts'
 

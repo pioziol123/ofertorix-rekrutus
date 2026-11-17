@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
+import { closePool, setPool } from '../lib/db.ts'
 import type { PgBoss } from 'pg-boss'
 import {
   afterAll,
@@ -12,6 +13,7 @@ import {
   vi,
 } from 'vitest'
 import { emptyProfile } from '../lib/profile/model.ts'
+import { confirmProfile, saveDraft } from '../lib/profile/store.ts'
 import { budgetMonth } from '../lib/ai/budget.ts'
 import { resumeAi } from '../lib/profile/ai.ts'
 import {
@@ -80,6 +82,8 @@ integration(
         })
       }
       await pool.query(statements.join('\n'))
+      // Profile reads go through the shared accessor (T-03).
+      setPool(pool)
     })
     beforeEach(async () => {
       vi.unstubAllEnvs()
@@ -129,7 +133,7 @@ integration(
     })
     afterAll(async () => {
       vi.unstubAllEnvs()
-      await pool?.end()
+      await closePool()
       if (admin) {
         await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
         await admin.end()
@@ -260,6 +264,35 @@ integration(
     }
     const enqueue = async (ids: string[], commandId = randomUUID()) =>
       enqueueMatchingGroup(pool, boss, { commandId, offerIds: ids })
+    it('uses one profile version for the whole group when a version is confirmed meanwhile (A10-AC03)', async () => {
+      let active = profileVersion,
+        revision = 0
+      for (let round = 0; round < 5; round++) {
+        const offers = [
+          await anotherAd(),
+          await anotherAd(),
+          await anotherAd(),
+          await anotherAd(),
+        ]
+        const data = emptyProfile()
+        data.summary = `Round ${round}`
+        const draft = await saveDraft(pool, data, revision)
+        const [group, confirmed] = await Promise.all([
+          enqueue(offers),
+          confirmProfile(pool, draft.revision, active, randomUUID()),
+        ])
+        active = confirmed.id
+        revision = draft.revision + 1
+        const versions = (
+          await pool.query(
+            'SELECT DISTINCT profile_version_id FROM matching_requests WHERE id=ANY($1::uuid[])',
+            [group.items.map((item) => item.id)],
+          )
+        ).rows
+        expect(group.items).toHaveLength(offers.length)
+        expect(versions).toHaveLength(1)
+      }
+    })
     it('submits multiple offers in one upload/create, maps unordered results and settles each cost independently', async () => {
       const group = await enqueue([ad, await anotherAd()]),
         provider = new Provider()

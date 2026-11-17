@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
+import { closePool, setPool } from '../lib/db.ts'
 import {
   afterAll,
   beforeAll,
@@ -11,6 +12,7 @@ import {
   vi,
 } from 'vitest'
 import { emptyProfile } from '../lib/profile/model.ts'
+import { confirmProfile, saveDraft } from '../lib/profile/store.ts'
 import {
   manualContext,
   publishAiRating,
@@ -21,6 +23,8 @@ import {
 } from '../lib/matching/ratings.ts'
 import { defaultWeights } from '../lib/matching/weights.ts'
 import type { Assessment, MatchingInput } from '../lib/matching/model.ts'
+import { activeProfileVersion } from '../lib/matching/profile-versions.ts'
+import { readMatching } from '../lib/matching/store.ts'
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
 integration(
@@ -53,6 +57,8 @@ integration(
           sql: (s: string) => sql.push(s),
         })
       await pool.query(sql.join('\n'))
+      // Profile reads go through the shared accessor (T-03).
+      setPool(pool)
     })
     beforeEach(async () => {
       vi.stubEnv('OPENAI_API_KEY', '')
@@ -107,7 +113,7 @@ integration(
     })
     afterAll(async () => {
       vi.unstubAllEnvs()
-      await pool?.end()
+      await closePool()
       if (admin) {
         await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
         await admin.end()
@@ -166,6 +172,8 @@ integration(
       })),
     })
     async function publish(request: Awaited<ReturnType<typeof newRequest>>) {
+      // As the AI result path: the active version is read before the transaction.
+      const active = (await activeProfileVersion())?.id ?? null
       const client = await pool.connect()
       try {
         await client.query('BEGIN')
@@ -173,6 +181,7 @@ integration(
           client,
           request,
           unknownResult(request.input),
+          active,
         )
         await client.query('COMMIT')
         return result
@@ -351,6 +360,89 @@ integration(
       expect(outcomes.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
       expect(outcomes.filter((r) => r.status === 'rejected')).toHaveLength(1)
       expect((await readRatings(pool, ad)).ratings).toHaveLength(1)
+    })
+    it('confirms a new profile version without waiting for an AI rating being published (A10-AC04)', async () => {
+      const request = await newRequest()
+      const active = (await activeProfileVersion())?.id ?? null
+      const publisher = await pool.connect()
+      try {
+        await publisher.query('BEGIN')
+        await publishAiRating(
+          publisher,
+          request,
+          unknownResult(request.input),
+          active,
+        )
+        // The publication's transaction is still open while the owner confirms.
+        const draft = await saveDraft(pool, emptyProfile(), 0)
+        const [confirmed] = await Promise.all([
+          Promise.race([
+            confirmProfile(pool, draft.revision, profileVersion, randomUUID()),
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () => reject(new Error('Confirmation waited for publication')),
+                3000,
+              ),
+            ),
+          ]),
+        ])
+        await publisher.query('COMMIT')
+        expect((await activeProfileVersion())?.id).toBe(confirmed.id)
+        expect((await readRatings(pool, ad)).current).toMatchObject({
+          request_id: request.id,
+          profile_number: 1,
+          stale: true,
+        })
+      } catch (error) {
+        await publisher.query('ROLLBACK')
+        throw error
+      } finally {
+        publisher.release()
+      }
+    })
+    it('reads the profile a fixed number of times for the assessment history, whatever its versions (A10-AC05)', async () => {
+      const profileReads = async (read: () => Promise<unknown>) => {
+        const spy = vi.spyOn(pool, 'query')
+        try {
+          await read()
+          return spy.mock.calls.filter(([sql]) =>
+            /profile_(versions|head)/.test(String(sql)),
+          ).length
+        } finally {
+          spy.mockRestore()
+        }
+      }
+      await saveManualRating(pool, ad, await manualCommand())
+      await newRequest()
+      const one = {
+        ratings: await profileReads(() => readRatings(pool, ad)),
+        history: await profileReads(() => readMatching(pool, ad)),
+      }
+      for (const number of [2, 3]) {
+        const version = randomUUID()
+        await pool.query(
+          'INSERT INTO profile_versions(id,number,data,command_id,draft_revision) VALUES($1,$2,$3,$4,$2)',
+          [version, number, emptyProfile(), randomUUID()],
+        )
+        await pool.query('UPDATE profile_head SET active_version_id=$1', [
+          version,
+        ])
+        await saveManualRating(pool, ad, await manualCommand())
+        await newRequest()
+      }
+      const view = await readMatching(pool, ad)
+      expect(view.ratings.map((rating) => rating.profile_number)).toEqual([
+        3, 2, 1,
+      ])
+      expect(
+        view.history.map((request) => request.profile_number).sort(),
+      ).toEqual([1, 2, 3])
+      expect(view.profileReady).toBe(true)
+      expect({
+        ratings: await profileReads(() => readRatings(pool, ad)),
+        history: await profileReads(() => readMatching(pool, ad)),
+      }).toEqual(one)
+      expect(one).toEqual({ ratings: 2, history: 3 })
     })
     it('publishes AI with weights active at completion and spends no budget on reweighting', async () => {
       const request = await newRequest()

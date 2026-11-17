@@ -5,6 +5,7 @@ import type { PgBoss } from 'pg-boss'
 import { z } from 'zod'
 import { tx } from '../profile/store.ts'
 import { requireQueued } from '../queue.ts'
+import { activeProfileVersion } from './profile-versions.ts'
 import {
   BatchClient,
   BatchError,
@@ -114,6 +115,9 @@ export async function enqueueMatchingGroup(
 ) {
   const command = groupCommandSchema.parse(value)
   const ids = [...command.offerIds].sort()
+  // One read of the active version for the whole group, before the
+  // transaction holds a connection: every offer gets the same version.
+  const profile = await activeProfileVersion()
   const client = await pool.connect()
   try {
     return await tx(client, async () => {
@@ -138,11 +142,6 @@ export async function enqueueMatchingGroup(
         throw new MatchingError(
           'Skonfiguruj model i cennik Batch przed oceną ofert.',
         )
-      const profile = (
-        await client.query(
-          'SELECT v.id,v.data FROM profile_head h JOIN profile_versions v ON v.id=h.active_version_id WHERE h.singleton',
-        )
-      ).rows[0]
       if (!profile)
         throw new MatchingError('Najpierw zatwierdź profil zawodowy.')
       const id = randomUUID()

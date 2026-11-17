@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
+import { closePool, setPool } from '../lib/db.ts'
 import type { PgBoss } from 'pg-boss'
 import {
   afterAll,
@@ -72,6 +73,8 @@ integration(
         })
       }
       await pool.query(statements.join('\n'))
+      // Profile reads go through the shared accessor (T-03).
+      setPool(pool)
     })
     beforeEach(async () => {
       vi.unstubAllEnvs()
@@ -121,7 +124,7 @@ integration(
     })
     afterAll(async () => {
       vi.unstubAllEnvs()
-      await pool?.end()
+      await closePool()
       if (admin) {
         await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
         await admin.end()
