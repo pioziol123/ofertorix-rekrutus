@@ -50,3 +50,33 @@ The configuration sets the allowed execution modes and the model choice for a ta
 - **Local execution.** Local inference has zero API cost and is available when the paid budget is exhausted. A paid tool used in a local task requires a reservation. Unknown usage stays an unknown.
 
 The execution history links the state, the cause, the result, usage and artefacts to the execution ID. Diagnostic messages contain only the needed IDs and causes. Input content, raw responses and tool materials have separate access through the execution history, according to the contract of the given mode of work.
+
+## State of implementation
+
+The sections above describe the target module. This section says what the code does today, so a client knows what it can rely on. The general contract exists; the Profile, Matching and Companies still run their own AI paths and move to it in tasks `oferty-pracy-0mq.9` (Profile) and `oferty-pracy-0mq.17` (Matching and Companies).
+
+### Contract available now
+
+| Operation | What it does |
+| --- | --- |
+| Execution request | Takes the job type (the key of an existing configuration and price list: `profile`, `matching`, `research`), the domain operation ID, an optional input version, the mode (single, a batch item with its group ID, or agent work with allowed tools), the instruction, the response schema and the input. In the caller's transaction it fixes the provider, model and price list, reserves the budget or records a wait for budget, and sends the job to the AI execution queue. Rolling back the caller's transaction rolls all of it back. A group request reserves the whole group or nothing. An operation has at most one execution waiting, queued or running. |
+| Execution read | The state, the result, the usage, the cost (reserved, settled, unknown) and the cause of a failure or of the client's rejection. The history read lists every execution of an operation; a retry is a new execution of the same operation. |
+| Budget read | The month's limit, the reserved and settled amounts and the funds available. |
+| Result receiver | A client registers one receiver per job type where dependencies are composed. AI calls it in the transaction that saves the settlement: with a result that is valid JSON, or with the cause of a final state without a result. The receiver accepts or rejects the result. The cost is settled whatever it decides, and an unknown cost stays reserved. |
+
+A refused request raises a defined error: no configuration, a mode the configured execution does not offer, a provider that cannot run here yet, an operation that already has an execution in progress, or an incomplete request.
+
+### Simplifications
+
+The coordination is simpler than the target in these points. None of them changes the behaviour of the existing Profile, Matching and Companies paths, which keep their own handling until they move to the contract. Improvements beyond moving the existing behaviour belong to the epic `oferty-pracy-sq2`.
+
+- **Single mode only.** Only the OpenAI adapter takes part in the coordination, in single mode. A batch item or agent work ends in the failed state with the cause `unsupported_mode`, and nothing is charged. The batch and research adapters come from the Matching and Companies code in task `oferty-pracy-0mq.17`.
+- **No local execution yet.** A request for a job type configured for the local model (Ollama) is refused as `executor_unavailable`. The Ollama adapter is in the module, but the shared local slot and the local execution mechanism join the coordination in task `oferty-pracy-0mq.9`.
+- **No detection of interrupted work.** An execution whose worker stopped stays running, and its operation cannot get a new execution. Recovery only sends again the jobs of queued executions and funds the ones that wait for budget. Detecting interrupted work belongs to task `oferty-pracy-0mq.15`.
+- **Retries as before.** A transient error (HTTP 429 or 5xx with an acceptable wait, or a request that may have been sent without a response) gives one more attempt, as the Profile path does today. Execution commands (stopping, skipping, resuming, explicit retry) do not exist yet.
+- **Schema check.** AI checks only that the result is valid JSON; the provider enforces the response schema, and the client validates the content.
+- **A receiver error** rolls back the client's writes and ends the execution as failed with the cause `receiver_error`; the cost is still settled.
+- **Transitional exports.** The public entry point also exports the configuration, budget and adapters that the Profile, Matching and Companies use today. Tasks `oferty-pracy-0mq.9` and `oferty-pracy-0mq.17` remove them. The local slot operations still live in the shared code and move with the local path in task `oferty-pracy-0mq.9`.
+- **Selection rule in two places.** The Profile still chooses its provider with its own copy of the configuration rule until task `oferty-pracy-0mq.9` makes it a client of the contract.
+
+The module now owns the shared AI building blocks and a working general contract. Its clients move to that contract in the tasks named above, and any new guarantee of handling or settlement is a matter for `oferty-pracy-sq2`.

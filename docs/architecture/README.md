@@ -170,9 +170,10 @@ flowchart TB
 | Queue handling and schedule | [Worker entry point](../../worker/index.ts). At start and every minute it checks for overdue work. The schedule requests the SOLID.Jobs import. |
 | Ad import | [SOLID.Jobs](../../lib/sources/sync.ts), [Polish sources](../../lib/sources/polish-sync.ts), [JobSpy](../../lib/sources/jobspy-sync.ts), [ad and revision storage](../../lib/sources/store.ts). |
 | CV extraction | [`extractImport`](../../lib/profile/imports.ts) handles `profile-parse`. |
-| Profile proposal | [`executeAi`](../../lib/profile/ai.ts) handles `profile-ai`. The paid path uses the [AI budget](../../lib/ai/budget.ts). |
+| Profile proposal | [`executeAi`](../../lib/profile/ai.ts) handles `profile-ai`. The paid path uses the [AI budget](../../modules/ai/infrastructure/persistence/budget.ts). |
 | Match assessments | The [single request](../../lib/matching/store.ts) and the [group](../../lib/matching/groups.ts) use the [Batch client](../../lib/matching/batch.ts) and the [batch archive](../../lib/matching/archive.ts). |
 | Basic research | [`executeCompanyResearch`](../../lib/companies/research.ts) runs `company-research` and uses the [OpenAI provider](../../lib/companies/research-provider.ts). |
+| General AI executions | [`runExecution`](../../modules/ai/run-execution.ts) handles `ai-execution` for clients of the [AI module](../../modules/ai/README.md) contract; no client uses it yet. |
 
 <a id="c4-kod-przygotowanie-propozycji-profilu"></a>
 
