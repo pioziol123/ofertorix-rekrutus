@@ -3,7 +3,7 @@
 Work moves through two phases separated by a **hand-off**:
 
 1. **Preparation** happens with the owner. Any input (a bd epic, a ticket, a document, a chat request) becomes specification documents and a bd task that meets the readiness checklist. The `task-prep` skill runs this phase. Applying `ready-for-agent` is the hand-off.
-2. **Execution** happens unattended. The runner (`node .sandcastle/runner.ts`) takes ready tasks one at a time, has an agent implement each in its own sandbox, runs the gates, merges into `main` and closes the task. The agent follows the `implement-task` skill. The owner's next contact with the work is testing `main`.
+2. **Execution** happens unattended. The runner (`node .sandcastle/runner.ts`) takes ready tasks one at a time, has an agent implement each in its own sandbox, runs the gates, delivers the work to `main` on GitHub and closes the task. The agent follows the `implement-task` skill. The owner's next contact with the work is pulling `main` and testing it.
 
 The `spec-docs` skill owns how the documents are written. This file owns how documents, tasks and the runner connect.
 
@@ -92,31 +92,58 @@ Before applying `ready-for-agent`:
 - `node scripts/check-spec-altitude.ts` run on the task's linked PRD, requirements and solution design, by path, exits 0. In the PRD and requirements no warning remains. In the solution design a remaining warning names a library, one of its options or a stored column, which the design carries on purpose; it needs no further record. A line that must name legacy code to identify it carries `<!-- altitude-ok: <reason> -->`.
 - Blocking dependencies are wired in bd.
 
-The runner re-checks the first item and the presence of acceptance criteria deterministically and returns the task as `needs-info` when they fail.
+The runner re-checks the first item and the presence of acceptance criteria deterministically. A document missing from `main` on GitHub makes the task wait, without a return, until it appears; missing document links or acceptance criteria return the task as `needs-info`.
 
 ## Execution
 
-Every agent runs in a Sandcastle `docker()` sandbox built from `.sandcastle/Dockerfile`: the project's toolchain, PostgreSQL with the schema migrated from the commit the image was built from, and Claude Code. The sandbox sees its own worktree and nothing else of the host: no owner database, no Docker, no files outside the repository's git data. Inside it the agent runs without permission prompts; the container is the boundary.
+### Three places
 
-For each task, in order:
+- **The exchange point** is `main` on `origin`, the project's repository on GitHub. Code and documents pass between the owner and the runner only through it.
+- **The runner's copy** is a separate clone of `origin`. The runner's program runs from it, in the version from the exchange point, and the agents' worktrees live in it. Its program files are checked out at a commit without a branch, and its local `main` only mirrors the exchange point: every fetch overwrites it, so a write to it from a sandbox has no effect. The runner trusts the commit ids it fetched and checked, not branch names.
+- **The owner's copy** is where the owner works. The runner and the agents neither read nor change its branches, history or files. The one exception is the task database: the runner uses the owner's bd database directly, so its export in the owner's copy changes while the runner works.
 
-1. Pick the first task from `bd ready` with `ready-for-agent`, neither `ready-for-human` nor `needs-info`, and an epic that passes the epic hand-off check; claim it. Rebuild the sandbox image first when `pnpm-lock.yaml` or `.sandcastle/Dockerfile` changed on `main`.
-2. Create a sandbox from `main` on the task branch `<epic>-<task>-<title slug>`, for example `0mq-13-wprowadzic-wspolne-zarzadzanie-polaczeniami` for `oferty-pracy-0mq.13`. Ids drop the project prefix; the task part is relative to the epic, and a task outside any epic uses its own id alone. Branches made by hand follow the same prefix.
-3. Run the implementing agent (`claude-opus-5-5`, effort `medium` by default) with the task and its documents. The agent runs the gate itself before finishing, writes a result file and commits on its branch; bd, merging and `main` belong to the runner.
-4. Check, in the same warm sandbox: `main` did not move during the run (the sandbox can write the shared git data; the runner restores it and stops if it did), the result file exists, the worktree is clean, the branch has commits and rebases cleanly on `main`, the result's shape and deviations pass the [deterministic checks](#what-the-runner-checks), and the gate passes.
-5. In a fresh sandbox on a copy of the branch, run the gate again, then a separate reviewing agent against the diff, the documents, the acceptance criteria and the result's assumptions and deviations. Its verdict is `pass`, `pass-with-deferral` (every deviation accepted) or `fail` with findings. A result with deviations needs `pass-with-deferral`. Only committed work reaches this step.
-6. When step 4 or 5 fails, send the report back into the implementing agent's session in the same warm sandbox (Sandcastle resume), so it keeps its context, and repeat from step 4. After three such feedback turns, or on a `blocked` result, a rebase conflict or a moved `main`, remove `ready-for-agent`, add `needs-info`, comment the reason and keep the branch for inspection.
-7. On success: fast-forward `main` to the branch, comment the evidence, the assumptions and the deviations, file a follow-up for each deviation and wire it to block the tasks that depend on it, add the assumptions to the epic's assumptions task, file new scope as `discovered-from` tasks with `needs-triage`, and close the task.
+Every agent runs in a Sandcastle `docker()` sandbox built from `.sandcastle/Dockerfile` as it is in the fetched `main`: the project's toolchain, PostgreSQL with the schema migrated from the commit the image was built from, and Claude Code. The sandbox sees its own worktree and the git data of the runner's copy, nothing else of the host: no owner's copy, no task database, no Docker, no GitHub credentials. Only the runner pushes. Inside the sandbox the agent runs without permission prompts; the container is the boundary.
 
-The runner never pushes and never syncs Dolt; pushing `main` stays with the owner.
+### Cycle
 
-Run it in a terminal from the main checkout, on a clean `main`, after `npm install` in `.sandcastle/` and with `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) in `.sandcastle/.env`:
+1. Fetch `main` from `origin` and overwrite the mirror. When GitHub cannot be reached, log git's message, take no task and try again in the next cycle.
+2. When the runner's program in the fetched `main` differs from the version the runner started from, log it and notify the owner once per version. The runner keeps working in its own version.
+3. Rebuild the sandbox image from the content of the fetched `main` when `pnpm-lock.yaml` or `.sandcastle/Dockerfile` there differ from the ones the image was built from.
+4. Reconcile the epics and pick the first task from `bd ready` with `ready-for-agent`, neither `ready-for-human` nor `needs-info`, and an epic that passes the epic hand-off check. A task whose linked documents are not in the fetched `main` stays ready and unclaimed; the runner logs the missing paths and moves on to the next one.
 
-- `node .sandcastle/runner.ts --dry-run` lists the candidates and the readiness verdict for each, without writing anything.
+### One task
+
+1. Claim the task and create the task branch at the fetched `main` commit: `<epic>-<task>-<title slug>`, for example `0mq-13-wprowadzic-wspolne-zarzadzanie-polaczeniami` for `oferty-pracy-0mq.13`. Ids drop the project prefix; the task part is relative to the epic, and a task outside any epic uses its own id alone. Branches made by hand follow the same prefix.
+2. Run the implementing agent (`claude-opus-5-5`, effort `medium` by default) in a sandbox on that branch with the task and its documents. The agent runs the gate itself before finishing, writes a result file and commits on its branch; bd, delivery and `main` belong to the runner.
+3. Check, in the same warm sandbox: the result file exists, the worktree is clean, the branch has commits and rebases cleanly on the fetched commit, the result's shape and deviations pass the [deterministic checks](#what-the-runner-checks), and the gate passes.
+4. In a fresh sandbox on a copy of the branch, run the gate again, then a separate reviewing agent against the diff, the documents, the acceptance criteria and the result's assumptions and deviations. Its verdict is `pass`, `pass-with-deferral` (every deviation accepted) or `fail` with findings. A result with deviations needs `pass-with-deferral`. Only committed work reaches this step.
+5. When step 3 or 4 fails, send the report back into the implementing agent's session in the same warm sandbox (Sandcastle resume), so it keeps its context, and repeat from step 3. After three such feedback turns, or on a `blocked` result or a rebase conflict, return the task.
+6. Deliver: push the checked commit to `main` on `origin` without forcing. When the push fails, the runner fetches again to learn why: `main` changed during the task (the return names the new commits), GitHub is unreachable, or git's message otherwise. Each of these returns the task.
+7. After delivery: comment the evidence, the assumptions and the deviations, file a follow-up for each deviation and wire it to block the tasks that depend on it, add the assumptions to the epic's assumptions task, file new scope as `discovered-from` tasks with `needs-triage`, close the task with the delivered commit, remove the branch an earlier return left on GitHub, and notify the owner that the work is on GitHub.
+
+**Return of a task.** Remove `ready-for-agent`, add `needs-info`, release the claim and comment the concrete reason. When the task has a branch, push it to GitHub as `agent/<task branch>`, forced over an earlier return, and name it in the comment; when that push fails, the comment says the work stayed only in the runner's copy.
+
+The runner never syncs Dolt.
+
+### Running the runner
+
+Prepare the runner's copy once, from the owner's copy:
+
+- `node .sandcastle/setup.ts [--dir <path>]` clones `origin` into an empty directory, by default beside the owner's copy with the suffix `-runner`; checks out `main` without a branch; runs `npm ci` in `.sandcastle/`; copies `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) from the owner's `.sandcastle/.env`; and records the owner's task database in `.sandcastle/runner.json`. Run on an existing runner's copy, it updates the program to `main` on GitHub and reinstalls the dependencies, keeps the settings, and refuses when the program files there have local changes.
+
+Then run the runner in a terminal from the runner's copy. It refuses to start without the token or the task database setting.
+
+- `node .sandcastle/runner.ts --dry-run` fetches GitHub and lists the candidates and the verdict for each, without writing to the task database or building the image.
 - `node .sandcastle/runner.ts --once` processes at most one task; without `--once` it polls every `--interval` minutes.
 - `--task <id>`, `--model`, `--effort` and `--rebuild-image` override the defaults.
 
-Logs live in `.sandcastle/logs/`.
+A change to the runner takes effect after it reaches `main` on GitHub, the preparing command runs again and the runner is restarted. Logs live in `.sandcastle/logs/` of the runner's copy. Stopping the runner during a task leaves the task claimed; release it with `bd unclaim`.
+
+In the owner's copy, set git once so that pulling the runner's work puts uncommitted changes aside and restores them by itself:
+
+```bash
+git config pull.rebase true && git config rebase.autoStash true
+```
 
 ## Commands
 
@@ -207,4 +234,4 @@ A change to a requirement that would alter the epic's outcome is not a follow-up
 
 ## After merge
 
-The owner tests `main`. Open follow-ups of the epic list the known deviations in `main`; they are not bugs. A defect found there becomes a new bug linked `discovered-from` the original task and goes through preparation. Before pushing `main`, check the epic's open follow-ups and its assumptions task, the flagged assumptions first.
+The owner pulls `main` from GitHub and tests it. Open follow-ups of the epic list the known deviations in `main`; they are not bugs. A defect found there becomes a new bug linked `discovered-from` the original task and goes through preparation. Check the epic's open follow-ups and its assumptions task, the flagged assumptions first.

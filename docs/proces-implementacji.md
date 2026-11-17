@@ -128,27 +128,27 @@ flowchart LR
 
 ### Stage 3. Execution (runner, unsupervised)
 
-The runner starts from the main checkout, on a clean `main`:
+The runner works in its own copy of the project, a clone of GitHub, and runs from it. `node .sandcastle/setup.ts`, run once from your copy, prepares that copy beside yours (suffix `-runner`); run again, it updates the runner's program. Your copy can be in any state: another branch, uncommitted changes, unpushed commits. Code and documents reach the runner only through `main` on GitHub, so push the documents before the hand-off. From the runner's copy:
 
-- `node .sandcastle/runner.ts --dry-run`: shows the candidates and the readiness verdict, writes nothing;
+- `node .sandcastle/runner.ts --dry-run`: fetches GitHub, shows the candidates and the readiness verdict, writes nothing to bd;
 - `node .sandcastle/runner.ts --once`: processes at most one task;
 - without `--once` it checks the queue every `--interval` minutes (default 5);
 - `--task <id>`, `--model` (default `claude-opus-5-5`), `--effort` (default `medium`) and `--rebuild-image` override the defaults.
 
 #### 3.1. Before each pass: reconciling epics
 
-The runner updates the state of each handed-over epic based on its children (details in chapter 7).
+The runner fetches `main` from GitHub; when GitHub is unreachable it takes no task this pass. It reports once per version when GitHub holds a newer runner program, rebuilds the sandbox image from the fetched `main` when `pnpm-lock.yaml` or `.sandcastle/Dockerfile` changed, and updates the state of each handed-over epic based on its children (details in chapter 7).
 
 #### 3.2. Choosing a task
 
 1. The candidates are `bd ready` with the label `ready-for-agent`, without `ready-for-human` and `needs-info`, skipping epics.
 2. **Epic check:** the nearest epic above the task has `ready-for-agent`, and none of its open children is unlabelled or in `needs-info`. Follow-ups are excluded from this check.
-3. **Deterministic readiness check:** the required links in the metadata exist and their files are on `main`, and `acceptance_criteria` is not empty. If not, the task goes back as `needs-info`.
-4. Claiming the task in bd. When `pnpm-lock.yaml` or `.sandcastle/Dockerfile` changed on `main`, the runner first rebuilds the sandbox image.
+3. **Deterministic readiness check:** the required links in the metadata exist and `acceptance_criteria` is not empty; if not, the task goes back as `needs-info`. A linked document that is not yet on `main` on GitHub makes the task wait, unreturned, while the runner takes the next one.
+4. Claiming the task in bd.
 
 #### 3.3. Implementation in a warm sandbox
 
-- The runner records the `main` SHA and creates the task branch from `main` in a Docker container. The container has the toolchain, PostgreSQL with migrations and Claude Code. It sees only its own worktree: it does not see your database, Docker or files outside the repo.
+- The runner creates the task branch at the `main` commit it fetched, in a Docker container. The container has the toolchain, PostgreSQL with migrations and Claude Code. It sees only its own worktree and the git data of the runner's copy: it does not see your copy, your database, Docker or GitHub credentials.
 - The agent gets the task, links to the documents and the **epic brief**: the `load_bearing` list and the open follow-ups whose code must not be built on.
 - The agent works by the skills `implement-task`, `tdd` and `write-documents`. At the end it runs `scripts/gate.sh` itself, commits and writes `.agent-result.json`.
 
@@ -156,12 +156,11 @@ The runner updates the state of each handed-over epic based on its children (det
 
 The runner checks in order:
 
-1. `main` has not moved (the sandbox has write access to the shared git data); if it has moved, the runner restores it and aborts;
-2. the result file exists; the status `blocked` ends the work at once;
-3. the worktree is clean, and the branch has commits;
-4. the branch rebases cleanly onto `main`;
-5. the shape of the result and the deviations pass the deterministic checks (chapter 8);
-6. the gate passes.
+1. the result file exists; the status `blocked` ends the work at once;
+2. the worktree is clean, and the branch has commits;
+3. the branch rebases cleanly onto the fetched `main` commit (a write to `main` from the sandbox changes nothing: the runner's `main` only mirrors GitHub);
+4. the shape of the result and the deviations pass the deterministic checks (chapter 8);
+5. the gate passes.
 
 #### 3.5. Verification in a fresh sandbox
 
@@ -177,27 +176,27 @@ The runner checks in order:
 
 - Every failure from steps 3.4 and 3.5 goes back as a report **to the same agent session** (Sandcastle resume), so the agent keeps its context.
 - The limit is **3 fix rounds**, shared by all kinds of failure: a failed gate, a missing result, a review fail.
-- These end the work with no fix rounds, going straight to a return: `blocked`, a rebase conflict, a moved `main` and a reviewer commit.
+- These end the work with no fix rounds, going straight to a return: `blocked`, a rebase conflict and a reviewer commit.
 
 #### 3.7. Completion
 
 **Success:**
-1. `merge --ff-only` of the branch into `main`, provided the main checkout is on `main` and has no uncommitted changes in tracked files (the `.beads` export does not count);
+1. the runner pushes the checked commit to `main` on GitHub, without forcing; when `main` there changed during the task, or GitHub is unreachable, the task goes back with that reason and the new commits named;
 2. a comment on the task: summary, evidence for the ACs, assumptions and known deviations;
 3. for each deviation a follow-up as a child of the epic (`needs-info`, `type=follow-up`, `marker`, `origin`, `discovered-from`), wired as a blocker of the tasks that mention its ID;
 4. assumptions added to the epic's triage task (section 5.6);
 5. new scope as `needs-triage` tasks with `discovered-from`;
-6. closing the task and deleting the branch.
+6. closing the task, deleting the branch, and deleting the `agent/` branch an earlier return left on GitHub.
 
-**Failure (return to preparation):** the task loses `ready-for-agent`, gets `needs-info` and a comment with the reason. It is unclaimed, and the branch stays for inspection. **The whole epic waits** until preparation resolves it.
+**Failure (return to preparation):** the task loses `ready-for-agent`, gets `needs-info` and a comment with the reason. It is unclaimed, and the branch goes to GitHub as `agent/<task branch>` for inspection; the comment names it, or says the work stayed only in the runner's copy when GitHub was unreachable. **The whole epic waits** until preparation resolves it.
 
-The runner never pushes or runs a Dolt sync.
+The runner pushes only to GitHub `main` and `agent/` branches, and never runs a Dolt sync.
 
 ### Stage 4. After the merge (owner)
 
-- You test `main`. The epic's open follow-ups are a list of **known and intended** differences, not bugs.
+- You pull `main` from GitHub and test it. The epic's open follow-ups are a list of **known and intended** differences, not bugs.
 - A defect found on `main` is a new bug with `discovered-from` pointing to the source task, and it goes through preparation.
-- Before pushing you review the epic's open follow-ups and its assumptions task, starting with the assumptions marked as load-bearing.
+- You review the epic's open follow-ups and its assumptions task, starting with the assumptions marked as load-bearing.
 
 ---
 

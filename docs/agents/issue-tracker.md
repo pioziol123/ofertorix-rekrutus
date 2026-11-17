@@ -26,7 +26,10 @@ Beads tracks work and its status.
 ## Authority
 
 Git commits, pushes and remote Dolt synchronization require explicit
-user authorization. No Git remote is currently configured.
+user authorization. The Git remote `origin` is the project's
+repository on GitHub. The unattended runner is the exception: it
+pushes delivered work to `main` and returned work to `agent/`
+branches there itself (see the process contract). Dolt has no remote.
 
 ## Wayfinding operations
 

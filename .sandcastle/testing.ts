@@ -1,0 +1,281 @@
+/**
+ * Stand-ins for the runner's tests (solution design of oferty-pracy-uuk, T-02): a bare
+ * repository plays the exchange point, clones play the runner's and the owner's copies,
+ * and the task database, agents, gate, review, image build and notifications are fakes.
+ * Git operations are real. No network is used.
+ */
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { excludeAgentFiles, GATE, RESULT_FILE, REVIEW_FILE, type Runner } from './flow.ts'
+import type { AgentResult, Issue } from './followups.ts'
+import type { ExecResult, FreshSandbox, NewIssue, Sandboxes, TaskDb, WarmSandbox } from './ports.ts'
+
+export function sh(cwd: string, ...args: string[]): string {
+  return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
+    cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim()
+}
+
+export function writeFile(root: string, path: string, content: string): void {
+  mkdirSync(dirname(join(root, path)), { recursive: true })
+  writeFileSync(join(root, path), content)
+}
+
+/** Commits files in a clone and pushes them to main on the exchange point. */
+export function pushFiles(clone: string, files: Record<string, string>, message = 'change'): string {
+  sh(clone, 'fetch', '--quiet', 'origin')
+  sh(clone, 'checkout', '--quiet', '--detach', 'origin/main')
+  for (const [path, content] of Object.entries(files)) writeFile(clone, path, content)
+  sh(clone, 'add', '-A')
+  sh(clone, 'commit', '--quiet', '-m', message)
+  sh(clone, 'push', '--quiet', 'origin', 'HEAD:refs/heads/main')
+  return sh(clone, 'rev-parse', 'HEAD')
+}
+
+// ---------- task database ----------
+
+export interface Comment { id: string; text: string }
+
+export class FakeDb implements TaskDb {
+  issues = new Map<string, Issue & { assignee?: string }>()
+  comments: Comment[] = []
+  closed: { id: string; reason: string }[] = []
+  claims: string[] = []
+  private next = 1
+
+  add(issue: Issue): void {
+    this.issues.set(issue.id, { status: 'open', labels: [], ...issue })
+  }
+
+  /** A task ready for the agent, with documents under docs/specs/<id>/. */
+  addTask(id: string, docs = { prd: `docs/${id}/PRD.md`, requirements: `docs/${id}/requirements.md#r`, sd: `docs/${id}/sd.md` }): Issue {
+    const issue: Issue = {
+      id, title: `Task ${id}`, issue_type: 'task', status: 'open', labels: ['ready-for-agent'],
+      acceptance_criteria: 'T-AC01: works', metadata: docs, parent: null,
+    }
+    this.add(issue)
+    return issue
+  }
+
+  private get(id: string) {
+    const issue = this.issues.get(id)
+    if (!issue) throw new Error(`no issue ${id}`)
+    return issue
+  }
+
+  ready = () => [...this.issues.values()].filter((i) => i.status === 'open' && i.labels?.includes('ready-for-agent') && !i.assignee)
+  show = (id: string) => structuredClone(this.get(id))
+  epics = () => [...this.issues.values()].filter((i) => i.issue_type === 'epic')
+  listUnder = (epicId: string) => [...this.issues.values()].filter((i) => i.parent === epicId)
+  assumptionTasks = () => []
+  claim = (id: string) => {
+    this.claims.push(id)
+    this.get(id).assignee = 'runner'
+    this.get(id).status = 'in_progress'
+  }
+  unclaim = (id: string) => {
+    delete this.get(id).assignee
+    this.get(id).status = 'open'
+  }
+  comment = (id: string, text: string) => void this.comments.push({ id, text })
+  update = (id: string, change: { add?: string[]; remove?: string[] }) => {
+    const issue = this.get(id)
+    issue.labels = [...(issue.labels ?? []).filter((l) => !change.remove?.includes(l)), ...(change.add ?? [])]
+  }
+  create = (issue: NewIssue) => {
+    const id = `new-${this.next++}`
+    this.add({ id, title: issue.title, labels: issue.labels })
+    return id
+  }
+  addDependency = () => {}
+  close = (id: string, reason: string) => {
+    this.get(id).status = 'closed'
+    this.closed.push({ id, reason })
+  }
+
+  /** Puts a returned task back into the ready state, as preparation would. */
+  handOffAgain(id: string): void {
+    this.update(id, { remove: ['needs-info'], add: ['ready-for-agent'] })
+  }
+}
+
+// ---------- agents and sandboxes ----------
+
+/** What a stand-in agent does in one turn, in the task's worktree. */
+export type AgentTurn = (ctx: { worktree: string; turn: number; prompt: string; branch: string }) => void | Promise<void>
+
+export function doneResult(acs = ['T-AC01']): AgentResult {
+  return { status: 'done', summary: 'done', evidence: acs.map((ac) => ({ ac, check: 'test', result: 'passed' })), question: null }
+}
+
+/** A stand-in agent that adds one file in a commit and writes a done result. */
+export function committingAgent(file = 'feature.txt', content = 'feature\n'): AgentTurn {
+  return ({ worktree }) => {
+    writeFile(worktree, file, content)
+    sh(worktree, 'add', file)
+    sh(worktree, 'commit', '--quiet', '-m', `agent: ${file}`)
+    writeFile(worktree, RESULT_FILE, JSON.stringify(doneResult()))
+  }
+}
+
+export class FakeSandboxes implements Sandboxes {
+  /** Exit code of the gate, per call; the last value repeats. */
+  gateExits: number[] = [0]
+  verdict: 'pass' | 'fail' = 'pass'
+  gateCalls = 0
+  prompts: string[] = []
+  private counter = 0
+
+  private repo: string
+  private base: string
+  agentTurn: AgentTurn
+
+  constructor(repo: string, base: string, agentTurn: AgentTurn) {
+    this.repo = repo
+    this.base = base
+    this.agentTurn = agentTurn
+  }
+
+  private worktree(branch: string): string {
+    const path = join(this.base, `wt-${this.counter++}`)
+    sh(this.repo, 'worktree', 'add', '--quiet', path, branch)
+    return path
+  }
+
+  private exec(worktree: string, command: string): ExecResult {
+    if (command === GATE) {
+      const code = this.gateExits[Math.min(this.gateCalls, this.gateExits.length - 1)]!
+      this.gateCalls++
+      return { exitCode: code, stdout: code ? 'gate failed\n' : 'gate ok\n', stderr: '' }
+    }
+    if (command.startsWith('rm -f ')) {
+      for (const file of command.slice(6).split(' ')) rmSync(join(worktree, file), { force: true })
+    }
+    return { exitCode: 0, stdout: '', stderr: '' }
+  }
+
+  async warm(branch: string): Promise<WarmSandbox> {
+    const worktree = this.worktree(branch)
+    let turn = 0
+    const play = async (prompt: string) => {
+      this.prompts.push(prompt)
+      await this.agentTurn({ worktree, turn: ++turn, prompt, branch })
+    }
+    return {
+      worktreePath: worktree,
+      exec: async (command) => this.exec(worktree, command),
+      start: play,
+      resume: async (prompt) => {
+        await play(prompt)
+        return true
+      },
+      close: async () => void sh(this.repo, 'worktree', 'remove', '--force', worktree),
+    }
+  }
+
+  async fresh(branch: string): Promise<FreshSandbox> {
+    const worktree = this.worktree(branch)
+    return {
+      worktreePath: worktree,
+      exec: async (command) => this.exec(worktree, command),
+      review: async () => writeFile(worktree, REVIEW_FILE, JSON.stringify({ verdict: this.verdict, findings: [] })),
+      close: async () => void sh(this.repo, 'worktree', 'remove', '--force', worktree),
+    }
+  }
+}
+
+// ---------- the three places ----------
+
+export interface World {
+  base: string
+  exchange: string
+  owner: string
+  runnerCopy: string
+  /** A third clone for changes of other parties at the exchange point. */
+  other: string
+  db: FakeDb
+  sandboxes: FakeSandboxes
+  images: string[]
+  notifications: { title: string; message: string }[]
+  logs: string[]
+  runner: Runner
+  cleanup(): void
+}
+
+/** Builds the exchange point with an initial commit, the three clones and the runner on top. */
+export function world(agentTurn: AgentTurn = committingAgent(), tasks: string[] = ['t-1']): World {
+  const base = mkdtempSync(join(tmpdir(), 'runner-'))
+  const exchange = join(base, 'exchange.git')
+  sh(base, 'init', '--quiet', '--bare', '--initial-branch=main', exchange)
+  const seed = join(base, 'seed')
+  sh(base, 'clone', '--quiet', exchange, seed)
+  writeFile(seed, '.sandcastle/runner.ts', '// runner v1\n')
+  writeFile(seed, 'README.md', 'project\n')
+  for (const id of tasks) {
+    writeFile(seed, `docs/${id}/PRD.md`, '# PRD\n')
+    writeFile(seed, `docs/${id}/requirements.md`, '# R\n')
+    writeFile(seed, `docs/${id}/sd.md`, '# SD\n')
+  }
+  sh(seed, 'add', '-A')
+  sh(seed, 'commit', '--quiet', '-m', 'initial')
+  sh(seed, 'push', '--quiet', 'origin', 'HEAD:refs/heads/main')
+
+  const owner = join(base, 'owner')
+  const runnerCopy = join(base, 'runner')
+  const other = join(base, 'other')
+  for (const clone of [owner, runnerCopy, other]) sh(base, 'clone', '--quiet', exchange, clone)
+  sh(runnerCopy, 'checkout', '--quiet', '--detach', 'origin/main')
+  for (const clone of [runnerCopy, other]) {
+    sh(clone, 'config', 'user.name', 'Test')
+    sh(clone, 'config', 'user.email', 'test@example.com')
+  }
+  excludeAgentFiles(runnerCopy)
+
+  const db = new FakeDb()
+  for (const id of tasks) db.addTask(id)
+  const sandboxes = new FakeSandboxes(runnerCopy, base, agentTurn)
+  const images: string[] = []
+  const notifications: { title: string; message: string }[] = []
+  const logs: string[] = []
+  const runner: Runner = {
+    repo: runnerCopy,
+    db,
+    sandboxes,
+    images: { ensure: (commit) => void images.push(commit) },
+    notifier: { notify: (title, message) => void notifications.push({ title, message }) },
+    log: (message) => void logs.push(message),
+    logTo: () => {},
+    startCommit: sh(runnerCopy, 'rev-parse', 'HEAD'),
+    reportedVersions: new Set(),
+  }
+  return {
+    base, exchange, owner, runnerCopy, other, db, sandboxes, images, notifications, logs, runner,
+    cleanup: () => rmSync(base, { recursive: true, force: true }),
+  }
+}
+
+/** Branches, HEAD, index, status and file contents of a working copy. */
+export function snapshot(dir: string) {
+  return {
+    refs: sh(dir, 'for-each-ref', '--format=%(refname) %(objectname)'),
+    head: sh(dir, 'rev-parse', '--symbolic-full-name', 'HEAD') + sh(dir, 'rev-parse', 'HEAD'),
+    index: sh(dir, 'ls-files', '--stage'),
+    status: sh(dir, 'status', '--porcelain=v1', '--untracked-files=all'),
+    files: sh(dir, 'ls-files', '--cached', '--others', '-z').split('\0').filter(Boolean)
+      .map((path) => `${path} ${sh(dir, 'hash-object', '--', path)}`),
+  }
+}
+
+export function exchangeMain(w: World): string {
+  return sh(w.exchange, 'rev-parse', 'refs/heads/main')
+}
+
+export function exchangeFile(w: World, path: string): string | null {
+  try {
+    return sh(w.exchange, 'show', `main:${path}`)
+  } catch {
+    return null
+  }
+}
