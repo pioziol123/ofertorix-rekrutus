@@ -85,7 +85,7 @@ An epic with open follow-ups is not finished, and its follow-ups list the known 
 
 Before applying `ready-for-agent`:
 
-- Every linked document exists in the default branch and the anchors resolve.
+- Every linked document is in `main` on `origin` with content identical to the owner's copy, uncommitted changes included, and the anchors resolve. Push `main` first, then run `node scripts/check-spec-sync.ts <id>` for the task, and for the epic before handing it off; it fetches `origin` and exits 0 only when every document matches, otherwise it lists each one as missing at the exchange point, different in content, or missing on disk.
 - Each acceptance criterion is observable and names how it is checked (test, command or inspection).
 - The solution design states the contracts the task touches exactly enough to implement without guessing, and each of its decisions lists the options the owner discarded with the reason or "none recorded".
 - No open question blocks the task; non-blocking assumptions are recorded in the documents.
