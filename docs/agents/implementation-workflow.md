@@ -57,6 +57,7 @@ A task leaves preparation with `ready-for-agent` only. Mark a task `ready-for-hu
 | Where | Key | Set by | Meaning |
 | --- | --- | --- | --- |
 | Epic | `load_bearing` | Preparation | Comma-separated requirement and criterion IDs the epic rests on, for example `R-03,T2-AC04`. A conflict touching one of them always blocks. Missing means none is marked. |
+| Epic | `shared` | Preparation | Comma-separated IDs of the criteria every task of the epic repeats, for example `W-AC01,W-AC03`. The runner leaves them out when it counts the tasks that wait for a deviation. Missing means none. |
 | Epic | `follow_ups` | Runner | `true` while every other child is closed and open follow-ups remain. See [Epic with open follow-ups](#epic-with-open-follow-ups). |
 | Task | `type` | Runner | `follow-up` on a task created from a deviation. |
 | Task | `marker`, `origin` | Runner | On a follow-up: the code marker it owns and the task that created it. |
@@ -68,7 +69,7 @@ An epic is handed off as a whole. Apply `ready-for-agent` to the epic only when 
 
 The runner checks this before each task: the nearest epic above the task carries `ready-for-agent`, and none of the epic's open children is unlabelled or `needs-info`. Follow-ups are left out of this check: an open follow-up keeps the epic open but does not pause its other tasks. A task the runner returns as `needs-info` pauses the rest of its epic until preparation resolves it. A `ready-for-human` task does not hold the epic back; its dependants wait in bd until the owner closes it. Tasks outside any epic are handed off one by one.
 
-Preparation also records the epic's `load_bearing` requirements: the decisions most of the epic builds on, such as a shared status model, contracts between modules or limits. Ask the owner which ones they are when the epic is handed off.
+Preparation also records the epic's `load_bearing` requirements: the decisions most of the epic builds on, such as a shared status model, contracts between modules or limits. Ask the owner which ones they are when the epic is handed off. It records the epic's `shared` criteria too: the ones every task repeats.
 
 ### Epic with open follow-ups
 
@@ -121,7 +122,7 @@ The runner runs as many tasks at the same time as its slots allow, one by defaul
 1. Create the task branch of the claimed task at the fetched `main` commit: `<epic>-<task>-<title slug>`, for example `0mq-13-wprowadzic-wspolne-zarzadzanie-polaczeniami` for `oferty-pracy-0mq.13`. Ids drop the project prefix; the task part is relative to the epic, and a task outside any epic uses its own id alone. Branches made by hand follow the same prefix.
 2. Run the implementing agent (`claude-opus-5-5`, effort `medium` by default) in a sandbox on that branch with the task and its documents. The agent runs the gate itself before finishing, writes a result file and commits on its branch; bd, delivery and `main` belong to the runner.
 3. Check, in the same warm sandbox: the result file exists, the worktree is clean, the branch has commits and rebases cleanly on the `main` commit the work must sit on (the fetched one, or a newer one from delivery), the result's shape and deviations pass the [deterministic checks](#what-the-runner-checks), and the gate passes.
-4. In a fresh sandbox on a copy of the branch, run the gate again, then a separate reviewing agent against the diff, the documents, the acceptance criteria and the result's assumptions and deviations. Its verdict is `pass`, `pass-with-deferral` (every deviation accepted) or `fail` with findings. A result with deviations needs `pass-with-deferral`. Only committed work reaches this step.
+4. In a fresh sandbox on a copy of the branch, run the gate again, start PostgreSQL with the schema migrated so the reviewer can run single tests, then run a separate reviewing agent against the diff, the documents, the acceptance criteria and the result's assumptions and deviations. Its verdict is `pass`, `pass-with-deferral` (every deviation accepted) or `fail` with findings. A result with deviations needs `pass-with-deferral`. Only committed work reaches this step.
 5. When step 3 or 4 fails, send the report back into the implementing agent's session in the same warm sandbox (Sandcastle resume), so it keeps its context, and repeat from step 3. A rebase conflict is such a failure too: the report names the conflicting files and the commits of `main` that changed them, and the agent rebases and resolves it itself. Three feedback turns per task at most, shared by every kind of failure, including those from delivery; a `blocked` result returns the task at once.
 6. Deliver, before the warm sandbox closes, as described in [Delivery](#delivery).
 7. After delivery: comment the evidence, the assumptions and the deviations, file a follow-up for each deviation and wire it to block the tasks that depend on it, add the assumptions to the epic's assumptions task, file new scope as `discovered-from` tasks with `needs-triage`, close the task with the delivered commit, remove the branch an earlier return left on GitHub, and notify the owner that the work is on GitHub.
@@ -238,7 +239,7 @@ Later tasks of the epic receive the open follow-ups in their prompt. They build 
 
 ### What the runner checks
 
-Deterministically, before the review: the result's shape; the limits; one or two requirement IDs per deviation; deferred criteria that are criteria of the task, not all of them, and none in `load_bearing`; every criterion either in the evidence or deferred; the marker added by the task's own diff; and at most two other open, non-follow-up tasks of the epic mentioning the deviation's IDs in their fields. An ID written inside a range such as `F2-01–F2-05` counts as mentioned; ranges in `load_bearing` count the same way. A failed check goes back to the agent as feedback.
+Deterministically, before the review: the result's shape; the limits; one or two requirement IDs per deviation; deferred criteria that are criteria of the task, not all of them, and none in `load_bearing`; every criterion either in the evidence or deferred; the marker added by the task's own diff; and at most two other open, non-follow-up tasks of the epic mentioning the deviation's IDs in their fields, not counting the epic's `shared` criteria, which every task names. An ID written inside a range such as `F2-01–F2-05` counts as mentioned; ranges in `load_bearing` count the same way. A failed check goes back to the agent as feedback.
 
 The reviewer then judges what a script cannot: whether each deviation qualifies, whether the interim choice follows precedence, whether the follow-up description stands on its own, whether every assumption really meets every criterion and has a test of its case, whether an assumption on a `load_bearing` requirement fixes its meaning for the rest of the epic, and whether the change builds on another follow-up's interim code.
 

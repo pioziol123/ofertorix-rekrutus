@@ -10,6 +10,7 @@ import {
   deviationProblems,
   epicLabelPlan,
   loadBearing,
+  sharedCriteria,
   rangeIds,
   resultShapeProblems,
 } from './followups.ts'
@@ -139,6 +140,12 @@ describe('dependants', () => {
       task(TASK, { description: 'R2-01' }),
     ]
     assert.deepEqual(dependants(deviation(), TASK, siblings), ['a'])
+  })
+
+  it('ignores the epic’s shared criteria, which every task names', () => {
+    const siblings = [task('a', { description: 'W-AC03' }), task('b', { description: 'W-AC03' }), task('c', { description: 'W-AC03, R2-01' })]
+    const d = deviation({ requirements: ['R2-01'], deferred_acs: ['W-AC03'] })
+    assert.deepEqual(dependants(d, TASK, siblings, sharedCriteria({ ...epic, metadata: { shared: 'W-AC01,W-AC03' } })), ['c'])
   })
 })
 

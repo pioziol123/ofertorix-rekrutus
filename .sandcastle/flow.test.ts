@@ -138,3 +138,23 @@ describe('uuk.2: runner in its own copy', () => {
     assert.deepEqual(w.images, [])
   })
 })
+
+describe('reviewer database', () => {
+  it('starts PostgreSQL in the review sandbox after the gate and tells the reviewer it runs', async () => {
+    w = world()
+    assert.equal(await cycle(w.runner), true)
+    const events = w.sandboxes.events
+    const gate = events.lastIndexOf('gate:fresh')
+    const database = events.indexOf('database:fresh')
+    assert.ok(gate >= 0 && database > gate && events.indexOf('review') > database, events.join(' '))
+    assert.match(w.sandboxes.reviewPrompts[0]!, /PostgreSQL is running/)
+  })
+
+  it('still reviews, and says so, when the database does not start', async () => {
+    w = world()
+    w.sandboxes.databaseExit = 1
+    assert.equal(await cycle(w.runner), true)
+    assert.equal(w.db.show('t-1').status, 'closed')
+    assert.match(w.sandboxes.reviewPrompts[0]!, /could not be started/)
+  })
+})

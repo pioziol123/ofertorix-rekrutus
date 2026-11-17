@@ -29,6 +29,7 @@ import {
   isFollowUp,
   isOpen,
   loadBearing,
+  sharedCriteria,
   marker,
   resultShapeProblems,
 } from './followups.ts'
@@ -37,6 +38,11 @@ import type { Images, Notifier, Sandboxes, TaskDb, WarmSandbox } from './ports.t
 export const RESULT_FILE = '.agent-result.json'
 export const REVIEW_FILE = '.agent-review.json'
 export const GATE = 'scripts/gate.sh'
+/**
+ * Starts the image's PostgreSQL for the reviewer. The gate stops the database it started,
+ * so without this a reviewer cannot run a single test on a real database.
+ */
+export const REVIEW_DATABASE = 'pg_ctl --wait --options="-k /tmp -c listen_addresses=localhost" --log=/tmp/review-postgres.log start && pnpm migrate'
 /** Feedback rounds into the implementing agent's session before the task goes back to preparation. */
 export const MAX_FEEDBACK_TURNS = 3
 
@@ -312,11 +318,16 @@ function feedbackPrompt(report: string): string {
   ].join('\n\n')
 }
 
-function reviewPrompt(issue: Issue, result: AgentResult, ctx: EpicContext, baseSha: string): string {
+function reviewPrompt(issue: Issue, result: AgentResult, ctx: EpicContext, baseSha: string, database: boolean): string {
   const deviations = result.deviations ?? []
   const assumptions = result.assumptions ?? []
   return [
     `Review the change on this branch against its specification. Diff: git diff ${baseSha}...HEAD. Do not modify tracked files.`,
+    `The gate already passed here: every test ran, those on a real database included. ${
+      database
+        ? 'PostgreSQL is running with the schema migrated, so you can run a single test to check a claim, for example RUN_INTEGRATION=1 pnpm vitest run <test file>.'
+        : 'PostgreSQL could not be started for you, so tests on a real database cannot be run again here; judge them from the code and the gate result.'
+    }`,
     `Documents: ${JSON.stringify(issue.metadata)}. Acceptance criteria:\n${issue.acceptance_criteria}`,
     'Read the documents in full, and the section "Spec conflicts during implementation" of the process contract that AGENTS.md names. Report requirements that are missing or partial, behaviour that was not asked for, contracts implemented differently from the solution design, and any option the solution design records as discarded that the diff, an assumption or interim code takes. Quote the document line for each finding.',
     'Also read the architecture rules that AGENTS.md names and check the diff against them. A design cost from their list that the diff introduces is a finding unless the solution design records it or the implementing agent recorded it as an assumption; such an assumption names the architecture rule in place of a precedence rule.',
@@ -435,8 +446,10 @@ async function verify(r: Runner, t: TaskRun, withReview: boolean): Promise<Step>
         return { ok: false, report: `${GATE} failed in a fresh sandbox, which sees only committed work:\n${tail(`${gate.stdout}${gate.stderr}`)}` }
       }
       if (withReview) {
+        const database = await sandbox.exec(REVIEW_DATABASE)
+        if (database.exitCode !== 0) r.log(`${t.issue.id}: the reviewer's database did not start:\n${tail(`${database.stdout}${database.stderr}`)}`)
         r.log(`${t.issue.id}: running the spec review`)
-        await sandbox.review(reviewPrompt(t.issue, t.result!, t.ctx, t.base))
+        await sandbox.review(reviewPrompt(t.issue, t.result!, t.ctx, t.base, database.exitCode === 0))
         if (git(r.repo, ['rev-parse', `refs/heads/${gateBranch}`]) !== commit) {
           return { ok: false, report: 'The reviewer committed to the branch under review.', final: true }
         }
@@ -638,7 +651,7 @@ function recordOutcome(r: Runner, issue: Issue, result: AgentResult, ctx: EpicCo
       filed.push(`- ${d.id}: NOT FILED, ${d.title} (defers ${d.deferred_acs.join(', ') || 'no criterion'}; marker ${tag})`)
       continue
     }
-    const waiting = dependants(d, issue.id, ctx.children)
+    const waiting = dependants(d, issue.id, ctx.children, sharedCriteria(ctx.epic))
     for (const dependant of waiting) quietly(r, `bd dep add ${dependant}`, () => r.db.addDependency(dependant, id))
     const blocks = waiting.length ? `; blocks ${waiting.join(', ')}` : ''
     filed.push(`- ${d.id} → ${id}: ${d.title} (defers ${d.deferred_acs.join(', ') || 'no criterion'}; marker ${tag}${blocks})`)

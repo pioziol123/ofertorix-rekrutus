@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { excludeAgentFiles, GATE, RESULT_FILE, REVIEW_FILE, type Runner, serialLane } from './flow.ts'
+import { excludeAgentFiles, GATE, RESULT_FILE, REVIEW_DATABASE, REVIEW_FILE, type Runner, serialLane } from './flow.ts'
 import type { AgentResult, Issue } from './followups.ts'
 import type { ExecResult, FreshSandbox, NewIssue, Sandboxes, TaskDb, WarmSandbox } from './ports.ts'
 
@@ -134,12 +134,15 @@ export class FakeSandboxes implements Sandboxes {
   /** Gate runs and image builds in order, e.g. 'gate:warm', 'gate:fresh', 'image:<sha>'. */
   events: string[] = []
   reviews = 0
+  reviewPrompts: string[] = []
   prompts: string[] = []
   private counter = 0
 
   private repo: string
   private base: string
   agentTurn: AgentTurn
+  /** Exit code of the reviewer's database start. */
+  databaseExit = 0
 
   constructor(repo: string, base: string, agentTurn: AgentTurn) {
     this.repo = repo
@@ -159,6 +162,10 @@ export class FakeSandboxes implements Sandboxes {
       const code = this.gate ? this.gate(kind, worktree) : this.gateExits[Math.min(this.gateCalls, this.gateExits.length - 1)]!
       this.gateCalls++
       return { exitCode: code, stdout: code ? 'gate failed\n' : 'gate ok\n', stderr: '' }
+    }
+    if (command === REVIEW_DATABASE) {
+      this.events.push(`database:${kind}`)
+      return { exitCode: this.databaseExit, stdout: '', stderr: this.databaseExit ? 'pg_ctl failed\n' : '' }
     }
     if (command.startsWith('rm -f ')) {
       for (const file of command.slice(6).split(' ')) rmSync(join(worktree, file), { force: true })
@@ -190,7 +197,8 @@ export class FakeSandboxes implements Sandboxes {
     return {
       worktreePath: worktree,
       exec: async (command) => this.exec(worktree, command, 'fresh'),
-      review: async () => {
+      review: async (prompt) => {
+        this.reviewPrompts.push(prompt)
         this.reviews++
         this.events.push('review')
         writeFile(worktree, REVIEW_FILE, JSON.stringify({ verdict: this.verdict, findings: [] }))

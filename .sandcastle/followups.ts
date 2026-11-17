@@ -125,11 +125,22 @@ export function rangeIds(text: string): string[] {
   return ids
 }
 
-export function loadBearing(epic: Issue | null): Set<string> {
-  const raw = epic?.metadata?.load_bearing
+function idList(raw: unknown): Set<string> {
   const list = Array.isArray(raw) ? raw.map(String) : typeof raw === 'string' ? raw.split(',') : []
   const ids = list.map((id) => id.trim()).filter(Boolean)
   return new Set([...ids, ...rangeIds(ids.join(','))])
+}
+
+export function loadBearing(epic: Issue | null): Set<string> {
+  return idList(epic?.metadata?.load_bearing)
+}
+
+/**
+ * Criteria the epic shares across its tasks (epic `metadata.shared`). Every task repeats them,
+ * so a mention of one says nothing about which task waits for a deviation.
+ */
+export function sharedCriteria(epic: Issue | null): Set<string> {
+  return idList(epic?.metadata?.shared)
 }
 
 /** Assumptions whose requirements include load-bearing IDs, with the IDs they touch. */
@@ -146,9 +157,12 @@ function mentions(issue: Issue, id: string): boolean {
   return new RegExp(`(^|[^A-Za-z0-9-])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9-]|$)`).test(fields)
 }
 
-/** Open tasks other than the task itself and follow-ups that mention any of the deviation's IDs. */
-export function dependants(deviation: Deviation, taskId: string, siblings: Issue[]): string[] {
-  const ids = [...deviation.requirements, ...deviation.deferred_acs]
+/**
+ * Open tasks other than the task itself and follow-ups that mention any of the deviation's IDs.
+ * The epic's shared criteria are left out: every task names them.
+ */
+export function dependants(deviation: Deviation, taskId: string, siblings: Issue[], shared: Set<string> = new Set()): string[] {
+  const ids = [...deviation.requirements, ...deviation.deferred_acs].filter((id) => !shared.has(id))
   return siblings
     .filter((s) => s.id !== taskId && s.issue_type !== 'epic' && isOpen(s) && !isFollowUp(s))
     .filter((s) => ids.some((id) => mentions(s, id)))
@@ -199,7 +213,7 @@ export function deviationProblems(result: AgentResult, ctx: DeviationContext): s
     const touched = [...(d.requirements ?? []), ...(d.deferred_acs ?? [])].filter((id) => bearing.has(id))
     if (touched.length) problems.push(`Deviation ${name}: ${touched.join(', ')} is load-bearing for the epic; finish as blocked.`)
     if (!ctx.hasMarker(marker(ctx.taskId, d.id))) problems.push(`Deviation ${name}: marker ${marker(ctx.taskId, d.id)} is not in the committed code.`)
-    const reach = dependants(d, ctx.taskId, ctx.siblings)
+    const reach = dependants(d, ctx.taskId, ctx.siblings, sharedCriteria(ctx.epic))
     if (reach.length > MAX_DEPENDANTS) {
       problems.push(`Deviation ${name}: ${reach.length} other open tasks mention its IDs (${reach.join(', ')}); at most ${MAX_DEPENDANTS} may wait for it. Finish as blocked.`)
     }
