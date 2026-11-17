@@ -269,7 +269,7 @@ Operacje są wewnętrzne dla modułu Źródła ofert. Przebieg jako obiekt zawie
 1. Upsert zakresu po odcisku parametrów.
 2. Wstawienie przebiegu oczekującego z pominięciem konfliktu na indeksie oczekującym.
 3. Bez wstawienia: odczyt identyfikatora istniejącego przebiegu oczekującego, bez wysyłania zadania.
-4. Po wstawieniu: wysłanie zadania i zapis jego identyfikatora. Błąd wysłania wycofuje całość.
+4. Po wstawieniu: wysłanie zadania i zapis jego identyfikatora. Błąd wysłania wycofuje całość. Przyjęcie bez funkcji wysyłającej zadanie (tylko Himalayas do zadania 0mq.16, zob. [0mq.5](#a5)) pomija ten krok.
 
 Pozostałe operacje:
 
@@ -368,7 +368,7 @@ Wykonawca jest operacją modułu Źródła ofert wywoływaną z handlera kolejki
 - Handlery wszystkich dotychczasowych kolejek źródeł wywołują wspólnego wykonawcę. Dotychczasowe funkcje wykonania i odzyskiwania czterech ścieżek oraz ich blokady sesyjne zostają usunięte.
 - Dotychczasowe zlecanie zostaje (zastąpi je zadanie 0mq.16), z opcjami zadań z punktu "Kolejka i odzyskiwanie" zamiast obecnych (`retryLimit` 0). Kolejki są tworzone z tymi opcjami przy inicjalizacji. Jeden aktywny przebieg na źródło zapewniają do zadania 0mq.16 kolejki osobne dla źródeł i dotychczasowe reguły zlecania przy jednym workerze wdrożenia.
 - Status niekompletnego przebiegu ustala wyłącznie krok 4 (A5-R03), bez dotychczasowych reguł źródeł. Niekompletny przebieg bez unikalnego ogłoszenia kończy się jako nieudany także w SOLID.Jobs (dziś częściowy po przeczytaniu strony) i w JobSpy (dziś częściowy przy statusie narzędzia innym niż nieudany). Testy integracyjne, które utrwalały dotychczasowe statusy tych przypadków, oczekują teraz statusu nieudanego. Decyzja właściciela z 2026-11-16 zastępuje w tym zakresie założenia ASM-2 i ASM-4 z zadania 0mq.1.
-- Himalayas: CLI tworzy przebieg dotychczasowym sposobem i wywołuje wspólnego wykonawcę w swoim procesie, z sygnałem przerwanym przy zakończeniu procesu.
+- Himalayas: CLI tworzy przebieg przyjęciem z [0mq.3](#a3) bez funkcji wysyłającej zadanie, od razu go rozpoczyna i wywołuje wspólnego wykonawcę w swoim procesie, z sygnałem przerwanym przy zakończeniu procesu. Do zadania 0mq.16 funkcja wysyłająca zadanie jest w przyjęciu opcjonalna; pomija ją tylko wykonanie w procesie CLI, a przebieg bez niej nie ma zadania w kolejce (decyzja właściciela z 2026-11-17, odstępstwo od A3-R02 ograniczone do tej ścieżki). Zadanie 0mq.16 przywraca funkcję jako obowiązkową.
   Przebieg bez zadania w kolejce nie ma sygnału, że jego proces żyje. Uznaje się go za pozostawiony przez martwy proces, gdy trwa co najmniej 240 s, czyli dwukrotność limitu przebiegu Himalayas (decyzja właściciela z 2026-11-17). Taki przebieg kończy z komunikatem o przerwaniu importu zarówno odzyskiwanie w workerze, jak i samo CLI przed przyjęciem nowego przebiegu tego źródła, więc nie wymaga działającego workera. Krótszy przebieg pozostawiony przez proces zakończony bez obsługi sygnału blokuje nowe przebiegi Himalayas do upływu tego czasu.
 - Zmiany stanu przebiegu w nowym kodzie przechodzą przez operacje z [0mq.3](#a3), rozszerzone o token.
 
