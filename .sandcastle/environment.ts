@@ -81,10 +81,10 @@ export function dockerSandboxes({ repo, model, effort }: { repo: string; model: 
 }
 
 /** Builds the image from the content of a fetched commit, not from the working files. */
-export function dockerImages({ repo, log, rebuild }: { repo: string; log: (message: string) => void; rebuild: boolean }): Images {
+export function dockerImages({ repo, rebuild }: { repo: string; rebuild: boolean }): Images {
   let force = rebuild
   return {
-    ensure(commit) {
+    ensure(commit, log) {
       const wanted = imageInputs(repo, commit)
       let current = ''
       try {

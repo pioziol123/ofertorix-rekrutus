@@ -39,7 +39,8 @@ export interface Sandboxes {
 
 /** Builds the agent environment's image from a commit when its inputs changed. */
 export interface Images {
-  ensure(commit: string): void
+  /** Builds when needed and writes what it does to the given log, the task's or the shared one. */
+  ensure(commit: string, log: (message: string) => void): void
 }
 
 export interface Notifier {

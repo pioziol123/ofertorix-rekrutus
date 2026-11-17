@@ -504,7 +504,7 @@ async function deliverInQueue(r: Runner, t: TaskRun): Promise<Delivery | 'unreac
       t.base = fetched.sha
       if (imageInputs(r.repo, fetched.sha) !== t.warmInputs) {
         r.log(`${t.issue.id}: the dependency list or the image recipe changed on ${BASE_BRANCH}; building the image from ${fetched.sha.slice(0, 7)}`)
-        r.images.ensure(fetched.sha)
+        r.images.ensure(fetched.sha, r.log)
         t.envChanged = true
       }
       const replayed = replay(t.sandbox.worktreePath, from, fetched.sha)
@@ -785,7 +785,7 @@ export async function selectNext(r: Runner): Promise<{ issue: Issue; baseSha: st
     return null
   }
   checkProgramVersion(r, fetched.sha)
-  r.images.ensure(fetched.sha)
+  r.images.ensure(fetched.sha, r.log)
   reconcileEpics(r, true)
   const issue = pickTask(r, fetched.sha, true)
   return issue ? { issue, baseSha: fetched.sha } : null
@@ -800,7 +800,7 @@ export async function cycle(r: Runner): Promise<boolean> {
 }
 
 export interface ServeOptions {
-  /** Start at most this many tasks, then wait for them and stop (--once is 1). */
+  /** Start at most this many tasks, then wait for them and stop; also stop when none is ready (--once is 1). */
   maxTasks?: number
   /** Stop once nothing is running and no task is ready (for tests). */
   stopWhenIdle?: boolean
@@ -816,14 +816,22 @@ export async function serve(r: Runner, options: ServeOptions = {}): Promise<void
   for (;;) {
     let idle = true
     while (running.size < r.slots && (options.maxTasks === undefined || started < options.maxTasks)) {
-      const next = await selectNext(r)
+      let next: Awaited<ReturnType<typeof selectNext>> = null
+      try {
+        next = await selectNext(r)
+      } catch (error) {
+        // A failure while selecting (task database, image build) must not stop the running tasks.
+        r.log(`selecting a task failed; trying again after the pause: ${firstLine(error instanceof Error ? error.message : String(error))}`)
+      }
       if (!next) break
       idle = false
       started++
-      const run: Promise<void> = processTask(r, next.issue, next.baseSha).finally(() => running.delete(run))
+      const run: Promise<void> = processTask(r, next.issue, next.baseSha)
+        .catch((error) => r.log(`${next.issue.id}: the run failed outside its own handling: ${firstLine(String(error))}`))
+        .finally(() => running.delete(run))
       running.add(run)
     }
-    const exhausted = options.maxTasks !== undefined && started >= options.maxTasks
+    const exhausted = options.maxTasks !== undefined && (started >= options.maxTasks || (idle && running.size === 0))
     if (exhausted || (options.stopWhenIdle && idle && running.size === 0)) {
       await Promise.all(running)
       return

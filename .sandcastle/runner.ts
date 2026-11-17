@@ -63,7 +63,7 @@ const runner: Runner = {
   repo,
   db: bdTaskDb({ repo, beadsDir: settings.beadsDir, assignee: git(repo, ['config', 'user.name']) }),
   sandboxes: dockerSandboxes({ repo, model: opts.model!, effort: opts.effort as Effort }),
-  images: dockerImages({ repo, log, rebuild: opts['rebuild-image']! }),
+  images: dockerImages({ repo, rebuild: opts['rebuild-image']! }),
   notifier: { notify },
   log,
   taskLog: (taskId) => {

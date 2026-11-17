@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
-import { serve } from './flow.ts'
+import { serialLane, serve } from './flow.ts'
 import { type AgentTurn, type World, committingAgent, exchangeFile, world } from './testing.ts'
 
 let w: World
@@ -98,5 +98,65 @@ describe('uuk.4: runs of tasks independent of each other', () => {
     assert.equal(agents.state.peak, 1)
     assert.equal(w.db.show('t-1').status, 'closed')
     assert.equal(w.db.show('t-2').status, 'closed')
+  })
+
+  it('--once stops when no task is ready instead of polling', async () => {
+    w = world(committingAgent(), [])
+    await serve(w.runner, { maxTasks: 1 })
+    assert.equal(w.pauses, 0)
+    assert.deepEqual(w.db.claims, [])
+  })
+
+  it('--once runs one task and stops even when more are ready', async () => {
+    w = world(committingAgent(), ['t-1', 't-2'])
+    await serve(w.runner, { maxTasks: 1 })
+    assert.deepEqual(w.db.claims, ['t-1'])
+    assert.equal(w.db.show('t-1').status, 'closed')
+    assert.equal(w.db.show('t-2').status, 'open')
+  })
+
+  it('U4-R05: a failure while selecting a task does not stop the running tasks', async () => {
+    const agents = pairedAgents(300)
+    w = world(agents.turn, ['t-1', 't-2'])
+    w.runner.slots = 2
+    const show = w.db.show
+    let failed = false
+    w.db.show = (id: string) => {
+      if (id === 't-2' && !failed) {
+        failed = true
+        throw new Error('bd is busy')
+      }
+      return show(id)
+    }
+    await serve(w.runner, { stopWhenIdle: true })
+    assert.match(w.logs.join('\n'), /selecting a task failed; trying again after the pause: bd is busy/)
+    assert.equal(w.db.show('t-1').status, 'closed')
+    assert.equal(w.db.show('t-2').status, 'closed')
+  })
+})
+
+describe('delivery queue', () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  it('U4-R04: runs operations one at a time, in the order they arrive', async () => {
+    const lane = serialLane()
+    const events: string[] = []
+    const op = (name: string, ms: number) => lane.run(async () => {
+      events.push(`start ${name}`)
+      await sleep(ms)
+      events.push(`end ${name}`)
+      return name
+    })
+    const results = await Promise.all([op('a', 30), op('b', 5), op('c', 1)])
+    assert.deepEqual(results, ['a', 'b', 'c'])
+    assert.deepEqual(events, ['start a', 'end a', 'start b', 'end b', 'start c', 'end c'])
+  })
+
+  it('keeps going after a failed operation', async () => {
+    const lane = serialLane()
+    await assert.rejects(lane.run(() => {
+      throw new Error('push failed')
+    }))
+    assert.equal(await lane.run(() => 'next'), 'next')
   })
 })
