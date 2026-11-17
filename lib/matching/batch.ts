@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { assessmentSchema, type MatchingInput } from './model.ts'
-import type { AiConfiguration } from '../ai/configuration.ts'
+import type { AiConfiguration } from '../../modules/ai/index.ts'
 
 const base = 'https://api.openai.com/v1'
 const identifier = z.string().regex(/^[a-zA-Z0-9_-]{1,200}$/)

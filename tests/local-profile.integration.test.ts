@@ -12,7 +12,7 @@ import {
   it,
   vi,
 } from 'vitest'
-import { budgetMonth } from '../lib/ai/budget.ts'
+import { budgetMonth } from '../modules/ai/index.ts'
 import { prepareProposal, executeAi } from '../lib/profile/ai.ts'
 import {
   retryLocalProfile,

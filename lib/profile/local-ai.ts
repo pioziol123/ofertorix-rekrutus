@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import type { PgBoss } from 'pg-boss'
-import type { ExecutionSnapshot } from '../ai/configuration.ts'
-import { savedEndpoint } from '../ai/configuration.ts'
-import { ModelError, emptyUsage } from '../ai/models/model.ts'
-import { OllamaAdapter } from '../ai/models/ollama.ts'
-import { localFetch } from '../ai/models/local-http.ts'
+import type { ExecutionSnapshot } from '../../modules/ai/index.ts'
+import {
+  savedEndpoint,
+  ModelError,
+  emptyUsage,
+  OllamaAdapter,
+  localFetch,
+} from '../../modules/ai/index.ts'
 import {
   claimLocal,
   authorizeLocalRequest,

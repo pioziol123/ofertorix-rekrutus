@@ -3,11 +3,14 @@ import {
   pricingConfiguration,
   parseAiExecutionConfig,
   resolveEndpoint,
-} from '../ai/configuration.ts'
-import type { AiConfiguration, ExecutionSnapshot } from '../ai/configuration.ts'
-import { ModelError } from '../ai/models/model.ts'
-import { OllamaAdapter } from '../ai/models/ollama.ts'
-import { localFetch } from '../ai/models/local-http.ts'
+  ModelError,
+  OllamaAdapter,
+  localFetch,
+} from '../../modules/ai/index.ts'
+import type {
+  AiConfiguration,
+  ExecutionSnapshot,
+} from '../../modules/ai/index.ts'
 import { profileRequest } from './ai-prompt.ts'
 
 export function profileAiConfigured(): boolean {

@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { OpenAiAdapter, normalizeOpenAi } from '../lib/ai/models/openai.ts'
-import { OllamaAdapter } from '../lib/ai/models/ollama.ts'
-import type { ModelRequest } from '../lib/ai/models/model.ts'
+import {
+  OpenAiAdapter,
+  normalizeOpenAi,
+} from '../modules/ai/infrastructure/adapters/openai.ts'
+import { OllamaAdapter } from '../modules/ai/index.ts'
+import type { ModelRequest } from '../modules/ai/index.ts'
 import { readAiProposal } from '../lib/profile/ai-result.ts'
 
 const facts = {

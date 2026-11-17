@@ -12,7 +12,7 @@ import {
   it,
   vi,
 } from 'vitest'
-import { budgetMonth } from '../lib/ai/budget.ts'
+import { budgetMonth } from '../modules/ai/index.ts'
 import { createCompany, CompanyConflict } from '../lib/companies/store.ts'
 import {
   executeCompanyResearch,

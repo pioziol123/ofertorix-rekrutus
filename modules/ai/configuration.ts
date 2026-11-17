@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { decimal } from './money.ts'
-import { ModelError } from './models/model.ts'
+import { decimal } from './domain/money.ts'
+import { ModelError } from './provider-adapter.ts'
 
 export type AiConfiguration = {
   model: string

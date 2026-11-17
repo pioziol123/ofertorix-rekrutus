@@ -3,7 +3,7 @@ import {
   parseAiExecutionConfig,
   resolveEndpoint,
   savedEndpoint,
-} from '../lib/ai/configuration.ts'
+} from '../modules/ai/index.ts'
 import {
   profileConfiguration,
   profileAiConfigured,

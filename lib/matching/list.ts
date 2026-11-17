@@ -1,7 +1,7 @@
 import type { Pool } from 'pg'
 import type { QueryExecutor } from '../db.ts'
 import type { OfferView } from '../../modules/offers/index.ts'
-import { chargeCeiling } from '../ai/budget.ts'
+import { chargeCeiling } from '../../modules/ai/index.ts'
 import { matchingConfiguration } from './store.ts'
 import { activeProfileVersion, currentAdVersions } from './ratings.ts'
 import {

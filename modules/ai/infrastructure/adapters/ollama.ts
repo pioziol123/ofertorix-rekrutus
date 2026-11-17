@@ -1,5 +1,10 @@
-import { ModelError, record, tokenCount, validateRequest } from './model.ts'
-import type { ModelRequest, ModelResult, StructuredModel } from './model.ts'
+import { ModelError } from '../../provider-adapter.ts'
+import { record, tokenCount, validateRequest } from './response.ts'
+import type {
+  ModelRequest,
+  ModelResult,
+  StructuredModel,
+} from '../../provider-adapter.ts'
 import { localFetch } from './local-http.ts'
 
 export type OllamaOptions = {

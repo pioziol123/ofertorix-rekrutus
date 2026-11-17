@@ -14,7 +14,7 @@ import {
 } from 'vitest'
 import { emptyProfile } from '../lib/profile/model.ts'
 import { confirmProfile, saveDraft } from '../lib/profile/store.ts'
-import { budgetMonth } from '../lib/ai/budget.ts'
+import { budgetMonth } from '../modules/ai/index.ts'
 import { resumeAi } from '../lib/profile/ai.ts'
 import {
   BatchClient,

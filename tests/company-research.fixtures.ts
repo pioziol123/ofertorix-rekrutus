@@ -1,4 +1,4 @@
-import type { AiConfiguration } from '../lib/ai/configuration.ts'
+import type { AiConfiguration } from '../modules/ai/index.ts'
 import {
   researchTopics,
   type ResearchDraft,

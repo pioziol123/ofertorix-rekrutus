@@ -46,22 +46,35 @@ export const emptyUsage = (): ModelUsage => ({
   inputTokens: null,
   outputTokens: null,
 })
-export const tokenCount = (value: unknown): number | null =>
-  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : null
-export function record(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
+
+/** The provider settings fixed when an execution is requested. */
+export type ProviderSettings = {
+  provider: string
+  model: string
+  /** The configured endpoint; null means the provider's default one. */
+  endpoint: { url: string; credentialEnv: string | null } | null
+  maxOutputTokens: number
 }
-export function validateRequest(request: ModelRequest) {
-  if (
-    !request.model?.trim() ||
-    !request.instructions?.trim() ||
-    !request.input?.trim() ||
-    !request.output?.name?.trim() ||
-    !Object.keys(record(request.output.schema)).length
-  )
-    throw new ModelError('configuration')
+
+/**
+ * The adapter contract of a provider. An adapter declares the execution
+ * modes it supports by providing them; coordination never sees the
+ * provider's protocol, job states or usage format.
+ * Single mode: one request, its result and usage, with errors classified
+ * as `ModelError`.
+ */
+export type ProviderAdapter = {
+  provider: string
+  single?: (settings: ProviderSettings) => StructuredModel
+}
+
+const adapters = new Map<string, ProviderAdapter>()
+
+/** Registers the adapter of a provider where dependencies are composed. */
+export function registerProviderAdapter(adapter: ProviderAdapter): void {
+  adapters.set(adapter.provider, adapter)
+}
+
+export function providerAdapter(provider: string): ProviderAdapter | undefined {
+  return adapters.get(provider)
 }

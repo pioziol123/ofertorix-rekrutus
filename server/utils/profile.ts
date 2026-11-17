@@ -9,7 +9,7 @@ import type { H3Event } from 'h3'
 import { ZodError } from 'zod'
 import { createBoss } from '../../lib/queue'
 import { ProfileConflict } from '../../lib/profile/store'
-import { ModelError } from '../../lib/ai/models/model'
+import { ModelError } from '../../modules/ai/index'
 let bossPromise: Promise<ReturnType<typeof createBoss>> | undefined
 export function profileBoss() {
   bossPromise ??= (async () => {

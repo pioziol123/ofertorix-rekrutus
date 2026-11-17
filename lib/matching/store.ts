@@ -12,8 +12,11 @@ import { batchArchive } from './archive.ts'
 import { randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import type { PgBoss } from 'pg-boss'
-import { aiConfiguration, type AiConfiguration } from '../ai/configuration.ts'
-import { chargeCeiling, reserve } from '../ai/budget.ts'
+import {
+  aiConfiguration,
+  type AiConfiguration,
+} from '../../modules/ai/index.ts'
+import { chargeCeiling, reserve } from '../../modules/ai/index.ts'
 import { tx } from '../profile/store.ts'
 import type { ProfileVersion } from '../../modules/profile/index.ts'
 import type { SourceAd } from '../../modules/sources/index.ts'

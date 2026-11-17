@@ -8,6 +8,14 @@ import {
   executeMatchingGroup,
   recoverMatchingGroups,
 } from '../lib/matching/groups.ts'
+import {
+  aiExecutionQueue,
+  openAiProvider,
+  recoverExecutions,
+  registerProviderAdapter,
+  runExecution,
+  useAiQueue,
+} from '../modules/ai/index.ts'
 import { closePool, getPool } from '../lib/db.ts'
 import { createBoss, smokeQueue } from '../lib/queue.ts'
 
@@ -78,6 +86,12 @@ await boss.work<{ groupId: string }>(matchingGroupQueue, async (jobs) => {
     await executeMatchingGroup(pool, boss, job.data.groupId)
 })
 await recoverCompanyResearch(pool, boss)
+useAiQueue(boss)
+registerProviderAdapter(openAiProvider())
+await recoverExecutions()
+await boss.work<{ executionId: string }>(aiExecutionQueue, async (jobs) => {
+  for (const job of jobs) await runExecution(job.data.executionId)
+})
 await boss.work<{ operationId: string }>(companyResearchQueue, async (jobs) => {
   for (const job of jobs)
     await executeCompanyResearch(pool, boss, job.data.operationId)
@@ -95,6 +109,7 @@ async function schedule() {
     await recoverMatching(pool, boss)
     await recoverMatchingGroups(pool, boss)
     await recoverCompanyResearch(pool, boss)
+    await recoverExecutions()
   } finally {
     scheduling = false
   }

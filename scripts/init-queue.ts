@@ -1,6 +1,7 @@
 import { companyResearchQueue } from '../lib/companies/research.ts'
 import { matchingGroupQueue } from '../lib/matching/groups.ts'
 import { createBoss, smokeQueue } from '../lib/queue.ts'
+import { aiExecutionJobOptions, aiExecutionQueue } from '../modules/ai/index.ts'
 
 import { syncQueues } from '../lib/sources/sync-queues.ts'
 import { syncJobOptions } from '../modules/sources/index.ts'
@@ -29,6 +30,7 @@ try {
     retryLimit: 0,
     expireInSeconds: 360,
   })
+  await boss.createQueue(aiExecutionQueue, aiExecutionJobOptions)
   console.info('Queue schema ready')
 } finally {
   await boss.stop()

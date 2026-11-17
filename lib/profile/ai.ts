@@ -5,12 +5,20 @@ import type { Pool, PoolClient } from 'pg'
 import type { PgBoss } from 'pg-boss'
 import { aiQueue, scrubContacts } from './imports.ts'
 import { ProfileConflict, tx } from './store.ts'
-import type { AiConfiguration, ExecutionSnapshot } from '../ai/configuration.ts'
-import { isExecutionSnapshot, savedEndpoint } from '../ai/configuration.ts'
-import { reserve, chargeCeiling } from '../ai/budget.ts'
-import { ModelError, emptyUsage } from '../ai/models/model.ts'
-import type { StructuredModel } from '../ai/models/model.ts'
-import { OpenAiAdapter } from '../ai/models/openai.ts'
+import type {
+  AiConfiguration,
+  ExecutionSnapshot,
+  StructuredModel,
+} from '../../modules/ai/index.ts'
+import {
+  isExecutionSnapshot,
+  savedEndpoint,
+  reserve,
+  chargeCeiling,
+  ModelError,
+  emptyUsage,
+  OpenAiAdapter,
+} from '../../modules/ai/index.ts'
 import { profileConfiguration } from './ai-configuration.ts'
 import { profileRequest } from './ai-prompt.ts'
 import { AiResultError, readAiProposal } from './ai-result.ts'

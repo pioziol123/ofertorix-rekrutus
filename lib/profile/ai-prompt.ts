@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { factSchema } from './model.ts'
-import type { ModelRequest } from '../ai/models/model.ts'
+import type { ModelRequest } from '../../modules/ai/index.ts'
 
 export function profileRequest(input: string, model: string): ModelRequest {
   const schema = z.toJSONSchema(factSchema, { target: 'draft-7' }) as Record<

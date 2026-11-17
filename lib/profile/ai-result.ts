@@ -1,5 +1,5 @@
 import { checkProposal, ProposalEvidenceError } from './model.ts'
-import type { ModelResult } from '../ai/models/model.ts'
+import type { ModelResult } from '../../modules/ai/index.ts'
 
 export class AiResultError extends Error {}
 export function readAiProposal(result: ModelResult, input: string) {

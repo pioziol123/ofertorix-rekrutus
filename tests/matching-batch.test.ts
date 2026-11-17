@@ -11,7 +11,7 @@ import {
   type BatchLine,
   type BatchArchive,
 } from '../lib/matching/batch.ts'
-import type { AiConfiguration } from '../lib/ai/configuration.ts'
+import type { AiConfiguration } from '../modules/ai/index.ts'
 import type { MatchingInput } from '../lib/matching/model.ts'
 
 const config: AiConfiguration = {

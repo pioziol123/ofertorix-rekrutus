@@ -1,5 +1,11 @@
-import { ModelError, record, tokenCount, validateRequest } from './model.ts'
-import type { ModelRequest, ModelResult, StructuredModel } from './model.ts'
+import { ModelError } from '../../provider-adapter.ts'
+import { record, tokenCount, validateRequest } from './response.ts'
+import type {
+  ModelRequest,
+  ModelResult,
+  ProviderAdapter,
+  StructuredModel,
+} from '../../provider-adapter.ts'
 
 export function normalizeOpenAi(value: unknown): ModelResult {
   const result = record(value),
@@ -125,5 +131,25 @@ export class OpenAiAdapter implements StructuredModel {
       )
     }
     return normalizeOpenAi(value)
+  }
+}
+
+/** The OpenAI provider for the AI coordination, in single mode. */
+export function openAiProvider(fetcher: typeof fetch = fetch): ProviderAdapter {
+  return {
+    provider: 'openai',
+    single: (settings) =>
+      new OpenAiAdapter(fetcher, {
+        maxOutputTokens: settings.maxOutputTokens,
+        ...(settings.endpoint
+          ? {
+              url: `${settings.endpoint.url.replace(/\/$/, '')}/responses`,
+              apiKey: () =>
+                settings.endpoint?.credentialEnv
+                  ? process.env[settings.endpoint.credentialEnv]
+                  : undefined,
+            }
+          : {}),
+      }),
   }
 }
