@@ -29,6 +29,10 @@ const snapshot = () => ({
   head: git(owner, 'symbolic-ref', '-q', 'HEAD'),
   index: git(owner, 'ls-files', '--stage'),
   status: git(owner, 'status', '--porcelain=v1', '--untracked-files=all'),
+  // Blob ids of every working file, tracked or not, so a content change counts too.
+  files: git(owner, 'ls-files', '--cached', '--others', '-z')
+    .split('\0').filter(Boolean)
+    .map((path) => `${path} ${git(owner, 'hash-object', '--', path)}`),
 })
 
 beforeEach(() => {
