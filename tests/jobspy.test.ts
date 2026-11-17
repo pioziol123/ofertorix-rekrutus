@@ -12,7 +12,8 @@ import {
   runJobspy,
 } from '../lib/sources/jobspy.ts'
 import { enqueueJobspy, jobspyStatus } from '../lib/sources/jobspy-sync.ts'
-import { parseFilters, projectOffer } from '../modules/offers/index.ts'
+import { parseFilters } from '../modules/offers/index.ts'
+import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 import { salaryMatch } from '../modules/offers/domain/salary-match.ts'
 import { job, result } from './fixtures/jobspy/result.ts'
 import { jobspySources } from '../lib/sources/jobspy-catalog.ts'
@@ -81,7 +82,7 @@ describe('JobSpy contract and projection', () => {
         period: 'Month',
       },
     })
-    const view = projectOffer({
+    const view = projectSourceAd({
       id: 'one',
       source: 'indeed',
       payload: normalized,
@@ -98,7 +99,7 @@ describe('JobSpy contract and projection', () => {
     (salary_origin) => {
       const payload = parseJobspy(result({ jobs: [job({ salary_origin })] }))
         .jobs[0]
-      const view = projectOffer({ payload })
+      const view = projectSourceAd({ payload })
       const filters = parseFilters({
         minSalary: '15000',
         currency: 'PLN',
@@ -123,7 +124,7 @@ describe('JobSpy contract and projection', () => {
       includeUnknownSalary: 'false',
     })
     for (const origin of [undefined, 'employer']) {
-      const view = projectOffer({
+      const view = projectSourceAd({
         payload: {
           salary: {
             from: 20000,

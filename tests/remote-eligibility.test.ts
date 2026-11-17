@@ -3,7 +3,7 @@ import {
   assessRemoteEligibility,
   remoteEligibilityLabel,
 } from '../lib/sources/remote-eligibility.ts'
-import { projectOffer } from '../modules/offers/index.ts'
+import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 
 describe('evidence for remote work from Poland', () => {
   it.each([
@@ -52,7 +52,7 @@ describe('evidence for remote work from Poland', () => {
   )
   it('does not use the remote flag or country as proof of Polish eligibility', () => {
     for (const country of ['Poland', 'India', 'USA']) {
-      const view = projectOffer({
+      const view = projectSourceAd({
         source: 'naukri',
         payload: {
           title: 'PHP engineer',
@@ -94,7 +94,7 @@ describe('evidence for remote work from Poland', () => {
     })
   })
   it('reassesses historical payloads from source evidence instead of trusting an old stored assessment', () => {
-    const view = projectOffer({
+    const view = projectSourceAd({
       source: 'zip_recruiter',
       payload: {
         title: 'PHP engineer',
@@ -107,7 +107,7 @@ describe('evidence for remote work from Poland', () => {
       remoteEligibility: { status: 'excluded', evidence: ['Remote, US only'] },
     })
     expect(
-      projectOffer({
+      projectSourceAd({
         source: 'solid-jobs',
         payload: { title: 'PHP engineer', description: 'Work from anywhere' },
       }),

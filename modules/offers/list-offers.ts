@@ -14,6 +14,6 @@ export type OfferList = ReturnType<typeof filterOffers>
  */
 export async function listOffers(filters: Filters): Promise<OfferList> {
   const offers = await readOffers()
-  // Until tasks 0mq.6 and 0mq.18 the list uses Matching's existing read.
+  // Until task 0mq.18 the list uses Matching's existing read.
   return filterOffers(await decorateMatching(db(), offers), filters)
 }

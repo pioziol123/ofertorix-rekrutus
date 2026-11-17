@@ -6,7 +6,14 @@ import {
   companyLinkCommand,
   type CompanyRole,
 } from './model.ts'
-import { projectOffer } from '../../modules/offers/index.ts'
+import {
+  missingAdCompany,
+  missingAdTitle,
+  readAdVersions,
+  readCurrentAds,
+  readCurrentAdVersions,
+  type SourceAd,
+} from '../../modules/sources/index.ts'
 export class CompanyConflict extends Error {}
 export class CompanyNotFound extends Error {}
 const uuid = z.uuid()
@@ -88,6 +95,10 @@ export async function changeCompanyLink(
   if (!uuid.safeParse(companyId).success) throw new CompanyNotFound()
   companyId = companyId.toLowerCase()
   const input = companyLinkCommand.parse(value)
+  // The version linked is the one read here, before the command holds its
+  // connection and without a row lock: an ad that changes before the write
+  // keeps the link on the version read (A6-R05, accepted as for matching).
+  const [adVersion] = await readCurrentAdVersions([input.adId])
   return command(
     pool,
     input.commandId,
@@ -104,13 +115,7 @@ export async function changeCompanyLink(
         ).rowCount
       )
         throw new CompanyNotFound()
-      const ad = (
-        await client.query(
-          'SELECT current_revision_id FROM source_ads WHERE id=$1 FOR SHARE',
-          [input.adId],
-        )
-      ).rows[0]
-      if (!ad?.current_revision_id) throw new CompanyNotFound()
+      if (!adVersion) throw new CompanyNotFound()
       const current =
         (
           await client.query(
@@ -132,7 +137,7 @@ export async function changeCompanyLink(
             input.role,
             companyId,
             input.evidence,
-            ad.current_revision_id,
+            adVersion.versionId,
           ],
         )
       } else
@@ -149,7 +154,7 @@ export async function changeCompanyLink(
           companyId,
           input.action,
           input.evidence,
-          ad.current_revision_id,
+          adVersion.versionId,
         ],
       )
       return { id: companyId }
@@ -195,41 +200,74 @@ export async function listCompanies(pool: Pool, value: unknown = {}) {
     pageSize: 25,
   }
 }
+// Ads linked to a company, newest first by first observation, as listed
+// before the read moved to the Sources module.
+const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+const byFirstSeenDesc = (a?: SourceAd, b?: SourceAd) =>
+  compare(b?.firstSeen ?? '', a?.firstSeen ?? '')
 export async function readCompany(pool: Pool, id: string) {
   if (!uuid.safeParse(id).success) return null
   const row = (await pool.query('SELECT * FROM companies WHERE id=$1', [id]))
     .rows[0]
   if (!row) return null
   const links = (
-    await pool.query(
-      `SELECT a.*,r.payload,l.role,l.evidence,l.revision_id AS linked_revision_id FROM company_ad_links l JOIN source_ads a ON a.id=l.ad_id JOIN source_ad_revisions r ON r.id=a.current_revision_id WHERE l.company_id=$1 ORDER BY a.first_seen_at DESC,a.id,l.role`,
+    await pool.query<{ ad_id: string; role: CompanyRole }>(
+      'SELECT ad_id,role FROM company_ad_links WHERE company_id=$1 ORDER BY role',
       [id],
     )
   ).rows
+  const ads = new Map(
+    (await readCurrentAds(links.map((link) => link.ad_id))).map((ad) => [
+      ad.id,
+      ad,
+    ]),
+  )
   const offers = new Map<
     string,
-    ReturnType<typeof projectOffer> & { roles: CompanyRole[] }
+    Omit<SourceAd, 'versionId'> & { revisions: never[]; roles: CompanyRole[] }
   >()
-  for (const link of links) {
-    if (!offers.has(link.id))
-      offers.set(link.id, { ...projectOffer(link), roles: [] })
-    offers.get(link.id)!.roles.push(link.role)
+  for (const link of [...links].sort(
+    (a, b) =>
+      byFirstSeenDesc(ads.get(a.ad_id), ads.get(b.ad_id)) ||
+      compare(a.ad_id, b.ad_id),
+  )) {
+    const ad = ads.get(link.ad_id)
+    if (!ad) continue
+    if (!offers.has(ad.id)) {
+      const { versionId: _current, ...content } = ad
+      // The response keeps the empty version history it always had.
+      offers.set(ad.id, { ...content, revisions: [], roles: [] })
+    }
+    offers.get(ad.id)!.roles.push(link.role)
   }
-  const history = (
+  const historyRows = (
     await pool.query(
-      `SELECT h.*,r.payload->>'title' AS title FROM company_link_history h JOIN source_ad_revisions r ON r.id=h.revision_id WHERE company_id=$1 ORDER BY created_at DESC,h.id DESC`,
+      'SELECT * FROM company_link_history WHERE company_id=$1 ORDER BY created_at DESC,id DESC',
       [id],
     )
-  ).rows.map((h) => ({
-    id: String(h.id),
-    adId: String(h.ad_id),
-    role: h.role as CompanyRole,
-    action: h.action as 'link' | 'unlink',
-    evidence: String(h.evidence),
-    revisionId: String(h.revision_id),
-    title: String(h.title ?? 'Oferta'),
-    at: iso(h.created_at),
-  }))
+  ).rows
+  const versions = new Map(
+    (await readAdVersions(historyRows.map((h) => String(h.revision_id)))).map(
+      (version) => [version.versionId, version],
+    ),
+  )
+  const history = historyRows.flatMap((h) => {
+    const version = versions.get(String(h.revision_id))
+    if (!version) return []
+    return [
+      {
+        id: String(h.id),
+        adId: String(h.ad_id),
+        role: h.role as CompanyRole,
+        action: h.action as 'link' | 'unlink',
+        evidence: String(h.evidence),
+        revisionId: String(h.revision_id),
+        // An ad version without a title shows under a label of its own.
+        title: version.title === missingAdTitle ? 'Oferta' : version.title,
+        at: iso(h.created_at),
+      },
+    ]
+  })
   return {
     ...profile(row),
     offers: [...offers.values()],
@@ -247,27 +285,27 @@ export async function readCompany(pool: Pool, id: string) {
 }
 export async function offerCompanies(pool: Pool, id: string) {
   if (!uuid.safeParse(id).success) return null
-  const row = (
-    await pool.query(
-      `SELECT r.payload->>'company' AS name FROM source_ads a JOIN source_ad_revisions r ON r.id=a.current_revision_id WHERE a.id=$1`,
-      [id],
-    )
-  ).rows[0]
-  if (!row) return null
+  const [ad] = await readCurrentAds([id])
+  if (!ad) return null
+  // An ad without a company name suggests no company profile.
+  const name = ad.company === missingAdCompany ? null : ad.company
   const links = (
     await pool.query(
       `SELECT l.role,l.evidence,c.id,c.name,c.kind FROM company_ad_links l JOIN companies c ON c.id=l.company_id WHERE l.ad_id=$1`,
       [id],
     )
   ).rows
-  const suggestions = (
-    await pool.query(
-      `SELECT id,name,kind FROM companies WHERE lower(name)=lower($1) ORDER BY created_at,id LIMIT 20`,
-      [row.name],
-    )
-  ).rows
+  const suggestions =
+    name === null
+      ? []
+      : (
+          await pool.query(
+            `SELECT id,name,kind FROM companies WHERE lower(name)=lower($1) ORDER BY created_at,id LIMIT 20`,
+            [name],
+          )
+        ).rows
   return {
-    name: row.name as string | null,
+    name,
     links: links.map((l) => ({
       role: l.role as CompanyRole,
       evidence: String(l.evidence),

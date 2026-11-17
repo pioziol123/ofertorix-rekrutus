@@ -1,9 +1,6 @@
-import { projectOffer } from './infrastructure/adapters/source-ad-projection.ts'
-import {
-  findCurrentAd,
-  findRevisions,
-} from './infrastructure/adapters/source-ads.ts'
+import { readAdVersionList, readCurrentAds } from '../sources/index.ts'
 import type { OfferView } from './offer-view.ts'
+import { toOffer } from './read-offers.ts'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -13,7 +10,14 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
  */
 export async function readOffer(id: string): Promise<OfferView | null> {
   if (!uuid.test(id)) return null
-  const ad = await findCurrentAd(id)
+  const [ad] = await readCurrentAds([id])
   if (!ad) return null
-  return projectOffer({ ...ad, revisions: await findRevisions(id) })
+  const versions = await readAdVersionList(id)
+  return toOffer(
+    ad,
+    versions.map((version) => ({
+      id: version.id,
+      at: version.at.toISOString(),
+    })),
+  )
 }

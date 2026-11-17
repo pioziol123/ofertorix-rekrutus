@@ -1,8 +1,11 @@
 import {
   activeProfileVersion,
+  adsForAssessment,
+  currentAdVersions,
   profileVersionNumbers,
   publishAiRating,
   readRatings,
+  withAdVersionState,
   withProfileNumbers,
 } from './ratings.ts'
 import { batchArchive } from './archive.ts'
@@ -13,7 +16,7 @@ import { aiConfiguration, type AiConfiguration } from '../ai/configuration.ts'
 import { chargeCeiling, reserve } from '../ai/budget.ts'
 import { tx } from '../profile/store.ts'
 import type { ProfileVersion } from '../../modules/profile/index.ts'
-import { projectOffer } from '../../modules/offers/index.ts'
+import type { SourceAd } from '../../modules/sources/index.ts'
 import { requireQueued } from '../queue.ts'
 import {
   matchingInput,
@@ -87,6 +90,9 @@ export async function prepareMatching(
   // The active version read before the transaction; one read per enqueue, so a
   // group uses one version for all its offers.
   profile: ProfileVersion | null,
+  // The ad read before the transaction, without a lock (see
+  // adsForAssessment); undefined when it does not exist.
+  ad: SourceAd | undefined,
   dispatch = true,
 ): Promise<{ id: string; state: string; reused: boolean }> {
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
@@ -100,14 +106,8 @@ export async function prepareMatching(
   ).rows[0]
   if (previous) return { ...previous, reused: true }
   if (!profile) throw new MatchingError('Najpierw zatwierdź profil zawodowy.')
-  const ad = (
-    await client.query(
-      'SELECT a.*,r.payload FROM source_ads a JOIN source_ad_revisions r ON r.id=a.current_revision_id WHERE a.id=$1',
-      [adId],
-    )
-  ).rows[0]
   if (!ad) throw new MatchingError('Nie znaleziono oferty.')
-  const input = matchingInput(profile.data, projectOffer(ad))
+  const input = matchingInput(profile.data, ad)
   const id = randomUUID()
   const excluded = input.checks.some((c) => c.state === 'conflict')
   const payload = excluded ? null : batchRequest(id, input, config).body
@@ -116,7 +116,7 @@ export async function prepareMatching(
     [
       id,
       adId,
-      ad.current_revision_id,
+      ad.versionId,
       profile.id,
       input,
       config,
@@ -142,10 +142,11 @@ export async function enqueueMatching(pool: Pool, boss: PgBoss, adId: string) {
       'Skonfiguruj model i cennik Batch przed oceną ofert.',
     )
   const profile = await activeProfileVersion()
+  const ad = (await adsForAssessment([adId])).get(adId)
   const client = await pool.connect()
   try {
     return await tx(client, () =>
-      prepareMatching(client, boss, adId, config, profile),
+      prepareMatching(client, boss, adId, config, profile, ad),
     )
   } catch (e) {
     if (e instanceof BatchError && e.code === 'limit')
@@ -203,6 +204,9 @@ export async function applyMatchingLine(
   // version confirmed since then is the accepted race of 0mq.13 and shows as
   // a stale rating; the owner can enqueue it again.
   activeProfileVersionId: string | null,
+  // The current version of the request's ad, read the same way; an ad
+  // changed since then is the same accepted race.
+  currentAdVersionId: string | undefined,
 ) {
   if (!line || line.error || line.response?.status_code !== 200) {
     const noCharge =
@@ -258,7 +262,13 @@ export async function applyMatchingLine(
       await settle(client, row.attempt_id, cost, usage, responseId)
       if (result)
         calculation = (
-          await publishAiRating(client, row, result, activeProfileVersionId)
+          await publishAiRating(
+            client,
+            row,
+            result,
+            activeProfileVersionId,
+            currentAdVersionId,
+          )
         ).calculation
       await client.query(
         'UPDATE matching_requests SET state=$2,result=$3,calculation=$4,error=$5,updated_at=now() WHERE id=$1',
@@ -282,8 +292,16 @@ export async function executeMatching(
   provider?: BatchClient,
 ) {
   // Read before this run holds its connection, so publishing a result never
-  // waits for a second one; the read takes no lock (see applyMatchingLine).
+  // waits for a second one; the reads take no lock (see applyMatchingLine).
   const activeProfileVersionId = (await activeProfileVersion())?.id ?? null
+  const adVersions = await currentAdVersions(
+    (
+      await pool.query<{ ad_id: string }>(
+        'SELECT ad_id FROM matching_requests WHERE id=$1',
+        [id],
+      )
+    ).rows.map((request) => request.ad_id),
+  )
   const client = await pool.connect()
   try {
     const locked = (
@@ -491,6 +509,7 @@ export async function executeMatching(
           results.get(id),
           batch,
           activeProfileVersionId,
+          adVersions.get(row.ad_id),
         )
       }
       // Cleanup is independent of result validity and never resubmits a request.
@@ -565,14 +584,21 @@ export type MatchingHistory = {
 }
 export async function readMatching(pool: Pool, adId: string) {
   const activeId = (await activeProfileVersion())?.id ?? null
-  const result = await pool.query<Omit<MatchingHistory, 'profile_number'>>(
-    `SELECT r.id,r.state,r.result,r.calculation,r.error,r.created_at,r.updated_at,r.profile_version_id,r.ad_revision_id,r.input->'checks' AS checks,r.input->'criteria' AS criteria,ar.retrieved_at AS offer_version_at,coalesce(g.batch_id,b.batch_id) AS batch_id,coalesce(g.status,b.status) AS batch_status,coalesce(g.cleaned,b.cleaned) AS cleaned,
-    (r.profile_version_id IS DISTINCT FROM $2::uuid OR r.ad_revision_id IS DISTINCT FROM a.current_revision_id) AS stale
-    FROM matching_requests r JOIN source_ads a ON a.id=r.ad_id JOIN source_ad_revisions ar ON ar.id=r.ad_revision_id LEFT JOIN matching_batches b ON b.request_id=r.id LEFT JOIN matching_groups g ON g.id=r.group_id WHERE r.ad_id=$1 ORDER BY r.created_at DESC,r.id DESC`,
-    [adId, activeId],
+  const requests = await withAdVersionState(
+    (
+      await pool.query<
+        Omit<MatchingHistory, 'profile_number' | 'offer_version_at' | 'stale'>
+      >(
+        `SELECT r.id,r.state,r.result,r.calculation,r.error,r.created_at,r.updated_at,r.profile_version_id,r.ad_revision_id,r.input->'checks' AS checks,r.input->'criteria' AS criteria,coalesce(g.batch_id,b.batch_id) AS batch_id,coalesce(g.status,b.status) AS batch_status,coalesce(g.cleaned,b.cleaned) AS cleaned
+    FROM matching_requests r LEFT JOIN matching_batches b ON b.request_id=r.id LEFT JOIN matching_groups g ON g.id=r.group_id WHERE r.ad_id=$1 ORDER BY r.created_at DESC,r.id DESC`,
+        [adId],
+      )
+    ).rows,
+    adId,
+    activeId,
   )
   const numbers = await profileVersionNumbers(
-    result.rows.map((row) => row.profile_version_id),
+    requests.map((row) => row.profile_version_id),
   )
   const config = matchingConfiguration()
   return {
@@ -581,7 +607,7 @@ export async function readMatching(pool: Pool, adId: string) {
     maximumCostPln: config
       ? chargeCeiling(config, config.maxInputTokens, config.maxOutputTokens)
       : null,
-    history: withProfileNumbers(result.rows, numbers),
+    history: withProfileNumbers(requests, numbers),
     ...(await readRatings(pool, adId, activeId)),
   }
 }

@@ -16,13 +16,13 @@ Fetching concerns a chosen source and a set **scope**. The scope defines which a
 
 A **sync run** is one execution of such a fetch. Results may arrive in many portions. The module keeps valid ads as they are received, so a later error does not wipe out the data already collected.
 
-| Run state | Meaning |
-| --- | --- |
-| Pending | The fetch has been requested and is waiting to start. |
-| In progress | Fetching and saving of results is under way. |
-| Complete | The whole set scope was checked. |
-| Partial | Useful results were obtained, but the whole scope was not checked or completeness could not be confirmed. |
-| Failed | No useful results could be obtained. |
+| Run state   | Meaning                                                                                                   |
+| ----------- | --------------------------------------------------------------------------------------------------------- |
+| Pending     | The fetch has been requested and is waiting to start.                                                     |
+| In progress | Fetching and saving of results is under way.                                                              |
+| Complete    | The whole set scope was checked.                                                                          |
+| Partial     | Useful results were obtained, but the whole scope was not checked or completeness could not be confirmed. |
+| Failed      | No useful results could be obtained.                                                                      |
 
 A complete run does not have to mean that all ads existing in a given source were fetched. Completeness refers to the set scope, not to the whole offer market. The result of a limited search may be complete and still not be enough to establish that another ad was removed.
 
@@ -73,3 +73,20 @@ A can be marked as available again: we have new information about its presence. 
 The module provides the ad content together with its history and information about what could be checked. The results of a partial fetch stay useful, but do not allow conclusions about the fate of the ads that were not found.
 
 Unavailability at the source, expiry of an ad and the end of a recruitment are separate pieces of information. The removal or expiry of one publication does not settle the state of the other ads of the same offer or the end of the user's application. An ad's history stays available even when the publication itself is no longer active.
+
+## Public read of ads
+
+Other modules read ads only through these operations, exported from the module's `index.ts`. They do not query the module's tables and do not interpret the content saved from a source.
+
+| Operation                                  | Contract                                                                                                                                                                                                                              |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Current ads (`readCurrentAds`)             | Takes a list of ad identifiers and returns those ads with their current content, in one query; unknown identifiers are skipped. Without a list it returns the whole catalogue and raises an error when it holds more than 10 000 ads. |
+| Given versions (`readAdVersions`)          | Takes a list of version identifiers and returns, in one query, each version's content with its ad's identifier, observation dates, availability and expiry. Unknown identifiers are skipped.                                          |
+| List of versions (`readAdVersionList`)     | Takes an ad identifier and returns the identifier and retrieval time of each of its versions, newest first.                                                                                                                           |
+| Current versions (`readCurrentAdVersions`) | Takes a list of ad identifiers and returns, in one query, the identifier of each ad's current version.                                                                                                                                |
+
+An ad in the response carries its identifier, the identifier of the version its content comes from (`versionId`) and the content in a unified form: title, company, link, description as plain text, skills, salaries with the origin of the amount, locations, level, working time, work mode, publication date, expiry date, availability, the first and last observation, whether it has expired, and, for sources in the catalogues, the source name and the remote-work qualification. The module translates the content saved from the source into this form when it reads it, because the saved content stays in the source's own form. An ad has expired when its expiry date passed before the moment of reading.
+
+A title or company name that the source does not give as non-empty text comes back as the fixed text `missingAdTitle` ("Stanowisko bez nazwy") or `missingAdCompany` ("Firma niepodana"); spaces at the ends are removed. A consumer that must tell a missing value apart compares with these exported constants.
+
+The reads take no row locks, so reading never delays a sync. A consumer that needs content and version to match reads the current version first and then the content of that version: the content then always belongs to the version it records, even when the ad changes in between.

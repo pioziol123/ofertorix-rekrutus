@@ -2,11 +2,15 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { tx } from '../profile/store.ts'
-import { projectOffer } from '../../modules/offers/index.ts'
+import {
+  readAdVersionList,
+  readAdVersions,
+  readCurrentAdVersions,
+  type SourceAd,
+} from '../../modules/sources/index.ts'
 import {
   readActiveProfileVersion,
   readProfileVersionMetadata,
-  type ProfileData,
   type ProfileVersion,
 } from '../../modules/profile/index.ts'
 import {
@@ -42,6 +46,71 @@ export async function profileVersionNumbers(
 ): Promise<Map<string, number>> {
   const metadata = await readProfileVersionMetadata(ids)
   return new Map(metadata.map((version) => [version.id, version.number]))
+}
+
+/**
+ * Matching reads ads only through the Sources module's public read, which
+ * takes no row locks. Callers read before they hold a connection, so a write
+ * never waits for a second one; an ad changed between this read and a later
+ * write is accepted as for the profile (0mq.13), and the assessment then
+ * shows as stale.
+ */
+
+/** The current version of each given ad that has one, by ad id. */
+export async function currentAdVersions(
+  adIds: readonly string[],
+): Promise<Map<string, string>> {
+  const versions = await readCurrentAdVersions(adIds)
+  return new Map(versions.map((v) => [v.adId, v.versionId]))
+}
+
+/**
+ * The given ads for assessment, by ad id: first the current version of each,
+ * then the content of exactly that version, so an assessment always pairs
+ * content with the version it came from, even when the ad changes between
+ * the two reads.
+ */
+export async function adsForAssessment(
+  adIds: readonly string[],
+): Promise<Map<string, SourceAd>> {
+  const versions = await readCurrentAdVersions(adIds)
+  const ads = await readAdVersions(versions.map((v) => v.versionId))
+  return new Map(ads.map((ad) => [ad.id, ad]))
+}
+
+/**
+ * Adds to each assessment row of one ad the retrieval time of the ad version
+ * it assessed and whether it is stale: made for another profile version than
+ * the active one, or for another ad version than the current one. Rows of an
+ * ad without a current version, or of a version the ad does not have, are
+ * left out, as the former join with the ad tables did.
+ */
+export async function withAdVersionState<
+  T extends { profile_version_id: string; ad_revision_id: string },
+>(
+  rows: T[],
+  adId: string,
+  activeProfileVersionId: string | null,
+): Promise<(T & { offer_version_at: Date; stale: boolean })[]> {
+  if (!rows.length) return []
+  const current = (await currentAdVersions([adId])).get(adId)
+  if (current === undefined) return []
+  const times = new Map(
+    (await readAdVersionList(adId)).map((v) => [v.id, v.at]),
+  )
+  return rows.flatMap((row) => {
+    const at = times.get(row.ad_revision_id)
+    if (!at) return []
+    return [
+      {
+        ...row,
+        offer_version_at: at,
+        stale:
+          row.profile_version_id !== activeProfileVersionId ||
+          row.ad_revision_id !== current,
+      },
+    ]
+  })
 }
 
 /**
@@ -165,19 +234,6 @@ async function insertRevision(
     )
   return { id, calculation }
 }
-// Reads of another module's data take no row locks (architecture rule on
-// database access, 6): the ad and the profile may change between this check
-// and the write, as the owner accepted in 0mq.13.
-async function currentAdRevision(client: PoolClient, adId: string) {
-  const row = (
-    await client.query(
-      'SELECT current_revision_id FROM source_ads WHERE id=$1',
-      [adId],
-    )
-  ).rows[0]
-  if (!row) throw new RatingConflict('Nie znaleziono oferty.')
-  return row.current_revision_id as string
-}
 async function head(client: PoolClient, adId: string) {
   return (
     (
@@ -189,8 +245,10 @@ async function head(client: PoolClient, adId: string) {
   )
 }
 // The caller owns the transaction: AI cost, request result and rating publish commit together.
-// The caller reads the active profile version before its transaction, without a
-// lock; a confirmation in between is accepted (owner's decision in 0mq.13).
+// The caller reads the active profile version and the ad's current version
+// before its transaction, without a lock; a change in between is accepted
+// (owner's decision in 0mq.13). The ad's current version is undefined when
+// the ad no longer exists.
 export async function publishAiRating(
   client: PoolClient,
   request: {
@@ -202,6 +260,7 @@ export async function publishAiRating(
   },
   result: Assessment,
   activeProfileVersionId: string | null,
+  currentAdVersionId: string | undefined,
 ) {
   await lock(client)
   const existing = (
@@ -213,8 +272,10 @@ export async function publishAiRating(
   if (existing)
     return existing as { id: string; calculation: ReturnType<typeof calculate> }
   const weights = await activeWeights(client),
-    previous = await head(client, request.ad_id),
-    adRevisionId = await currentAdRevision(client, request.ad_id)
+    previous = await head(client, request.ad_id)
+  if (currentAdVersionId === undefined)
+    throw new RatingConflict('Nie znaleziono oferty.')
+  const adRevisionId = currentAdVersionId
   const isFresh = (profile: string, ad: string) =>
     profile === activeProfileVersionId && ad === adRevisionId
   const promote =
@@ -242,20 +303,15 @@ export async function publishAiRating(
 export async function manualContext(pool: Pool, adId: string) {
   const profile = await activeProfileVersion()
   if (!profile) return null
-  const ad = (
-    await pool.query(
-      'SELECT a.*,r.payload FROM source_ads a JOIN source_ad_revisions r ON r.id=a.current_revision_id WHERE a.id=$1',
-      [adId],
-    )
-  ).rows[0]
+  const ad = (await adsForAssessment([adId])).get(adId)
   if (!ad) throw new RatingConflict('Nie znaleziono oferty.')
   const client = await pool.connect()
   try {
     const previous = await head(client, adId),
-      input = matchingInput(profile.data, projectOffer(ad))
+      input = matchingInput(profile.data, ad)
     const same =
       previous?.profile_version_id === profile.id &&
-      previous?.ad_revision_id === ad.current_revision_id
+      previous?.ad_revision_id === ad.versionId
     const assessment: Assessment =
       same && previous
         ? previous.result
@@ -275,7 +331,7 @@ export async function manualContext(pool: Pool, adId: string) {
     return {
       headId: previous?.id ?? null,
       profileVersionId: String(profile.id),
-      adRevisionId: String(ad.current_revision_id),
+      adRevisionId: ad.versionId,
       input,
       assessment,
       staleBase: !!previous && !same,
@@ -291,8 +347,11 @@ export async function saveManualRating(
 ) {
   const command = manualRatingCommand.parse(value),
     hash = fingerprint({ adId: adId.toLowerCase(), ...command })
-  // Read before the transaction holds a connection; the read takes no lock.
+  // Read before the transaction holds a connection; the reads take no lock.
+  // The content assessed is that of the version the owner's form names.
   const profile = await activeProfileVersion()
+  const currentAdVersionId = (await currentAdVersions([adId])).get(adId)
+  const [assessedAd] = await readAdVersions([command.adRevisionId])
   const client = await pool.connect()
   try {
     return await tx(client, async () => {
@@ -308,17 +367,19 @@ export async function saveManualRating(
           throw new RatingConflict('Identyfikator zapisu dotyczy innej treści.')
         return { id: String(duplicate.id), reused: true }
       }
-      const previous = await head(client, adId),
-        adRevisionId = await currentAdRevision(client, adId)
+      const previous = await head(client, adId)
+      if (currentAdVersionId === undefined)
+        throw new RatingConflict('Nie znaleziono oferty.')
       if (
         (previous?.id ?? null) !== command.expectedRevisionId ||
         profile?.id !== command.profileVersionId ||
-        adRevisionId !== command.adRevisionId
+        currentAdVersionId !== command.adRevisionId ||
+        !assessedAd
       )
         throw new RatingConflict(
           'Ocena, profil lub ogłoszenie zmieniły się. Wczytaj aktualne dane przed zapisem; Twój formularz nie został zapisany.',
         )
-      const context = await manualContextOnClient(client, adId, profile.data)
+      const context = matchingInput(profile.data, assessedAd)
       let result: Assessment
       try {
         result = validateAssessment(command.assessment, context, 'owner')
@@ -354,19 +415,6 @@ export async function saveManualRating(
   } finally {
     client.release()
   }
-}
-async function manualContextOnClient(
-  client: PoolClient,
-  adId: string,
-  profile: ProfileData,
-) {
-  const ad = (
-    await client.query(
-      'SELECT a.*,r.payload FROM source_ads a JOIN source_ad_revisions r ON r.id=a.current_revision_id WHERE a.id=$1',
-      [adId],
-    )
-  ).rows[0]
-  return matchingInput(profile, projectOffer(ad))
 }
 export async function saveWeights(pool: Pool, value: unknown) {
   const command = weightCommand.parse(value),
@@ -469,17 +517,21 @@ export async function readRatings(
   adId: string,
   activeProfileVersionId: string | null,
 ) {
-  const found = (
-    await pool.query<Omit<RatingView, 'profile_number'>>(
-      `SELECT r.id,r.request_id,r.result,r.calculation,r.author,r.assessment_author,r.reason,r.profile_version_id,r.ad_revision_id,ar.retrieved_at AS offer_version_at,
-    r.weights_version_id,w.number AS weights_number,w.weights,r.created_at,r.input->'criteria' AS criteria,r.input->'checks' AS checks,(h.revision_id=r.id) AS is_current,
-    (r.profile_version_id IS DISTINCT FROM $2::uuid OR r.ad_revision_id IS DISTINCT FROM a.current_revision_id) AS stale
-    FROM matching_rating_revisions r JOIN source_ads a ON a.id=r.ad_id
-    JOIN source_ad_revisions ar ON ar.id=r.ad_revision_id JOIN matching_weight_versions w ON w.id=r.weights_version_id
+  const found = await withAdVersionState(
+    (
+      await pool.query<
+        Omit<RatingView, 'profile_number' | 'offer_version_at' | 'stale'>
+      >(
+        `SELECT r.id,r.request_id,r.result,r.calculation,r.author,r.assessment_author,r.reason,r.profile_version_id,r.ad_revision_id,
+    r.weights_version_id,w.number AS weights_number,w.weights,r.created_at,r.input->'criteria' AS criteria,r.input->'checks' AS checks,(h.revision_id=r.id) AS is_current
+    FROM matching_rating_revisions r JOIN matching_weight_versions w ON w.id=r.weights_version_id
     LEFT JOIN matching_rating_heads h ON h.ad_id=r.ad_id WHERE r.ad_id=$1 ORDER BY r.sequence DESC`,
-      [adId, activeProfileVersionId],
-    )
-  ).rows
+        [adId],
+      )
+    ).rows,
+    adId,
+    activeProfileVersionId,
+  )
   const rows: RatingView[] = withProfileNumbers(
     found,
     await profileVersionNumbers(found.map((row) => row.profile_version_id)),
