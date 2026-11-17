@@ -119,10 +119,11 @@ describe('uuk.2: runner in its own copy', () => {
     assert.equal(readFileSync(join(w.runnerCopy, '.sandcastle/runner.ts'), 'utf8'), '// runner v1\n')
   })
 
-  it('ignores a write to main made from the agent\'s environment', async () => {
+  it('ignores writes to main and origin/main made from the agent\'s environment', async () => {
     w = world(async (ctx) => {
       committingAgent()(ctx)
       sh(ctx.worktree, 'update-ref', 'refs/heads/main', 'HEAD')
+      sh(ctx.worktree, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
     })
     await cycle(w.runner)
     assert.equal(w.db.show('t-1').status, 'closed')

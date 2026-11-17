@@ -1,8 +1,10 @@
 /**
  * Git operations of the runner's copy against the exchange point, `main` on `origin`
- * (solution design of oferty-pracy-uuk, T-01 and task uuk.2). The local `main` only
- * mirrors the exchange point: every fetch overwrites it, so a write to it from an
- * agent's environment has no effect. The runner trusts commit ids, not branch names.
+ * (solution design of oferty-pracy-uuk, T-01 and task uuk.2). The runner reads the
+ * exchange point from `origin/main`, which every fetch overwrites, so a write to it from
+ * an agent's environment has no effect. The copy itself stays on its `main` branch, which
+ * holds the runner's program and moves only when the program is updated. The runner
+ * trusts commit ids, not branch names.
  */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -36,13 +38,13 @@ export function tryGit(repo: string, args: string[]): { ok: boolean; out: string
 
 export type Fetched = { ok: true; sha: string } | { ok: false; error: string }
 
-/** Fetches the exchange point and overwrites the `main` mirror with it, forced. */
+export const EXCHANGE_REF = `refs/remotes/${REMOTE}/${BASE_BRANCH}`
+
+/** Fetches the exchange point into `origin/main`, forced; the checked-out program is untouched. */
 export function fetchMain(repo: string): Fetched {
-  const fetch = tryGit(repo, ['fetch', '--quiet', '--no-tags', REMOTE,
-    `+refs/heads/${BASE_BRANCH}:refs/heads/${BASE_BRANCH}`,
-    `+refs/heads/${BASE_BRANCH}:refs/remotes/${REMOTE}/${BASE_BRANCH}`])
+  const fetch = tryGit(repo, ['fetch', '--quiet', '--no-tags', REMOTE, `+refs/heads/${BASE_BRANCH}:${EXCHANGE_REF}`])
   if (!fetch.ok) return { ok: false, error: fetch.out }
-  return { ok: true, sha: git(repo, ['rev-parse', `refs/heads/${BASE_BRANCH}`]) }
+  return { ok: true, sha: git(repo, ['rev-parse', EXCHANGE_REF]) }
 }
 
 /** Commits in `to` that `from` lacks, one `<short id> <subject>` per line, oldest first. */

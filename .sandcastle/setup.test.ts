@@ -4,6 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import { ENV_FILE, readSettings, settingsProblems, writeSettings } from './settings.ts'
+import { fetchMain } from './exchange.ts'
 import { defaultRunnerDir, prepareRunnerCopy } from './setup.ts'
 import { type World, pushFiles, sh, world, writeFile } from './testing.ts'
 
@@ -17,15 +18,15 @@ function setup(dir: string) {
 }
 
 describe('preparing command', () => {
-  it('creates the runner\'s copy in an empty place, detached at main from GitHub, with its settings', () => {
+  it('creates the runner\'s copy in an empty place, on main from GitHub, with its settings', () => {
     w = world()
     writeFile(w.owner, ENV_FILE, 'CLAUDE_CODE_OAUTH_TOKEN=secret\n')
     const dir = join(w.base, 'fresh-runner')
     const { result, installs } = setup(dir)
     assert.deepEqual(result, { ok: true, action: 'created', commit: sh(w.exchange, 'rev-parse', 'main') })
     assert.equal(sh(dir, 'rev-parse', 'HEAD'), sh(w.exchange, 'rev-parse', 'main'))
-    // Not attached to a branch, so the runner may overwrite its main mirror.
-    assert.throws(() => sh(dir, 'symbolic-ref', '-q', 'HEAD'))
+    // On the main branch, so a plain git pull updates the program.
+    assert.equal(sh(dir, 'symbolic-ref', '--short', 'HEAD'), 'main')
     assert.deepEqual(installs, [join(dir, '.sandcastle')])
     assert.equal(readSettings(dir).beadsDir, join(w.owner, '.beads'))
     assert.match(readFileSync(join(dir, ENV_FILE), 'utf8'), /^CLAUDE_CODE_OAUTH_TOKEN=secret$/m)
@@ -41,6 +42,27 @@ describe('preparing command', () => {
     assert.deepEqual(result, { ok: true, action: 'updated', commit: v2 })
     assert.equal(readFileSync(join(dir, '.sandcastle/runner.ts'), 'utf8'), '// runner v2\n')
     assert.equal(readSettings(dir).beadsDir, '/kept')
+  })
+
+  it('puts a copy left detached by an earlier version back on main when updating', () => {
+    w = world()
+    const dir = join(w.base, 'fresh-runner')
+    setup(dir)
+    sh(dir, 'checkout', '--quiet', '--detach', 'HEAD')
+    const v2 = pushFiles(w.other, { '.sandcastle/runner.ts': '// runner v2\n' }, 'runner v2')
+    assert.deepEqual(setup(dir).result, { ok: true, action: 'updated', commit: v2 })
+    assert.equal(sh(dir, 'symbolic-ref', '--short', 'HEAD'), 'main')
+    assert.equal(sh(dir, 'rev-parse', 'HEAD'), v2)
+  })
+
+  it('leaves the program unchanged when the runner fetches GitHub', () => {
+    w = world()
+    const dir = join(w.base, 'fresh-runner')
+    const { result } = setup(dir)
+    const v2 = pushFiles(w.other, { '.sandcastle/runner.ts': '// runner v2\n' }, 'runner v2')
+    assert.deepEqual(fetchMain(dir), { ok: true, sha: v2 })
+    assert.equal(sh(dir, 'rev-parse', 'HEAD'), result.ok ? result.commit : '')
+    assert.equal(sh(dir, 'symbolic-ref', '--short', 'HEAD'), 'main')
   })
 
   it('refuses to update a program with local changes', () => {

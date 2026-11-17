@@ -245,7 +245,6 @@ export function world(agentTurn: AgentTurn = committingAgent(), tasks: string[] 
   const runnerCopy = join(base, 'runner')
   const other = join(base, 'other')
   for (const clone of [owner, runnerCopy, other]) sh(base, 'clone', '--quiet', exchange, clone)
-  sh(runnerCopy, 'checkout', '--quiet', '--detach', 'origin/main')
   for (const clone of [runnerCopy, other]) {
     sh(clone, 'config', 'user.name', 'Test')
     sh(clone, 'config', 'user.email', 'test@example.com')

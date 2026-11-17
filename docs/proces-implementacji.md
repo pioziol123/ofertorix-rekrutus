@@ -159,7 +159,7 @@ The runner checks in order:
 
 1. the result file exists; the status `blocked` ends the work at once;
 2. the worktree is clean, and the branch has commits;
-3. the branch rebases cleanly onto the fetched `main` commit (a write to `main` from the sandbox changes nothing: the runner's `main` only mirrors GitHub);
+3. the branch rebases cleanly onto the fetched `main` commit (a write to `main` or `origin/main` from the sandbox changes nothing: every fetch overwrites `origin/main` with GitHub's state);
 4. the shape of the result and the deviations pass the deterministic checks (chapter 8);
 5. the gate passes.
 

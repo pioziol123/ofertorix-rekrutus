@@ -3,7 +3,7 @@
  * Run from the owner's copy:
  *   node .sandcastle/setup.ts [--dir <path>]
  * The default directory sits beside the owner's copy, named after it with the suffix -runner.
- * In an empty place it clones GitHub, checks out main without attaching to a branch,
+ * In an empty place it clones GitHub on the main branch,
  * installs the runner's dependencies, copies the agent token and records where the task
  * database is. Run again, it updates the program to main on GitHub and keeps the settings.
  */
@@ -41,11 +41,8 @@ export function prepareRunnerCopy({ owner, dir, install }: SetupOptions): SetupR
   if (isEmptyPlace(dir)) {
     const clone = tryGit(dirname(resolve(dir)), ['clone', '--quiet', url.out, resolve(dir)])
     if (!clone.ok) return { ok: false, error: `cloning ${url.out} failed: ${clone.out}` }
-    // A clone attaches HEAD to main; detach it so the main mirror can be overwritten.
-    git(dir, ['checkout', '--quiet', '--detach', `${REMOTE}/${BASE_BRANCH}`])
     const fetched = fetchMain(dir)
     if (!fetched.ok) return { ok: false, error: fetched.error }
-    git(dir, ['checkout', '--quiet', '--detach', fetched.sha])
     install(join(dir, PROGRAM_DIR))
     writeFileSync(join(dir, ENV_FILE), `${TOKEN_KEY}=${tokenIn(join(owner, ENV_FILE))}\n`)
     writeSettings(dir, { beadsDir: join(resolve(owner), '.beads') })
@@ -59,8 +56,10 @@ export function prepareRunnerCopy({ owner, dir, install }: SetupOptions): SetupR
   if (changed) return { ok: false, error: `the runner's program in ${dir} has local changes; resolve them first:\n${changed}` }
   const fetched = fetchMain(dir)
   if (!fetched.ok) return { ok: false, error: fetched.error }
-  const checkout = tryGit(dir, ['checkout', '--quiet', '--detach', fetched.sha])
-  if (!checkout.ok) return { ok: false, error: `checking out ${BASE_BRANCH} ${fetched.sha.slice(0, 7)} in ${dir} failed:\n${checkout.out}` }
+  // A copy prepared by an earlier version stands detached; put it back on main first.
+  const update = tryGit(dir, ['checkout', '--quiet', BASE_BRANCH])
+  const merge = update.ok ? tryGit(dir, ['merge', '--quiet', '--ff-only', fetched.sha]) : update
+  if (!merge.ok) return { ok: false, error: `updating ${BASE_BRANCH} to ${fetched.sha.slice(0, 7)} in ${dir} failed:\n${merge.out}` }
   install(join(dir, PROGRAM_DIR))
   // Settings are kept; only a missing one is filled in.
   if (!tokenIn(join(dir, ENV_FILE))) writeFileSync(join(dir, ENV_FILE), `${TOKEN_KEY}=${tokenIn(join(owner, ENV_FILE))}\n`)
