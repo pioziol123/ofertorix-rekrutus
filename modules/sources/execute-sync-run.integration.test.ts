@@ -30,6 +30,7 @@ import {
   type SourceConnector,
 } from './infrastructure/adapters/connector.ts'
 import { createConnectorRegistry } from './infrastructure/adapters/connector-registry.ts'
+import { inProcessRunLimitSeconds } from './recover-sync-runs.ts'
 import { admitRun, readRun } from './sync-run-state.ts'
 
 // The shortest heartbeat pg-boss allows, so a lost worker is noticed fast.
@@ -680,13 +681,13 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
     await recoverSyncRuns(
       findJob,
       new Date(
-        startedAt.getTime() + (syncJobOptions.expireInSeconds - 1) * 1000,
+        startedAt.getTime() + (inProcessRunLimitSeconds - 1) * 1000,
       ),
     )
     expect((await readRun(orphan.id))!.status).toBe('running')
     await recoverSyncRuns(
       findJob,
-      new Date(startedAt.getTime() + syncJobOptions.expireInSeconds * 1000),
+      new Date(startedAt.getTime() + inProcessRunLimitSeconds * 1000),
     )
     expect(await readRun(orphan.id)).toMatchObject({
       status: 'failed',

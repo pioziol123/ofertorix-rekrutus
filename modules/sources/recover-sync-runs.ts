@@ -1,5 +1,4 @@
 import { finishedRunStatus } from './domain/run-status.ts'
-import { syncJobOptions } from './sync-job-options.ts'
 import {
   finishRun,
   listUnfinishedRuns,
@@ -22,15 +21,20 @@ const interrupted = {
   inProcess: 'Import interrupted; request a new import',
 } as const
 
-// A run executed in the requesting process has no queue job to tell whether
-// it is alive. It gets as long as one queue attempt may take.
-const inProcessLimitMs = syncJobOptions.expireInSeconds * 1000
+/**
+ * How long a run executed in the requesting process may run before recovery
+ * treats it as left by a process that died. Such a run has no queue job to
+ * tell whether it is alive. Twice the Himalayas run limit of 120 s, the only
+ * source run this way until 0mq.16 (owner decision 2026-11-17).
+ */
+export const inProcessRunLimitSeconds = 240
+const inProcessLimitMs = inProcessRunLimitSeconds * 1000
 
 /**
  * Finishes the unfinished runs no work will execute any more (A5-R06): a
  * queued or running run whose queue job does not exist or has ended, and a
- * run executed without a queue that has been running longer than a queue
- * attempt may take. Such a run ends partial or failed by its saved ads,
+ * run executed without a queue that has been running longer than
+ * `inProcessRunLimitSeconds`. Such a run ends partial or failed by its saved ads,
  * with a message that asks for a new request. Runs whose job waits, is
  * retried or is active stay as they are.
  *
