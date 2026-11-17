@@ -3,7 +3,7 @@
 Work moves through two phases separated by a **hand-off**:
 
 1. **Preparation** happens with the owner. Any input (a bd epic, a ticket, a document, a chat request) becomes specification documents and a bd task that meets the readiness checklist. The `task-prep` skill runs this phase. Applying `ready-for-agent` is the hand-off.
-2. **Execution** happens unattended. The runner (`node .sandcastle/runner.ts`) takes ready tasks one at a time, has an agent implement each in its own sandbox, runs the gates, delivers the work to `main` on GitHub and closes the task. The agent follows the `implement-task` skill. The owner's next contact with the work is pulling `main` and testing it.
+2. **Execution** happens unattended. The runner (`node .sandcastle/runner.ts`) takes ready tasks, one at a time unless set otherwise, has an agent implement each in its own sandbox, runs the gates, delivers the work to `main` on GitHub and closes the task. The agent follows the `implement-task` skill. The owner's next contact with the work is pulling `main` and testing it.
 
 The `spec-docs` skill owns how the documents are written. This file owns how documents, tasks and the runner connect.
 
@@ -106,14 +106,17 @@ Every agent runs in a Sandcastle `docker()` sandbox built from `.sandcastle/Dock
 
 ### Cycle
 
+The runner runs as many tasks at the same time as its slots allow, one by default. It starts the next task whenever a slot is free and a task is ready; the cycle below keeps working while tasks run. Every run of a task has its own state, branch, sandboxes and log, and an error in one run returns that task and leaves the others running. Fetches at the start of a cycle and the deliveries of all runs, from the fetch to the push, pass through one queue, one at a time in the order they arrive; a rejected push still guards against changes from outside the runner.
+
+
 1. Fetch `main` from `origin` and overwrite the mirror. When GitHub cannot be reached, log git's message, take no task and try again in the next cycle.
 2. When the runner's program in the fetched `main` differs from the version the runner started from, log it and notify the owner once per version. The runner keeps working in its own version.
 3. Rebuild the sandbox image from the content of the fetched `main` when `pnpm-lock.yaml` or `.sandcastle/Dockerfile` there differ from the ones the image was built from.
-4. Reconcile the epics and pick the first task from `bd ready` with `ready-for-agent`, neither `ready-for-human` nor `needs-info`, and an epic that passes the epic hand-off check. A task whose linked documents are not in the fetched `main` stays ready and unclaimed; the runner logs the missing paths and moves on to the next one.
+4. Reconcile the epics and pick the first task from `bd ready` with `ready-for-agent`, neither `ready-for-human` nor `needs-info`, and an epic that passes the epic hand-off check. A task whose linked documents are not in the fetched `main` stays ready and unclaimed; the runner logs the missing paths and moves on to the next one. The claim is a conditional write that succeeds only when the task has no assignee; when another run claimed it first, the runner skips it without a comment and without changing its labels.
 
 ### One task
 
-1. Claim the task and create the task branch at the fetched `main` commit: `<epic>-<task>-<title slug>`, for example `0mq-13-wprowadzic-wspolne-zarzadzanie-polaczeniami` for `oferty-pracy-0mq.13`. Ids drop the project prefix; the task part is relative to the epic, and a task outside any epic uses its own id alone. Branches made by hand follow the same prefix.
+1. Create the task branch of the claimed task at the fetched `main` commit: `<epic>-<task>-<title slug>`, for example `0mq-13-wprowadzic-wspolne-zarzadzanie-polaczeniami` for `oferty-pracy-0mq.13`. Ids drop the project prefix; the task part is relative to the epic, and a task outside any epic uses its own id alone. Branches made by hand follow the same prefix.
 2. Run the implementing agent (`claude-opus-5-5`, effort `medium` by default) in a sandbox on that branch with the task and its documents. The agent runs the gate itself before finishing, writes a result file and commits on its branch; bd, delivery and `main` belong to the runner.
 3. Check, in the same warm sandbox: the result file exists, the worktree is clean, the branch has commits and rebases cleanly on the `main` commit the work must sit on (the fetched one, or a newer one from delivery), the result's shape and deviations pass the [deterministic checks](#what-the-runner-checks), and the gate passes.
 4. In a fresh sandbox on a copy of the branch, run the gate again, then a separate reviewing agent against the diff, the documents, the acceptance criteria and the result's assumptions and deviations. Its verdict is `pass`, `pass-with-deferral` (every deviation accepted) or `fail` with findings. A result with deviations needs `pass-with-deferral`. Only committed work reaches this step.
@@ -147,9 +150,10 @@ Then run the runner in a terminal from the runner's copy. It refuses to start wi
 
 - `node .sandcastle/runner.ts --dry-run` fetches GitHub and lists the candidates and the verdict for each, without writing to the task database or building the image.
 - `node .sandcastle/runner.ts --once` processes at most one task; without `--once` it polls every `--interval` minutes.
+- `--slots <n>` runs up to `n` tasks at the same time; the default is 1.
 - `--task <id>`, `--model`, `--effort` and `--rebuild-image` override the defaults.
 
-A change to the runner takes effect after it reaches `main` on GitHub, the preparing command runs again and the runner is restarted. Logs live in `.sandcastle/logs/` of the runner's copy. Stopping the runner during a task leaves the task claimed; release it with `bd unclaim`.
+A change to the runner takes effect after it reaches `main` on GitHub, the preparing command runs again and the runner is restarted. Logs live in `.sandcastle/logs/` of the runner's copy: `runner.log` for entries not tied to a task, and one file per run of a task, named after the task id. Stopping the runner during a task leaves the task claimed; release it with `bd unclaim`.
 
 In the owner's copy, set git once so that pulling the runner's work puts uncommitted changes aside and restores them by itself:
 

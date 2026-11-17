@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { excludeAgentFiles, GATE, RESULT_FILE, REVIEW_FILE, type Runner } from './flow.ts'
+import { excludeAgentFiles, GATE, RESULT_FILE, REVIEW_FILE, type Runner, serialLane } from './flow.ts'
 import type { AgentResult, Issue } from './followups.ts'
 import type { ExecResult, FreshSandbox, NewIssue, Sandboxes, TaskDb, WarmSandbox } from './ports.ts'
 
@@ -43,6 +43,8 @@ export class FakeDb implements TaskDb {
   comments: Comment[] = []
   closed: { id: string; reason: string }[] = []
   claims: string[] = []
+  /** Tasks another run claims first: they still look ready, but the conditional claim fails. */
+  lostClaims = new Set<string>()
   private next = 1
 
   add(issue: Issue): void {
@@ -65,15 +67,17 @@ export class FakeDb implements TaskDb {
     return issue
   }
 
-  ready = () => [...this.issues.values()].filter((i) => i.status === 'open' && i.labels?.includes('ready-for-agent') && !i.assignee)
+  ready = () => [...this.issues.values()].filter((i) => i.status === 'open' && i.labels?.includes('ready-for-agent') && (!i.assignee || this.lostClaims.has(i.id)))
   show = (id: string) => structuredClone(this.get(id))
   epics = () => [...this.issues.values()].filter((i) => i.issue_type === 'epic')
   listUnder = (epicId: string) => [...this.issues.values()].filter((i) => i.parent === epicId)
   assumptionTasks = () => []
   claim = (id: string) => {
+    if (this.lostClaims.has(id) || this.get(id).assignee) return false
     this.claims.push(id)
     this.get(id).assignee = 'runner'
     this.get(id).status = 'in_progress'
+    return true
   }
   unclaim = (id: string) => {
     delete this.get(id).assignee
@@ -210,6 +214,8 @@ export interface World {
   images: string[]
   notifications: { title: string; message: string }[]
   logs: string[]
+  /** Each run's own log, by task id. */
+  taskLogs: Map<string, string[]>
   runner: Runner
   /** Called on each pause of a waiting delivery; the test may repair GitHub here. */
   onPause: () => void
@@ -252,6 +258,7 @@ export function world(agentTurn: AgentTurn = committingAgent(), tasks: string[] 
   const images: string[] = []
   const notifications: { title: string; message: string }[] = []
   const logs: string[] = []
+  const taskLogs = new Map<string, string[]>()
   const runner: Runner = {
     repo: runnerCopy,
     db,
@@ -259,17 +266,27 @@ export function world(agentTurn: AgentTurn = committingAgent(), tasks: string[] 
     images: { ensure: (commit) => { images.push(commit); sandboxes.events.push(`image:${commit}`) } },
     notifier: { notify: (title, message) => void notifications.push({ title, message }) },
     log: (message) => void logs.push(message),
-    logTo: () => {},
+    taskLog: (taskId) => {
+      const own: string[] = []
+      taskLogs.set(taskId, own)
+      return (message) => {
+        own.push(message)
+        logs.push(message)
+      }
+    },
+    slots: 1,
+    exchange: serialLane(),
     startCommit: sh(runnerCopy, 'rev-parse', 'HEAD'),
     reportedVersions: new Set(),
     pause: async () => {
       w.pauses++
-      if (w.pauses > 50) throw new Error('delivery kept waiting')
+      if (w.pauses > 500) throw new Error('kept waiting')
       w.onPause()
+      await new Promise((resolve) => setTimeout(resolve, 5))
     },
   }
   const w: World = {
-    base, exchange, owner, runnerCopy, other, db, sandboxes, images, notifications, logs, runner,
+    base, exchange, owner, runnerCopy, other, db, sandboxes, images, notifications, logs, taskLogs, runner,
     onPause: () => {},
     pauses: 0,
     cleanup: () => rmSync(base, { recursive: true, force: true }),

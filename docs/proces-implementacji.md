@@ -133,6 +133,7 @@ The runner works in its own copy of the project, a clone of GitHub, and runs fro
 - `node .sandcastle/runner.ts --dry-run`: fetches GitHub, shows the candidates and the readiness verdict, writes nothing to bd;
 - `node .sandcastle/runner.ts --once`: processes at most one task;
 - without `--once` it checks the queue every `--interval` minutes (default 5);
+- `--slots <n>`: how many tasks run at the same time (default 1); each run has its own branch, sandboxes and log, and deliveries go to GitHub one after another;
 - `--task <id>`, `--model` (default `claude-opus-5-5`), `--effort` (default `medium`) and `--rebuild-image` override the defaults.
 
 #### 3.1. Before each pass: reconciling epics
@@ -144,7 +145,7 @@ The runner fetches `main` from GitHub; when GitHub is unreachable it takes no ta
 1. The candidates are `bd ready` with the label `ready-for-agent`, without `ready-for-human` and `needs-info`, skipping epics.
 2. **Epic check:** the nearest epic above the task has `ready-for-agent`, and none of its open children is unlabelled or in `needs-info`. Follow-ups are excluded from this check.
 3. **Deterministic readiness check:** the required links in the metadata exist and `acceptance_criteria` is not empty; if not, the task goes back as `needs-info`. A linked document that is not yet on `main` on GitHub makes the task wait, unreturned, while the runner takes the next one.
-4. Claiming the task in bd.
+4. Claiming the task in bd, conditionally: only when nobody holds it. A task another run claimed first is skipped without a comment.
 
 #### 3.3. Implementation in a warm sandbox
 

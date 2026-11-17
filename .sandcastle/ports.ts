@@ -73,7 +73,11 @@ export interface TaskDb {
   listUnder(epicId: string): Issue[]
   /** Open and closed assumption tasks of a scope (metadata type=assumptions, epic=<scope>). */
   assumptionTasks(scope: string): Issue[]
-  claim(id: string): void
+  /**
+   * Claims the task only when it has no assignee (a conditional write). False when
+   * another run claimed it first; other failures throw.
+   */
+  claim(id: string): boolean
   unclaim(id: string): void
   comment(id: string, text: string): void
   update(id: string, change: LabelChange): void

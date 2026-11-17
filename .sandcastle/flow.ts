@@ -58,10 +58,17 @@ export interface Runner {
   sandboxes: Sandboxes
   images: Images
   notifier: Notifier
-  /** Writes to the current log: the task's own log while a task runs, the shared log otherwise. */
+  /**
+   * Writes to the log of this context: the runner's shared log, or the task's own log in
+   * the context a task's run gets (task uuk.4: no variables shared between runs).
+   */
   log(message: string): void
-  /** Points the log at a task's own file, or back at the shared log with null. */
-  logTo(taskId: string | null): void
+  /** A new log of its own for one run of a task. */
+  taskLog(taskId: string): (message: string) => void
+  /** How many tasks run at the same time (U4-R02); 1 by default. */
+  slots: number
+  /** Fetches and deliveries of all runs pass through here one at a time (U4-R04). */
+  exchange: Lane
   /** The commit the running program was started from (U2-R06). */
   startCommit: string
   /** Program trees at the exchange point already reported as newer. */
@@ -73,6 +80,22 @@ export interface Runner {
 }
 
 const firstLine = (text: string) => text.split('\n')[0] ?? ''
+
+/** Runs operations one at a time, in the order they arrive. */
+export interface Lane {
+  run<T>(operation: () => T | Promise<T>): Promise<T>
+}
+
+export function serialLane(): Lane {
+  let last: Promise<unknown> = Promise.resolve()
+  return {
+    run<T>(operation: () => T | Promise<T>): Promise<T> {
+      const result = last.then(operation)
+      last = result.catch(() => {})
+      return result
+    },
+  }
+}
 
 function tail(text: string, lines = 60): string {
   return text.trim().split('\n').slice(-lines).join('\n')
@@ -455,12 +478,20 @@ type Delivery = { delivered: true } | { delivered?: false; feedback: string } | 
  */
 async function deliver(r: Runner, t: TaskRun): Promise<Delivery> {
   for (;;) {
+    // One run at a time goes from the fetch to the push (U4-R04); a wait for GitHub happens outside the queue.
+    const attempt = await r.exchange.run(() => deliverInQueue(r, t))
+    if (attempt !== 'unreachable') return attempt
+    await r.pause()
+  }
+}
+
+async function deliverInQueue(r: Runner, t: TaskRun): Promise<Delivery | 'unreachable'> {
+  for (;;) {
     // 1. Fetch; while GitHub is unreachable the checked work waits with its sandbox open (U3-R07).
     const fetched = fetchMain(r.repo)
     if (!fetched.ok) {
       r.log(`${t.issue.id}: delivery waits, GitHub is unreachable: ${firstLine(fetched.error)}`)
-      await r.pause()
-      continue
+      return 'unreachable'
     }
     // 2–4. main changed since the last gate: replay the work on it and check it again.
     if (fetched.sha !== t.gateBase) {
@@ -491,7 +522,8 @@ async function deliver(r: Runner, t: TaskRun): Promise<Delivery> {
     if (pushed.ok) return { delivered: true }
     // The cause comes from fetching again, not from the text of git's message.
     const again = fetchMain(r.repo)
-    if (!again.ok || again.sha !== t.gateBase) continue
+    if (!again.ok) return 'unreachable'
+    if (again.sha !== t.gateBase) continue
     return { returned: `Delivery failed: ${tail(pushed.out, 10)}` }
   }
 }
@@ -648,27 +680,23 @@ function recordAssumptions(r: Runner, issue: Issue, assumptions: NonNullable<Age
   }))
 }
 
-/** Runs one task from the fetched exchange point state `baseSha` to delivery or return. */
-export async function processTask(r: Runner, issue: Issue, baseSha: string): Promise<void> {
-  const branch = taskBranch(r, issue)
-  r.logTo(issue.id)
+/**
+ * Runs one claimed task from the fetched exchange point state `baseSha` to delivery or
+ * return. The run gets its own context with its own log; an error in it returns this task
+ * and leaves the other runs alone (U4-R01, U4-R05).
+ */
+export async function processTask(shared: Runner, issue: Issue, baseSha: string): Promise<void> {
+  const r: Runner = { ...shared, log: shared.taskLog(issue.id) }
+  shared.log(`${issue.id}: started on ${BASE_BRANCH} at ${baseSha.slice(0, 7)}`)
+  let branch: string | null = null
   try {
-    r.db.claim(issue.id)
+    branch = taskBranch(r, issue)
     git(r.repo, ['branch', '--force', branch, baseSha])
     const ctx = epicContext(r, issue)
-
-    let outcome: Awaited<ReturnType<typeof runTask>>
-    try {
-      outcome = await runTask(r, issue, branch, baseSha, ctx)
-    } catch (error) {
-      // A sandbox or agent failure (idle timeout, docker error) must not kill the runner
-      // and leave the task claimed: hand it back like any other failed attempt.
-      const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
-      returnToPreparation(r, issue, `The runner stopped the attempt on an error: ${message}`, branch)
-      return
-    }
+    const outcome = await runTask(r, issue, branch, baseSha, ctx)
     if (!outcome.ok) {
       returnToPreparation(r, issue, outcome.report || 'Unknown failure.', branch)
+      shared.log(`${issue.id}: returned to preparation`)
       return
     }
     const { commit, result } = outcome
@@ -679,9 +707,14 @@ export async function processTask(r: Runner, issue: Issue, baseSha: string): Pro
     deleteReturnBranch(r.repo, branch)
     tryGit(r.repo, ['branch', '-D', branch])
     r.log(`${issue.id}: delivered to ${BASE_BRANCH} on GitHub at ${sha} and closed`)
+    shared.log(`${issue.id}: delivered at ${sha}`)
     r.notifier.notify(`${issue.id} is on GitHub`, `${issue.title} — delivered to ${BASE_BRANCH} at ${sha}`)
-  } finally {
-    r.logTo(null)
+  } catch (error) {
+    // A sandbox, agent or task database failure must not stop the runner or the other runs,
+    // nor leave the task claimed: hand it back like any other failed attempt.
+    const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+    returnToPreparation(r, issue, `The runner stopped the attempt on an error: ${message}`, branch)
+    shared.log(`${issue.id}: returned to preparation after an error`)
   }
 }
 
@@ -731,28 +764,78 @@ export function pickTask(r: Runner, mainSha: string, apply: boolean): Issue | nu
       console.log(`- ${issue.id} ${issue.title}\n  would implement`)
       continue
     }
+    // A conditional claim: losing it means another run took the task first (U4-R03).
+    if (!r.db.claim(issue.id)) {
+      r.log(`${issue.id}: skipped, another run claimed it first`)
+      continue
+    }
     return issue
   }
   return null
 }
 
 /**
- * One cycle: fetch the exchange point, report a newer program, build the image from the
- * fetched state, reconcile epics, pick a task and run it. Returns whether a task ran.
+ * Selects and claims the next task: fetch the exchange point through the delivery queue,
+ * report a newer program, build the image from the fetched state, reconcile epics and pick.
  */
-export async function cycle(r: Runner): Promise<boolean> {
-  const fetched = fetchMain(r.repo)
+export async function selectNext(r: Runner): Promise<{ issue: Issue; baseSha: string } | null> {
+  const fetched = await r.exchange.run(() => fetchMain(r.repo))
   if (!fetched.ok) {
     r.log(`cannot fetch ${BASE_BRANCH} from GitHub; no task taken this cycle: ${tail(fetched.error, 5)}`)
-    return false
+    return null
   }
   checkProgramVersion(r, fetched.sha)
   r.images.ensure(fetched.sha)
   reconcileEpics(r, true)
-  const picked = pickTask(r, fetched.sha, true)
-  if (!picked) return false
-  await processTask(r, picked, fetched.sha)
+  const issue = pickTask(r, fetched.sha, true)
+  return issue ? { issue, baseSha: fetched.sha } : null
+}
+
+/** One cycle with one slot: select a task and run it to the end. Returns whether a task ran. */
+export async function cycle(r: Runner): Promise<boolean> {
+  const next = await selectNext(r)
+  if (!next) return false
+  await processTask(r, next.issue, next.baseSha)
   return true
+}
+
+export interface ServeOptions {
+  /** Start at most this many tasks, then wait for them and stop (--once is 1). */
+  maxTasks?: number
+  /** Stop once nothing is running and no task is ready (for tests). */
+  stopWhenIdle?: boolean
+}
+
+/**
+ * The runner's main loop (U4-R02): starts a task whenever a slot is free and a task is
+ * ready; selection keeps working while tasks run. Pauses when nothing could be started.
+ */
+export async function serve(r: Runner, options: ServeOptions = {}): Promise<void> {
+  const running = new Set<Promise<void>>()
+  let started = 0
+  for (;;) {
+    let idle = true
+    while (running.size < r.slots && (options.maxTasks === undefined || started < options.maxTasks)) {
+      const next = await selectNext(r)
+      if (!next) break
+      idle = false
+      started++
+      const run: Promise<void> = processTask(r, next.issue, next.baseSha).finally(() => running.delete(run))
+      running.add(run)
+    }
+    const exhausted = options.maxTasks !== undefined && started >= options.maxTasks
+    if (exhausted || (options.stopWhenIdle && idle && running.size === 0)) {
+      await Promise.all(running)
+      return
+    }
+    if (running.size === r.slots || !idle) {
+      // All slots busy, or a task just started: look again when a run ends or after a pause.
+      if (running.size === r.slots) await Promise.race(running)
+      continue
+    }
+    r.log(`no task to start (${running.size} of ${r.slots} slots busy); next check after the pause`)
+    await Promise.race([r.pause(), ...running])
+  }
 }
 
 /** Preview mode: fetch, version check, reconciliation and selection, with no task database writes and no image build. */

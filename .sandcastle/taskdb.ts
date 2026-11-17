@@ -7,7 +7,10 @@ import { execFileSync } from 'node:child_process'
 import type { Issue } from './followups.ts'
 import type { NewIssue, TaskDb } from './ports.ts'
 
-export function bdTaskDb({ repo, beadsDir }: { repo: string; beadsDir: string }): TaskDb {
+/** Exit code of bd when an --if-assignee or --if-status condition does not hold. */
+const CONDITION_NOT_MET = 13
+
+export function bdTaskDb({ repo, beadsDir, assignee }: { repo: string; beadsDir: string; assignee: string }): TaskDb {
   const bd = (args: string[]): string =>
     execFileSync('bd', args, {
       cwd: repo,
@@ -26,7 +29,16 @@ export function bdTaskDb({ repo, beadsDir }: { repo: string; beadsDir: string })
     epics: () => json<Issue[]>(['list', '--type', 'epic', '--limit', '0']),
     listUnder: (epicId) => json<Issue[]>(['list', '--parent', epicId, '--all', '--limit', '0']),
     assumptionTasks: (scope) => json<Issue[]>(['list', '--metadata-field', 'type=assumptions', '--metadata-field', `epic=${scope}`, '--limit', '0']),
-    claim: (id) => void bd(['update', id, '--claim']),
+    // A plain --claim succeeds again for the same assignee, so it cannot tell two runs apart.
+    claim: (id) => {
+      try {
+        bd(['update', id, '--if-assignee', '', '--assignee', assignee, '--status', 'in_progress'])
+        return true
+      } catch (error) {
+        if ((error as { status?: number }).status === CONDITION_NOT_MET) return false
+        throw error
+      }
+    },
     unclaim: (id) => void bd(['unclaim', id]),
     comment: (id, text) => void bd(['comment', id, text]),
     update: (id, change) => {
