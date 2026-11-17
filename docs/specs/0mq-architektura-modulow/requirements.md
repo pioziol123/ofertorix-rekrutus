@@ -13,7 +13,7 @@ They apply to every task of the epic and are cited in each of them.
 | Criterion | Acceptance condition | Check |
 | --- | --- | --- |
 | W-AC01 | All of the project's automated quality checks pass: code rules and formatting, types, the application build, and automated tests including the tests on a real database. | Full run of the quality checks |
-| W-AC02 | The application's behaviour does not change beyond the changes described in the task's requirements. After the change, existing tests check the same behaviour. A test is removed or weakened only when the task deliberately changes the behaviour it checks; the task result names each such test and the reason. | Review of test changes |
+| W-AC02 | Removed on 2026-11-17: it referred to behaviour without naming it, so no task could tell what it protects. The ID is not reused. | — |
 | W-AC03 | Code created or moved in the task belongs to the module that owns its data and rules, and uses other modules only through their public operations, in line with the [architecture rules](../../architecture/moduly-i-zasady-kodu.md). | Code review |
 
 <a id="f2"></a>

@@ -31,7 +31,7 @@ This document carries the requirements over into technical language. Its decisio
 
 <a id="t-03"></a>
 
-**T-03. Database tests.** Integration tests run on an isolated PostgreSQL schema and an isolated pg-boss schema, like the existing integration tests. The shared database access mechanism is set to the isolated schema's pool before its first use. This is test setup, not a change to the test's assertions (W-AC02).
+**T-03. Database tests.** Integration tests run on an isolated PostgreSQL schema and an isolated pg-boss schema, like the existing integration tests. The shared database access mechanism is set to the isolated schema's pool before its first use. This is test setup, not a change to the test's assertions.
 
 <a id="f2"></a>
 
