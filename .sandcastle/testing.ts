@@ -5,7 +5,7 @@
  * Git operations are real. No network is used.
  */
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { excludeAgentFiles, GATE, RESULT_FILE, REVIEW_FILE, type Runner } from './flow.ts'
@@ -299,4 +299,31 @@ export function exchangeFile(w: World, path: string): string | null {
   } catch {
     return null
   }
+}
+
+/**
+ * Installs a pre-receive hook in the exchange point, so a test acts at the moment of the
+ * runner's push: between its last fetch and the ref update. The script runs once per push
+ * in the bare repository; `$1` is a counter file the test can read.
+ */
+export function onExchangePush(w: World, script: string): string {
+  const counter = join(w.base, 'pushes')
+  const hook = join(w.exchange, 'hooks', 'pre-receive')
+  writeFileSync(hook, `#!/bin/sh\nn=$(($(cat "${counter}" 2>/dev/null || echo 0) + 1)); echo $n > "${counter}"\n${script}\n`)
+  chmodSync(hook, 0o755)
+  return counter
+}
+
+/**
+ * Prepares another party's commit on top of the exchange point's main without moving main:
+ * it waits on a side branch, and a push hook moves main to it, as a concurrent push would.
+ */
+export function racingCommit(w: World, files: Record<string, string>, message: string): string {
+  sh(w.other, 'fetch', '--quiet', 'origin')
+  sh(w.other, 'checkout', '--quiet', '--detach', 'origin/main')
+  for (const [path, content] of Object.entries(files)) writeFile(w.other, path, content)
+  sh(w.other, 'add', '-A')
+  sh(w.other, 'commit', '--quiet', '-m', message)
+  sh(w.other, 'push', '--quiet', 'origin', 'HEAD:refs/heads/race')
+  return sh(w.other, 'rev-parse', 'HEAD')
 }

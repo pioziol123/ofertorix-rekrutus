@@ -2,7 +2,7 @@
 // A bare repository stands in for GitHub; another clone pushes the other party's changes
 // between the runner's steps. No network is used (W-AC02).
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import { cycle } from './flow.ts'
@@ -14,7 +14,9 @@ import {
   doneResult,
   exchangeFile,
   exchangeMain,
+  onExchangePush,
   pushFiles,
+  racingCommit,
   sh,
   world,
   writeFile,
@@ -50,18 +52,29 @@ describe('uuk.3: delivery with a changing exchange point', () => {
   })
 
   it('U3-AC02: a change between the fetch and the push rejects the first delivery and the retry succeeds', async () => {
-    let pushes = 0
-    w = world(agent(() => void pushFiles(w.other, { 'a.txt': 'a\n' }, 'other: a')))
-    // The gate after the first replay runs between the delivery's fetch and its push.
-    w.sandboxes.gate = (kind) => {
-      if (kind === 'fresh' && freshGates() === 2 && pushes++ === 0) pushFiles(w.other, { 'b.txt': 'b\n' }, 'other: b')
-      return 0
-    }
+    let race = ''
+    let pushes = ''
+    w = world(agent(() => {
+      race = racingCommit(w, { 'race.txt': 'race\n' }, 'other: pushed at the moment of delivery')
+      // The other party's push lands right at the runner's first push, after its fetch.
+      pushes = onExchangePush(w, `if [ "$n" = 1 ]; then env -u GIT_QUARANTINE_PATH -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git update-ref refs/heads/main ${race}; fi`)
+    }))
     await cycle(w.runner)
+    assert.equal(readFileSync(pushes, 'utf8').trim(), '2', 'the first push was rejected, the second accepted')
     assert.equal(w.db.show('t-1').status, 'closed')
-    for (const file of ['a.txt', 'b.txt', 'feature.txt']) assert.ok(exchangeFile(w, file), file)
-    assert.equal(freshGates(), 3)
-    assert.match(w.logs.join('\n'), /retry 2 of 5/)
+    assert.equal(sh(w.exchange, 'rev-parse', 'main~1'), race, 'the other party\'s change is kept, the work on top of it')
+    assert.equal(exchangeFile(w, 'race.txt'), 'race')
+    assert.equal(exchangeFile(w, 'feature.txt'), 'feature')
+    assert.equal(freshGates(), 2)
+    assert.match(w.logs.join('\n'), /retry 1 of 5/)
+  })
+
+  it('returns the task with git\'s message when a push fails and main on GitHub did not change', async () => {
+    w = world(agent(() => void onExchangePush(w, 'echo "declined by the exchange point" >&2; exit 1')))
+    await cycle(w.runner)
+    assert.match(commentsOf('t-1'), /Delivery failed:[\s\S]*declined by the exchange point/)
+    assert.ok(w.db.show('t-1').labels?.includes('needs-info'))
+    assert.equal(exchangeFile(w, 'feature.txt'), null)
   })
 
   it('U3-AC03: a change of a task document runs the review again; another change repeats only the gate', async () => {
@@ -139,6 +152,15 @@ describe('uuk.3: delivery with a changing exchange point', () => {
     assert.equal(w.db.show('t-1').status, 'closed')
     assert.equal(commentsOf('t-1').includes('returned'), false)
     assert.deepEqual(w.db.claims, ['t-1'], 'no new task while the delivery waited')
+    assert.equal(exchangeFile(w, 'feature.txt'), 'feature')
+  })
+
+  it('U3-AC07: GitHub lost at the moment of the push makes the work wait, and it is delivered once GitHub is back', async () => {
+    w = world(agent(() => void onExchangePush(w, `if [ "$n" = 1 ]; then GIT_DIR="${w.runnerCopy}/.git" git config remote.origin.url "${w.base}/gone.git"; exit 1; fi`)))
+    w.onPause = () => sh(w.runnerCopy, 'remote', 'set-url', 'origin', w.exchange)
+    await cycle(w.runner)
+    assert.equal(w.pauses, 1)
+    assert.equal(w.db.show('t-1').status, 'closed')
     assert.equal(exchangeFile(w, 'feature.txt'), 'feature')
   })
 
