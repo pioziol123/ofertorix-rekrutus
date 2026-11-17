@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { closePool, setPool, transaction } from '../../lib/db.ts'
-import { readOffer } from '../../lib/offers.ts'
+import { readOffer } from '../offers/index.ts'
 import { hash } from './domain/canonical-hash.ts'
 import {
   toConnectorAd,
@@ -231,13 +231,13 @@ integration('batch save in an isolated PostgreSQL schema', () => {
       ad('undated'),
     ])
 
-    const expired = await readOffer(pool, await adId('expired'))
+    const expired = await readOffer(await adId('expired'))
     expect(expired).toMatchObject({
       availability: 'available',
       expired: true,
       validTo: '2020-01-01T00:00:00.000Z',
     })
-    const undated = await readOffer(pool, await adId('undated'))
+    const undated = await readOffer(await adId('undated'))
     expect(undated).toMatchObject({
       availability: 'available',
       expired: false,

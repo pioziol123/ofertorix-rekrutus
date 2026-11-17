@@ -1,7 +1,7 @@
 import { defaultWeights, weightsSchema, type Weights } from './weights.ts'
 import { z } from 'zod'
 import type { ProfileData } from '../../modules/profile/index.ts'
-import type { OfferView } from '../offers.ts'
+import type { OfferView } from '../../modules/offers/index.ts'
 import { scrubContacts } from '../profile/imports.ts'
 
 export const groups = [

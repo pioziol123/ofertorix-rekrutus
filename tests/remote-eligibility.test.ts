@@ -3,7 +3,7 @@ import {
   assessRemoteEligibility,
   remoteEligibilityLabel,
 } from '../lib/sources/remote-eligibility.ts'
-import { projectOffer } from '../lib/offers.ts'
+import { projectOffer } from '../modules/offers/index.ts'
 
 describe('evidence for remote work from Poland', () => {
   it.each([

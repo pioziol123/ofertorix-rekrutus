@@ -19,7 +19,7 @@ import {
   parseJobspy,
   queueFor,
 } from '../lib/sources/jobspy.ts'
-import { projectOffer } from '../lib/offers.ts'
+import { projectOffer } from '../modules/offers/index.ts'
 import { job, result, sourceResult } from './fixtures/jobspy/result.ts'
 
 afterEach(() => vi.unstubAllEnvs())

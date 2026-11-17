@@ -6,7 +6,7 @@ import {
   companyLinkCommand,
   type CompanyRole,
 } from './model.ts'
-import { projectOffer } from '../offers.ts'
+import { projectOffer } from '../../modules/offers/index.ts'
 export class CompanyConflict extends Error {}
 export class CompanyNotFound extends Error {}
 const uuid = z.uuid()

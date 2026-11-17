@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parsePolish, polishQuery, runPolish } from '../lib/sources/polish.ts'
-import { projectOffer } from '../lib/offers.ts'
+import { projectOffer } from '../modules/offers/index.ts'
 import {
   query,
   record,

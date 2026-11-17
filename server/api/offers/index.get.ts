@@ -1,8 +1,5 @@
-import {
-  decorateMatching,
-  matchingListStatus,
-} from '../../../lib/matching/list'
-import { filterOffers, parseFilters, readOffers } from '../../../lib/offers'
+import { matchingListStatus } from '../../../lib/matching/list'
+import { listOffers, parseFilters } from '../../../modules/offers'
 import { syncStatus } from '../../../lib/sources/sync'
 import { jobspyCatalogStatus } from '../../../lib/sources/jobspy-sync'
 import { polishCatalogStatus } from '../../../lib/sources/polish-sync'
@@ -14,15 +11,15 @@ export default defineEventHandler(async (event) => {
   } catch {
     throw createError({ statusCode: 400, statusMessage: 'Invalid filters' })
   }
-  const [offers, sync, jobspy, polish, matching] = await Promise.all([
-    readOffers(database),
+  const [list, sync, jobspy, polish, matching] = await Promise.all([
+    listOffers(filters),
     syncStatus(database),
     jobspyCatalogStatus(database),
     polishCatalogStatus(database),
     matchingListStatus(database),
   ])
   return {
-    ...filterOffers(await decorateMatching(database, offers), filters),
+    ...list,
     matching,
     jobspy,
     polish,

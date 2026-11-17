@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { tx } from '../profile/store.ts'
-import { projectOffer } from '../offers.ts'
+import { projectOffer } from '../../modules/offers/index.ts'
 import {
   readActiveProfileVersion,
   readProfileVersionMetadata,

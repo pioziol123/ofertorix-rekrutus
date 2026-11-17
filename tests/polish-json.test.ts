@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parsePolish } from '../lib/sources/polish.ts'
-import { projectOffer } from '../lib/offers.ts'
+import { projectOffer } from '../modules/offers/index.ts'
 import { nfjAliasRecord } from './fixtures/polish/json-record.ts'
 import { query, record, result } from './fixtures/polish/result.ts'
 

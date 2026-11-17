@@ -13,7 +13,7 @@ import { aiConfiguration, type AiConfiguration } from '../ai/configuration.ts'
 import { chargeCeiling, reserve } from '../ai/budget.ts'
 import { tx } from '../profile/store.ts'
 import type { ProfileVersion } from '../../modules/profile/index.ts'
-import { projectOffer } from '../offers.ts'
+import { projectOffer } from '../../modules/offers/index.ts'
 import { requireQueued } from '../queue.ts'
 import {
   matchingInput,

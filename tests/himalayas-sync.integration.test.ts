@@ -18,7 +18,7 @@ import {
 } from '../lib/sources/himalayas.ts'
 import { syncHimalayas } from '../lib/sources/himalayas-sync.ts'
 import { hash } from '../lib/sources/solid.ts'
-import { readOffers } from '../lib/offers.ts'
+import { readOffers } from '../modules/offers/read-offers.ts'
 import { himalayasWith } from './source-connectors.fixtures.ts'
 
 const integration =
@@ -117,7 +117,7 @@ integration(
       ).rows[0].payload
       expect(payload.sourceRecord).toEqual(raw('one'))
       expect(payload.validFrom).toBeNull()
-      const offers = await readOffers(pool)
+      const offers = await readOffers()
       expect(offers[0]).toMatchObject({
         source: 'Himalayas',
         url: raw('one').applicationLink,

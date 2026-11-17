@@ -12,7 +12,7 @@ import {
   vi,
 } from 'vitest'
 import { decorateMatching, matchingListStatus } from '../lib/matching/list.ts'
-import { projectOffer } from '../lib/offers.ts'
+import { projectOffer } from '../modules/offers/index.ts'
 import {
   activeProfileVersion,
   manualContext,

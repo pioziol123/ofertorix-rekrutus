@@ -12,7 +12,8 @@ import {
   runJobspy,
 } from '../lib/sources/jobspy.ts'
 import { enqueueJobspy, jobspyStatus } from '../lib/sources/jobspy-sync.ts'
-import { parseFilters, projectOffer, salaryMatch } from '../lib/offers.ts'
+import { parseFilters, projectOffer } from '../modules/offers/index.ts'
+import { salaryMatch } from '../modules/offers/domain/salary-match.ts'
 import { job, result } from './fixtures/jobspy/result.ts'
 import { jobspySources } from '../lib/sources/jobspy-catalog.ts'
 
@@ -21,7 +22,9 @@ afterEach(() => vi.unstubAllEnvs())
 describe('JobSpy contract and projection', () => {
   it('versions the Indeed adapter independently from other sources', () => {
     expect(parametersFor('indeed').adapterVersion).toBe(5)
-    for (const source of jobspySources.filter((source) => source !== 'indeed')) {
+    for (const source of jobspySources.filter(
+      (source) => source !== 'indeed',
+    )) {
       expect(parametersFor(source).adapterVersion).toBe(3)
     }
   })

@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import { request } from 'node:http'
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { closePool, setPool } from '../lib/db.ts'
 import { companyRoles } from '../lib/companies/model.ts'
 import {
   changeCompanyLink,
@@ -13,7 +14,7 @@ import {
   offerCompanies,
   readCompany,
 } from '../lib/companies/store.ts'
-import { readOffer } from '../lib/offers.ts'
+import { readOffer } from '../modules/offers/index.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -57,6 +58,7 @@ integration('company profiles in isolated PostgreSQL', () => {
         sql: (s: string) => sql.push(s),
       })
     await pool.query(sql.join('\n'))
+    setPool(pool)
   })
   beforeEach(async () => {
     await pool.query(
@@ -99,7 +101,7 @@ integration('company profiles in isolated PostgreSQL', () => {
     )
   })
   afterAll(async () => {
-    await pool?.end()
+    await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
       await admin.end()
@@ -318,7 +320,7 @@ integration('company profiles in isolated PostgreSQL', () => {
         expect.objectContaining({ revisionId, action: 'link' }),
       ]),
     )
-    expect(await readOffer(pool, adId)).toMatchObject({ title: 'New role' })
+    expect(await readOffer(adId)).toMatchObject({ title: 'New role' })
   })
   it('rejects nonexistent targets and invalid commands without receipts or history', async () => {
     const company = await create()

@@ -21,7 +21,7 @@ import {
 import { jobspyQueue, queueFor } from '../lib/sources/jobspy.ts'
 import { enqueueSync } from '../lib/sources/sync.ts'
 import { hash, importQueue } from '../lib/sources/solid.ts'
-import { readOffers } from '../lib/offers.ts'
+import { readOffers } from '../modules/offers/read-offers.ts'
 import { job, result, sourceResult } from './fixtures/jobspy/result.ts'
 import { jobspyWith, solidJobsWith } from './source-connectors.fixtures.ts'
 import { deliver, recover } from './sync-run.fixtures.ts'
@@ -150,7 +150,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     expect(
       (await pool.query('SELECT * FROM source_ad_revisions')).rowCount,
     ).toBe(3)
-    const view = (await readOffers(pool))[0]!
+    const view = (await readOffers())[0]!
     expect(view).toMatchObject({
       source: 'Indeed',
       title: 'PHP engineer',

@@ -20,7 +20,7 @@ import {
   polishSources,
   type PolishQuery,
 } from '../lib/sources/polish.ts'
-import { readOffers } from '../lib/offers.ts'
+import { readOffers } from '../modules/offers/read-offers.ts'
 import { deliver, recover } from './sync-run.fixtures.ts'
 import { hash } from '../lib/sources/solid.ts'
 import { nfjAliasRecord } from './fixtures/polish/json-record.ts'
@@ -146,7 +146,7 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
       expect(
         (await pool.query('SELECT * FROM source_ad_revisions')).rows,
       ).toHaveLength(3)
-      const offers = await readOffers(pool)
+      const offers = await readOffers()
       expect(offers[0]).toMatchObject({
         source: polishCatalog[source].name,
         url: record(source).url,

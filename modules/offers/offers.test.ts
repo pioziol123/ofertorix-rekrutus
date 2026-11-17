@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import { filterOffers } from './domain/filter-offers.ts'
+import { hasSalaryFilter, offerFilterQuery } from './view.ts'
+import { parseFilters } from './domain/filters.ts'
+import { salaryMatch } from './domain/salary-match.ts'
 import {
-  filterOffers,
-  hasSalaryFilter,
-  offerFilterQuery,
-  parseFilters,
   plainDescription,
   projectOffer,
   safeUrl,
-  salaryMatch,
-} from '../lib/offers.ts'
+} from './infrastructure/adapters/source-ad-projection.ts'
 
 const row = (payload: Record<string, unknown> = {}, id = 'a') => ({
   id,

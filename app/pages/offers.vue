@@ -9,7 +9,7 @@ import {
   offerFilterQuery,
   hasSalaryFilter,
   type Salary,
-} from '../../lib/offers'
+} from '../../modules/offers/view'
 useHead({ title: 'Oferty pracy — przegląd' })
 const route = useRoute()
 const keys = [
