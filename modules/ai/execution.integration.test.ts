@@ -23,7 +23,6 @@ import {
   readExecution,
   readExecutionHistory,
   recoverExecutions,
-  registerProviderAdapter,
   registerResultReceiver,
   requestExecution,
   requestExecutionGroup,
@@ -34,9 +33,10 @@ import {
   type ExecutionResultDelivery,
   type ModelResult,
   type ModelUsage,
-  type ProviderAdapter,
   type ReceiverDecision,
 } from './index.ts'
+import type { ProviderAdapter } from './provider-adapter.ts'
+import { registerProviderAdapter } from './provider-registry.ts'
 
 // A client's own settings key, a simulated provider and its price list.
 // AI must work with any key a client defines.

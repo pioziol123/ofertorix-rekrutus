@@ -36,8 +36,6 @@ export {
 } from './execution-queue.ts'
 export { runExecution } from './run-execution.ts'
 export { recoverExecutions } from './recover-executions.ts'
-export { registerProviderAdapter } from './provider-registry.ts'
-export type { ProviderAdapter, ProviderSettings } from './provider-adapter.ts'
 
 // Transitional: what the Profile, Matching and Companies use today, until
 // tasks oferty-pracy-0mq.9 and oferty-pracy-0mq.17 move them to the
