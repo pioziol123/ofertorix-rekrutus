@@ -586,14 +586,14 @@ Requirements: [A14](requirements.md#a14). F4 scope: [F4](requirements.md#f4). St
 
    The client depends only on the public entry point, and coordination only on the adapter contract.
 2. **Execution request.** The request works in the client's transaction (the shared mechanism from 0mq.13) and takes:
-   - the job type: the existing configuration and price list key,
+   - the settings key: a name the client defines for itself (e.g. `profile`), under which AI keeps that client's execution settings (decision 10),
    - the identifier of the domain operation and an optional input version,
    - the execution mode: single, a batch item with a group identifier, or agent work,
    - the instruction, the response schema and the input.
 
    It fixes a snapshot of the configuration and price list, reserves the budget by the existing rules (or saves a wait for budget), and sends the job to the AI execution queue in the same transaction. It returns the execution identifier and the initial state. For a group, the reservation covers the whole group or nothing.
 3. **One active execution per operation.** The AI module ensures that a given domain operation has at most one execution in progress. The rule is enforced by a partial index on the execution data. This replaces the existing rule of one attempt in progress per import in the Profile data; task 0mq.9 carries out the migration.
-4. **Result receiver.** For a job type, the client registers a result receiver: a contract defined by AI and implemented by the client's integrating layer. Registration happens where dependencies are composed (worker, server). The receiver is called in one of two cases:
+4. **Result receiver.** For a settings key, the client registers a result receiver: a contract defined by AI and implemented by the client's integrating layer. Registration happens where dependencies are composed (worker, server). The receiver is called in one of two cases:
    - **A result that matches the schema:** AI passes the operation identifier, the input version, the result and the cost information. The receiver returns the decision "accepted" or "rejected with a reason".
    - **A final state without a result:** AI passes the cause.
 
@@ -604,12 +604,21 @@ Requirements: [A14](requirements.md#a14). F4 scope: [F4](requirements.md#f4). St
    - **Agent:** starting work with allowed tools, the result, the materials and the usage of each step.
 
    Coordination computes the cost from the usage and the price list snapshot. The existing OpenAI (single call) and Ollama adapters go into the module as single-mode adapters. The OpenAI batch adapter and the research adapter are created from the Matching and Companies code in task 0mq.17.
-6. **Configuration and budget.** The existing configuration, prices, cost arithmetic and monthly budget move into the module without changing behaviour (E01). Reservation and settlement work in the current transaction.
+6. **Configuration and budget.** The cost arithmetic and the monthly budget move into the module without changing behaviour (E01-AC02–AC04). Configuration changes as decision 10 describes, which replaces E01-AC01. Reservation and settlement work in the current transaction.
 7. **Reads.** Public AI reads:
    - **Execution:** state, result, usage, cost (reserved, actual, unknown), cause, and the operation's attempt history.
    - **Budget:** the period limit, the reserved and settled amounts, the funds available.
 8. **Transition.** Until tasks 0mq.9 and 0mq.17, the AI public entry point also exports what the Profile, Matching and Companies use today: configuration, budget and adapters. These exports are marked as transitional, and tasks 0mq.9 and 0mq.17 remove them.
 9. **Simplifications** (F4) are described in the AI module description, in the section on the state of implementation, with a reference to the epic `oferty-pracy-sq2`.
+10. **Execution settings belong to the client and are kept by AI.** The client owns the settings of its executions; AI stores them, validates them and uses them to build the provider request. The division:
+    - **Settings under a key (the client decides):** the provider, the model and the reasoning effort. Nothing else.
+    - **AI configuration (AI decides):** the price list per model, the token limits, the endpoints and credentials, the execution mode a provider supports, and provider runtime parameters such as the local context window. These may be fixed in the AI code for now.
+
+    The key is an opaque string in the public contract (`string`, not a closed list of values). AI checks that settings exist for it and that they are complete and valid for the chosen provider and model (e.g. that the model accepts the reasoning effort); otherwise the request is refused with the cause `not_configured`. For now AI holds the settings as a fixed object in its code, one entry per key (`profile`, `matching`, `research`), with the values that today's environment and code produce, so provider requests do not change (E01-AC04). The object is data: no AI code branches on a key value, and the key literals appear in that one file only. A later task moves the settings to a database table changed through an AI operation; that change does not touch the rest of the AI code.
+
+    The variables `AI_PROFILE_PRICING_JSON`, `AI_MATCHING_PRICING_JSON`, `AI_RESEARCH_PRICING_JSON` and `AI_*_EXECUTION_JSON` are removed. Changing a client's provider or model requires changing the code until the settings table exists; the owner accepted this. The rule that Matching on OpenAI must run as a batch is removed from AI; until task 0mq.17 Matching keeps its batch path in its own code. The transitional exports (decision 8) read prices and limits from the same fixed AI configuration.
+
+    Options discarded: a closed list of job types in the public contract (AI would know its clients); an opaque key with settings in the client's own configuration (the owner wants AI to keep and validate the settings, like a bank keeping its clients' accounts); keeping the environment variables (none needed while the settings are fixed in code).
 
 ### Verification
 
@@ -617,7 +626,8 @@ Requirements: [A14](requirements.md#a14). F4 scope: [F4](requirements.md#f4). St
 | --- | --- |
 | A14-AC01 | Review of the AI public entry point. |
 | A14-AC02–AC04 | Integration test according to T-03 with a simulated adapter and a test receiver. AC04: the receiver rejects the result, and the cost is settled; the adapter returns no usage, and the cost stays reserved. |
-| A14-AC05 | Tests from the stage 1 SD and existing configuration and budget tests. |
+| A14-AC05 | Tests from the stage 1 SD for E01-AC02–AC04 and existing budget tests. |
+| A14-AC08 | Unit tests of the settings validation: a missing key, an unknown provider or model, a reasoning effort the model does not accept. A search of the AI module finds the key literals only in the settings file. |
 | A14-AC06 | Review of the module description. |
 | A14-AC07 | Review of the dependencies of the AI coordination, adapters and public entry point. |
 
@@ -643,7 +653,7 @@ Requirements: [A9](requirements.md#a9). Stage 2: [requirements](../lokalne-ai/et
   The existing Profile-specific fields become optional and are not used by the new code; removing them belongs to the epic `oferty-pracy-sq2`.
 - **The import read** shows the state of proposal preparation from the AI execution read.
 - **Transitional exports.** The Profile stops using the transitional AI exports from 0mq.14. Removing the exports that no other module uses any more belongs to this task.
-- **The AI module description** gets a section on adding an execution path: a new adapter, or a new job type with configuration and a result receiver.
+- **The AI module description** gets a section on adding an execution path: a new adapter, or a new settings key with its settings and a result receiver.
 
 ### Verification
 

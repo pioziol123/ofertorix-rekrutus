@@ -385,8 +385,9 @@ The AI module provides general capabilities for working with a model, independen
 | A14-R03 | Provider details (protocol, job state at the provider, further integration steps, usage data) belong to its adapter. The adapter carries out settlement in the flow set by the AI module and does not set its own module policy. |
 | A14-R04 | The requesting module prepares the request, interprets the result and decides how to apply it. AI does not save the client's business data. |
 | A14-R05 | The execution result reaches the requesting module through a contract defined by AI, and settlement may happen in the same operation as the client's publication of the result. |
-| A14-R06 | Configuration, prices and cost arithmetic have one owner in the AI module and work as before (E01-AC01–02). Checking the budget, saving the attempt and requesting the work stay in one operation (E01-AC03). |
+| A14-R06 | Prices and cost arithmetic have one owner in the AI module and work as before (E01-AC02). The pricing environment variables named in E01-AC01 are replaced by configuration in the AI module (A14-R08); E01-AC01 no longer applies. Checking the budget, saving the attempt and requesting the work stay in one operation (E01-AC03). |
 | A14-R07 | Simplifications are explicitly described in the AI module description and kept separate from the requirements of the epic `oferty-pracy-sq2`. |
+| A14-R08 | The requesting module owns the settings of its executions and names them with a key it defines. The settings are the provider, the model and the reasoning effort; everything else (prices, limits, endpoints) is AI configuration. AI keeps the settings, refuses a request whose settings are missing or invalid, and does not know which modules use it. |
 
 | Criterion | Acceptance condition | Check |
 | --- | --- | --- |
@@ -394,8 +395,9 @@ The AI module provides general capabilities for working with a model, independen
 | A14-AC02 | An execution request with a simulated provider goes through the queue and ends with a state, result, usage and cost available through a read; the result reaches the client's registered receiver. | Automated test on a real database and queue |
 | A14-AC03 | Rolling back the client's operation rolls back the execution request and the budget reservation. | Same as above |
 | A14-AC04 | When the client rejects the result, the cost incurred is still settled; an unknown cost stays reserved. | Same as above |
-| A14-AC05 | Criteria E01-AC01–04 are met. | Tests named in the stage 1 SD and existing configuration and budget tests |
+| A14-AC05 | Criteria E01-AC02–04 are met. | Tests named in the stage 1 SD and existing budget tests |
 | A14-AC06 | The AI module description lists the simplifications and refers improvements to `oferty-pracy-sq2`. | Documentation review |
+| A14-AC08 | A request with a missing settings key, or with settings whose provider, model or reasoning effort AI does not accept, is refused with the cause `not_configured`. Settings with today's values give the same provider requests as before. No AI code depends on a particular key value. | Unit tests and code review |
 | A14-AC07 | Provider protocols and states appear only in the adapters; the AI coordination and the requesting modules do not know them, and AI does not save the clients' business data. | Code review |
 
 <a id="a9"></a>
