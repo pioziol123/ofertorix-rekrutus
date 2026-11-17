@@ -24,6 +24,14 @@ The architecture rules span several files with different roles:
 
 Paths to agent documentation live in this file only. A process document, a skill or a runner prompt names another family by its name from the map above, for example "the architecture rules", and the reader finds the path here. A document may still give paths to the files it describes itself and to files of its own family. Specifications may link a specific rule they cite as evidence. When a family moves or splits, update its row in the map.
 
+## Talking to the owner
+
+The owner thinks in the domain: what a person using the application sees and what goes wrong for them. Every reply to the owner follows three rules. They apply most when you relay another agent's work, such as a blocker, an assumption or a review finding, because that text carries the other agent's vocabulary.
+
+- **Domain first.** Open with the problem in domain terms from the glossary in the domain docs: who is affected and what breaks. Give the mechanism (code, contracts, diffs, document quotes) after that, and only as far as the decision needs it. A proposal names the problem it solves before it names the solution.
+- **Expand every label.** A term the owner has not used in this conversation gets its meaning in the same sentence. This covers task-internal identifiers (assumption and requirement numbers), error codes, function names and words you coined. When a word has several meanings in the project, say which one you mean.
+- **Echo before acting.** When a short reply could refer to more than one thing you raised, restate in one sentence what you understood, then act. Wait for confirmation before a change that alters a requirement or creates a task.
+
 
 ## Non-Interactive Shell Commands
 
