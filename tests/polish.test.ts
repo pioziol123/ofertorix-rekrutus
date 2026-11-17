@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parsePolish, polishQuery, runPolish } from '../lib/sources/polish.ts'
-import { projectOffer } from '../modules/offers/index.ts'
+import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 import {
   query,
   record,
@@ -57,7 +57,9 @@ describe('Polish source contract', () => {
         }),
       ]),
     )
-    expect(projectOffer({ source: 'bulldogjob', payload: job })).toMatchObject({
+    expect(
+      projectSourceAd({ source: 'bulldogjob', payload: job }),
+    ).toMatchObject({
       source: 'Bulldogjob',
       mode: 'remote',
       skills: [
@@ -79,15 +81,15 @@ describe('Polish source contract', () => {
         basis: 'netto (+ VAT)',
       }),
     ])
-    expect(projectOffer({ source: 'theprotocol', payload: job })).toMatchObject(
-      {
-        source: 'theprotocol.it',
-        skills: [
-          { name: 'PHP', optional: false },
-          { name: 'Go', optional: true },
-        ],
-      },
-    )
+    expect(
+      projectSourceAd({ source: 'theprotocol', payload: job }),
+    ).toMatchObject({
+      source: 'theprotocol.it',
+      skills: [
+        { name: 'PHP', optional: false },
+        { name: 'Go', optional: true },
+      ],
+    })
   })
   it('projects actual theprotocol detail currencyCode, kindCode and home-office fields', () => {
     const q = query('theprotocol'),
@@ -103,20 +105,20 @@ describe('Polish source contract', () => {
         basis: 'netto (+ VAT)',
       }),
     ])
-    expect(projectOffer({ source: 'theprotocol', payload: job })).toMatchObject(
-      {
-        mode: 'remote',
-        salaries: [
-          expect.objectContaining({
-            from: 100,
-            to: 150,
-            currency: 'PLN',
-            period: 'Hour',
-            contract: 'B2B',
-          }),
-        ],
-      },
-    )
+    expect(
+      projectSourceAd({ source: 'theprotocol', payload: job }),
+    ).toMatchObject({
+      mode: 'remote',
+      salaries: [
+        expect.objectContaining({
+          from: 100,
+          to: 150,
+          currency: 'PLN',
+          period: 'Hour',
+          contract: 'B2B',
+        }),
+      ],
+    })
     expect(job.sourceRecord).toEqual({
       listing: raw.listing,
       detail: raw.detail,

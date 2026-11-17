@@ -1,16 +1,21 @@
-import { assessRemoteEligibility } from '../../../../lib/sources/remote-eligibility.ts'
+import { assessRemoteEligibility } from '../../../lib/sources/remote-eligibility.ts'
 import {
   polishCatalog,
   type PolishSource,
-} from '../../../../lib/sources/polish-catalog.ts'
+} from '../../../lib/sources/polish-catalog.ts'
 import {
   jobspyCatalog,
   type JobspySource,
-} from '../../../../lib/sources/jobspy-catalog.ts'
-import type { OfferView, Salary } from '../../offer-view.ts'
+} from '../../../lib/sources/jobspy-catalog.ts'
+import {
+  missingAdCompany,
+  missingAdTitle,
+  type Salary,
+  type SourceAdContent,
+} from '../source-ad.ts'
 
-// Translates a stored source ad and its current content into an offer.
-// Task 0mq.6 moves this projection into the Sources read contract.
+// Translates a stored ad and the content of one of its versions, saved in
+// the source's own form, into the unified form of the Sources read.
 const text = (v: unknown): string | null =>
   typeof v === 'string' && v.trim() ? v.trim() : null
 const number = (v: unknown): number | null =>
@@ -52,10 +57,10 @@ export function plainDescription(v: unknown): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
-export function projectOffer(
+export function projectSourceAd(
   row: Record<string, unknown>,
   now = new Date(),
-): OfferView {
+): SourceAdContent {
   const p =
     row.payload && typeof row.payload === 'object'
       ? (row.payload as Record<string, unknown>)
@@ -108,8 +113,8 @@ export function projectOffer(
   const validTo = date(row.valid_to)
   return {
     id: String(row.id),
-    title: text(p.title) ?? 'Stanowisko bez nazwy',
-    company: text(p.company) ?? 'Firma niepodana',
+    title: text(p.title) ?? missingAdTitle,
+    company: text(p.company) ?? missingAdCompany,
     url: safeUrl(row.url),
     description: plainDescription(p.description),
     salaries,
@@ -134,9 +139,6 @@ export function projectOffer(
     availability:
       row.availability === 'unavailable' ? 'unavailable' : 'available',
     expired: validTo !== null && new Date(validTo) < now,
-    revisions: Array.isArray(row.revisions)
-      ? (row.revisions as OfferView['revisions'])
-      : [],
     ...(typeof row.source === 'string' &&
     (Object.hasOwn(jobspyCatalog, row.source) ||
       Object.hasOwn(polishCatalog, row.source) ||

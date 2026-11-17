@@ -5,7 +5,11 @@ import type { PgBoss } from 'pg-boss'
 import { z } from 'zod'
 import { tx } from '../profile/store.ts'
 import { requireQueued } from '../queue.ts'
-import { activeProfileVersion } from './ratings.ts'
+import {
+  activeProfileVersion,
+  adsForAssessment,
+  currentAdVersions,
+} from './ratings.ts'
 import {
   BatchClient,
   BatchError,
@@ -116,8 +120,10 @@ export async function enqueueMatchingGroup(
   const command = groupCommandSchema.parse(value)
   const ids = [...command.offerIds].sort()
   // One read of the active version for the whole group, before the
-  // transaction holds a connection: every offer gets the same version.
+  // transaction holds a connection: every offer gets the same version. The
+  // ads are read in bulk the same way, without a lock.
   const profile = await activeProfileVersion()
+  const ads = await adsForAssessment(ids)
   const client = await pool.connect()
   try {
     return await tx(client, async () => {
@@ -157,6 +163,7 @@ export async function enqueueMatchingGroup(
           offerId,
           config,
           profile,
+          ads.get(offerId),
           false,
         )
         items.push({ ...item, offerId })
@@ -232,8 +239,16 @@ export async function executeMatchingGroup(
   provider?: BatchClient,
 ) {
   // Read before this run holds its connection, so publishing results never
-  // waits for a second one; the read takes no lock (see applyMatchingLine).
+  // waits for a second one; the reads take no lock (see applyMatchingLine).
   const activeProfileVersionId = (await activeProfileVersion())?.id ?? null
+  const adVersions = await currentAdVersions(
+    (
+      await pool.query<{ ad_id: string }>(
+        'SELECT ad_id FROM matching_requests WHERE group_id=$1',
+        [id],
+      )
+    ).rows.map((request) => request.ad_id),
+  )
   const client = await pool.connect()
   try {
     if (
@@ -449,6 +464,7 @@ export async function executeMatchingGroup(
               results.get(member.id),
               batch,
               activeProfileVersionId,
+              adVersions.get(member.ad_id),
             )
         await client.query(
           "UPDATE matching_groups SET state='completed',error=NULL,updated_at=now() WHERE id=$1",

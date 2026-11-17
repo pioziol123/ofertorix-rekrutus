@@ -1,7 +1,7 @@
 import { defaultWeights, weightsSchema, type Weights } from './weights.ts'
 import { z } from 'zod'
 import type { ProfileData } from '../../modules/profile/index.ts'
-import type { OfferView } from '../../modules/offers/index.ts'
+import type { SourceAdContent } from '../../modules/sources/index.ts'
 import { scrubContacts } from '../profile/imports.ts'
 
 export const groups = [
@@ -170,7 +170,7 @@ export function calculate(
 
 export function salaryCheck(
   wanted: ProfileData['salary'],
-  salaries: OfferView['salaries'],
+  salaries: SourceAdContent['salaries'],
 ): MatchingInput['checks'][number] {
   const basis = (v: string | null | undefined): string | undefined =>
     ({
@@ -230,7 +230,7 @@ export function salaryCheck(
 
 export function matchingInput(
   profile: ProfileData,
-  offer: OfferView,
+  offer: SourceAdContent,
 ): MatchingInput {
   const criteria: Criterion[] = []
   const add = (group: Group, id: string, label: string, unknown = false) =>

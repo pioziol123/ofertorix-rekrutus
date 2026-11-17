@@ -12,7 +12,7 @@ import {
   vi,
 } from 'vitest'
 import { decorateMatching, matchingListStatus } from '../lib/matching/list.ts'
-import { projectOffer } from '../modules/offers/index.ts'
+import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 import {
   activeProfileVersion,
   manualContext,
@@ -113,7 +113,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
   })
   const activeId = async () => (await activeProfileVersion())?.id ?? null
   const offers = () => [
-    projectOffer({
+    projectSourceAd({
       id: ad,
       payload: {},
       first_seen_at: new Date(),

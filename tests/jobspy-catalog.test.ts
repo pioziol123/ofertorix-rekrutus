@@ -19,7 +19,7 @@ import {
   parseJobspy,
   queueFor,
 } from '../lib/sources/jobspy.ts'
-import { projectOffer } from '../modules/offers/index.ts'
+import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 import { job, result, sourceResult } from './fixtures/jobspy/result.ts'
 
 afterEach(() => vi.unstubAllEnvs())
@@ -59,9 +59,11 @@ describe('additional JobSpy sources', () => {
       )
       expect(batch.jobs).toHaveLength(1)
       expect(batch.diagnostics).toMatchObject({ outsideScope: 0 })
-      expect(projectOffer({ source, payload: batch.jobs[0] })).toMatchObject({
-        remoteEligibility: { status: 'unknown' },
-      })
+      expect(projectSourceAd({ source, payload: batch.jobs[0] })).toMatchObject(
+        {
+          remoteEligibility: { status: 'unknown' },
+        },
+      )
     },
   )
   it.each(['linkedin', 'bayt'] as const)(
@@ -75,7 +77,7 @@ describe('additional JobSpy sources', () => {
         qualificationUnknown: ['PHP', 'senior'],
         salary: { origin: 'unknown' },
       })
-      expect(projectOffer({ source, payload: batch.jobs[0] }).source).toBe(
+      expect(projectSourceAd({ source, payload: batch.jobs[0] }).source).toBe(
         source === 'linkedin' ? 'LinkedIn' : 'Bayt',
       )
       expect(batch.diagnostics).not.toHaveProperty('jobs')
@@ -141,7 +143,7 @@ describe('additional JobSpy sources', () => {
     expect(batch.jobs.map((j) => j.jobOfferKey)).toEqual(['foreign0'])
     expect(batch.diagnostics).toMatchObject({ outsideScope: 2, rejected: 0 })
     expect(
-      projectOffer({ source: 'bayt', payload: batch.jobs[0] }),
+      projectSourceAd({ source: 'bayt', payload: batch.jobs[0] }),
     ).toMatchObject({
       mode: 'remote',
       remoteEligibility: { status: 'unknown', evidence: [] },

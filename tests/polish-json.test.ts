@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parsePolish } from '../lib/sources/polish.ts'
-import { projectOffer } from '../modules/offers/index.ts'
+import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 import { nfjAliasRecord } from './fixtures/polish/json-record.ts'
 import { query, record, result } from './fixtures/polish/result.ts'
 
@@ -24,7 +24,7 @@ describe('JSON Polish portal records', () => {
       listing: raw.listing,
       detail: raw.detail,
     })
-    expect(projectOffer({ source: q.source, payload: job })).toMatchObject({
+    expect(projectSourceAd({ source: q.source, payload: job })).toMatchObject({
       source: 'Just Join IT',
       mode: 'remote',
       skills: [
@@ -79,7 +79,7 @@ describe('JSON Polish portal records', () => {
       listing: raw.listing,
       detail: raw.detail,
     })
-    expect(projectOffer({ source: q.source, payload: job })).toMatchObject({
+    expect(projectSourceAd({ source: q.source, payload: job })).toMatchObject({
       source: 'No Fluff Jobs',
       mode: 'remote',
       skills: [
