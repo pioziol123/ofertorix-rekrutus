@@ -598,7 +598,9 @@ Requirements: [A14](requirements.md#a14). F4 scope: [F4](requirements.md#f4). St
    - **A final state without a result:** AI passes the cause.
 
    AI calls the receiver in the transaction in which it saves the settlement. The client's publication and the settlement are therefore committed together. The cost is settled regardless of the receiver's decision; an unknown cost stays reserved.
-5. **Adapter contract.** An adapter declares the execution modes it supports:
+
+   **Execution and delivery are separate (decision 11).** An exception thrown by the receiver is neither a decision nor an outcome of the execution.
+5. **Adapter contract.** An adapter declares the execution modes it supports. A request in a mode that no adapter for the chosen provider supports is refused at request time with the cause `unsupported_mode`: no budget is reserved and no job is queued (decision 13).
    - **Single:** request, result and usage, with errors classified like the existing model errors.
    - **Batch:** creating a batch with item identifiers, polling the state, fetching results per item, and cleanup. It includes telling a missing result file apart from a correct result, and an uncertain state after sending.
    - **Agent:** starting work with allowed tools, the result, the materials and the usage of each step.
@@ -627,6 +629,9 @@ Requirements: [A14](requirements.md#a14). F4 scope: [F4](requirements.md#f4). St
 | A14-AC01 | Review of the AI public entry point. |
 | A14-AC02–AC04 | Integration test according to T-03 with a simulated adapter and a test receiver. AC04: the receiver rejects the result, and the cost is settled; the adapter returns no usage, and the cost stays reserved. |
 | A14-AC05 | Tests from the stage 1 SD for E01-AC02–AC04 and existing budget tests. |
+| A14-AC09 | Integration test according to T-03: the test receiver throws on the first delivery and accepts on the second. After the first delivery the execution is `delivering`, the result is saved, the cost is reserved and none of the receiver's writes remain; after the second it is `completed`, settled once, and the provider was called once. A receiver that always throws leaves the execution `delivering` after the retries, with the cost reserved. |
+| A14-AC10 | Unit or integration test: a batch request and an agent request are refused with `unsupported_mode`, with no reservation and no queued job. |
+| A14-AC11 | Review of the migration and the persistence code: new code writes and reads only `state` and `cause`; the transitional columns are listed in the AI module description. |
 | A14-AC08 | Unit tests of the settings validation: a missing key, an unknown provider or model, a reasoning effort the model does not accept. A search of the AI module finds the key literals only in the settings file. |
 | A14-AC06 | Review of the module description. |
 | A14-AC07 | Review of the dependencies of the AI coordination, adapters and public entry point. |
@@ -640,6 +645,7 @@ Requirements: [A9](requirements.md#a9). Stage 2: [requirements](../lokalne-ai/et
 - **The Profile's integrating layer** lies in the Profile module's adapters. It takes over the existing building of the proposal instruction and schema, and the parsing of the result. It requests an execution of the "profile" type through the AI contract and is the result receiver for this type.
 - **Result receiver:**
   - For a result, it calls a Profile operation that checks the text revision and the quotes and saves the proposal in the import data.
+  - It tolerates being called again with the same result after a failed delivery (decision 11 from 0mq.14). An exception it throws does not end the proposal preparation; the import stays in the AI-running state until a delivery succeeds.
   - For a final state without a result, it sets the import state with the existing messages, e.g. "przerwano przygotowanie propozycji; koszt pozostaje zarezerwowany" ("proposal preparation interrupted; the cost stays reserved").
 - **Execution paths:**
   - The paid path uses the single-mode OpenAI adapter.
@@ -649,11 +655,28 @@ Requirements: [A9](requirements.md#a9). Stage 2: [requirements](../lokalne-ai/et
   - It adds general fields: the operation identifier, the input version and the execution result.
   - It fills them from the existing import, text revision and proposal fields.
   - It replaces the index of one attempt in progress per import with an index of one execution in progress per operation (decision 3 from 0mq.14).
+  - It fills `state` and `cause` for the existing rows from `result_status`, `error_code` and `disposition` (decision 12 from 0mq.14). After the migration no code writes or reads those columns; `runtime_state` stays as the observation of the local process.
 
   The existing Profile-specific fields become optional and are not used by the new code; removing them belongs to the epic `oferty-pracy-sq2`.
 - **The import read** shows the state of proposal preparation from the AI execution read.
 - **Transitional exports.** The Profile stops using the transitional AI exports from 0mq.14. Removing the exports that no other module uses any more belongs to this task.
 - **The AI module description** gets a section on adding an execution path: a new adapter, or a new settings key with its settings and a result receiver.
+11. **Result delivery is retried, not failed.** When the provider returns a result that matches the schema, AI first saves the result and the usage with the execution, in its own transaction, and sets the state `delivering`. Then it delivers: in one transaction it calls the receiver and saves the settlement (decision 4), and sets the final state from the receiver's decision (`completed` or `rejected`).
+    - If the receiver throws, the delivery transaction is rolled back in full: nothing of the client's writes or of the settlement remains, the execution stays `delivering` with the result saved, and the cost stays reserved. AI retries the delivery with the retry policy of the AI execution queue. The provider is not called again.
+    - When the retries run out, the execution stays `delivering`. The execution read shows the state, the number of delivery attempts and the last error message. A person has to act; redelivering by hand belongs to the epic `oferty-pracy-sq2` and is listed among the simplifications (decision 9).
+    - There is no cause `receiver_error` and no final state for a receiver exception. A receiver must tolerate being called again with the same result; it can, because a failed delivery leaves none of its writes.
+    - `delivering` counts as in progress for the rule of one active execution per operation (decision 3).
+
+    Options discarded: ending the execution as failed with the cause `receiver_error` (a paid, correct result would be lost on a transient error, and a bug in the client would look like a model failure); calling the receiver again with a final state without a result after the rollback (no longer needed, because the execution does not fail).
+12. **One record of an execution's stage and cause.** The columns `state` and `cause` of the AI executions table are the only record of an execution's stage and of the cause of its end, for every execution requested through the public contract. States: `waiting_budget`, `queued`, `running`, `delivering`, `completed`, `rejected`, `failed`, `retried`.
+    - The existing columns `result_status`, `error_code`, `disposition` and `publication_allowed` are transitional. Only the existing local Profile path writes and reads them, until task 0mq.9 moves that path to the AI coordination and migrates its rows to `state` and `cause`. New code does not write or read them. Removing them belongs to the epic `oferty-pracy-sq2`.
+    - The column `runtime_state` is not a duplicate and stays: it records what is observed about the process on the local model (running, unknown after a lost lease), a fact separate from the execution's stage. An execution can be `running` while its process is `unknown`.
+    - The justification required by the architecture rules (costs of design decisions, a second mechanism for the same thing): the existing columns do not express waiting for budget, the queue, delivery or rejection by the client, and their meaning is tied to the local Profile path. The second record is transitional, ends with task 0mq.9 and is listed among the simplifications (decision 9).
+
+    Options discarded: extending the existing columns with the new values (the stage would be split over three columns with unclear meanings, and the general contract would inherit the local Profile path's model); migrating the local Profile path already in this task (pulls the work of task 0mq.9 into this task).
+13. **Unsupported modes are refused at request time.** Today no adapter supports batch or agent work through the public contract, so such requests are refused with `unsupported_mode` before any reservation (decision 5). The refusal follows from the adapters' declared modes, not from a fixed rule in coordination; task 0mq.17 adds the batch and agent adapters, and those modes then start working without changing the request.
+
+    Options discarded: accepting a batch request and ending it as failed in the queue (its reservations would make real requests wait for budget, and the same cause would mean two different things).
 
 ### Verification
 
@@ -698,7 +721,8 @@ Requirements: [A17](requirements.md#a17). Stages 3 and 4: [stage 3](../lokalne-a
   - The existing assessment queue and its handling move to AI.
 - **Assessment groups:**
   - A group request reserves the budget of the whole group or nothing, and creates batch items with identifiers equal to the existing `custom_id`.
-  - The existing OpenAI Batch client moves to AI as a batch-mode adapter, together with the cycle of sending, polling, collecting and cleaning up batches.
+  - The existing OpenAI Batch client moves to AI as a batch-mode adapter, together with the cycle of sending, polling, collecting and cleaning up batches. Declaring the batch mode in this adapter ends the refusal of batch requests from 0mq.14 (decision 13); the research adapter does the same for agent work.
+  - Delivery of each item's result follows decision 11 from 0mq.14: a receiver exception is retried and does not end the item.
   - Results per item reach the receiver independently; a result out of order reaches the right item.
   - An uncertain state after a batch is sent blocks the automatic creation of the next paid batch.
   - The batch diagnostic archive is saved by the adapter. The existing archive table passes to AI ownership without a schema change, and the archive view reads it through a public AI read.

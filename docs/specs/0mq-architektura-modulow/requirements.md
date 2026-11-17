@@ -387,6 +387,9 @@ The AI module provides general capabilities for working with a model, independen
 | A14-R05 | The execution result reaches the requesting module through a contract defined by AI, and settlement may happen in the same operation as the client's publication of the result. |
 | A14-R06 | Prices and cost arithmetic have one owner in the AI module and work as before (E01-AC02). The pricing environment variables named in E01-AC01 are replaced by configuration in the AI module (A14-R08); E01-AC01 no longer applies. Checking the budget, saving the attempt and requesting the work stay in one operation (E01-AC03). |
 | A14-R07 | Simplifications are explicitly described in the AI module description and kept separate from the requirements of the epic `oferty-pracy-sq2`. |
+| A14-R09 | An error in the requesting module while it takes over a result does not lose the result or end the execution: the result stays with the execution and its delivery is tried again. Only the requesting module's decision (accepted or rejected) or a failure on the AI side ends an execution. |
+| A14-R10 | Work in a mode that no provider handles yet (batch, agent) is refused when requested, without reserving the budget. |
+| A14-R11 | An execution's stage and the cause of its end are recorded once. A second record for the existing local Profile path is allowed until task 0mq.9 and is listed among the simplifications. |
 | A14-R08 | The requesting module owns the settings of its executions and names them with a key it defines. The settings are the provider, the model and the reasoning effort; everything else (prices, limits, endpoints) is AI configuration. AI keeps the settings, refuses a request whose settings are missing or invalid, and does not know which modules use it. |
 
 | Criterion | Acceptance condition | Check |
@@ -397,6 +400,9 @@ The AI module provides general capabilities for working with a model, independen
 | A14-AC04 | When the client rejects the result, the cost incurred is still settled; an unknown cost stays reserved. | Same as above |
 | A14-AC05 | Criteria E01-AC02–04 are met. | Tests named in the stage 1 SD and existing budget tests |
 | A14-AC06 | The AI module description lists the simplifications and refers improvements to `oferty-pracy-sq2`. | Documentation review |
+| A14-AC09 | When the receiver fails on the first delivery and accepts on the second, the execution ends completed, the cost is settled once and the provider is called once. A receiver that keeps failing leaves the execution waiting for delivery with the cost reserved. | Automated test on a real database and queue |
+| A14-AC10 | A batch or agent request is refused with no budget reserved and no job queued. | Automated test |
+| A14-AC11 | New code records the stage and cause only in the new fields; the AI module description lists the transitional fields of the local Profile path. | Code and documentation review |
 | A14-AC08 | A request with a missing settings key, or with settings whose provider, model or reasoning effort AI does not accept, is refused with the cause `not_configured`. Settings with today's values give the same provider requests as before. No AI code depends on a particular key value. | Unit tests and code review |
 | A14-AC07 | Provider protocols and states appear only in the adapters; the AI coordination and the requesting modules do not know them, and AI does not save the clients' business data. | Code review |
 
