@@ -69,18 +69,12 @@ async function callProvider(execution: ExecutionRow): Promise<Outcome> {
     }
   } catch (error) {
     if (!(error instanceof ModelError)) return { ...outcome, cause: 'unknown' }
-    const transient =
-      error.details.httpStatus === 429 || (error.details.httpStatus ?? 0) >= 500
     return {
       ...outcome,
       cause: error.code,
       usage: error.details.usage ?? outcome.usage,
       responseId: error.details.responseId ?? outcome.responseId,
-      retry:
-        (transient && error.details.retryAfterMs !== null) ||
-        (error.details.requestSent === true &&
-          !error.details.responseReceived &&
-          error.code !== 'aborted'),
+      retry: error.details.transient === true,
       retryAfterMs: error.details.retryAfterMs ?? 1000,
     }
   }

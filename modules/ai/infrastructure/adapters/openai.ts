@@ -107,19 +107,27 @@ export class OpenAiAdapter implements StructuredModel {
         },
       )
     } catch (cause) {
+      const aborted = signal?.aborted === true
+      // The request may have been sent without a response: worth one more try.
       throw new ModelError(
-        signal?.aborted ? 'aborted' : 'network',
-        { requestSent: true },
+        aborted ? 'aborted' : 'network',
+        { requestSent: true, transient: !aborted },
         { cause },
       )
     }
-    if (!response.ok)
+    if (!response.ok) {
+      const retryAfterMs = retryDelay(response.headers.get('retry-after'))
       throw new ModelError('http', {
         requestSent: true,
         responseReceived: true,
         httpStatus: response.status,
-        retryAfterMs: retryDelay(response.headers.get('retry-after')),
+        retryAfterMs,
+        // Rate limits and server errors pass, unless the wait is too long.
+        transient:
+          (response.status === 429 || response.status >= 500) &&
+          retryAfterMs !== null,
       })
+    }
     let value: unknown
     try {
       value = await response.json()

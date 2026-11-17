@@ -231,11 +231,42 @@ describe('OpenAI adapter owns protocol and transport metadata', () => {
           responseReceived: true,
           httpStatus: status,
           retryAfterMs: 3000,
+          transient: true,
         },
       })
       expect(fetcher).toHaveBeenCalledOnce()
     },
   )
+  it.each([
+    ['a client error', 400, null],
+    ['a server error with a too long wait', 503, '120'],
+  ])('does not judge %s transient', async (_, status, retryAfter) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response('', {
+        status,
+        headers: retryAfter ? { 'Retry-After': retryAfter } : {},
+      }),
+    )
+    await expect(
+      new OpenAiAdapter(fetcher, {
+        maxOutputTokens: 500,
+        apiKey: () => 'synthetic',
+      }).generate(request),
+    ).rejects.toMatchObject({ code: 'http', details: { transient: false } })
+  })
+  it('does not judge a caller abort transient', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new Error('aborted'))
+    await expect(
+      new OpenAiAdapter(fetcher, {
+        maxOutputTokens: 500,
+        apiKey: () => 'synthetic',
+      }).generate(request, controller.signal),
+    ).rejects.toMatchObject({ code: 'aborted', details: { transient: false } })
+  })
   it('marks transport failure as possibly sent and never invents usage', async () => {
     const fetcher = vi
       .fn<typeof fetch>()
@@ -245,7 +276,10 @@ describe('OpenAI adapter owns protocol and transport metadata', () => {
         maxOutputTokens: 500,
         apiKey: () => 'synthetic',
       }).generate(request),
-    ).rejects.toMatchObject({ code: 'network', details: { requestSent: true } })
+    ).rejects.toMatchObject({
+      code: 'network',
+      details: { requestSent: true, transient: true },
+    })
     expect(
       normalizeOpenAi({
         status: 'incomplete',

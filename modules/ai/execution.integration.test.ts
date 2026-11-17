@@ -382,11 +382,11 @@ integration('AI execution coordination with a real database and queue', () => {
     })
   })
 
-  it('retries a request that may not have reached the provider as a second attempt', async () => {
+  it('retries an error the adapter judges transient as a second attempt', async () => {
     const requested = request()
     const first = await requestExecution(requested)
     answers.push(async () => {
-      throw new ModelError('network', { requestSent: true })
+      throw new ModelError('network', { requestSent: true, transient: true })
     })
     answers.push(completed({ text: 'second' }))
     await work()
@@ -403,6 +403,41 @@ integration('AI execution coordination with a real database and queue', () => {
     ])
     expect(results.map((r) => r.result)).toEqual([{ text: 'second' }])
   }, 10_000)
+
+  it('ends an error the adapter does not judge transient without a retry, whatever its protocol details', async () => {
+    const requested = request()
+    const admitted = await requestExecution(requested)
+    answers.push(async () => {
+      throw new ModelError('http', {
+        requestSent: true,
+        responseReceived: true,
+        httpStatus: 503,
+        retryAfterMs: 1000,
+      })
+    })
+    await work()
+    expect(await jobs()).toEqual([])
+    expect(await readExecutionHistory(requested.operationId)).toMatchObject([
+      { id: admitted.executionId, state: 'failed', cause: 'http' },
+    ])
+    expect(failures).toMatchObject([{ cause: 'http' }])
+  })
+
+  it('accepts agent work and ends it explicitly while no adapter offers the mode', async () => {
+    const admitted = await requestExecution(
+      request({ mode: { kind: 'agent', tools: ['web_search'] } }),
+    )
+    expect(admitted.state).toBe('queued')
+    await work()
+    expect(calls).toEqual([])
+    expect(await readExecution(admitted.executionId)).toMatchObject({
+      mode: 'agent',
+      state: 'failed',
+      cause: 'unsupported_mode',
+      cost: { reserved: ceiling, actual: '0.000000', unknown: false },
+    })
+    expect(failures).toMatchObject([{ cause: 'unsupported_mode' }])
+  })
 
   it('keeps one execution in progress per operation', async () => {
     const operationId = randomUUID()

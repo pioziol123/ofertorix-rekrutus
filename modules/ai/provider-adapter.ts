@@ -33,6 +33,12 @@ export class ModelError extends Error {
       responseReceived?: boolean
       httpStatus?: number
       retryAfterMs?: number | null
+      /**
+       * The adapter's judgement that sending the same request again may
+       * succeed, after `retryAfterMs` when given. Coordination decides on
+       * retries only from this, never from the provider's protocol.
+       */
+      transient?: boolean
       responseId?: string | null
       usage?: ModelUsage
       runtimeEnded?: boolean
