@@ -32,6 +32,6 @@ docs/research/profil-import-spike/node_modules/
 docs/.obsidian/
 .sandcastle/.env
 .sandcastle/runner.json
-.sandcastle/node_modules/
+.sandcastle/node_modules
 .sandcastle/logs/
 .sandcastle/worktrees/

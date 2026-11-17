@@ -1,6 +1,8 @@
 // Task uuk.2 of oferty-pracy-uuk: the runner in its own copy, exchange through GitHub.
 // A bare repository stands in for GitHub; no network is used (W-AC02).
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import { cycle, preview } from './flow.ts'
 import {
@@ -120,17 +122,22 @@ describe('uuk.2: runner in its own copy', () => {
 
   it('U2-AC07: finishes in its own version and reports a newer program once', async () => {
     w = world(async (ctx) => {
-      committingAgent(`f${ctx.turn}-${Date.now()}.txt`)(ctx)
-    }, ['t-1', 't-2'])
-    pushFiles(w.other, { '.sandcastle/runner.ts': '// runner v2\n' }, 'runner v2')
+      committingAgent(`${ctx.branch}.txt`)(ctx)
+      // The newer program reaches the exchange point during the first task.
+      if (!exchangeFile(w, '.sandcastle/runner.ts')?.includes('v2')) pushFiles(w.other, { '.sandcastle/runner.ts': '// runner v2\n' }, 'runner v2')
+    }, ['t-1', 't-2', 't-3'])
+    // t-1 is returned: GitHub changed during it. The next cycles run in the old version.
+    assert.equal(await cycle(w.runner), true)
+    assert.match(commentsOf('t-1'), /runner v2/)
     assert.equal(await cycle(w.runner), true)
     assert.equal(await cycle(w.runner), true)
-    assert.equal(w.db.show('t-1').status, 'closed')
     assert.equal(w.db.show('t-2').status, 'closed')
+    assert.equal(w.db.show('t-3').status, 'closed')
     assert.equal(w.notifications.filter((n) => n.title === 'Newer runner on GitHub').length, 1)
     assert.equal(w.logs.filter((l) => /has a newer runner program/.test(l)).length, 1)
     // The runner's program files stay at the version it started from.
     assert.equal(sh(w.runnerCopy, 'rev-parse', 'HEAD'), w.runner.startCommit)
+    assert.equal(readFileSync(join(w.runnerCopy, '.sandcastle/runner.ts'), 'utf8'), '// runner v1\n')
   })
 
   it('ignores a write to main made from the agent\'s environment', async () => {

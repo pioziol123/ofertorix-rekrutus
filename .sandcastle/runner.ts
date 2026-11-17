@@ -13,10 +13,9 @@ import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { git } from './exchange.ts'
 import { type Runner, cycle, excludeAgentFiles, GATE, preview, writeLog } from './flow.ts'
-import type { Issue } from './followups.ts'
-import type { NewIssue, TaskDb } from './ports.ts'
 import { type Effort, dockerImages, dockerSandboxes } from './environment.ts'
 import { readSettings, settingsProblems } from './settings.ts'
+import { bdTaskDb } from './taskdb.ts'
 
 const { values: opts } = parseArgs({
   options: {
@@ -41,51 +40,6 @@ const logDir = join(repo, '.sandcastle', 'logs')
 const sharedLog = join(logDir, 'runner.log')
 let logFile = sharedLog
 
-// ---------- task database ----------
-
-/** Every bd call goes through here; the setting points bd at the owner's task database (U2-R05). */
-function bd(args: string[]): string {
-  return execFileSync('bd', args, {
-    cwd: repo,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, BEADS_DIR: settings.beadsDir },
-  })
-}
-
-const json = <T>(args: string[]) => JSON.parse(bd([...args, '--json'])) as T
-
-const taskDb: TaskDb = {
-  ready: () => json<Issue[]>(['ready', '--label', 'ready-for-agent', '--limit', '0']),
-  show: (id) => {
-    const parsed = json<Issue | Issue[]>(['show', id])
-    return Array.isArray(parsed) ? parsed[0]! : parsed
-  },
-  epics: () => json<Issue[]>(['list', '--type', 'epic', '--limit', '0']),
-  listUnder: (epicId) => json<Issue[]>(['list', '--parent', epicId, '--all', '--limit', '0']),
-  assumptionTasks: (scope) => json<Issue[]>(['list', '--metadata-field', 'type=assumptions', '--metadata-field', `epic=${scope}`, '--limit', '0']),
-  claim: (id) => void bd(['update', id, '--claim']),
-  unclaim: (id) => void bd(['unclaim', id]),
-  comment: (id, text) => void bd(['comment', id, text]),
-  update: (id, change) => {
-    const args = ['update', id]
-    for (const label of change.add ?? []) args.push('--add-label', label)
-    for (const label of change.remove ?? []) args.push('--remove-label', label)
-    for (const [key, value] of Object.entries(change.setMetadata ?? {})) args.push('--set-metadata', `${key}=${value}`)
-    for (const key of change.unsetMetadata ?? []) args.push('--unset-metadata', key)
-    bd(args)
-  },
-  create: (issue: NewIssue) => {
-    const args = ['create', '--title', issue.title, '--description', issue.description, '--type', 'task',
-      '--labels', issue.labels.join(','), '--deps', `discovered-from:${issue.discoveredFrom}`, '--silent']
-    if (issue.metadata) args.push('--metadata', JSON.stringify(issue.metadata))
-    if (issue.parent) args.push('--parent', issue.parent, '--no-inherit-labels')
-    return bd(args).trim().split('\n').pop()!.trim()
-  },
-  addDependency: (id, dependsOn) => void bd(['dep', 'add', id, dependsOn]),
-  close: (id, reason) => void bd(['close', id, '--reason', reason]),
-}
-
 function notify(title: string, message: string): void {
   const clean = (text: string) => text.replace(/["\\]/g, '').slice(0, 200)
   spawn('osascript', ['-e', `display notification "${clean(message)}" with title "${clean(title)}"`], {
@@ -101,7 +55,7 @@ function log(message: string): void {
 
 const runner: Runner = {
   repo,
-  db: taskDb,
+  db: bdTaskDb({ repo, beadsDir: settings.beadsDir }),
   sandboxes: dockerSandboxes({ repo, model: opts.model!, effort: opts.effort as Effort }),
   images: dockerImages({ repo, log, rebuild: opts['rebuild-image']! }),
   notifier: { notify },

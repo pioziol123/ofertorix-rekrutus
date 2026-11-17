@@ -59,7 +59,8 @@ export function prepareRunnerCopy({ owner, dir, install }: SetupOptions): SetupR
   if (changed) return { ok: false, error: `the runner's program in ${dir} has local changes; resolve them first:\n${changed}` }
   const fetched = fetchMain(dir)
   if (!fetched.ok) return { ok: false, error: fetched.error }
-  git(dir, ['checkout', '--quiet', '--detach', fetched.sha])
+  const checkout = tryGit(dir, ['checkout', '--quiet', '--detach', fetched.sha])
+  if (!checkout.ok) return { ok: false, error: `checking out ${BASE_BRANCH} ${fetched.sha.slice(0, 7)} in ${dir} failed:\n${checkout.out}` }
   install(join(dir, PROGRAM_DIR))
   // Settings are kept; only a missing one is filled in.
   if (!tokenIn(join(dir, ENV_FILE))) writeFileSync(join(dir, ENV_FILE), `${TOKEN_KEY}=${tokenIn(join(owner, ENV_FILE))}\n`)

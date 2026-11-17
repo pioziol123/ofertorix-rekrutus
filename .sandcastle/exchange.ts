@@ -13,8 +13,15 @@ export const RETURN_PREFIX = 'agent/'
 /** The runner's own program; a different tree at the exchange point is a newer version. */
 export const PROGRAM_DIR = '.sandcastle'
 
+/**
+ * Agents' sandboxes can write to the git data of the runner's copy. The runner's own git
+ * calls on the host therefore ignore hooks and fsmonitor, so nothing an agent leaves in
+ * that data runs on the host, which holds the GitHub credentials (U2-R03).
+ */
+const HARDENED = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false']
+
 export function git(repo: string, args: string[]): string {
-  return execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  return execFileSync('git', [...HARDENED, ...args], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
 
 export function tryGit(repo: string, args: string[]): { ok: boolean; out: string } {
