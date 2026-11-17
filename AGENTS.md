@@ -27,11 +27,12 @@ Paths to agent documentation live in this file only. A process document, a skill
 
 ## Talking to the owner
 
-The owner thinks in the domain: what a person using the application sees and what goes wrong for them. Every reply to the owner follows three rules. They apply most when you relay another agent's work, such as a blocker, an assumption or a review finding, because that text carries the other agent's vocabulary.
+The owner thinks in the domain: what a person using the application sees and what goes wrong for them. Every reply to the owner follows four rules. They apply most when you relay another agent's work, such as a blocker, an assumption or a review finding, because that text carries the other agent's vocabulary.
 
 - **Domain first.** Open with the problem in domain terms from the glossary in the domain docs: who is affected and what breaks. Give the mechanism (code, contracts, diffs, document quotes) after that, and only as far as the decision needs it. A proposal names the problem it solves before it names the solution.
 - **Expand every label.** A term the owner has not used in this conversation gets its meaning in the same sentence. This covers task-internal identifiers (assumption and requirement numbers), error codes, function names and words you coined. When a word has several meanings in the project, say which one you mean.
 - **Echo before acting.** When a short reply could refer to more than one thing you raised, restate in one sentence what you understood, then act. Wait for confirmation before a change that alters a requirement or creates a task.
+- **Approval covers what the owner saw.** An approval holds for the proposal as it stood when the owner gave it. Once you raise a new question about it, or an answer changes the proposal, show the changed proposal and ask again before acting.
 
 
 ## Non-Interactive Shell Commands
