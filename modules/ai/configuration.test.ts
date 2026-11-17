@@ -1,10 +1,28 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { aiConfiguration } from './configuration.ts'
+import { decimal } from './domain/money.ts'
+import { resolveSettings } from './domain/settings.ts'
 import { executionSettings } from './execution-settings.ts'
 import { AiRequestError } from './errors.ts'
+import {
+  OpenAiAdapter,
+  openAiProvider,
+} from './infrastructure/adapters/openai.ts'
+import { aiCatalog, type AiCatalog } from './model-catalog.ts'
+
+// The keys are the clients' own names; AI must not care which they are.
+const ai = vi.hoisted(() => ({ settings: {} as Record<string, unknown> }))
+vi.mock('./client-settings.ts', async (original) => {
+  const real = await original<typeof import('./client-settings.ts')>()
+  Object.assign(ai.settings, real.clientSettings)
+  return { clientSettings: ai.settings }
+})
+const realKeys = vi.hoisted(() => [] as string[])
 
 const pricing = {
-  model: 'gpt-test',
+  model: 'model-a',
   version: 'prices-1',
   inputUsdPerMillion: '0.25',
   outputUsdPerMillion: '2',
@@ -13,191 +31,239 @@ const pricing = {
   maxInputTokens: 20000,
   maxOutputTokens: 6000,
 }
-const variables = [
-  'AI_PROFILE_PRICING_JSON',
-  'AI_MATCHING_PRICING_JSON',
-  'AI_RESEARCH_PRICING_JSON',
-] as const
+const catalog: AiCatalog = {
+  providers: {
+    paid: { credentialEnv: 'PAID_KEY' },
+    local: { credentialEnv: null },
+  },
+  models: [
+    {
+      provider: 'paid',
+      model: 'model-a',
+      reasoningEfforts: ['low', 'high'],
+      prices: { single: pricing },
+    },
+    {
+      provider: 'local',
+      model: 'model-b',
+      reasoningEfforts: [null],
+      prices: {},
+    },
+  ],
+}
+const valid = { provider: 'paid', model: 'model-a', reasoningEffort: 'low' }
 
-afterEach(() => vi.unstubAllEnvs())
+beforeEach(() => {
+  if (!realKeys.length) realKeys.push(...Object.keys(ai.settings))
+  vi.stubEnv('OPENAI_API_KEY', 'key')
+})
+afterEach(() => {
+  vi.unstubAllEnvs()
+  for (const key of Object.keys(ai.settings))
+    if (!realKeys.includes(key)) delete ai.settings[key]
+})
 
-describe('E01-AC01: one configuration read for every consumer', () => {
-  describe.each(variables)('%s', (variable) => {
-    it('reads a valid price list', () => {
-      vi.stubEnv('OPENAI_API_KEY', 'key')
-      vi.stubEnv(variable, JSON.stringify(pricing))
-      expect(aiConfiguration(variable)).toEqual(pricing)
+describe('A14-AC08: settings validation', () => {
+  it('accepts a known provider, a model it offers and an effort the model accepts', () => {
+    expect(resolveSettings(valid, catalog)).toEqual({
+      settings: valid,
+      model: catalog.models[0],
     })
-    it('is not configured without the API key or the variable', () => {
-      vi.stubEnv('OPENAI_API_KEY', '')
-      vi.stubEnv(variable, JSON.stringify(pricing))
-      expect(aiConfiguration(variable)).toBeNull()
-      vi.stubEnv('OPENAI_API_KEY', 'key')
-      vi.stubEnv(variable, '')
-      expect(aiConfiguration(variable)).toBeNull()
-      vi.stubEnv(variable, undefined)
-      expect(aiConfiguration(variable)).toBeNull()
-    })
-    it.each([
-      ['invalid JSON', '{broken'],
-      ['JSON null', 'null'],
-      ['an unknown field', JSON.stringify({ ...pricing, extra: 1 })],
-      ['a missing key', JSON.stringify({ ...pricing, fxVersion: undefined })],
-      ['a wrong type', JSON.stringify({ ...pricing, maxInputTokens: '20000' })],
-      ['an empty model', JSON.stringify({ ...pricing, model: '' })],
-      ['a zero price', JSON.stringify({ ...pricing, inputUsdPerMillion: '0' })],
-      ['a zero rate', JSON.stringify({ ...pricing, usdPln: '0.000000' })],
-      [
-        'a negative price',
-        JSON.stringify({ ...pricing, outputUsdPerMillion: '-1' }),
-      ],
-      [
-        'seven fraction digits',
-        JSON.stringify({ ...pricing, usdPln: '4.1234567' }),
-      ],
-      [
-        'seven integer digits',
-        JSON.stringify({ ...pricing, usdPln: '1234567' }),
-      ],
-      [
-        'a fractional token cap',
-        JSON.stringify({ ...pricing, maxInputTokens: 1.5 }),
-      ],
-      [
-        'zero output tokens',
-        JSON.stringify({ ...pricing, maxOutputTokens: 0 }),
-      ],
-      [
-        'input tokens above the cap',
-        JSON.stringify({ ...pricing, maxInputTokens: 2000001 }),
-      ],
-      [
-        'output tokens above the cap',
-        JSON.stringify({ ...pricing, maxOutputTokens: 6001 }),
-      ],
-    ])('rejects %s', (_, value) => {
-      vi.stubEnv('OPENAI_API_KEY', 'key')
-      vi.stubEnv(variable, value)
-      expect(aiConfiguration(variable)).toBeNull()
-    })
-    it('accepts the token caps at their limits', () => {
-      vi.stubEnv('OPENAI_API_KEY', 'key')
-      const limits = {
-        ...pricing,
-        maxInputTokens: 2000000,
-        maxOutputTokens: 6000,
-      }
-      vi.stubEnv(variable, JSON.stringify(limits))
-      expect(aiConfiguration(variable)).toEqual(limits)
-    })
-    it('reads the environment again on every call', () => {
-      vi.stubEnv('OPENAI_API_KEY', 'key')
-      vi.stubEnv(variable, JSON.stringify(pricing))
-      expect(aiConfiguration(variable)?.model).toBe('gpt-test')
-      vi.stubEnv(variable, JSON.stringify({ ...pricing, model: 'gpt-next' }))
-      expect(aiConfiguration(variable)?.model).toBe('gpt-next')
-      vi.stubEnv(variable, '')
-      expect(aiConfiguration(variable)).toBeNull()
-    })
+    expect(
+      resolveSettings(
+        { provider: 'local', model: 'model-b', reasoningEffort: null },
+        catalog,
+      )?.settings.model,
+    ).toBe('model-b')
   })
-  it('defaults to the profile price list', () => {
-    vi.stubEnv('OPENAI_API_KEY', 'key')
-    vi.stubEnv('AI_PROFILE_PRICING_JSON', JSON.stringify(pricing))
-    expect(aiConfiguration()).toEqual(pricing)
+  it.each([
+    ['missing settings', undefined],
+    ['settings that are not an object', 'paid'],
+    ['a missing reasoning effort', { provider: 'paid', model: 'model-a' }],
+    ['an unknown field', { ...valid, temperature: 0 }],
+    ['an empty model', { ...valid, model: ' ' }],
+    ['an unknown provider', { ...valid, provider: 'other' }],
+    ['an unknown model', { ...valid, model: 'model-c' }],
+    ['a model of another provider', { ...valid, model: 'model-b' }],
+    [
+      'an effort the model does not accept',
+      { ...valid, reasoningEffort: 'medium' },
+    ],
+    [
+      'no effort for a model that needs one',
+      { ...valid, reasoningEffort: null },
+    ],
+    [
+      'an effort for a model that takes none',
+      { provider: 'local', model: 'model-b', reasoningEffort: 'low' },
+    ],
+  ])('refuses %s', (_, value) => {
+    expect(resolveSettings(value, catalog)).toBeNull()
+  })
+
+  it('refuses a request whose key has no settings as not_configured', () => {
+    for (const key of ['', 'unknown-client', 'constructor', '__proto__'])
+      expect(() => executionSettings(key, 'single')).toThrow(
+        new AiRequestError('not_configured'),
+      )
+  })
+  it.each([
+    [
+      'an unknown provider',
+      { provider: 'other', model: 'gpt-6-luna', reasoningEffort: 'low' },
+    ],
+    [
+      'an unknown model',
+      { provider: 'openai', model: 'gpt-0', reasoningEffort: 'low' },
+    ],
+    [
+      'an effort the model does not accept',
+      { provider: 'openai', model: 'gpt-6-luna', reasoningEffort: 'extreme' },
+    ],
+  ])('refuses settings with %s as not_configured', (_, settings) => {
+    ai.settings['client-x'] = settings
+    expect(() => executionSettings('client-x', 'single')).toThrow(
+      new AiRequestError('not_configured'),
+    )
+  })
+  it('refuses a paid provider without its secret as not_configured', () => {
+    ai.settings['client-x'] = {
+      provider: 'openai',
+      model: 'gpt-6-luna',
+      reasoningEffort: 'low',
+    }
+    vi.stubEnv('OPENAI_API_KEY', '')
+    expect(() => executionSettings('client-x', 'single')).toThrow(
+      new AiRequestError('not_configured'),
+    )
+  })
+  it('works for any key the client defines', () => {
+    ai.settings['any name a client picks'] = {
+      provider: 'openai',
+      model: 'gpt-6-luna',
+      reasoningEffort: 'high',
+    }
+    expect(executionSettings('any name a client picks', 'single')).toEqual({
+      provider: 'openai',
+      model: 'gpt-6-luna',
+      reasoningEffort: 'high',
+      maxOutputTokens: 6000,
+      pricing: aiCatalog.models[0]!.prices.single,
+    })
   })
 })
 
-describe('provider and model chosen for an execution request', () => {
-  const endpoint = {
-    ref: 'paid',
-    version: 1,
-    url: 'https://paid.test/v1',
-    credentialEnv: 'PAID_KEY',
-  }
-  const selection = (overrides = {}) =>
-    JSON.stringify({
-      version: 1,
-      provider: 'openai',
-      model: 'gpt-test',
-      execution: 'direct',
-      endpointRef: 'paid',
-      endpointVersion: 1,
-      runtimeParameters: {},
-      ...overrides,
-    })
-  const refused = (code: string) => expect.objectContaining({ code })
-
-  it('uses the job type price list on the default endpoint without a selection', () => {
-    vi.stubEnv('OPENAI_API_KEY', 'key')
-    vi.stubEnv('AI_RESEARCH_PRICING_JSON', JSON.stringify(pricing))
-    expect(executionSettings('research', 'agent')).toEqual({
-      provider: 'openai',
-      model: 'gpt-test',
-      endpoint: null,
-      endpointRef: null,
-      endpointVersion: null,
-      maxOutputTokens: 6000,
-      pricing,
-    })
-  })
-  it('uses an explicit selection with its endpoint and matching prices', () => {
-    vi.stubEnv('AI_ENDPOINTS_JSON', JSON.stringify([endpoint]))
-    vi.stubEnv('PAID_KEY', 'secret')
-    vi.stubEnv('AI_PROFILE_EXECUTION_JSON', selection())
-    vi.stubEnv('AI_PROFILE_PRICING_JSON', JSON.stringify(pricing))
-    expect(executionSettings('profile', 'single')).toMatchObject({
-      provider: 'openai',
-      endpoint: { url: 'https://paid.test/v1', credentialEnv: 'PAID_KEY' },
-      endpointRef: 'paid',
-      endpointVersion: 1,
-      pricing,
-    })
-  })
-  it('refuses a missing or inconsistent configuration', () => {
-    vi.stubEnv('OPENAI_API_KEY', '')
-    expect(() => executionSettings('profile', 'single')).toThrow(
-      refused('not_configured'),
-    )
-    vi.stubEnv('AI_PROFILE_EXECUTION_JSON', '{broken')
-    expect(() => executionSettings('profile', 'single')).toThrow(
-      refused('not_configured'),
-    )
-    vi.stubEnv('AI_ENDPOINTS_JSON', JSON.stringify([endpoint]))
-    vi.stubEnv('PAID_KEY', 'secret')
-    vi.stubEnv('AI_PROFILE_EXECUTION_JSON', selection())
-    vi.stubEnv(
-      'AI_PROFILE_PRICING_JSON',
-      JSON.stringify({ ...pricing, model: 'other' }),
-    )
-    expect(() => executionSettings('profile', 'single')).toThrow(
-      refused('not_configured'),
-    )
-  })
-  it('refuses a mode the selected execution does not offer', () => {
-    vi.stubEnv('AI_ENDPOINTS_JSON', JSON.stringify([endpoint]))
-    vi.stubEnv('PAID_KEY', 'secret')
-    vi.stubEnv('AI_PROFILE_EXECUTION_JSON', selection())
-    vi.stubEnv('AI_PROFILE_PRICING_JSON', JSON.stringify(pricing))
-    expect(() => executionSettings('profile', 'batch')).toThrow(
+describe('A14-AC10: modes no adapter declares', () => {
+  it.each(['batch', 'agent'] as const)(
+    'refuses %s as unsupported_mode',
+    (mode) => {
+      ai.settings['client-x'] = {
+        provider: 'openai',
+        model: 'gpt-6-luna',
+        reasoningEffort: 'low',
+      }
+      expect(() => executionSettings('client-x', mode)).toThrow(
+        new AiRequestError('unsupported_mode'),
+      )
+    },
+  )
+  it('refuses a provider without an adapter in the coordination as unsupported_mode', () => {
+    ai.settings['client-x'] = {
+      provider: 'ollama',
+      model: 'gpt-oss:20b',
+      reasoningEffort: null,
+    }
+    expect(() => executionSettings('client-x', 'single')).toThrow(
       new AiRequestError('unsupported_mode'),
     )
   })
-  it('refuses the local provider until it joins the coordination', () => {
-    vi.stubEnv(
-      'AI_ENDPOINTS_JSON',
-      JSON.stringify([{ ...endpoint, ref: 'local', credentialEnv: null }]),
-    )
-    vi.stubEnv(
-      'AI_PROFILE_EXECUTION_JSON',
-      selection({
-        provider: 'ollama',
-        model: 'gpt-oss:20b',
-        endpointRef: 'local',
-        runtimeParameters: { numCtx: 8192 },
-      }),
-    )
-    expect(() => executionSettings('profile', 'single')).toThrow(
-      refused('executor_unavailable'),
-    )
+})
+
+describe('AI configuration', () => {
+  it('holds valid price lists: positive amounts and caps within the limits', () => {
+    for (const model of aiCatalog.models)
+      for (const list of Object.values(model.prices)) {
+        expect(list.model).toBe(model.model)
+        for (const amount of [
+          list.inputUsdPerMillion,
+          list.outputUsdPerMillion,
+          list.usdPln,
+        ])
+          expect(decimal(amount)).toBeGreaterThan(0n)
+        expect(list.maxInputTokens).toBeGreaterThan(0)
+        expect(list.maxInputTokens).toBeLessThanOrEqual(2000000)
+        expect(list.maxOutputTokens).toBeGreaterThan(0)
+        expect(list.maxOutputTokens).toBeLessThanOrEqual(6000)
+      }
+  })
+  it('names in every client setting a provider and model it knows', () => {
+    for (const key of realKeys)
+      expect(resolveSettings(ai.settings[key], aiCatalog)).not.toBeNull()
+  })
+  it('gives the transitional consumers the price list of their key and mode', () => {
+    ai.settings['client-x'] = {
+      provider: 'openai',
+      model: 'gpt-6-luna',
+      reasoningEffort: 'low',
+    }
+    const luna = aiCatalog.models[0]!
+    expect(aiConfiguration('client-x')).toEqual(luna.prices.single)
+    expect(aiConfiguration('client-x', 'batch')).toEqual(luna.prices.batch)
+    expect(aiConfiguration('client-x', 'agent')).toBeNull()
+    expect(aiConfiguration('unknown-client')).toBeNull()
+    vi.stubEnv('OPENAI_API_KEY', '')
+    expect(aiConfiguration('client-x')).toBeNull()
+  })
+})
+
+describe('A14-AC08: the settings of today give the same provider requests', () => {
+  it('sends the request the existing paid path sends, for every key in the settings', async () => {
+    for (const key of realKeys) {
+      const settings = executionSettings(key, 'single')
+      const bodies: string[] = []
+      const fetcher = vi.fn<typeof fetch>(async (_, init) => {
+        bodies.push(String(init?.body))
+        return Response.json({ status: 'incomplete' })
+      })
+      const request = {
+        model: settings.model,
+        instructions: 'Extract facts.',
+        input: 'Some text',
+        output: { name: 'facts', schema: { type: 'object' } },
+      }
+      await openAiProvider(fetcher).modes.single!(settings).generate(request)
+      // The existing paths: the price list's output cap and a low effort.
+      await new OpenAiAdapter(fetcher, {
+        maxOutputTokens: settings.pricing.maxOutputTokens,
+      }).generate(request)
+      expect(bodies[0]).toBe(bodies[1])
+      expect(JSON.parse(bodies[0]!)).toMatchObject({
+        reasoning: { effort: 'low' },
+        max_output_tokens: 6000,
+      })
+    }
+  })
+})
+
+describe('A14-AC08: no AI code depends on a key value', () => {
+  it('names the keys only in the settings file', () => {
+    const files: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name)
+        if (entry.isDirectory()) walk(path)
+        else if (/\.ts$/.test(entry.name) && !/\.test\.ts$/.test(entry.name))
+          files.push(path)
+      }
+    }
+    const root = join(import.meta.dirname)
+    walk(root)
+    const offenders = files.filter((file) => {
+      if (file.endsWith('client-settings.ts')) return false
+      const text = readFileSync(file, 'utf8')
+      return realKeys.some((key) => new RegExp(`['"\`]${key}['"\`]`).test(text))
+    })
+    expect(realKeys.length).toBeGreaterThan(0)
+    expect(offenders).toEqual([])
   })
 })

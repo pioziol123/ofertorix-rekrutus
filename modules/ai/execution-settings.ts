@@ -1,89 +1,37 @@
-import {
-  aiConfiguration,
-  parseAiExecutionConfig,
-  pricingConfiguration,
-  resolveEndpoint,
-  type AiConfiguration,
-} from './configuration.ts'
+import { hasCredentials, settingsFor } from './configuration.ts'
+import type { ExecutionMode } from './domain/execution-mode.ts'
 import { AiRequestError } from './errors.ts'
+import type { AiConfiguration } from './model-catalog.ts'
 import type { ProviderSettings } from './provider-adapter.ts'
+import { supportsMode } from './provider-registry.ts'
 
-/** A job type is the key of an existing configuration and price list. */
-export type AiJobType = 'profile' | 'matching' | 'research'
-export const aiJobTypes: readonly AiJobType[] = [
-  'profile',
-  'matching',
-  'research',
-]
+export type { ExecutionMode } from './domain/execution-mode.ts'
 
-export type ExecutionMode = 'single' | 'batch' | 'agent'
-
-/** The provider, model and prices chosen for an execution at request time. */
-export type ExecutionSettings = ProviderSettings & {
-  endpointRef: string | null
-  endpointVersion: number | null
-  pricing: AiConfiguration
-}
-
-const variables = (jobType: AiJobType) => {
-  const prefix = `AI_${jobType.toUpperCase()}`
-  return {
-    selection: `${prefix}_EXECUTION_JSON`,
-    pricing: `${prefix}_PRICING_JSON`,
-  }
-}
+/** The provider, model and prices fixed for an execution at request time. */
+export type ExecutionSettings = ProviderSettings & { pricing: AiConfiguration }
 
 /**
- * Chooses the provider and model of a job type from the configuration, the
- * way the existing consumers do: an explicit execution selection with its
- * endpoint and matching price list, otherwise the job type's price list on
- * the default OpenAI endpoint.
+ * The settings of an execution under a client's settings key, in a mode.
+ * Missing or invalid settings, a missing price list or a missing secret
+ * are `not_configured`; a mode no adapter of the provider declares is
+ * `unsupported_mode`.
  */
 export function executionSettings(
-  jobType: AiJobType,
+  key: string,
   mode: ExecutionMode,
 ): ExecutionSettings {
-  const names = variables(jobType)
-  let choice
-  try {
-    choice = parseAiExecutionConfig(process.env[names.selection], jobType)
-  } catch {
-    throw new AiRequestError('not_configured')
-  }
-  if (!choice) {
-    const pricing = aiConfiguration(names.pricing)
-    if (!pricing) throw new AiRequestError('not_configured')
-    return {
-      provider: 'openai',
-      model: pricing.model,
-      endpoint: null,
-      endpointRef: null,
-      endpointVersion: null,
-      maxOutputTokens: pricing.maxOutputTokens,
-      pricing,
-    }
-  }
-  if (choice.execution !== (mode === 'batch' ? 'batch' : 'direct'))
+  const resolved = settingsFor(key)
+  if (!resolved) throw new AiRequestError('not_configured')
+  const { settings, model } = resolved
+  if (!supportsMode(settings.provider, mode))
     throw new AiRequestError('unsupported_mode')
-  // The local path joins the coordination with the shared local slot in
-  // task oferty-pracy-0mq.9; until then only the paid provider runs here.
-  if (choice.provider !== 'openai')
-    throw new AiRequestError('executor_unavailable')
-  let endpoint
-  try {
-    endpoint = resolveEndpoint(choice.endpointRef, choice.endpointVersion)
-  } catch {
-    throw new AiRequestError('not_configured')
-  }
-  const pricing = pricingConfiguration(names.pricing)
-  if (!pricing || pricing.model !== choice.model || !endpoint.credentialEnv)
+  const pricing = model.prices[mode]
+  if (!pricing || !hasCredentials(settings.provider))
     throw new AiRequestError('not_configured')
   return {
-    provider: choice.provider,
-    model: choice.model,
-    endpoint: { url: endpoint.url, credentialEnv: endpoint.credentialEnv },
-    endpointRef: choice.endpointRef,
-    endpointVersion: choice.endpointVersion,
+    provider: settings.provider,
+    model: settings.model,
+    reasoningEffort: settings.reasoningEffort,
     maxOutputTokens: pricing.maxOutputTokens,
     pricing,
   }

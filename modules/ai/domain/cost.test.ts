@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AiConfiguration } from '../configuration.ts'
+import type { AiConfiguration } from '../model-catalog.ts'
 import { attemptCeiling, budgetMonth, chargeCeiling } from './cost.ts'
 
 const config: AiConfiguration = {

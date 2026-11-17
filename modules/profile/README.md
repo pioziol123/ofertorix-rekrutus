@@ -12,15 +12,15 @@ Matching fetches the active profile version together with its ID and applies its
 
 ## Public operations
 
-| Operation | Contract |
-| --- | --- |
-| CV import | Takes a document or pasted text. Returns the import ID and the state of text preparation. |
-| Import read | Exposes the import state, the text for review, the state and result of the proposal preparation and the original file, if one was uploaded. |
-| Proposal preparation request | Takes the selected text and the expected import revision. Saves the text revision used to prepare the proposal and requests the execution. |
-| Proposal application | Takes the import ID, the text revision, the choice of elements and the expected draft revision. Adds the selected items or replaces the items the owner indicates. |
-| Draft read and write | Exposes the editable data with a revision ID. The write checks the expected revision to detect a change since the read. |
-| Profile confirmation | Takes the expected draft revision and the ID of the current active version. Creates an immutable version and activates it in one operation. |
-| Confirmed versions read | Exposes the active version together with its ID, information that there is no active version, the history and a read of a given version. |
+| Operation                    | Contract                                                                                                                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CV import                    | Takes a document or pasted text. Returns the import ID and the state of text preparation.                                                                          |
+| Import read                  | Exposes the import state, the text for review, the state and result of the proposal preparation and the original file, if one was uploaded.                        |
+| Proposal preparation request | Takes the selected text and the expected import revision. Saves the text revision used to prepare the proposal and requests the execution.                         |
+| Proposal application         | Takes the import ID, the text revision, the choice of elements and the expected draft revision. Adds the selected items or replaces the items the owner indicates. |
+| Draft read and write         | Exposes the editable data with a revision ID. The write checks the expected revision to detect a change since the read.                                            |
+| Profile confirmation         | Takes the expected draft revision and the ID of the current active version. Creates an immutable version and activates it in one operation.                        |
+| Confirmed versions read      | Exposes the active version together with its ID, information that there is no active version, the history and a read of a given version.                           |
 
 ## From CV to active profile
 
@@ -32,11 +32,11 @@ Matching fetches the active profile version together with its ID and applies its
 
 ## Division of responsibility with AI
 
-| Part | Responsibility |
-| --- | --- |
+| Part                 | Responsibility                                                                                                                                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Professional profile | Prepares and saves the text chosen by the owner, requests the proposal preparation, ties the execution to the text revision, checks the quotes, saves the result and applies the selected changes to the draft. |
-| Integration layer | Translates the request into an instruction and a response schema and passes the Profile module the execution ID, a unified state and the result in an agreed format. |
-| AI | Chooses the provider and model, handles communication and the queue, coordinates the shared local execution, recovers interrupted executions and is responsible for retries, the budget and settlement. |
+| Integration layer    | Translates the request into an instruction and a response schema and passes the Profile module the execution ID, a unified state and the result in an agreed format.                                            |
+| AI                   | Chooses the provider and model, handles communication and the queue, coordinates the shared local execution, recovers interrupted executions and is responsible for retries, the budget and settlement.         |
 
 The Profile module uses one interface for proposal preparation. The choice of provider and the execution mode belong to the AI module.
 

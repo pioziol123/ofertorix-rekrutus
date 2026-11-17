@@ -3,11 +3,7 @@ import { db } from '../../lib/db.ts'
 import { attemptCeiling } from './domain/cost.ts'
 import { decimal, money } from './domain/money.ts'
 import { sendExecutionJob } from './execution-queue.ts'
-import type {
-  AiJobType,
-  ExecutionMode,
-  ExecutionSettings,
-} from './execution-settings.ts'
+import type { ExecutionMode, ExecutionSettings } from './execution-settings.ts'
 import { reserve } from './infrastructure/persistence/budget.ts'
 import {
   insertExecution,
@@ -15,7 +11,7 @@ import {
 } from './infrastructure/persistence/executions.ts'
 
 export type Admission = {
-  jobType: AiJobType
+  settingsKey: string
   operationId: string
   inputVersion: string | null
   mode: ExecutionMode

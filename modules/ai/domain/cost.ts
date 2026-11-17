@@ -1,4 +1,4 @@
-import type { AiConfiguration } from '../configuration.ts'
+import type { AiConfiguration } from '../model-catalog.ts'
 import { ceil, decimal, million, money } from './money.ts'
 
 /** The PLN cost of the given token usage, rounded up at each step. */

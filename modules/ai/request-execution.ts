@@ -3,9 +3,7 @@ import { transaction } from '../../lib/db.ts'
 import { admitExecutions, type RequestedExecution } from './admit-executions.ts'
 import { AiRequestError } from './errors.ts'
 import {
-  aiJobTypes,
   executionSettings,
-  type AiJobType,
   type ExecutionSettings,
 } from './execution-settings.ts'
 import {
@@ -22,8 +20,11 @@ export type ExecutionModeRequest =
   | { kind: 'agent'; tools: string[] }
 
 export type ExecutionRequest = {
-  /** The configuration and price list key. */
-  jobType: AiJobType
+  /**
+   * The key under which AI keeps the client's execution settings: a name
+   * the client defines for itself.
+   */
+  settingsKey: string
   /** The client's domain operation; it has at most one execution in progress. */
   operationId: string
   /** The client's version of the input, handed back with the result. */
@@ -39,7 +40,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 function validate(request: ExecutionRequest) {
   const mode = request.mode
   if (
-    !aiJobTypes.includes(request.jobType) ||
+    typeof request.settingsKey !== 'string' ||
     !uuid.test(request.operationId) ||
     !request.instruction?.trim() ||
     !request.input?.trim() ||
@@ -71,18 +72,16 @@ function snapshot(
 async function admit(requests: ExecutionRequest[]) {
   for (const request of requests) validate(request)
   const first = requests[0]!
-  // Agent work reserves the token cap plus the fees of its paid tools, a
-  // rule its adapter brings in task oferty-pracy-0mq.17. Until then it is
-  // refused rather than funded below the existing rule.
-  if (first.mode.kind === 'agent') throw new AiRequestError('unsupported_mode')
-  const settings = executionSettings(first.jobType, first.mode.kind)
+  // Refused before anything is reserved: settings that are missing or
+  // invalid, and a mode no adapter of the provider declares.
+  const settings = executionSettings(first.settingsKey, first.mode.kind)
   return transaction(async () => {
     for (const request of requests)
       if (await hasActiveExecution(request.operationId))
         throw new AiRequestError('operation_busy')
     return admitExecutions(
       requests.map((request) => ({
-        jobType: request.jobType,
+        settingsKey: request.settingsKey,
         operationId: request.operationId,
         inputVersion: request.inputVersion ?? null,
         mode: request.mode.kind,
@@ -98,9 +97,10 @@ async function admit(requests: ExecutionRequest[]) {
 }
 
 /**
- * Requests an execution in the caller's transaction: fixes the settings and
- * prices, reserves the budget (or records a wait for it) and sends the job.
- * Rolling back the caller's transaction rolls all of it back.
+ * Requests an execution in the caller's transaction: fixes the settings
+ * kept under the client's key and the prices, reserves the budget (or
+ * records a wait for it) and sends the job. Rolling back the caller's
+ * transaction rolls all of it back.
  */
 export async function requestExecution(
   request: ExecutionRequest,
@@ -121,7 +121,7 @@ export async function requestExecutionGroup(
     first.mode.kind !== 'batch' ||
     requests.some(
       (r) =>
-        r.jobType !== first.jobType ||
+        r.settingsKey !== first.settingsKey ||
         r.mode.kind !== 'batch' ||
         r.mode.groupId !==
           (first.mode as { kind: 'batch'; groupId: string }).groupId,

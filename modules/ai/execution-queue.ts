@@ -4,7 +4,17 @@ import { requireQueued } from '../../lib/queue.ts'
 
 /** The AI execution queue; its jobs carry only the execution identifier. */
 export const aiExecutionQueue = 'ai-execution'
-export const aiExecutionJobOptions = { retryLimit: 0, expireInSeconds: 300 }
+/**
+ * A job fails only when the delivery of a saved outcome fails; its retries
+ * deliver again without calling the provider. After the last one the
+ * execution stays waiting for delivery.
+ */
+export const aiExecutionJobOptions = {
+  retryLimit: 3,
+  retryDelay: 30,
+  retryBackoff: true,
+  expireInSeconds: 300,
+}
 
 let queue: PgBoss | undefined
 

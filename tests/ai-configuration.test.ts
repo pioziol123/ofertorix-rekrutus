@@ -1,66 +1,76 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  parseAiExecutionConfig,
-  resolveEndpoint,
-  savedEndpoint,
-} from '../modules/ai/index.ts'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resolveEndpoint, savedEndpoint } from '../modules/ai/index.ts'
 import {
   profileConfiguration,
   profileAiConfigured,
 } from '../lib/profile/ai-configuration.ts'
 
+// The settings AI keeps under the Profile's key, replaced per test.
+const ai = vi.hoisted(() => ({ settings: {} as Record<string, unknown> }))
+vi.mock('../modules/ai/client-settings.ts', () => ({
+  clientSettings: ai.settings,
+}))
+
+// The local choice AI derives from the settings and its own configuration.
 const local = {
   version: 1,
   provider: 'ollama',
   model: 'gpt-oss:20b',
   execution: 'direct',
-  endpointRef: 'local',
+  endpointRef: 'ollama',
   endpointVersion: 1,
-  runtimeParameters: { numCtx: 8192 },
+  runtimeParameters: { numCtx: 32768 },
 }
 const endpoint = {
-  ref: 'local',
+  ref: 'ollama',
   version: 1,
   url: 'http://local.test',
   credentialEnv: null,
 }
+beforeEach(() => {
+  ai.settings.profile = {
+    provider: 'ollama',
+    model: 'gpt-oss:20b',
+    reasoningEffort: null,
+  }
+})
 afterEach(() => vi.unstubAllEnvs())
-describe('strict provider selection without implicit cloud fallback', () => {
-  it('uses legacy configuration only when selection is absent', () => {
-    expect(parseAiExecutionConfig(undefined)).toBeNull()
-    expect(parseAiExecutionConfig(JSON.stringify(local))).toEqual(local)
+describe('provider chosen from the settings without implicit cloud fallback', () => {
+  it('uses the paid price list when the settings name the paid provider', async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'key')
+    ai.settings.profile = {
+      provider: 'openai',
+      model: 'gpt-6-luna',
+      reasoningEffort: 'low',
+    }
+    expect(profileAiConfigured()).toBe(true)
+    expect(await profileConfiguration('PHP')).toMatchObject({
+      model: 'gpt-6-luna',
+      maxOutputTokens: 6000,
+    })
+    vi.stubEnv('OPENAI_API_KEY', '')
+    expect(profileAiConfigured()).toBe(false)
+    expect(await profileConfiguration('PHP')).toBeNull()
   })
   it.each([
-    '',
-    'null',
-    '{}',
-    '[]',
-    '{invalid',
-    JSON.stringify({ ...local, unexpected: true }),
-    JSON.stringify({
-      ...local,
-      runtimeParameters: { numCtx: 8192, temperature: 0 },
-    }),
-    JSON.stringify({ ...local, provider: 'other' }),
-    JSON.stringify({ ...local, execution: 'batch' }),
-    JSON.stringify({ ...local, model: 'other' }),
-  ])('rejects invalid explicit selection %s', (value) => {
-    expect(() => parseAiExecutionConfig(value)).toThrow(
-      expect.objectContaining({ code: 'configuration' }),
-    )
-  })
-  it.each(['matching', 'research'] as const)(
-    'does not silently accept unsupported local %s',
-    (useCase) => {
-      expect(() =>
-        parseAiExecutionConfig(JSON.stringify(local), useCase),
-      ).toThrow(expect.objectContaining({ code: 'configuration' }))
+    [
+      'a reasoning effort the local model does not accept',
+      { reasoningEffort: 'low' },
+    ],
+    ['an unknown local model', { model: 'other' }],
+    ['an unknown provider', { provider: 'other' }],
+  ])(
+    'is not configured with %s, even when paid credentials exist',
+    async (_, change) => {
+      vi.stubEnv('OPENAI_API_KEY', 'key')
+      vi.stubEnv('AI_ENDPOINTS_JSON', JSON.stringify([endpoint]))
+      ai.settings.profile = { ...(ai.settings.profile as object), ...change }
+      expect(profileAiConfigured()).toBe(false)
+      expect(await profileConfiguration('PHP')).toBeNull()
     },
   )
   it('builds a local snapshot without paid credentials or pricing', async () => {
     vi.stubEnv('OPENAI_API_KEY', '')
-    vi.stubEnv('AI_PROFILE_PRICING_JSON', '')
-    vi.stubEnv('AI_PROFILE_EXECUTION_JSON', JSON.stringify(local))
     vi.stubEnv('AI_ENDPOINTS_JSON', JSON.stringify([endpoint]))
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
@@ -80,7 +90,6 @@ describe('strict provider selection without implicit cloud fallback', () => {
     expect(snapshot).not.toHaveProperty('pricing')
   })
   it('rejects changed or removed endpoint versions instead of redirecting queued work', async () => {
-    vi.stubEnv('AI_PROFILE_EXECUTION_JSON', JSON.stringify(local))
     vi.stubEnv('AI_ENDPOINTS_JSON', JSON.stringify([endpoint]))
     const snapshot = await profileConfiguration(
       'PHP',
@@ -121,7 +130,7 @@ describe('strict provider selection without implicit cloud fallback', () => {
       [{ ...endpoint, url: 'http://secret:password@local.test' }],
     ]) {
       vi.stubEnv('AI_ENDPOINTS_JSON', JSON.stringify(entries))
-      expect(() => resolveEndpoint('local', 1)).toThrow(
+      expect(() => resolveEndpoint('ollama', 1)).toThrow(
         expect.objectContaining({ code: 'configuration' }),
       )
     }

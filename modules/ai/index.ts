@@ -18,7 +18,7 @@ export {
 export type { ExecutionState } from './infrastructure/persistence/executions.ts'
 export { readBudget, type AiBudget } from './read-budget.ts'
 export { AiRequestError, type AiRequestErrorCode } from './errors.ts'
-export type { AiJobType, ExecutionMode } from './execution-settings.ts'
+export type { ExecutionMode } from './execution-settings.ts'
 export {
   registerResultReceiver,
   type ExecutionCost,
@@ -36,12 +36,8 @@ export {
 } from './execution-queue.ts'
 export { runExecution } from './run-execution.ts'
 export { recoverExecutions } from './recover-executions.ts'
-export {
-  registerProviderAdapter,
-  type ProviderAdapter,
-  type ProviderSettings,
-} from './provider-adapter.ts'
-export { openAiProvider } from './infrastructure/adapters/openai.ts'
+export { registerProviderAdapter } from './provider-registry.ts'
+export type { ProviderAdapter, ProviderSettings } from './provider-adapter.ts'
 
 // Transitional: what the Profile, Matching and Companies use today, until
 // tasks oferty-pracy-0mq.9 and oferty-pracy-0mq.17 move them to the
@@ -49,8 +45,7 @@ export { openAiProvider } from './infrastructure/adapters/openai.ts'
 export {
   aiConfiguration,
   isExecutionSnapshot,
-  parseAiExecutionConfig,
-  pricingConfiguration,
+  localExecutionChoice,
   resolveEndpoint,
   savedEndpoint,
   type AiConfiguration,

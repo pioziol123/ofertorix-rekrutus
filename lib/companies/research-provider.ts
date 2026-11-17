@@ -12,7 +12,7 @@ import {
   type ResearchEvidence,
 } from './research-model.ts'
 export const researchConfiguration = (): AiConfiguration | null => {
-  const c = aiConfiguration('AI_RESEARCH_PRICING_JSON')
+  const c = aiConfiguration('research')
   const minimum =
     c?.model === 'gpt-6-luna'
       ? 500000

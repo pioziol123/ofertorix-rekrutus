@@ -54,7 +54,7 @@ export async function enqueueLocalProfile(
       )
   }
   await client.query(
-    'INSERT INTO ai_executions(id,task_type,operation_id,supersedes,configuration,publication_token) VALUES($1,$2,$3,$4,$5,$6)',
+    'INSERT INTO ai_executions(id,settings_key,operation_id,supersedes,configuration,publication_token) VALUES($1,$2,$3,$4,$5,$6)',
     [executionId, 'profile', importId, previous, snapshot, token],
   )
   await client.query('INSERT INTO ai_local_queue(execution_id) VALUES($1)', [
@@ -258,7 +258,7 @@ export async function executeLocalProfile(
 
 export async function wakeLocalProfiles(pool: Pool, boss: PgBoss) {
   const queued = await pool.query(
-    "SELECT a.id FROM ai_local_queue q JOIN ai_attempts a ON a.execution_id=q.execution_id JOIN ai_executions e ON e.id=q.execution_id WHERE q.state='queued' AND e.disposition='active' AND e.task_type='profile' ORDER BY q.queue_sequence",
+    "SELECT a.id FROM ai_local_queue q JOIN ai_attempts a ON a.execution_id=q.execution_id JOIN ai_executions e ON e.id=q.execution_id WHERE q.state='queued' AND e.disposition='active' AND e.settings_key='profile' ORDER BY q.queue_sequence",
   )
   for (const row of queued.rows)
     await boss.send(

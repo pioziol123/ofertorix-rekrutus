@@ -10,9 +10,7 @@ import {
 } from '../lib/matching/groups.ts'
 import {
   aiExecutionQueue,
-  openAiProvider,
   recoverExecutions,
-  registerProviderAdapter,
   runExecution,
   useAiQueue,
 } from '../modules/ai/index.ts'
@@ -87,7 +85,6 @@ await boss.work<{ groupId: string }>(matchingGroupQueue, async (jobs) => {
 })
 await recoverCompanyResearch(pool, boss)
 useAiQueue(boss)
-registerProviderAdapter(openAiProvider())
 await recoverExecutions()
 await boss.work<{ executionId: string }>(aiExecutionQueue, async (jobs) => {
   for (const job of jobs) await runExecution(job.data.executionId)

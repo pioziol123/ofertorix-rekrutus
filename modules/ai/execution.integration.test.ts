@@ -34,23 +34,62 @@ import {
   type ExecutionResultDelivery,
   type ModelResult,
   type ModelUsage,
+  type ProviderAdapter,
   type ReceiverDecision,
 } from './index.ts'
+
+// A client's own settings key, a simulated provider and its price list.
+// AI must work with any key a client defines.
+const settingsKey = 'summaries'
+vi.mock('./client-settings.ts', () => ({
+  clientSettings: {
+    summaries: {
+      provider: 'simulated',
+      model: 'simulated-model',
+      reasoningEffort: null,
+    },
+  },
+}))
+vi.mock('./model-catalog.ts', () => ({
+  aiCatalog: {
+    providers: { simulated: { credentialEnv: null } },
+    models: [
+      {
+        provider: 'simulated',
+        model: 'simulated-model',
+        reasoningEfforts: [null],
+        // The same price list in both modes the simulated adapter may declare.
+        prices: {
+          single: {
+            model: 'simulated-model',
+            version: 'prices-1',
+            inputUsdPerMillion: '1',
+            outputUsdPerMillion: '2',
+            usdPln: '4',
+            fxVersion: 'fx-1',
+            maxInputTokens: 1000,
+            maxOutputTokens: 500,
+          },
+          batch: {
+            model: 'simulated-model',
+            version: 'prices-1',
+            inputUsdPerMillion: '1',
+            outputUsdPerMillion: '2',
+            usdPln: '4',
+            fxVersion: 'fx-1',
+            maxInputTokens: 1000,
+            maxOutputTokens: 500,
+          },
+        },
+      },
+    ],
+  },
+}))
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
 
 // Ceiling: (1000 * 1 + 500 * 2) / 1e6 USD * 4 = 0.008 PLN per attempt.
-const pricing = {
-  model: 'simulated-model',
-  version: 'prices-1',
-  inputUsdPerMillion: '1',
-  outputUsdPerMillion: '2',
-  usdPln: '4',
-  fxVersion: 'fx-1',
-  maxInputTokens: 1000,
-  maxOutputTokens: 500,
-}
 const ceiling = '0.008000'
 
 integration('AI execution coordination with a real database and queue', () => {
@@ -64,9 +103,11 @@ integration('AI execution coordination with a real database and queue', () => {
   /** What the simulated provider answers next; one entry per call. */
   let answers: Array<() => Promise<ModelResult>>
   let calls: Array<{ model: string; instructions: string; input: string }>
+  let modes: Array<keyof ProviderAdapter['modes'] | 'batch'>
   let decide: (delivery: ExecutionResultDelivery) => Promise<ReceiverDecision>
   let results: ExecutionResultDelivery[]
   let failures: ExecutionFailureDelivery[]
+  let receiveFailure: () => Promise<void>
 
   const completed =
     (
@@ -83,7 +124,7 @@ integration('AI execution coordination with a real database and queue', () => {
   const request = (
     overrides: Partial<ExecutionRequest> = {},
   ): ExecutionRequest => ({
-    jobType: 'profile',
+    settingsKey,
     operationId: randomUUID(),
     inputVersion: '3',
     mode: { kind: 'single' },
@@ -104,14 +145,30 @@ integration('AI execution coordination with a real database and queue', () => {
       )
     ).rows.map((r) => r.id as string)
 
-  /** Takes the next job from the queue and handles it like the worker. */
+  /**
+   * Takes the next job from the queue and handles it like the worker: an
+   * error fails the job, so the queue retries it.
+   */
   async function work() {
     const [job] = await boss.fetch<{ executionId: string }>(aiExecutionQueue)
     if (!job) throw new Error('Expected a queued AI job')
-    await runExecution(job.data.executionId)
+    try {
+      await runExecution(job.data.executionId)
+    } catch (error) {
+      await boss.fail(aiExecutionQueue, job.id, { message: String(error) })
+      throw error
+    }
     await boss.complete(aiExecutionQueue, job.id)
     return job.data.executionId
   }
+
+  const jobState = async (executionId: string) =>
+    (
+      await admin.query(
+        `SELECT state, retry_count FROM ${queueSchema}.job WHERE name=$1 AND data->>'executionId'=$2`,
+        [aiExecutionQueue, executionId],
+      )
+    ).rows
 
   const clientRows = async () =>
     (await pool.query('SELECT * FROM client_publications ORDER BY created_at'))
@@ -150,18 +207,24 @@ integration('AI execution coordination with a real database and queue', () => {
     await boss.start()
     await boss.createQueue(aiExecutionQueue, aiExecutionJobOptions)
     useAiQueue(boss)
-    registerProviderAdapter({
-      provider: 'openai',
-      single: () => ({
-        async generate(modelRequest) {
-          calls.push(modelRequest)
-          const answer = answers.shift()
-          if (!answer) throw new Error('Unexpected provider call')
-          return answer()
-        },
-      }),
+    const single: NonNullable<ProviderAdapter['modes']['single']> = () => ({
+      async generate(modelRequest) {
+        calls.push(modelRequest)
+        const answer = answers.shift()
+        if (!answer) throw new Error('Unexpected provider call')
+        return answer()
+      },
     })
-    registerResultReceiver('profile', {
+    // The modes the simulated adapter declares, read on every request.
+    registerProviderAdapter({
+      provider: 'simulated',
+      get modes() {
+        return Object.fromEntries(
+          modes.map((mode) => [mode, mode === 'single' ? single : {}]),
+        )
+      },
+    })
+    registerResultReceiver(settingsKey, {
       async receiveResult(delivery) {
         results.push(delivery)
         await db().query(
@@ -172,19 +235,19 @@ integration('AI execution coordination with a real database and queue', () => {
       },
       async receiveFailure(delivery) {
         failures.push(delivery)
+        await receiveFailure()
       },
     })
   }, 30_000)
 
   beforeEach(async () => {
-    vi.stubEnv('OPENAI_API_KEY', 'test-key')
-    vi.stubEnv('AI_PROFILE_PRICING_JSON', JSON.stringify(pricing))
-    vi.stubEnv('AI_PROFILE_EXECUTION_JSON', undefined)
     answers = []
+    modes = ['single']
     calls = []
     results = []
     failures = []
     decide = async () => ({ accepted: true })
+    receiveFailure = async () => {}
     await pool.query(
       'TRUNCATE client_publications, ai_attempts, ai_executions, ai_budget_months CASCADE',
     )
@@ -341,19 +404,124 @@ integration('AI execution coordination with a real database and queue', () => {
     })
   })
 
-  it('a receiver error rolls back the client writes but keeps the settlement', async () => {
+  it('A14-AC09: a receiver error keeps the result for another delivery, which settles once without calling the provider again', async () => {
+    let deliveries = 0
     decide = async () => {
-      throw new Error('client bug')
+      deliveries++
+      if (deliveries === 1) throw new Error('client bug')
+      return { accepted: true }
     }
     const admitted = await requestExecution(request())
     answers.push(completed({ text: 'summary' }))
-    await work()
+    await expect(work()).rejects.toThrow('client bug')
+
+    // Delivering: the result is saved, the cost reserved, the client's
+    // writes and the settlement rolled back, and the job is retried.
     expect(await clientRows()).toEqual([])
     expect(await readExecution(admitted.executionId)).toMatchObject({
-      state: 'failed',
-      cause: 'receiver_error',
-      cost: { actual: '0.000800', unknown: false },
+      state: 'delivering',
+      result: { text: 'summary' },
+      usage: { inputTokens: 100, outputTokens: 50 },
+      cost: { reserved: ceiling, actual: null, unknown: false },
+      cause: null,
+      delivery: { attempts: 1, lastError: 'Error: client bug' },
+      finishedAt: null,
     })
+    expect(await readBudget()).toMatchObject({
+      reserved: ceiling,
+      settled: '0.000000',
+    })
+    expect(await jobState(admitted.executionId)).toEqual([
+      { state: 'retry', retry_count: 0 },
+    ])
+    expect(aiExecutionJobOptions.retryLimit).toBeGreaterThan(0)
+
+    // The queue's retry runs the same job again.
+    await runExecution(admitted.executionId)
+    expect(calls).toHaveLength(1)
+    expect(results).toHaveLength(2)
+    expect(await clientRows()).toHaveLength(1)
+    expect(await readExecution(admitted.executionId)).toMatchObject({
+      state: 'completed',
+      cost: { reserved: ceiling, actual: '0.000800', unknown: false },
+      delivery: { attempts: 2, lastError: 'Error: client bug' },
+    })
+    expect(await readBudget()).toMatchObject({
+      reserved: '0.000000',
+      settled: '0.000800',
+    })
+    expect(
+      (
+        await pool.query(
+          "SELECT count(*)::int AS n FROM ai_attempts WHERE state='settled'",
+        )
+      ).rows[0].n,
+    ).toBe(1)
+
+    // Another copy of the job finds the execution delivered.
+    await runExecution(admitted.executionId)
+    expect(results).toHaveLength(2)
+    expect(calls).toHaveLength(1)
+  })
+
+  it('A14-AC09: a receiver that keeps failing leaves the execution waiting for delivery with the cost reserved', async () => {
+    decide = async () => {
+      throw new Error('still broken')
+    }
+    const requested = request()
+    const admitted = await requestExecution(requested)
+    answers.push(completed({ text: 'summary' }))
+    await expect(work()).rejects.toThrow('still broken')
+    // The first run and every retry of the queue.
+    for (let retry = 0; retry < aiExecutionJobOptions.retryLimit; retry++)
+      await expect(runExecution(admitted.executionId)).rejects.toThrow(
+        'still broken',
+      )
+    expect(calls).toHaveLength(1)
+    expect(await clientRows()).toEqual([])
+    expect(await readExecution(admitted.executionId)).toMatchObject({
+      state: 'delivering',
+      result: { text: 'summary' },
+      cost: { reserved: ceiling, actual: null, unknown: false },
+      delivery: {
+        attempts: aiExecutionJobOptions.retryLimit + 1,
+        lastError: 'Error: still broken',
+      },
+    })
+    expect((await readBudget()).reserved).toBe(ceiling)
+    // Still in progress: the operation gets no second execution.
+    await expect(
+      requestExecution(request({ operationId: requested.operationId })),
+    ).rejects.toEqual(new AiRequestError('operation_busy'))
+  })
+
+  it('A14-AC09: a final state without a result is delivered again after a receiver error', async () => {
+    let deliveries = 0
+    receiveFailure = async () => {
+      deliveries++
+      if (deliveries === 1) throw new Error('client bug')
+    }
+    const admitted = await requestExecution(request())
+    answers.push(async () => {
+      throw new ModelError('http', {
+        requestSent: true,
+        responseReceived: true,
+      })
+    })
+    await expect(work()).rejects.toThrow('client bug')
+    expect(await readExecution(admitted.executionId)).toMatchObject({
+      state: 'delivering',
+      cause: 'http',
+      cost: { actual: null, unknown: false },
+    })
+    await runExecution(admitted.executionId)
+    expect(await readExecution(admitted.executionId)).toMatchObject({
+      state: 'failed',
+      cause: 'http',
+      cost: { actual: null, unknown: true },
+    })
+    expect(failures).toHaveLength(2)
+    expect(calls).toHaveLength(1)
   })
 
   it('a final state without a result reaches the receiver with its cause', async () => {
@@ -423,14 +591,34 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(failures).toMatchObject([{ cause: 'http' }])
   })
 
-  it('refuses agent work until an adapter brings its reservation rule', async () => {
-    const requested = request({
-      mode: { kind: 'agent', tools: ['web_search'] },
-    })
-    await expect(requestExecution(requested)).rejects.toEqual(
-      new AiRequestError('unsupported_mode'),
-    )
-    expect(await readExecutionHistory(requested.operationId)).toEqual([])
+  it.each<[string, ExecutionRequest['mode']]>([
+    ['batch', { kind: 'batch', groupId: randomUUID() }],
+    ['agent', { kind: 'agent', tools: ['web_search'] }],
+  ])(
+    'A14-AC10: refuses %s work no adapter declares, with nothing reserved or queued',
+    async (_, mode) => {
+      const requested = request({ mode })
+      await expect(requestExecution(requested)).rejects.toEqual(
+        new AiRequestError('unsupported_mode'),
+      )
+      expect(await readExecutionHistory(requested.operationId)).toEqual([])
+      expect(
+        (await pool.query('SELECT count(*)::int AS n FROM ai_attempts')).rows[0]
+          .n,
+      ).toBe(0)
+      expect(await jobs()).toEqual([])
+      expect((await readBudget()).reserved).toBe('0.000000')
+    },
+  )
+
+  it('A14-AC10: refuses a batch group no adapter declares, with nothing reserved', async () => {
+    const groupId = randomUUID()
+    await expect(
+      requestExecutionGroup([
+        request({ mode: { kind: 'batch', groupId } }),
+        request({ mode: { kind: 'batch', groupId } }),
+      ]),
+    ).rejects.toEqual(new AiRequestError('unsupported_mode'))
     expect(await jobs()).toEqual([])
     expect((await readBudget()).reserved).toBe('0.000000')
   })
@@ -454,42 +642,6 @@ integration('AI execution coordination with a real database and queue', () => {
     })
   })
 
-  it('keeps the cost unknown and reserved when the saved endpoint changed, as the Profile path does', async () => {
-    const endpoint = {
-      ref: 'paid',
-      version: 1,
-      url: 'https://paid.test/v1',
-      credentialEnv: 'PAID_KEY',
-    }
-    vi.stubEnv('PAID_KEY', 'secret')
-    vi.stubEnv('AI_ENDPOINTS_JSON', JSON.stringify([endpoint]))
-    vi.stubEnv(
-      'AI_PROFILE_EXECUTION_JSON',
-      JSON.stringify({
-        version: 1,
-        provider: 'openai',
-        model: pricing.model,
-        execution: 'direct',
-        endpointRef: 'paid',
-        endpointVersion: 1,
-        runtimeParameters: {},
-      }),
-    )
-    const admitted = await requestExecution(request())
-    vi.stubEnv(
-      'AI_ENDPOINTS_JSON',
-      JSON.stringify([{ ...endpoint, url: 'https://other.test/v1' }]),
-    )
-    await work()
-    expect(calls).toEqual([])
-    expect(await readExecution(admitted.executionId)).toMatchObject({
-      state: 'failed',
-      cause: 'configuration',
-      cost: { reserved: ceiling, actual: null, unknown: true },
-    })
-    expect((await readBudget()).reserved).toBe(ceiling)
-  })
-
   it('answers concurrent requests of one operation with one execution and a defined error', async () => {
     const operationId = randomUUID()
     const outcomes = await Promise.allSettled([
@@ -511,12 +663,12 @@ integration('AI execution coordination with a real database and queue', () => {
     )
   })
 
-  it('refuses a job type without configuration', async () => {
-    vi.stubEnv('AI_PROFILE_PRICING_JSON', '{broken')
-    await expect(requestExecution(request())).rejects.toEqual(
-      new AiRequestError('not_configured'),
-    )
+  it('A14-AC08: refuses a settings key without settings, with nothing reserved', async () => {
+    await expect(
+      requestExecution(request({ settingsKey: 'unknown-client' })),
+    ).rejects.toEqual(new AiRequestError('not_configured'))
     expect(await jobs()).toEqual([])
+    expect((await readBudget()).reserved).toBe('0.000000')
   })
 
   it('waits for budget and is queued by recovery when funds appear', async () => {
@@ -540,7 +692,8 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(await jobs()).toEqual([admitted.executionId])
   })
 
-  it('reserves a group as a whole or not at all', async () => {
+  it('reserves a group as a whole or not at all, once an adapter declares batch mode', async () => {
+    modes = ['single', 'batch']
     await pool.query('INSERT INTO ai_budget_months VALUES($1,0.01)', [
       budgetMonth(),
     ])
@@ -563,7 +716,8 @@ integration('AI execution coordination with a real database and queue', () => {
       ['queued', groupId, ceiling],
       ['queued', groupId, ceiling],
     ])
-    // No adapter offers batch mode yet: an explicit final state, nothing spent.
+    // The simulated batch mode does no work: an explicit final state.
+    modes = ['single']
     await work()
     expect(failures[0]).toMatchObject({
       cause: 'unsupported_mode',

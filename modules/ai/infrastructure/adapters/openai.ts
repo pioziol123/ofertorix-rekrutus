@@ -57,6 +57,8 @@ export class OpenAiAdapter implements StructuredModel {
       maxOutputTokens: number
       url?: string
       apiKey?: () => string | undefined
+      /** The reasoning effort sent; `low` when not given, none when null. */
+      reasoningEffort?: string | null
     } = { maxOutputTokens: 6000 },
   ) {}
   async generate(
@@ -68,6 +70,10 @@ export class OpenAiAdapter implements StructuredModel {
       ? this.options.apiKey()
       : process.env.OPENAI_API_KEY
     if (!key) throw new ModelError('configuration')
+    const effort =
+      this.options.reasoningEffort === undefined
+        ? 'low'
+        : this.options.reasoningEffort
     let response: Response
     try {
       response = await this.fetcher(
@@ -84,7 +90,7 @@ export class OpenAiAdapter implements StructuredModel {
             tools: [],
             service_tier: 'default',
             max_output_tokens: this.options.maxOutputTokens,
-            reasoning: { effort: 'low' },
+            ...(effort === null ? {} : { reasoning: { effort } }),
             instructions: request.instructions,
             input: [
               {
@@ -142,22 +148,21 @@ export class OpenAiAdapter implements StructuredModel {
   }
 }
 
-/** The OpenAI provider for the AI coordination, in single mode. */
-export function openAiProvider(fetcher: typeof fetch = fetch): ProviderAdapter {
+/**
+ * The OpenAI provider for the AI coordination, in single mode, on the
+ * default endpoint with the key from the provider's secret.
+ */
+export function openAiProvider(
+  fetcher: typeof fetch = (input, init) => fetch(input, init),
+): ProviderAdapter {
   return {
     provider: 'openai',
-    single: (settings) =>
-      new OpenAiAdapter(fetcher, {
-        maxOutputTokens: settings.maxOutputTokens,
-        ...(settings.endpoint
-          ? {
-              url: `${settings.endpoint.url.replace(/\/$/, '')}/responses`,
-              apiKey: () =>
-                settings.endpoint?.credentialEnv
-                  ? process.env[settings.endpoint.credentialEnv]
-                  : undefined,
-            }
-          : {}),
-      }),
+    modes: {
+      single: (settings) =>
+        new OpenAiAdapter(fetcher, {
+          maxOutputTokens: settings.maxOutputTokens,
+          reasoningEffort: settings.reasoningEffort,
+        }),
+    },
   }
 }

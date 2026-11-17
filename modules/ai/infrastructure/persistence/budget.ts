@@ -1,5 +1,5 @@
 import type { QueryExecutor } from '../../../../lib/db.ts'
-import type { AiConfiguration } from '../../configuration.ts'
+import type { AiConfiguration } from '../../model-catalog.ts'
 import { attemptCeiling, budgetMonth } from '../../domain/cost.ts'
 import { decimal, money } from '../../domain/money.ts'
 

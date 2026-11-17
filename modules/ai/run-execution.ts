@@ -2,28 +2,27 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { transaction } from '../../lib/db.ts'
 import { admitExecutions } from './admit-executions.ts'
 import { chargeCeiling } from './domain/cost.ts'
-import { savedEndpoint } from './configuration.ts'
 import {
+  claimDelivery,
   claimExecution,
   finishExecution,
+  recordFailedDelivery,
+  saveOutcome,
   settleAttempt,
+  settleSavedAttempt,
   type ExecutionRow,
   type Settlement,
 } from './infrastructure/persistence/executions.ts'
-import {
-  emptyUsage,
-  ModelError,
-  providerAdapter,
-  type ModelUsage,
-} from './provider-adapter.ts'
-import { resultReceiver, type ExecutionCost } from './result-receiver.ts'
+import { emptyUsage, ModelError, type ModelUsage } from './provider-adapter.ts'
+import { providerAdapter } from './provider-registry.ts'
+import { resultReceiver } from './result-receiver.ts'
 
 /** The attempts an operation gets for transient errors, as before. */
 const maxAttempts = 2
 
 type Outcome = {
-  /** The parsed result, or undefined when the execution ended without one. */
-  result?: unknown
+  /** The parsed result, or null when the execution ended without one. */
+  result: unknown
   cause: string | null
   usage: ModelUsage
   responseId: string | null
@@ -37,6 +36,7 @@ type Outcome = {
 async function callProvider(execution: ExecutionRow): Promise<Outcome> {
   const { settings, instruction, input, responseSchema } = execution.snapshot
   const outcome: Outcome = {
+    result: null,
     cause: null,
     usage: emptyUsage(),
     responseId: null,
@@ -46,22 +46,11 @@ async function callProvider(execution: ExecutionRow): Promise<Outcome> {
   }
   const single =
     execution.mode === 'single'
-      ? providerAdapter(settings.provider)?.single
+      ? providerAdapter(settings.provider)?.modes.single
       : undefined
+  // The adapter was removed after the request was accepted.
   if (!single) return { ...outcome, cause: 'unsupported_mode', notSent: true }
   try {
-    // A changed endpoint is a configuration error with an unknown cost, as
-    // on the Profile path: the request is not redirected.
-    if (
-      settings.endpoint &&
-      settings.endpointRef !== null &&
-      settings.endpointVersion !== null
-    )
-      savedEndpoint({
-        endpointRef: settings.endpointRef,
-        endpointVersion: settings.endpointVersion,
-        endpoint: settings.endpoint,
-      })
     const response = await single(settings).generate({
       model: settings.model,
       instructions: instruction,
@@ -72,11 +61,15 @@ async function callProvider(execution: ExecutionRow): Promise<Outcome> {
     outcome.responseId = response.responseId
     if (response.outcome !== 'completed' || response.text === null)
       return { ...outcome, cause: response.outcome }
+    let result: unknown = null
     try {
-      return { ...outcome, result: JSON.parse(response.text) }
+      result = JSON.parse(response.text)
     } catch {
-      return { ...outcome, cause: 'format' }
+      // Handled below with any other result that is not a JSON value.
     }
+    return result === null
+      ? { ...outcome, cause: 'format' }
+      : { ...outcome, result }
   } catch (error) {
     if (!(error instanceof ModelError)) return { ...outcome, cause: 'unknown' }
     return {
@@ -120,13 +113,12 @@ async function retry(execution: ExecutionRow, settlement: Settlement) {
     await settleAttempt(execution.id, settlement)
     await finishExecution(execution.id, {
       state: 'retried',
-      result: null,
       cause: settlement.error,
     })
     await admitExecutions(
       [
         {
-          jobType: execution.jobType,
+          settingsKey: execution.settingsKey,
           operationId: execution.operationId,
           inputVersion: execution.inputVersion,
           mode: execution.mode,
@@ -142,73 +134,85 @@ async function retry(execution: ExecutionRow, settlement: Settlement) {
   })
 }
 
-/**
- * Saves the settlement and hands the outcome to the client's receiver in
- * the same transaction.
- */
-async function deliver(
-  execution: ExecutionRow,
-  outcome: Outcome,
-  settlement: Settlement,
-) {
-  const receiver = resultReceiver(execution.jobType)
-  const cost: ExecutionCost = {
-    reserved: execution.attempt.reserved,
-    actual: settlement.actual,
-  }
-  const delivery = {
-    executionId: execution.id,
-    operationId: execution.operationId,
-    inputVersion: execution.inputVersion,
-    cost,
-  }
-  const result = outcome.result === undefined ? null : outcome.result
-  await transaction(async () => {
-    await settleAttempt(execution.id, settlement)
-    if (!receiver) throw new MissingReceiver()
-    if (outcome.result === undefined) {
-      const cause = outcome.cause ?? 'unknown'
-      await receiver.receiveFailure({ ...delivery, cause })
-      await finishExecution(execution.id, { state: 'failed', result, cause })
-      return
-    }
-    const decision = await receiver.receiveResult({ ...delivery, result })
-    await finishExecution(
-      execution.id,
-      decision.accepted
-        ? { state: 'completed', result, cause: null }
-        : { state: 'rejected', result, cause: decision.reason },
-    )
-  }).catch(async (error: unknown) => {
-    // The client's writes are rolled back; the cost is still settled.
-    await transaction(async () => {
-      await settleAttempt(execution.id, settlement)
-      await finishExecution(execution.id, {
-        state: 'failed',
-        result,
-        cause:
-          error instanceof MissingReceiver ? 'no_receiver' : 'receiver_error',
-      })
-    })
-  })
+/** Why a delivery did not reach the client's decision, for diagnostics. */
+function deliveryError(error: unknown) {
+  const text =
+    error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+  return text.slice(0, 500)
 }
 
-class MissingReceiver extends Error {}
+/**
+ * Hands the saved outcome to the client's receiver and, in the same
+ * transaction, settles the attempt and ends the execution with the
+ * receiver's decision. When the receiver throws, everything of this
+ * delivery is rolled back, the execution stays `delivering` with its cost
+ * reserved, and the error is raised so that the queue retries the job.
+ */
+async function deliver(executionId: string) {
+  try {
+    await transaction(async () => {
+      const execution = await claimDelivery(executionId)
+      if (!execution) return
+      const receiver = resultReceiver(execution.settingsKey)
+      if (!receiver)
+        throw new Error(`No receiver for settings key ${execution.settingsKey}`)
+      const delivery = {
+        executionId: execution.id,
+        operationId: execution.operationId,
+        inputVersion: execution.inputVersion,
+        cost: {
+          reserved: execution.attempt.reserved,
+          actual: execution.attempt.actual,
+        },
+      }
+      await settleSavedAttempt(execution.id)
+      if (execution.result === null) {
+        const cause = execution.cause ?? 'unknown'
+        await receiver.receiveFailure({ ...delivery, cause })
+        await finishExecution(execution.id, { state: 'failed', cause })
+        return
+      }
+      const decision = await receiver.receiveResult({
+        ...delivery,
+        result: execution.result,
+      })
+      await finishExecution(
+        execution.id,
+        decision.accepted
+          ? { state: 'completed', cause: null }
+          : { state: 'rejected', cause: decision.reason },
+      )
+    })
+  } catch (error) {
+    await recordFailedDelivery(executionId, deliveryError(error))
+    throw error
+  }
+}
 
 /**
- * Handles one job of the AI execution queue: claims the execution, calls
- * the provider, settles the attempt and delivers the outcome, or retries
- * a transient error once as a new attempt of the same operation.
+ * Handles one job of the AI execution queue. A queued execution is
+ * claimed, the provider called once, and the outcome saved before it is
+ * delivered; a transient error is retried once as a new attempt of the same
+ * operation. An execution waiting for delivery is delivered again without
+ * calling the provider.
  */
 export async function runExecution(executionId: string): Promise<void> {
   const execution = await transaction(() => claimExecution(executionId))
-  if (!execution) return
-  const outcome = await callProvider(execution)
-  const settlement = settlementOf(execution, outcome)
-  if (outcome.retry && execution.attempt.number < maxAttempts) {
-    await delay(outcome.retryAfterMs)
-    await retry(execution, settlement)
-    return
+  if (execution) {
+    const outcome = await callProvider(execution)
+    const settlement = settlementOf(execution, outcome)
+    if (outcome.retry && execution.attempt.number < maxAttempts) {
+      await delay(outcome.retryAfterMs)
+      await retry(execution, settlement)
+      return
+    }
+    await transaction(() =>
+      saveOutcome(
+        execution.id,
+        { result: outcome.result, cause: outcome.cause },
+        settlement,
+      ),
+    )
   }
-  await deliver(execution, outcome, settlement)
+  await deliver(executionId)
 }

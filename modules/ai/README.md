@@ -4,33 +4,33 @@ Target architecture of the `modules/ai/` module. The module accepts a request to
 
 ## Division of responsibility
 
-| Part | Responsibility |
-| --- | --- |
-| Requesting module | Prepares the needed data and ties the request to its version. Checks the result by its own rules and decides whether the domain result can be saved or published. |
+| Part              | Responsibility                                                                                                                                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Requesting module | Prepares the needed data and ties the request to its version. Checks the result by its own rules and decides whether the domain result can be saved or published.                                   |
 | Integration layer | Translates a specific use case into an instruction and a response schema. Uses the AI module's public operations and passes the requesting module a unified state and a result in an agreed format. |
-| AI module | Chooses the configured executor, persists the configuration, manages the execution state and settles usage. Exposes the result for domain validation. |
-| Executor adapter | Translates the request, response, errors and usage data. Handles the executor's protocol, e.g. the batch cycle or the agent session cycle. |
+| AI module         | Chooses the configured executor, persists the configuration, manages the execution state and settles usage. Exposes the result for domain validation.                                               |
+| Executor adapter  | Translates the request, response, errors and usage data. Handles the executor's protocol, e.g. the batch cycle or the agent session cycle.                                                          |
 
 The AI module records the execution state, usage and cost. The execution result is the input to an operation of the requesting module, which applies its own conditions for saving and publishing. The execution state, the settlement and the decision to accept the content are separate.
 
 ## Public operations
 
-| Operation | Contract |
-| --- | --- |
-| Execution request | Takes the task type, the domain operation ID and the prepared input. Returns the execution ID and its initial state, or a defined error. |
-| Execution read | Exposes the state, the result in the agreed format, usage, cost and the cause of an error or of waiting. Reading the history makes it possible to tell apart executions of the same operation. |
+| Operation          | Contract                                                                                                                                                                                                                            |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Execution request  | Takes the task type, the domain operation ID and the prepared input. Returns the execution ID and its initial state, or a defined error.                                                                                            |
+| Execution read     | Exposes the state, the result in the agreed format, usage, cost and the cause of an error or of waiting. Reading the history makes it possible to tell apart executions of the same operation.                                      |
 | Execution commands | Allow checking, stopping, skipping, resuming or retrying, according to the executor's capabilities and the execution state. Accepting a command means recording the intent. The confirmed effect is visible in the execution state. |
-| Budget read | Exposes the period limit, the reserved and settled amounts and the funds available for new requests. |
+| Budget read        | Exposes the period limit, the reserved and settled amounts and the funds available for new requests.                                                                                                                                |
 
 Public operations hide the queue, the provider's protocol and how the state is stored. A domain operation has its own ID. Each of its executions has a separate ID, and a paid attempt has a separate settlement record.
 
 ## Execution modes
 
-| Mode | Flow |
-| --- | --- |
-| Direct model call | The executor sends one request and receives a response, e.g. from the OpenAI Responses API or Ollama. For the module's client, the execution has an ID and a state. |
-| Batch at the provider | The executor sends a batch, checks its state and assigns the received results to the individual executions. A valid result of one item can be received even when another item ends in an error. An example is the OpenAI Batch API. |
-| Agent session | The executor manages the session, observes its progress and collects the result and materials from the provided tools. The agent runs the work loop, and the allowed tools depend on the task. The target local executor uses OpenCode and Ollama. |
+| Mode                  | Flow                                                                                                                                                                                                                                               |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Direct model call     | The executor sends one request and receives a response, e.g. from the OpenAI Responses API or Ollama. For the module's client, the execution has an ID and a state.                                                                                |
+| Batch at the provider | The executor sends a batch, checks its state and assigns the received results to the individual executions. A valid result of one item can be received even when another item ends in an error. An example is the OpenAI Batch API.                |
+| Agent session         | The executor manages the session, observes its progress and collects the result and materials from the provided tools. The agent runs the work loop, and the allowed tools depend on the task. The target local executor uses OpenCode and Ollama. |
 
 The configuration sets the allowed execution modes and the model choice for a task type. On a request the module persists the input, the instruction and schema version, and the executor settings and any price list. A pending execution keeps this snapshot after the configuration changes. Secrets are read from the runtime configuration. An unavailable executor or a missing required capability gives an explicit state.
 
@@ -57,12 +57,12 @@ The sections above describe the target module. This section says what the code d
 
 ### Contract available now
 
-| Operation | What it does |
-| --- | --- |
+| Operation         | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Execution request | Takes the job type (the key of an existing configuration and price list: `profile`, `matching`, `research`), the domain operation ID, an optional input version, the mode (single, a batch item with its group ID, or agent work with allowed tools, which is refused until its adapter exists), the instruction, the response schema and the input. In the caller's transaction it fixes the provider, model and price list, reserves the budget or records a wait for budget, and sends the job to the AI execution queue. Rolling back the caller's transaction rolls all of it back. A group request reserves the whole group or nothing. An operation has at most one execution waiting, queued or running. |
-| Execution read | The state, the result, the usage, the cost (reserved, settled, unknown) and the cause of a failure or of the client's rejection. The history read lists every execution of an operation; a retry is a new execution of the same operation. |
-| Budget read | The month's limit, the reserved and settled amounts and the funds available. |
-| Result receiver | A client registers one receiver per job type where dependencies are composed. AI calls it in the transaction that saves the settlement: with a result that is valid JSON, or with the cause of a final state without a result. The receiver accepts or rejects the result. The cost is settled whatever it decides, and an unknown cost stays reserved. |
+| Execution read    | The state, the result, the usage, the cost (reserved, settled, unknown) and the cause of a failure or of the client's rejection. The history read lists every execution of an operation; a retry is a new execution of the same operation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Budget read       | The month's limit, the reserved and settled amounts and the funds available.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Result receiver   | A client registers one receiver per job type where dependencies are composed. AI calls it in the transaction that saves the settlement: with a result that is valid JSON, or with the cause of a final state without a result. The receiver accepts or rejects the result. The cost is settled whatever it decides, and an unknown cost stays reserved.                                                                                                                                                                                                                                                                                                                                                          |
 
 A refused request raises a defined error: no configuration, a mode that an explicit execution selection of the job type does not offer (for example a batch item when the selection is a direct call), a provider that cannot run here yet, an operation that already has an execution in progress, or an incomplete request.
 

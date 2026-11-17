@@ -1,99 +1,84 @@
 import { z } from 'zod'
-import { decimal } from './domain/money.ts'
+import { clientSettings } from './client-settings.ts'
+import type { ExecutionMode } from './domain/execution-mode.ts'
+import { resolveSettings, type ClientSettings } from './domain/settings.ts'
+import {
+  aiCatalog,
+  type AiConfiguration,
+  type CatalogModel,
+} from './model-catalog.ts'
 import { ModelError } from './provider-adapter.ts'
 
-export type AiConfiguration = {
-  model: string
-  version: string
-  inputUsdPerMillion: string
-  outputUsdPerMillion: string
-  usdPln: string
-  fxVersion: string
-  maxInputTokens: number
-  maxOutputTokens: number
+export type { AiConfiguration } from './model-catalog.ts'
+
+/**
+ * A client's settings under its key, checked against the AI configuration.
+ * Null when the key has no settings or they are invalid.
+ */
+export function settingsFor(
+  key: string,
+): { settings: ClientSettings; model: CatalogModel } | null {
+  const value = Object.hasOwn(clientSettings, key)
+    ? clientSettings[key]
+    : undefined
+  return resolveSettings(value, aiCatalog)
 }
+
+/** Whether the secret the provider needs is present in the environment. */
+export function hasCredentials(provider: string): boolean {
+  const variable = aiCatalog.providers[provider]?.credentialEnv
+  return variable === null || (!!variable && !!process.env[variable])
+}
+
+/**
+ * The price list of a settings key's model in a mode, when its settings are
+ * valid and the provider's secret is present; otherwise null.
+ */
 export function aiConfiguration(
-  variable = 'AI_PROFILE_PRICING_JSON',
+  key: string,
+  mode: ExecutionMode = 'single',
 ): AiConfiguration | null {
-  return process.env.OPENAI_API_KEY ? pricingConfiguration(variable) : null
+  const resolved = settingsFor(key)
+  if (!resolved || !hasCredentials(resolved.settings.provider)) return null
+  return resolved.model.prices[mode] ?? null
 }
-export function pricingConfiguration(
-  variable = 'AI_PROFILE_PRICING_JSON',
-): AiConfiguration | null {
-  if (!process.env[variable]) return null
-  try {
-    const c = z
-      .object({
-        model: z.string().min(1),
-        version: z.string().min(1),
-        inputUsdPerMillion: z.string(),
-        outputUsdPerMillion: z.string(),
-        usdPln: z.string(),
-        fxVersion: z.string().min(1),
-        maxInputTokens: z.number().int().positive().max(2000000),
-        maxOutputTokens: z.number().int().positive().max(6000),
-      })
-      .strict()
-      .parse(JSON.parse(process.env[variable]!))
-    if (
-      decimal(c.inputUsdPerMillion) <= 0n ||
-      decimal(c.outputUsdPerMillion) <= 0n ||
-      decimal(c.usdPln) <= 0n
-    )
-      return null
-    return c
-  } catch {
+
+/**
+ * The stored choice of an execution on a local runtime. The existing local
+ * Profile path saves it in its snapshot.
+ */
+export type AiExecutionConfig = {
+  version: 1
+  provider: 'ollama'
+  execution: 'direct'
+  model: string
+  endpointRef: string
+  endpointVersion: number
+  runtimeParameters: { numCtx: number }
+}
+
+/**
+ * The local execution chosen for a settings key, or null when the key's
+ * settings name no local model (or are invalid).
+ */
+export function localExecutionChoice(key: string): AiExecutionConfig | null {
+  const resolved = settingsFor(key)
+  const local = resolved?.model.local
+  if (!resolved || !local || resolved.settings.provider !== 'ollama')
     return null
+  return {
+    version: 1,
+    provider: 'ollama',
+    execution: 'direct',
+    model: resolved.model.model,
+    endpointRef: local.endpointRef,
+    endpointVersion: local.endpointVersion,
+    runtimeParameters: { numCtx: local.numCtx },
   }
 }
 
 const name = z.string().trim().min(1)
 const integer = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
-const baseSelection = {
-  version: z.literal(1),
-  model: name,
-  endpointRef: name,
-  endpointVersion: integer,
-}
-export const aiExecutionConfigSchema = z.discriminatedUnion('provider', [
-  z
-    .object({
-      ...baseSelection,
-      provider: z.literal('openai'),
-      execution: z.enum(['direct', 'batch']),
-      runtimeParameters: z.object({}).strict(),
-    })
-    .strict(),
-  z
-    .object({
-      ...baseSelection,
-      provider: z.literal('ollama'),
-      model: z.literal('gpt-oss:20b'),
-      execution: z.literal('direct'),
-      runtimeParameters: z.object({ numCtx: integer }).strict(),
-    })
-    .strict(),
-])
-export type AiExecutionConfig = z.infer<typeof aiExecutionConfigSchema>
-export type AiUseCase = 'profile' | 'matching' | 'research'
-export function parseAiExecutionConfig(
-  value: string | undefined,
-  useCase: AiUseCase = 'profile',
-): AiExecutionConfig | null {
-  if (value === undefined) return null
-  try {
-    const result = aiExecutionConfigSchema.parse(JSON.parse(value))
-    const supported =
-      useCase === 'profile'
-        ? result.execution === 'direct'
-        : result.provider === 'openai' &&
-          result.execution === (useCase === 'matching' ? 'batch' : 'direct')
-    if (!supported) throw new Error('Unsupported execution')
-    return result
-  } catch {
-    throw new ModelError('configuration')
-  }
-}
 const endpointSchema = z
   .object({
     ref: name,
@@ -144,7 +129,19 @@ export function resolveEndpoint(ref: string, version: number): AiEndpoint {
     throw new ModelError('configuration')
   }
 }
-export type ExecutionSnapshot = AiExecutionConfig & {
+
+/**
+ * The snapshot the existing Profile path saves for an explicit execution
+ * choice. Rows saved before the settings key may still name OpenAI with
+ * its own endpoint and price list.
+ */
+export type ExecutionSnapshot = (
+  | AiExecutionConfig
+  | (Omit<AiExecutionConfig, 'provider' | 'runtimeParameters'> & {
+      provider: 'openai'
+      runtimeParameters: Record<string, never>
+    })
+) & {
   promptVersion: string
   schemaVersion: string
   instructions: string
@@ -154,15 +151,7 @@ export type ExecutionSnapshot = AiExecutionConfig & {
   endpoint: AiEndpoint
   pricing?: AiConfiguration
 }
-/**
- * The endpoint saved at request time, if the configuration still has it
- * unchanged; queued work is never redirected to another endpoint.
- */
-export function savedEndpoint(snapshot: {
-  endpointRef: string
-  endpointVersion: number
-  endpoint: Pick<AiEndpoint, 'url' | 'credentialEnv'>
-}): AiEndpoint {
+export function savedEndpoint(snapshot: ExecutionSnapshot): AiEndpoint {
   const endpoint = resolveEndpoint(
     snapshot.endpointRef,
     snapshot.endpointVersion,

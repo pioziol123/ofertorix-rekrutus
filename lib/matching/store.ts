@@ -42,8 +42,7 @@ import {
 } from './batch.ts'
 export const matchingQueue = 'offer-matching'
 export class MatchingError extends Error {}
-export const matchingConfiguration = () =>
-  aiConfiguration('AI_MATCHING_PRICING_JSON')
+export const matchingConfiguration = () => aiConfiguration('matching', 'batch')
 const pending = [
   'waiting_budget',
   'queued',

@@ -57,8 +57,8 @@ export const emptyUsage = (): ModelUsage => ({
 export type ProviderSettings = {
   provider: string
   model: string
-  /** The configured endpoint; null means the provider's default one. */
-  endpoint: { url: string; credentialEnv: string | null } | null
+  /** The reasoning effort the client chose; null sends none. */
+  reasoningEffort: string | null
   maxOutputTokens: number
 }
 
@@ -67,20 +67,11 @@ export type ProviderSettings = {
  * modes it supports by providing them; coordination never sees the
  * provider's protocol, job states or usage format.
  * Single mode: one request, its result and usage, with errors classified
- * as `ModelError`.
+ * as `ModelError`. Batch and agent modes come with their adapters.
  */
 export type ProviderAdapter = {
   provider: string
-  single?: (settings: ProviderSettings) => StructuredModel
-}
-
-const adapters = new Map<string, ProviderAdapter>()
-
-/** Registers the adapter of a provider where dependencies are composed. */
-export function registerProviderAdapter(adapter: ProviderAdapter): void {
-  adapters.set(adapter.provider, adapter)
-}
-
-export function providerAdapter(provider: string): ProviderAdapter | undefined {
-  return adapters.get(provider)
+  modes: {
+    single?: (settings: ProviderSettings) => StructuredModel
+  }
 }

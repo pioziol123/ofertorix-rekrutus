@@ -1,9 +1,7 @@
 import {
   aiConfiguration,
-  pricingConfiguration,
-  parseAiExecutionConfig,
+  localExecutionChoice,
   resolveEndpoint,
-  ModelError,
   OllamaAdapter,
   localFetch,
 } from '../../modules/ai/index.ts'
@@ -13,16 +11,15 @@ import type {
 } from '../../modules/ai/index.ts'
 import { profileRequest } from './ai-prompt.ts'
 
+/** The Profile's settings key in the AI module. */
+const settingsKey = 'profile'
+
 export function profileAiConfigured(): boolean {
   try {
-    const choice = parseAiExecutionConfig(process.env.AI_PROFILE_EXECUTION_JSON)
-    if (!choice) return aiConfiguration() !== null
-    const endpoint = resolveEndpoint(choice.endpointRef, choice.endpointVersion)
-    return (
-      choice.provider === 'ollama' ||
-      (endpoint.credentialEnv !== null &&
-        pricingConfiguration()?.model === choice.model)
-    )
+    const choice = localExecutionChoice(settingsKey)
+    if (!choice) return aiConfiguration(settingsKey) !== null
+    resolveEndpoint(choice.endpointRef, choice.endpointVersion)
+    return true
   } catch {
     return false
   }
@@ -31,33 +28,22 @@ export async function profileConfiguration(
   input: string,
   fetcher?: typeof fetch,
 ): Promise<AiConfiguration | ExecutionSnapshot | null> {
-  const choice = parseAiExecutionConfig(process.env.AI_PROFILE_EXECUTION_JSON)
-  if (!choice) return aiConfiguration()
+  const choice = localExecutionChoice(settingsKey)
+  if (!choice) return aiConfiguration(settingsKey)
   const endpoint = resolveEndpoint(choice.endpointRef, choice.endpointVersion)
   const request = profileRequest(input, choice.model)
-  const snapshot: ExecutionSnapshot = {
+  const adapter = new OllamaAdapter(fetcher ?? localFetch, {
+    url: endpoint.url,
+    numCtx: choice.runtimeParameters.numCtx,
+    credential: () =>
+      endpoint.credentialEnv ? process.env[endpoint.credentialEnv] : undefined,
+  })
+  return {
     ...request,
     ...choice,
     endpoint,
     promptVersion: 'profile-facts-v1',
     schemaVersion: 'profile-facts-v1',
-    modelDigest: null,
+    modelDigest: await adapter.checkModelAvailability(choice.model),
   }
-  if (choice.provider === 'openai') {
-    const pricing = pricingConfiguration()
-    if (!pricing || pricing.model !== choice.model || !endpoint.credentialEnv)
-      throw new ModelError('configuration')
-    snapshot.pricing = pricing
-  } else {
-    const adapter = new OllamaAdapter(fetcher ?? localFetch, {
-      url: endpoint.url,
-      numCtx: choice.runtimeParameters.numCtx,
-      credential: () =>
-        endpoint.credentialEnv
-          ? process.env[endpoint.credentialEnv]
-          : undefined,
-    })
-    snapshot.modelDigest = await adapter.checkModelAvailability(choice.model)
-  }
-  return snapshot
 }

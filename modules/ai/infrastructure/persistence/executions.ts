@@ -1,7 +1,6 @@
 import { db } from '../../../../lib/db.ts'
 import { AiRequestError } from '../../errors.ts'
 import type {
-  AiJobType,
   ExecutionMode,
   ExecutionSettings,
 } from '../../execution-settings.ts'
@@ -17,18 +16,25 @@ export type ExecutionSnapshot = {
   tools: string[]
 }
 
+/**
+ * The stage of an execution. `delivering` holds a saved outcome that the
+ * client's receiver has not taken over yet; it is still in progress.
+ */
 export type ExecutionState =
   | 'waiting_budget'
   | 'queued'
   | 'running'
+  | 'delivering'
   | 'completed'
   | 'rejected'
   | 'failed'
   | 'retried'
 
+const inProgress = "('waiting_budget','queued','running','delivering')"
+
 export type ExecutionRow = {
   id: string
-  jobType: AiJobType
+  settingsKey: string
   operationId: string
   inputVersion: string | null
   mode: ExecutionMode
@@ -36,8 +42,10 @@ export type ExecutionRow = {
   supersedes: string | null
   state: ExecutionState
   snapshot: ExecutionSnapshot
+  /** The saved result, or null when the execution has none. */
   result: unknown
   cause: string | null
+  delivery: { attempts: number; error: string | null }
   createdAt: Date
   finishedAt: Date | null
   attempt: {
@@ -62,7 +70,7 @@ function toExecution(row: Record<string, unknown>): ExecutionRow {
   } | null
   return {
     id: row.id as string,
-    jobType: row.task_type as AiJobType,
+    settingsKey: row.settings_key as string,
     operationId: row.operation_id as string,
     inputVersion: row.input_version as string | null,
     mode: row.mode as ExecutionMode,
@@ -72,6 +80,10 @@ function toExecution(row: Record<string, unknown>): ExecutionRow {
     snapshot: row.configuration as ExecutionSnapshot,
     result: row.result ?? null,
     cause: row.cause as string | null,
+    delivery: {
+      attempts: row.delivery_attempts as number,
+      error: row.delivery_error as string | null,
+    },
     createdAt: row.created_at as Date,
     finishedAt: row.finished_at as Date | null,
     attempt: {
@@ -91,7 +103,7 @@ function toExecution(row: Record<string, unknown>): ExecutionRow {
 
 export async function hasActiveExecution(operationId: string) {
   const active = await db().query(
-    "SELECT 1 FROM ai_executions WHERE operation_id=$1 AND state IN ('waiting_budget','queued','running')",
+    `SELECT 1 FROM ai_executions WHERE operation_id=$1 AND state IN ${inProgress}`,
     [operationId],
   )
   return (active.rowCount ?? 0) > 0
@@ -99,7 +111,7 @@ export async function hasActiveExecution(operationId: string) {
 
 export type NewExecution = {
   id: string
-  jobType: AiJobType
+  settingsKey: string
   operationId: string
   inputVersion: string | null
   mode: ExecutionMode
@@ -129,11 +141,11 @@ export async function insertExecution(execution: NewExecution) {
   const state = execution.attempt.funding ? 'queued' : 'waiting_budget'
   try {
     await db().query(
-      `INSERT INTO ai_executions(id,task_type,operation_id,supersedes,configuration,publication_token,state,mode,group_id,input_version)
+      `INSERT INTO ai_executions(id,settings_key,operation_id,supersedes,configuration,publication_token,state,mode,group_id,input_version)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [
         execution.id,
-        execution.jobType,
+        execution.settingsKey,
         execution.operationId,
         execution.supersedes,
         execution.snapshot,
@@ -192,7 +204,7 @@ export async function fundExecution(
  */
 export async function claimExecution(executionId: string) {
   const claimed = await db().query(
-    "UPDATE ai_executions SET state='running',runtime_state='running',runtime_observed_at=now(),revision=revision+1 WHERE id=$1 AND state='queued' RETURNING id",
+    "UPDATE ai_executions SET state='running',revision=revision+1 WHERE id=$1 AND state='queued' RETURNING id",
     [executionId],
   )
   if (!claimed.rowCount) return null
@@ -211,24 +223,82 @@ export type Settlement = {
   error: string | null
 }
 
+const attemptOutcome =
+  'actual_pln=$2,usage=$3,response_id=$4,error=$5,finished_at=now()'
+function attemptValues(executionId: string, settlement: Settlement) {
+  return [
+    executionId,
+    settlement.actual,
+    {
+      input_tokens: settlement.usage.inputTokens,
+      output_tokens: settlement.usage.outputTokens,
+    },
+    settlement.responseId,
+    settlement.error,
+  ]
+}
+
 /** Settles the attempt of an execution; the month of the attempt stays. */
 export async function settleAttempt(
   executionId: string,
   settlement: Settlement,
 ) {
   await db().query(
-    'UPDATE ai_attempts SET state=$2,actual_pln=$3,usage=$4,response_id=$5,error=$6,finished_at=now() WHERE execution_id=$1',
+    `UPDATE ai_attempts SET state=CASE WHEN $2::numeric IS NULL THEN 'unknown' ELSE 'settled' END,${attemptOutcome} WHERE execution_id=$1`,
+    attemptValues(executionId, settlement),
+  )
+}
+
+/**
+ * Saves what the provider returned and the cost it implies, without
+ * settling: the attempt keeps its reservation until the outcome is
+ * delivered. The execution waits for delivery.
+ */
+export async function saveOutcome(
+  executionId: string,
+  outcome: { result: unknown; cause: string | null },
+  settlement: Settlement,
+) {
+  await db().query(
+    "UPDATE ai_executions SET state='delivering',result=$2,cause=$3,revision=revision+1 WHERE id=$1 AND state='running'",
     [
       executionId,
-      settlement.actual === null ? 'unknown' : 'settled',
-      settlement.actual,
-      {
-        input_tokens: settlement.usage.inputTokens,
-        output_tokens: settlement.usage.outputTokens,
-      },
-      settlement.responseId,
-      settlement.error,
+      outcome.result === null ? null : JSON.stringify(outcome.result),
+      outcome.cause,
     ],
+  )
+  await db().query(
+    `UPDATE ai_attempts SET ${attemptOutcome} WHERE execution_id=$1`,
+    attemptValues(executionId, settlement),
+  )
+}
+
+/**
+ * Takes an execution waiting for delivery and counts the delivery attempt.
+ * The row stays locked until the transaction ends, so a second delivery
+ * of the same execution waits and then finds it delivered.
+ */
+export async function claimDelivery(executionId: string) {
+  const claimed = await db().query(
+    "UPDATE ai_executions SET delivery_attempts=delivery_attempts+1 WHERE id=$1 AND state='delivering' RETURNING id",
+    [executionId],
+  )
+  return claimed.rowCount ? readExecutionRow(executionId) : null
+}
+
+/** Settles the saved cost: known costs are charged, unknown stay reserved. */
+export async function settleSavedAttempt(executionId: string) {
+  await db().query(
+    "UPDATE ai_attempts SET state=CASE WHEN actual_pln IS NULL THEN 'unknown' ELSE 'settled' END WHERE execution_id=$1",
+    [executionId],
+  )
+}
+
+/** Records a delivery that did not reach the client's decision. */
+export async function recordFailedDelivery(executionId: string, error: string) {
+  await db().query(
+    "UPDATE ai_executions SET delivery_attempts=delivery_attempts+1,delivery_error=$2 WHERE id=$1 AND state='delivering'",
+    [executionId, error],
   )
 }
 
@@ -236,19 +306,12 @@ export async function finishExecution(
   executionId: string,
   outcome: {
     state: 'completed' | 'rejected' | 'failed' | 'retried'
-    result: unknown
     cause: string | null
   },
 ) {
   await db().query(
-    "UPDATE ai_executions SET state=$2,result=$3,cause=$4,runtime_state='finished',result_status=$5,finished_at=now(),revision=revision+1 WHERE id=$1",
-    [
-      executionId,
-      outcome.state,
-      outcome.result === null ? null : JSON.stringify(outcome.result),
-      outcome.cause,
-      outcome.result === null ? 'failed' : 'completed',
-    ],
+    'UPDATE ai_executions SET state=$2,cause=$3,finished_at=now(),revision=revision+1 WHERE id=$1',
+    [executionId, outcome.state, outcome.cause],
   )
 }
 
