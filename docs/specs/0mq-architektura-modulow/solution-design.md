@@ -532,6 +532,8 @@ An ad in the response has its identifier, the identifier of its current version,
 
   The transaction lock on the ad during linking stays (A6-R05).
 
+  The read returns a fixed text for a missing title and for a missing company name. Companies treat these two texts as "missing": the link history shows its own label for an ad without a title, and the suggestion of company profiles is skipped for an ad without a company name (A6-R07). An ad whose source content is exactly one of the two texts is therefore treated as missing too; the owner accepted this on 2026-11-17. This is the target behaviour of the task, not interim code, and it carries no follow-up.
+
 ### Verification
 
 | Criterion | Check |

@@ -339,12 +339,13 @@ Sources provide a public read of source ads and their versions. Offers, Matching
 | A6-R03 | Offers build the list and details from the Sources read. Matching gets the ad for assessment, the current versions for determining assessment freshness, and the ads for the list through the Sources read. Companies get the ads linked to a company, the version titles in the link history, the company name from the ad and the current version at linking through the Sources read. |
 | A6-R04 | The match assessment uses the content and the identifier of the same ad version. |
 | A6-R05 | The read does not block changes to the ad. Linking a company to an ad saves the version read at the moment of linking; if the ad changes in the meantime, the link points to the previous version. The change is accepted on the same terms as for the match assessment. |
-| A6-R06 | The list and details views, assessments and companies show the same data as before the change. Reads for lists fetch data in bulk, without a separate read for each item. |
+| A6-R06 | The list and details views, assessments and companies show the same data as before the change, except as A6-R07 states. Reads for lists fetch data in bulk, without a separate read for each item. |
+| A6-R07 | Company views take the title and the company name of an ad in the unified form of the Sources read. A title or company name that is empty, consists only of spaces, is not text, or reads exactly "Stanowisko bez nazwy" or "Firma niepodana" counts as missing. An ad with a missing title appears in the company link history as "Oferta". An ad with a missing company name suggests no company profile. Spaces at the ends of a title or company name are ignored, so a company name that differs from a profile name only by them suggests that profile. The owner accepted these differences from the earlier behaviour on 2026-11-17. |
 
 | Criterion | Acceptance condition | Check |
 | --- | --- | --- |
 | A6-AC01 | Reading the current ad, many ads, a given version and the list of versions returns the data from A6-R01 and A6-R02. | Automated test on a real database |
-| A6-AC02 | For the same data, the offer list and details, the match assessment input and the company views contain the same values as before the change. | Existing offer, matching and company tests |
+| A6-AC02 | For the same data, the offer list and details, the match assessment input and the company views contain the same values as before the change, except for the cases in A6-R07, which the company views show as A6-R07 states. | Existing offer, matching and company tests; automated test of the A6-R07 cases |
 | A6-AC03 | An assessment saved for an ad points to the version whose content was assessed, also when the ad changes during the assessment. | Automated test |
 | A6-AC04 | Offers, Matching and Companies do not read Sources data other than through its public read and do not interpret ad content on their own. | Code review |
 | A6-AC05 | The offer list with assessments makes a constant number of reads, whatever the number of offers. | Automated query counter test or code review |
