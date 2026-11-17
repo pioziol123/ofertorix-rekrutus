@@ -67,18 +67,22 @@ export async function addCurrentRevision(
 }
 
 /**
- * Marks the source's ads last seen in the scope, but not observed in the
- * run, as unavailable: the rule SOLID.Jobs applied before connectors.
+ * Marks the source's ads observed in any run of the scope, but not in the
+ * given run, as unavailable. Ads already unavailable are left untouched.
  */
-export async function markUnobservedScopeAdsUnavailable(run: {
-  id: string
+export async function markAdsAbsentFromRunUnavailable(run: {
+  runId: string
   scopeId: string
   source: string
 }): Promise<void> {
   await db().query(
     `UPDATE source_ads a SET availability='unavailable'
-    WHERE source=$1 AND last_seen_scope_id=$2
+    WHERE a.source=$1 AND a.availability='available'
+    AND a.id IN (
+      SELECT s.source_ad_id FROM source_run_seen s
+      JOIN source_sync_runs r ON r.id=s.run_id WHERE r.scope_id=$2
+    )
     AND NOT EXISTS (SELECT 1 FROM source_run_seen s WHERE s.run_id=$3 AND s.source_ad_id=a.id)`,
-    [run.source, run.scopeId, run.id],
+    [run.source, run.scopeId, run.runId],
   )
 }

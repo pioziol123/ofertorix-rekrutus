@@ -12,7 +12,7 @@ import {
   type ConnectorProvider,
 } from './infrastructure/adapters/connector-registry.ts'
 import { sourceConnectors } from './infrastructure/adapters/source-connectors.ts'
-import { markUnobservedScopeAdsUnavailable } from './infrastructure/persistence/source-ads.ts'
+import { markAbsentAdsUnavailable } from './mark-absent-ads-unavailable.ts'
 import { saveBatch } from './save-batch.ts'
 import {
   finishRun,
@@ -162,13 +162,13 @@ async function finish(
       saveFailed: outcome.saveFailed ?? false,
       uniqueAds: current.uniqueAds,
     })
-    // Until 0mq.7 the rule SOLID.Jobs applied before connectors, for each
-    // connector that infers unavailability from absence.
-    if (status === 'complete' && connector?.infersUnavailabilityFromAbsence)
-      await markUnobservedScopeAdsUnavailable({
-        id: run.id,
+    if (status === 'complete' && connector)
+      await markAbsentAdsUnavailable({
+        runId: run.id,
         scopeId: run.scopeId,
         source: run.source,
+        infersUnavailabilityFromAbsence:
+          connector.infersUnavailabilityFromAbsence,
       })
     const finished = await finishRun(
       held.runId,

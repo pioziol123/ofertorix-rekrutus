@@ -432,6 +432,134 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
     ])
   })
 
+  describe('unavailability after a complete run (A7)', () => {
+    const source = 'simulated-infers'
+    const scope = (
+      keyword: string,
+      list: ConnectorAd[][],
+      options: {
+        infers?: boolean
+        result?: ConnectorResult
+        name?: string
+      } = {},
+    ) =>
+      simulated(options.name ?? source, batches(list, options.result), {
+        infers: options.infers ?? true,
+        settings: { keyword },
+      })
+    /** Admits and executes one run of the connector; returns the run id. */
+    const run = async (connector: SourceConnector) => {
+      const runId = await admit(connector)
+      await executeNext(connector)
+      return runId
+    }
+    const availability = async (name = source) =>
+      Object.fromEntries(
+        (
+          await pool.query<{ external_id: string; availability: string }>(
+            'SELECT external_id,availability FROM source_ads WHERE source=$1',
+            [name],
+          )
+        ).rows.map((row) => [row.external_id, row.availability]),
+      )
+
+    it('marks ads seen earlier in the scope and absent from a complete run unavailable (A7-AC01)', async () => {
+      await run(scope('php', [[ad('kept'), ad('gone')]]))
+      const runId = await run(scope('php', [[ad('kept')]]))
+      expect(await stored(runId)).toMatchObject({ status: 'complete' })
+      expect(await availability()).toEqual({
+        kept: 'available',
+        gone: 'unavailable',
+      })
+    })
+
+    it('keeps unseen ads after a partial or failed run and after a complete run of a source without inference (A7-AC02)', async () => {
+      await run(scope('php', [[ad('kept'), ad('unseen')]]))
+      const partial = await run(
+        scope('php', [[ad('kept')]], {
+          result: { complete: false, reason: 'Scope not fully checked' },
+        }),
+      )
+      const failed = await run(
+        scope('php', [], {
+          result: { complete: false, reason: 'Source down' },
+        }),
+      )
+      expect(await stored(partial)).toMatchObject({ status: 'partial' })
+      expect(await stored(failed)).toMatchObject({ status: 'failed' })
+      expect(await availability()).toEqual({
+        kept: 'available',
+        unseen: 'available',
+      })
+
+      const keeps = 'simulated-keeps'
+      await run(
+        scope('php', [[ad('kept'), ad('unseen')]], {
+          name: keeps,
+          infers: false,
+        }),
+      )
+      const complete = await run(
+        scope('php', [[ad('kept')]], { name: keeps, infers: false }),
+      )
+      expect(await stored(complete)).toMatchObject({ status: 'complete' })
+      expect(await availability(keeps)).toEqual({
+        kept: 'available',
+        unseen: 'available',
+      })
+    })
+
+    it('rolls the marking back and leaves the run incomplete when marking fails (A7-AC03)', async () => {
+      await run(scope('php', [[ad('kept'), ad('gone')]]))
+      // Fails the statement that marks an ad unavailable.
+      await pool.query(`CREATE FUNCTION reject_unavailable() RETURNS trigger AS $$
+        BEGIN RAISE EXCEPTION 'forced marking failure'; END $$ LANGUAGE plpgsql`)
+      await pool.query(`CREATE TRIGGER reject_unavailable BEFORE UPDATE ON source_ads
+        FOR EACH ROW WHEN (NEW.availability='unavailable') EXECUTE FUNCTION reject_unavailable()`)
+      try {
+        const connector = scope('php', [[ad('kept')]])
+        const runId = await admit(connector)
+        await expect(executeNext(connector)).rejects.toThrow(
+          'forced marking failure',
+        )
+        expect((await stored(runId)).status).not.toBe('complete')
+        expect(await availability()).toEqual({
+          kept: 'available',
+          gone: 'available',
+        })
+      } finally {
+        await pool.query('DROP TRIGGER reject_unavailable ON source_ads')
+        await pool.query('DROP FUNCTION reject_unavailable()')
+      }
+    })
+
+    // Example X from A7: the scope's history decides, not the last scope.
+    it('marks X after a complete PHP run although last seen in Java, and a Java run restores it (A7-AC04)', async () => {
+      await run(scope('php', [[ad('x'), ad('php-only')]]))
+      await run(scope('java', [[ad('x')]]))
+      await run(scope('php', [[ad('php-only')]]))
+      expect(await availability()).toEqual({
+        x: 'unavailable',
+        'php-only': 'available',
+      })
+      await run(scope('java', [[ad('x')]]))
+      expect(await availability()).toEqual({
+        x: 'available',
+        'php-only': 'available',
+      })
+    })
+
+    it('keeps an ad never seen in the scope after a complete run of that scope (A7-AC05)', async () => {
+      await run(scope('java', [[ad('java-only')]]))
+      await run(scope('php', [[ad('php-ad')]]))
+      await run(scope('php', [[ad('php-ad')]]))
+      expect(await availability()).toEqual({
+        'java-only': 'available',
+        'php-ad': 'available',
+      })
+    })
+  })
+
   // ASM-4: the run's own source selects the connector, not the delivery.
   it('executes a delivered run with the connector of its own source (ASM-4)', async () => {
     const alpha = vi.fn(batches([[ad('alpha')]]))
@@ -682,9 +810,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
     const startedAt = (await readRun(orphan.id))!.startedAt!
     await recoverSyncRuns(
       findJob,
-      new Date(
-        startedAt.getTime() + (inProcessRunLimitSeconds - 1) * 1000,
-      ),
+      new Date(startedAt.getTime() + (inProcessRunLimitSeconds - 1) * 1000),
     )
     expect((await readRun(orphan.id))!.status).toBe('running')
     await recoverSyncRuns(

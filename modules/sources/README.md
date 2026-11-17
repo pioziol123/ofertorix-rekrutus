@@ -58,6 +58,8 @@ Dla źródeł, które pozwalają wyciągać wnioski z nieobecności ogłoszenia,
 - możliwości wnioskowania o niedostępności z braku w wynikach danego źródła;
 - porównania ogłoszeń i obserwacji dotyczących tego samego źródła oraz zakresu.
 
+O tym, czy ogłoszenie należało do zakresu, decyduje historia jego obserwacji w przebiegach tego zakresu, a nie zakres, w którym widziano je ostatnio. Ogłoszenie widziane wcześniej w zakresie, a nieobecne w kompletnym przebiegu tego zakresu, staje się niedostępne. Późniejsza obserwacja w dowolnym zakresie przywraca jego dostępność.
+
 Jeżeli którykolwiek z tych warunków nie jest spełniony, brak obserwacji pozostawia dotychczasową dostępność ogłoszenia bez zmian. Dotyczy to zarówno częściowego pobrania, jak i kompletnego wyszukiwania, którego wyniki nie są podstawą do wykrywania usuniętych ogłoszeń.
 
 ### Przykład: przerwane pobieranie
