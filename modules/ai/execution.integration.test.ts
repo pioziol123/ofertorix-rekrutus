@@ -69,7 +69,10 @@ integration('AI execution coordination with a real database and queue', () => {
   let failures: ExecutionFailureDelivery[]
 
   const completed =
-    (result: unknown, usage = { inputTokens: 100, outputTokens: 50 }) =>
+    (
+      result: unknown,
+      usage: ModelUsage = { inputTokens: 100, outputTokens: 50 },
+    ) =>
     async (): Promise<ModelResult> => ({
       outcome: 'completed',
       text: JSON.stringify(result),
