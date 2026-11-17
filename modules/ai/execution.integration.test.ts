@@ -439,6 +439,55 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(failures).toMatchObject([{ cause: 'unsupported_mode' }])
   })
 
+  it('keeps the cost unknown and reserved when the saved endpoint changed, as the Profile path does', async () => {
+    const endpoint = {
+      ref: 'paid',
+      version: 1,
+      url: 'https://paid.test/v1',
+      credentialEnv: 'PAID_KEY',
+    }
+    vi.stubEnv('PAID_KEY', 'secret')
+    vi.stubEnv('AI_ENDPOINTS_JSON', JSON.stringify([endpoint]))
+    vi.stubEnv(
+      'AI_PROFILE_EXECUTION_JSON',
+      JSON.stringify({
+        version: 1,
+        provider: 'openai',
+        model: pricing.model,
+        execution: 'direct',
+        endpointRef: 'paid',
+        endpointVersion: 1,
+        runtimeParameters: {},
+      }),
+    )
+    const admitted = await requestExecution(request())
+    vi.stubEnv(
+      'AI_ENDPOINTS_JSON',
+      JSON.stringify([{ ...endpoint, url: 'https://other.test/v1' }]),
+    )
+    await work()
+    expect(calls).toEqual([])
+    expect(await readExecution(admitted.executionId)).toMatchObject({
+      state: 'failed',
+      cause: 'configuration',
+      cost: { reserved: ceiling, actual: null, unknown: true },
+    })
+    expect((await readBudget()).reserved).toBe(ceiling)
+  })
+
+  it('answers concurrent requests of one operation with one execution and a defined error', async () => {
+    const operationId = randomUUID()
+    const outcomes = await Promise.allSettled([
+      requestExecution(request({ operationId })),
+      requestExecution(request({ operationId })),
+    ])
+    expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1)
+    expect(
+      outcomes.flatMap((o) => (o.status === 'rejected' ? [o.reason] : [])),
+    ).toEqual([new AiRequestError('operation_busy')])
+    expect(await readExecutionHistory(operationId)).toHaveLength(1)
+  })
+
   it('keeps one execution in progress per operation', async () => {
     const operationId = randomUUID()
     await requestExecution(request({ operationId }))

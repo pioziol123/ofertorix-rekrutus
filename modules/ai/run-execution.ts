@@ -2,7 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { transaction } from '../../lib/db.ts'
 import { admitExecutions } from './admit-executions.ts'
 import { chargeCeiling } from './domain/cost.ts'
-import { savedSettingsEndpoint } from './execution-settings.ts'
+import { savedEndpoint } from './configuration.ts'
 import {
   claimExecution,
   finishExecution,
@@ -49,9 +49,19 @@ async function callProvider(execution: ExecutionRow): Promise<Outcome> {
       ? providerAdapter(settings.provider)?.single
       : undefined
   if (!single) return { ...outcome, cause: 'unsupported_mode', notSent: true }
-  if (!savedSettingsEndpoint(settings))
-    return { ...outcome, cause: 'configuration', notSent: true }
   try {
+    // A changed endpoint is a configuration error with an unknown cost, as
+    // on the Profile path: the request is not redirected.
+    if (
+      settings.endpoint &&
+      settings.endpointRef !== null &&
+      settings.endpointVersion !== null
+    )
+      savedEndpoint({
+        endpointRef: settings.endpointRef,
+        endpointVersion: settings.endpointVersion,
+        endpoint: settings.endpoint,
+      })
     const response = await single(settings).generate({
       model: settings.model,
       instructions: instruction,

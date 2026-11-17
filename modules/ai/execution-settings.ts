@@ -88,24 +88,3 @@ export function executionSettings(
     pricing,
   }
 }
-
-/**
- * The endpoint saved with an execution, if the configuration still has it
- * unchanged; queued work is never redirected to another endpoint.
- */
-export function savedSettingsEndpoint(settings: ExecutionSettings): boolean {
-  if (settings.endpointRef === null || settings.endpointVersion === null)
-    return true
-  try {
-    const endpoint = resolveEndpoint(
-      settings.endpointRef,
-      settings.endpointVersion,
-    )
-    return (
-      endpoint.url === settings.endpoint?.url &&
-      endpoint.credentialEnv === settings.endpoint?.credentialEnv
-    )
-  } catch {
-    return false
-  }
-}

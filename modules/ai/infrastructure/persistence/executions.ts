@@ -1,4 +1,5 @@
 import { db } from '../../../../lib/db.ts'
+import { AiRequestError } from '../../errors.ts'
 import type {
   AiJobType,
   ExecutionMode,
@@ -115,25 +116,40 @@ export type NewExecution = {
   }
 }
 
+function isActiveExecutionConflict(error: unknown) {
+  const details = error as { code?: string; constraint?: string } | null
+  return (
+    details?.code === '23505' &&
+    details.constraint === 'ai_one_active_execution'
+  )
+}
+
 /** Saves an execution with its attempt, the settlement record. */
 export async function insertExecution(execution: NewExecution) {
   const state = execution.attempt.funding ? 'queued' : 'waiting_budget'
-  await db().query(
-    `INSERT INTO ai_executions(id,task_type,operation_id,supersedes,configuration,publication_token,state,mode,group_id,input_version)
-     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    [
-      execution.id,
-      execution.jobType,
-      execution.operationId,
-      execution.supersedes,
-      execution.snapshot,
-      execution.publicationToken,
-      state,
-      execution.mode,
-      execution.groupId,
-      execution.inputVersion,
-    ],
-  )
+  try {
+    await db().query(
+      `INSERT INTO ai_executions(id,task_type,operation_id,supersedes,configuration,publication_token,state,mode,group_id,input_version)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        execution.id,
+        execution.jobType,
+        execution.operationId,
+        execution.supersedes,
+        execution.snapshot,
+        execution.publicationToken,
+        state,
+        execution.mode,
+        execution.groupId,
+        execution.inputVersion,
+      ],
+    )
+  } catch (error) {
+    // A concurrent request of the same operation won the race.
+    if (isActiveExecutionConflict(error))
+      throw new AiRequestError('operation_busy')
+    throw error
+  }
   // General attempts carry their own operation type, so the paths that
   // still read attempts by Profile, Matching or Companies never pick them.
   await db().query(

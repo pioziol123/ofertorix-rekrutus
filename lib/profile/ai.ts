@@ -290,14 +290,8 @@ export async function executePaidProfile(
         if (error instanceof ModelError) {
           usage = error.details.usage ?? usage
           responseId = error.details.responseId ?? responseId
-          const transient =
-            error.details.httpStatus === 429 ||
-            (error.details.httpStatus ?? 0) >= 500
-          retry =
-            (transient && error.details.retryAfterMs !== null) ||
-            (error.details.requestSent === true &&
-              !error.details.responseReceived &&
-              error.code !== 'aborted')
+          // The adapter judges which errors are worth another attempt.
+          retry = error.details.transient === true
           retryAfterMs = error.details.retryAfterMs ?? 1000
         }
         errorMessage =

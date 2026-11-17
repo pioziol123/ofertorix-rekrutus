@@ -154,7 +154,15 @@ export type ExecutionSnapshot = AiExecutionConfig & {
   endpoint: AiEndpoint
   pricing?: AiConfiguration
 }
-export function savedEndpoint(snapshot: ExecutionSnapshot): AiEndpoint {
+/**
+ * The endpoint saved at request time, if the configuration still has it
+ * unchanged; queued work is never redirected to another endpoint.
+ */
+export function savedEndpoint(snapshot: {
+  endpointRef: string
+  endpointVersion: number
+  endpoint: Pick<AiEndpoint, 'url' | 'credentialEnv'>
+}): AiEndpoint {
   const endpoint = resolveEndpoint(
     snapshot.endpointRef,
     snapshot.endpointVersion,
