@@ -31,6 +31,7 @@ import {
 } from './infrastructure/adapters/connector.ts'
 import { createConnectorRegistry } from './infrastructure/adapters/connector-registry.ts'
 import { inProcessRunLimitSeconds } from './recover-sync-runs.ts'
+import { SyncRunAlreadyActiveError } from './run-sync-in-process.ts'
 import { admitRun, readRun } from './sync-run-state.ts'
 
 // The shortest heartbeat pg-boss allows, so a lost worker is noticed fast.
@@ -632,9 +633,10 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
     ])
   })
 
-  // ASM-1: a run executed without a queue has no job telling whether its
-  // process is alive; recovery leaves it while a queue attempt could last.
-  it('leaves a running run without a queue job to its process for as long as a queue attempt may take (ASM-1)', async () => {
+  // A run executed without a queue has no job telling whether its process is
+  // alive; recovery leaves it for inProcessRunLimitSeconds (owner decision
+  // 2026-11-17).
+  it('leaves a running run without a queue job to its process for inProcessRunLimitSeconds', async () => {
     let release!: () => void
     const gate = new Promise<void>((resolve) => {
       release = resolve
@@ -691,7 +693,41 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
     )
     expect(await readRun(orphan.id)).toMatchObject({
       status: 'failed',
-      error: 'Worker interrupted; request a new import',
+      error: 'Import interrupted; request a new import',
+    })
+  })
+
+  it('finishes a run left by a dead process when the next in-process run of the source starts, without a worker', async () => {
+    const registry = createConnectorRegistry([
+      simulated('simulated-alpha', batches([[ad('one')]])),
+    ])
+    const request = {
+      source: 'simulated-alpha',
+      scheduleDay: '2026-11-17',
+      signal: new AbortController().signal,
+    }
+    // A process that died: its run stays running without a job.
+    const orphan = await runSyncInProcess(request, registry)
+    await pool.query(
+      "UPDATE source_sync_runs SET status='running',finished_at=NULL,started_at=now() WHERE id=$1",
+      [orphan.id],
+    )
+
+    await expect(runSyncInProcess(request, registry)).rejects.toBeInstanceOf(
+      SyncRunAlreadyActiveError,
+    )
+    expect((await readRun(orphan.id))!.status).toBe('running')
+
+    await pool.query(
+      `UPDATE source_sync_runs SET started_at=now()-make_interval(secs=>$2) WHERE id=$1`,
+      [orphan.id, inProcessRunLimitSeconds],
+    )
+    const next = await runSyncInProcess(request, registry)
+
+    expect(next).toMatchObject({ status: 'complete' })
+    expect(await readRun(orphan.id)).toMatchObject({
+      status: 'partial',
+      error: 'Import interrupted; request a new import',
     })
   })
 })

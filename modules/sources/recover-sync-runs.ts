@@ -49,16 +49,36 @@ export async function recoverSyncRuns(
     if (run.jobId) {
       const job = await findJob({ source: run.source, jobId: run.jobId })
       if (job && !endedJobStates.has(job.state)) continue
-    } else if (
-      run.status === 'running' &&
-      now.getTime() - (run.startedAt ?? now).getTime() < inProcessLimitMs
-    )
+    } else if (run.status === 'running') {
+      if (!leftByDeadProcess(run, now)) continue
+      await finishInterrupted(run, interrupted.inProcess)
       continue
+    }
     await finishInterrupted(
       run,
       run.status === 'queued' ? interrupted.queued : interrupted.running,
     )
   }
+}
+
+/**
+ * Finishes the source's runs executed without a queue that have been running
+ * longer than `inProcessRunLimitSeconds`, so a process that died does not
+ * block the source until a worker recovers. The process that executes runs
+ * in-process calls it before admitting its own run; the change is
+ * conditional, so concurrent callers and workers finish such a run once.
+ */
+export async function recoverInProcessRuns(
+  source: string,
+  now: Date = new Date(),
+): Promise<void> {
+  for (const run of await listUnfinishedRuns(source))
+    if (!run.jobId && run.status === 'running' && leftByDeadProcess(run, now))
+      await finishInterrupted(run, interrupted.inProcess)
+}
+
+function leftByDeadProcess(run: SyncRun, now: Date): boolean {
+  return now.getTime() - (run.startedAt ?? now).getTime() >= inProcessLimitMs
 }
 
 /**

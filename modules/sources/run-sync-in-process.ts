@@ -2,7 +2,7 @@ import { transaction } from '../../lib/db.ts'
 import type { ConnectorProvider } from './infrastructure/adapters/connector-registry.ts'
 import { sourceConnectors } from './infrastructure/adapters/source-connectors.ts'
 import { executeStartedRun } from './execute-sync-run.ts'
-import { finishStoppedRun } from './recover-sync-runs.ts'
+import { finishStoppedRun, recoverInProcessRuns } from './recover-sync-runs.ts'
 import { admitRun, readRun, startRun, type SyncRun } from './sync-run-state.ts'
 
 /** The scope already has an active run; nothing was created or fetched. */
@@ -21,7 +21,8 @@ export class SyncRunAlreadyActiveError extends Error {
  * The run is created and started together, so a scope with an active run
  * gets an error and no run. Aborting the signal stops the fetch and ends
  * the run as interrupted (F2-13): no queue would retry it. A process that
- * dies leaves the run to recovery.
+ * dies leaves the run running; the next call, or a worker's recovery,
+ * finishes it once it is older than `inProcessRunLimitSeconds`.
  */
 export async function runSyncInProcess(
   request: {
@@ -35,6 +36,7 @@ export async function runSyncInProcess(
 ): Promise<SyncRun> {
   const connector = connectors.get(request.source)
   const parameters = connector.scopeParameters(request.scopeRequest)
+  await recoverInProcessRuns(request.source)
   const run = await transaction(async () => {
     const admitted = await admitRun({
       source: request.source,
