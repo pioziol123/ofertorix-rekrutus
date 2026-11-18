@@ -27,6 +27,11 @@ export type ExecutionSnapshot = {
    * adapter reads it. Absent in snapshots saved before the check existed.
    */
   fixed?: Record<string, unknown>
+  /**
+   * The client asked to keep the exact request and raw response of a
+   * single-mode execution. Absent when it did not ask.
+   */
+  keepArchive?: boolean
 }
 
 const inProgress = `(${inProgressStates.map((s) => `'${s}'`).join(',')})`

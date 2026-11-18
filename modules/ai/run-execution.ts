@@ -1,6 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { transaction } from '../../lib/db.ts'
 import { admitExecutions } from './admit-executions.ts'
+import { archiveArtifact } from './infrastructure/persistence/batch-archive.ts'
 import { chargeCeiling } from './domain/cost.ts'
 import type { ExecutionEnd } from './domain/execution-state.ts'
 import { parseResult } from './domain/response-schema.ts'
@@ -140,6 +141,19 @@ async function callProvider(
   try {
     const response = await single(settings, {
       fixed: execution.snapshot.fixed ?? {},
+      // Kept only when the client asked for it (SD 0mq.17 decision 5).
+      ...(execution.snapshot.keepArchive
+        ? {
+            keepArtifact: (
+              kind: 'input' | 'output',
+              key: string,
+              content: string,
+            ) =>
+              transaction(() =>
+                archiveArtifact(execution.id, kind, key, content),
+              ),
+          }
+        : {}),
       ...(local
         ? {
             beforeSend: () => authorizeLocalRequest(local),

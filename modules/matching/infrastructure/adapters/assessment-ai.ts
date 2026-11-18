@@ -56,6 +56,10 @@ function assessmentRequest(
     // ASSUMPTION(oferty-pracy-0mq.21/ASM-5): an assessment is refused
     // above the input cap, as the former batch path refused it.
     refuseAboveInputCap: true,
+    // Every assessment keeps its diagnostic archive: a single one through
+    // AI's archive of the execution, a group through its batch archive
+    // (SD 0mq.17 decision 5).
+    keepArchive: true,
     ...(check ? { check } : {}),
   }
 }

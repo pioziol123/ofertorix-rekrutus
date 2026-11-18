@@ -25,6 +25,7 @@ import {
   assessmentSettingsKey,
 } from '../modules/matching/index.ts'
 import { assessmentSchema, type MatchingInput } from '../lib/matching/model.ts'
+import { readBatchArchive } from '../lib/matching/archive.ts'
 import { enqueueMatching, readMatching } from '../lib/matching/store.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {
@@ -138,6 +139,31 @@ integration(
           [id],
         )
       ).rows[0].n
+
+    it('keeps the exact request body and raw response of a single assessment in the archive its history row opens (E03-AC02, SD 0mq.17 decision 5)', async () => {
+      const request = await enqueueMatching(ad)
+      await queue.work()
+      const archive = await readBatchArchive(request.id)
+      const execution = await latest(request.id)
+      expect(archive!.operationId).toBe(execution.id)
+      expect(archive!.reconstructedInput).toBeNull()
+      const byKind = Object.fromEntries(
+        archive!.artifacts.map((a) => [a.kind, a]),
+      )
+      expect(archive!.artifacts).toHaveLength(2)
+      // Exactly what was sent and what came back.
+      expect(JSON.parse(byKind.input!.content)).toEqual(openAi.singleCalls[0])
+      expect(JSON.parse(byKind.output!.content)).toEqual(
+        openAi.answer(
+          JSON.parse(openAi.singleCalls[0]!.input[0]!.content[0]!.text),
+          openAi.singleCalls[0]!,
+        ),
+      )
+      // ASSUMPTION(oferty-pracy-0mq.21/ASM-3): the history row carries no
+      // provider batch number.
+      const [row] = (await readMatching(ad)).history
+      expect(row).not.toHaveProperty('batch_id')
+    })
 
     it('deduplicates concurrent requests of one offer into one single execution of the request (AM-AC01)', async () => {
       const [a, b] = await Promise.all([

@@ -203,7 +203,8 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
       url: '/v1/responses',
       body,
     })
-    // A single execution and an excluded request have no batch archive.
+    // A single execution that kept no artefacts and an excluded request
+    // have an empty archive.
     const direct = randomUUID(),
       excluded = randomUUID()
     await request(direct, { group: null })

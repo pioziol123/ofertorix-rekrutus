@@ -164,8 +164,8 @@ export async function enqueueMatchingGroup(value: unknown) {
       await lockCommand(command.commandId)
       // FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the AI group of the command
       // is the only record that it was accepted; a command that requested
-      // no AI work leaves none. ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the
-      // group read.
+      // no AI work leaves none. The group read is interim code of the
+      // deviation, not part of ASM-4.
       const accepted = await readExecutionGroup(command.commandId)
       if (accepted.length)
         return acceptedGroup(command.commandId, accepted, ids)

@@ -140,9 +140,11 @@ export async function countActiveExecutions(
 }
 
 /**
- * The diagnostic archive of the provider batch an execution was sent in:
- * the exact files and replies, kept under the batch's group. Empty for an
- * execution that was not sent in a batch; null for an unknown execution.
+ * The diagnostic archive of an execution: for one sent in a provider batch,
+ * the exact files and replies of the batch, kept under its group; for a
+ * single-mode execution whose client asked for it, the exact request body
+ * and raw response, kept under the execution. Empty when nothing was kept;
+ * null for an unknown execution.
  */
 export async function readExecutionArchive(executionId: string): Promise<{
   archiveId: string

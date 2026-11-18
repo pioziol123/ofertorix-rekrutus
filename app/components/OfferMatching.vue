@@ -270,6 +270,8 @@ onUnmounted(() => clearInterval(timer))
           Profil v{{ row.profile_number }} · ogłoszenie z
           {{ new Date(row.offer_version_at).toLocaleString('pl-PL') }}
         </p>
+        <!-- ASSUMPTION(oferty-pracy-0mq.21/ASM-3): no provider batch number;
+             the public execution read carries no provider facts (A14-AC12). -->
         <small>Zlecenie {{ row.id }}</small>
       </div>
     </details>

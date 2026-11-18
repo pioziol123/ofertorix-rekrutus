@@ -110,6 +110,16 @@ export type RequestContext = {
   beforeSend?: () => Promise<boolean>
   /** Keeps the raw response of the provider with the execution. */
   archive?: (raw: string) => Promise<void>
+  /**
+   * Keeps an exact provider artefact (the request body sent, the raw
+   * response received) in the execution's diagnostic archive. Given only
+   * when the client asked for the archive.
+   */
+  keepArtifact?: (
+    kind: 'input' | 'output',
+    key: string,
+    content: string,
+  ) => Promise<void>
 }
 
 /** One item of a provider batch: its identifier and its request. */

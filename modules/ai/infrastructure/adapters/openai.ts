@@ -6,6 +6,7 @@ import type {
   ModelResult,
   ProviderAdapter,
   ProviderObservation,
+  RequestContext,
   StructuredModel,
 } from '../../provider-adapter.ts'
 import type { ExecutionEnd } from '../../domain/execution-state.ts'
@@ -53,6 +54,16 @@ function retryDelay(value: string | null) {
       : Date.parse(value) - Date.now()
   return Number.isFinite(ms) && ms <= 60000 ? Math.max(1000, ms) : null
 }
+/** The diagnostic archive asked for could not keep an artefact. */
+export class ArchiveError extends Error {
+  constructor(
+    readonly requestSent: boolean,
+    options?: ErrorOptions,
+  ) {
+    super('AI archive', options)
+  }
+}
+
 export class OpenAiAdapter implements StructuredModel {
   constructor(
     private fetcher: typeof fetch = fetch,
@@ -62,6 +73,8 @@ export class OpenAiAdapter implements StructuredModel {
       apiKey?: () => string | undefined
       /** The reasoning effort sent; `low` when not given, none when null. */
       reasoningEffort?: string | null
+      /** Keeps the exact request body and raw response, when given. */
+      keepArtifact?: RequestContext['keepArtifact']
     } = { maxOutputTokens: 6000 },
   ) {}
   async generate(
@@ -77,6 +90,32 @@ export class OpenAiAdapter implements StructuredModel {
       this.options.reasoningEffort === undefined
         ? 'low'
         : this.options.reasoningEffort
+    const body = JSON.stringify({
+      model: request.model,
+      store: false,
+      tools: [],
+      service_tier: 'default',
+      max_output_tokens: this.options.maxOutputTokens,
+      ...(effort === null ? {} : { reasoning: { effort } }),
+      instructions: request.instructions,
+      input: [
+        {
+          role: 'user',
+          content: [{ type: 'input_text', text: request.input }],
+        },
+      ],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: request.output.name,
+          strict: true,
+          schema: request.output.schema,
+        },
+      },
+    })
+    // The exact body is archived before it is sent; a request whose
+    // archive was asked for is not sent without it.
+    await this.keep('input', 'request', body, false)
     let response: Response
     try {
       response = await this.fetcher(
@@ -87,29 +126,7 @@ export class OpenAiAdapter implements StructuredModel {
             Authorization: `Bearer ${key}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            model: request.model,
-            store: false,
-            tools: [],
-            service_tier: 'default',
-            max_output_tokens: this.options.maxOutputTokens,
-            ...(effort === null ? {} : { reasoning: { effort } }),
-            instructions: request.instructions,
-            input: [
-              {
-                role: 'user',
-                content: [{ type: 'input_text', text: request.input }],
-              },
-            ],
-            text: {
-              format: {
-                type: 'json_schema',
-                name: request.output.name,
-                strict: true,
-                schema: request.output.schema,
-              },
-            },
-          }),
+          body,
           signal: signal
             ? AbortSignal.any([signal, AbortSignal.timeout(90000)])
             : AbortSignal.timeout(90000),
@@ -137,9 +154,21 @@ export class OpenAiAdapter implements StructuredModel {
           retryAfterMs !== null,
       })
     }
+    let raw: string
+    try {
+      raw = await response.text()
+    } catch (cause) {
+      throw new ModelError(
+        'format',
+        { requestSent: true, responseReceived: true },
+        { cause },
+      )
+    }
+    // The raw response is archived before it is interpreted.
+    await this.keep('output', 'response', raw, true)
     let value: unknown
     try {
-      value = await response.json()
+      value = JSON.parse(raw)
     } catch (cause) {
       throw new ModelError(
         'format',
@@ -148,6 +177,19 @@ export class OpenAiAdapter implements StructuredModel {
       )
     }
     return normalizeOpenAi(value)
+  }
+  private async keep(
+    kind: 'input' | 'output',
+    key: string,
+    content: string,
+    requestSent: boolean,
+  ) {
+    if (!this.options.keepArtifact) return
+    try {
+      await this.options.keepArtifact(kind, key, content)
+    } catch (cause) {
+      throw new ArchiveError(requestSent, { cause })
+    }
   }
 }
 
@@ -165,6 +207,13 @@ export function openAiEnd(observation: ProviderObservation): ExecutionEnd {
   if (observation.kind === 'lost_lease')
     return { state: 'uncertain', cause: 'interrupted' }
   const error = observation.error
+  // A request whose archive was asked for is not sent without it; after
+  // it was sent, a response that could not be archived is not read, so
+  // how the work ended and what it cost stay unknown.
+  if (error instanceof ArchiveError)
+    return error.requestSent
+      ? { state: 'uncertain', cause: 'unknown' }
+      : { state: 'failed', cause: 'unknown' }
   if (!(error instanceof ModelError))
     return { state: 'uncertain', cause: 'unknown' }
   if (error.code === 'format' && error.details.runtimeEnded)
@@ -184,10 +233,11 @@ export function openAiProvider(
   return {
     provider: 'openai',
     modes: {
-      single: (settings) =>
+      single: (settings, context) =>
         new OpenAiAdapter(fetcher, {
           maxOutputTokens: settings.maxOutputTokens,
           reasoningEffort: settings.reasoningEffort,
+          keepArtifact: context.keepArtifact,
         }),
       batch: (settings) =>
         openAiBatch(

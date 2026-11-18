@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ModelError, type ModelRequest } from '../../provider-adapter.ts'
 import { OllamaAdapter, ollamaEnd } from './ollama.ts'
-import { OpenAiAdapter, normalizeOpenAi, openAiEnd } from './openai.ts'
+import {
+  ArchiveError,
+  OpenAiAdapter,
+  normalizeOpenAi,
+  openAiEnd,
+} from './openai.ts'
 
 const facts = {
   summary: null,
@@ -262,6 +267,62 @@ describe('OpenAI adapter owns protocol and transport metadata', () => {
         apiKey: () => 'synthetic',
       }).generate(request, controller.signal),
     ).rejects.toMatchObject({ code: 'aborted', details: { transient: false } })
+  })
+  it('archives the exact body before sending and the raw response before reading it, when asked (SD 0mq.17 decision 5)', async () => {
+    const events: string[] = []
+    const raw = JSON.stringify({
+      id: 'paid-id',
+      status: 'completed',
+      usage: { input_tokens: 1, output_tokens: 1 },
+      output: [message(JSON.stringify(facts))],
+    })
+    const fetcher = vi.fn<typeof fetch>(async () => {
+      events.push('send')
+      return new Response(raw)
+    })
+    const kept: [string, string, string][] = []
+    await new OpenAiAdapter(fetcher, {
+      maxOutputTokens: 500,
+      apiKey: () => 'synthetic',
+      keepArtifact: async (kind, key, content) => {
+        events.push(kind)
+        kept.push([kind, key, content])
+      },
+    }).generate(request)
+    expect(events).toEqual(['input', 'send', 'output'])
+    expect(kept).toEqual([
+      ['input', 'request', String(fetcher.mock.calls[0]![1]!.body)],
+      ['output', 'response', raw],
+    ])
+    // The archived body holds no credentials.
+    expect(kept[0]![2]).not.toContain('synthetic')
+  })
+  it('does not send a request whose archive cannot be kept, and leaves an unarchived response unread', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response('{"status":"completed"}'))
+    const failing = (failOn: 'input' | 'output') =>
+      new OpenAiAdapter(fetcher, {
+        maxOutputTokens: 500,
+        apiKey: () => 'synthetic',
+        keepArtifact: async (kind) => {
+          if (kind === failOn) throw new Error('database')
+        },
+      }).generate(request)
+    const notSent = await failing('input').catch((e: unknown) => e)
+    expect(notSent).toBeInstanceOf(ArchiveError)
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(openAiEnd({ kind: 'error', error: notSent })).toEqual({
+      state: 'failed',
+      cause: 'unknown',
+    })
+    const unread = await failing('output').catch((e: unknown) => e)
+    expect(unread).toBeInstanceOf(ArchiveError)
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(openAiEnd({ kind: 'error', error: unread })).toEqual({
+      state: 'uncertain',
+      cause: 'unknown',
+    })
   })
   it('marks transport failure as possibly sent and never invents usage', async () => {
     const fetcher = vi

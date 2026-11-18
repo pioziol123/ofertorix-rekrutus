@@ -20,6 +20,7 @@ import {
   executionCauses,
   readBudget,
   readExecution,
+  readExecutionArchive,
   readExecutionHistory,
   recoverExecutions,
   registerResultReceiver,
@@ -192,6 +193,7 @@ integration('AI execution coordination with a real database and queue', () => {
       '1770000000017_profile_ai_executions',
       '1770000000007_matching_payload',
       '1770000000008_matching_groups',
+      '1770000000012_matching_batch_archives',
       '1770000000018_matching_ai_executions',
     ])
       createRequire(import.meta.url)(`../../migrations/${migration}.cjs`).up({
@@ -211,12 +213,20 @@ integration('AI execution coordination with a real database and queue', () => {
     await boss.start()
     await boss.createQueue(aiExecutionQueue, aiExecutionJobOptions)
     useAiQueue(boss)
-    const single: NonNullable<ProviderAdapter['modes']['single']> = () => ({
+    // Like the OpenAI adapter, it keeps what it sends and receives when
+    // the archive was asked for.
+    const single: NonNullable<ProviderAdapter['modes']['single']> = (
+      _settings,
+      context,
+    ) => ({
       async generate(modelRequest) {
         calls.push(modelRequest)
+        await context.keepArtifact?.('input', 'request', modelRequest.input)
         const answer = answers.shift()
         if (!answer) throw new Error('Unexpected provider call')
-        return answer()
+        const response = await answer()
+        await context.keepArtifact?.('output', 'response', response.text ?? '')
+        return response
       },
     })
     // The simulated adapter declares single mode while it is present.
@@ -666,6 +676,31 @@ integration('AI execution coordination with a real database and queue', () => {
         request({ input: 'x'.repeat(800), refuseAboveInputCap: true }),
       ),
     ).resolves.toMatchObject({ state: 'queued' })
+  })
+
+  it('keeps the diagnostic archive of a single execution only when the client asked for it (SD 0mq.17 decision 5)', async () => {
+    answers.push(completed({ text: 'ok' }), completed({ text: 'ok' }))
+    const kept = await requestExecution(
+      request({ input: 'Archived text', keepArchive: true }),
+    )
+    const notKept = await requestExecution(request({ input: 'Profile text' }))
+    await work()
+    await work()
+    const archive = await readExecutionArchive(kept.executionId)
+    expect(archive!.archiveId).toBe(kept.executionId)
+    expect(
+      archive!.artifacts.map((a) => [a.kind, a.artifact_key, a.content]),
+    ).toEqual(
+      expect.arrayContaining([
+        ['input', 'request', 'Archived text'],
+        ['output', 'response', JSON.stringify({ text: 'ok' })],
+      ]),
+    )
+    expect(archive!.artifacts).toHaveLength(2)
+    expect(await readExecutionArchive(notKept.executionId)).toEqual({
+      archiveId: notKept.executionId,
+      artifacts: [],
+    })
   })
 
   it('ends a completed response that is not JSON without a result and settles its cost', async () => {

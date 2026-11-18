@@ -46,6 +46,14 @@ export type ExecutionRequest = {
    */
   refuseAboveInputCap?: boolean
   /**
+   * Keep the exact request body and the raw provider response of a
+   * single-mode execution in its diagnostic archive, under the execution's
+   * archive identifier. Batches are archived whole by their adapter.
+   * Solution design 0mq.17 decision 5: the client asks per request,
+   * so a client that does not ask is not archived.
+   */
+  keepArchive?: boolean
+  /**
    * The result of the check before the request, for the same settings
    * key. Required when the provider fixes something before a request.
    */
@@ -89,6 +97,9 @@ function snapshot(
     responseSchema: request.responseSchema,
     input: request.input,
     tools: request.mode.kind === 'agent' ? request.mode.tools : [],
+    ...(request.keepArchive && request.mode.kind === 'single'
+      ? { keepArchive: true }
+      : {}),
   }
 }
 
