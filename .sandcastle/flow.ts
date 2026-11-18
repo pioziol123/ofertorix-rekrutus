@@ -704,8 +704,16 @@ async function runTask(r: Runner, issue: Issue, branch: string, baseSha: string,
     }
     t.turns++
     r.log(`${issue.id}: feedback turn ${t.turns}: ${firstLine(report)}`)
-    await t.sandbox!.exec(`rm -f ${RESULT_FILE}`)
-    if (!(await t.sandbox!.resume(feedbackPrompt(report)))) return returned(`${report}\n(No agent session to resume.)`)
+    try {
+      await t.sandbox!.exec(`rm -f ${RESULT_FILE}`)
+      if (!(await t.sandbox!.resume(feedbackPrompt(report)))) return returned(`${report}\n(No agent session to resume.)`)
+    } catch (error) {
+      // A turn the environment interrupted is given back: retries are counted apart from
+      // feedback turns (ENV-R04), and the next check reports the same problem to the new agent.
+      // ASSUMPTION(oferty-pracy-5yd.3/ASM-2)
+      if (error instanceof EnvironmentFailure) t.turns--
+      throw error
+    }
     return null
   }
   let prompt = implementPrompt(issue, ctx, baseSha, continuation)

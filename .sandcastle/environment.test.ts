@@ -149,6 +149,25 @@ describe('5yd.3: retry after an environment failure', () => {
     assert.equal(w.db.show('t-1').status, 'closed')
   })
 
+  it('ASM-2: a feedback turn the environment interrupts is given back, so the retry costs no feedback turn', async () => {
+    let turns = 0
+    w = world((ctx) => {
+      turns++
+      if (turns === 1) return committingAgent()(ctx)
+      if (turns === 2 || turns === 4) throw new Error('container killed')
+      if (turns === 5) w.sandboxes.verdict = 'pass'
+      answer(ctx)
+    })
+    w.sandboxes.verdict = 'fail'
+    w.sandboxes.findings = ['F1: a finding']
+    await cycle(w.runner)
+
+    assert.equal((taskLog().match(/feedback turn 1:/g) ?? []).length, 2, 'the interrupted turn 1 was sent again as turn 1')
+    assert.doesNotMatch(taskLog(), /feedback turn 2:/)
+    assert.equal((taskLog().match(/environment failure \d/g) ?? []).length, 2)
+    assert.equal(w.db.show('t-1').status, 'closed')
+  })
+
   it('ASM-1: closing the agent\'s sandbox fails after delivery: the task stays delivered and the failure is only logged', async () => {
     w = world(committingAgent())
     const open = w.sandboxes.warm.bind(w.sandboxes)
