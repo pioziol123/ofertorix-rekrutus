@@ -18,7 +18,9 @@ export {
   readImport,
 } from './read-imports.ts'
 
-// Composition: where the worker registers the receiver of proposal outcomes.
+// Composition: where the worker registers the receiver of proposal outcomes
+// and resumes preparations stored by the former path.
+export { resumeProposalPreparations } from './resume-proposal-preparations.ts'
 export {
   proposalReceiver,
   proposalSettingsKey,

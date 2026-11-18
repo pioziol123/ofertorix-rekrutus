@@ -18,6 +18,7 @@ import {
 import {
   proposalReceiver,
   proposalSettingsKey,
+  resumeProposalPreparations,
 } from '../modules/profile/index.ts'
 import { closePool, getPool } from '../lib/db.ts'
 import { createBoss, smokeQueue } from '../lib/queue.ts'
@@ -83,6 +84,7 @@ await boss.work<{ groupId: string }>(matchingGroupQueue, async (jobs) => {
 await recoverCompanyResearch(pool, boss)
 useAiQueue(boss)
 registerResultReceiver(proposalSettingsKey, proposalReceiver)
+await resumeProposalPreparations()
 await recoverExecutions()
 await boss.work<{ executionId: string }>(aiExecutionQueue, async (jobs) => {
   for (const job of jobs) await runExecution(job.data.executionId)
@@ -102,6 +104,7 @@ async function schedule() {
     await recoverMatching(pool, boss)
     await recoverMatchingGroups(pool, boss)
     await recoverCompanyResearch(pool, boss)
+    await resumeProposalPreparations()
     await recoverExecutions()
   } finally {
     scheduling = false

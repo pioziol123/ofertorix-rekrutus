@@ -82,12 +82,14 @@ export type ProviderSettings = {
 /**
  * What an adapter observed when the work ended without a result: a
  * response the model did not complete, an error, or a lost lease of a
- * running process on the shared local slot.
+ * running process on the shared local slot. For a lost lease,
+ * `processEnded` says whether the end of the process was observed and the
+ * slot released.
  */
 export type ProviderObservation =
   | { kind: 'outcome'; outcome: 'refused' | 'incomplete' }
   | { kind: 'error'; error: unknown }
-  | { kind: 'lost_lease' }
+  | { kind: 'lost_lease'; processEnded: boolean }
 
 /** What the coordination gives an adapter for one request. */
 export type RequestContext = {

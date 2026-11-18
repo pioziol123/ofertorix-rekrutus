@@ -82,13 +82,13 @@ const revisionOf = (inputVersion: string | null) =>
 export const proposalReceiver: ResultReceiver = {
   async receiveResult(delivery) {
     const revision = revisionOf(delivery.inputVersion)
-    if (revision === null) return { accepted: false }
-    const accepted = await recordPreparationResult(
+    if (revision === null)
+      return { accepted: false, reason: 'invalid_input_version' }
+    return recordPreparationResult(
       delivery.operationId,
       revision,
       delivery.result,
     )
-    return { accepted }
   },
   async receiveFailure(delivery) {
     const revision = revisionOf(delivery.inputVersion)

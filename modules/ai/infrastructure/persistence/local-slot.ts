@@ -107,10 +107,12 @@ export async function archiveLocal(claim: LocalClaim, raw: string) {
 }
 
 /**
- * Records what is observed about the process after the request: ended,
- * which releases the slot, or unknown, which keeps it. Returns whether the
- * worker still held a live lease, the condition for using the outcome.
- * Runs in the caller's transaction.
+ * Records what is observed about the process after the request: ended, or
+ * unknown. An ended process releases the slot, unless recovery already
+ * ended the execution because its lease lapsed: that end keeps the slot
+ * until a person checks it. Returns whether the worker still held a live
+ * lease (the condition for using the outcome) and whether the slot was
+ * released. Runs in the caller's transaction.
  */
 export async function finishLocal(claim: LocalClaim, ended: boolean) {
   const slot = (
@@ -123,6 +125,14 @@ export async function finishLocal(claim: LocalClaim, ended: boolean) {
     String(slot.generation) === claim.generation &&
     slot.lease_owner === claim.owner &&
     slot.live === true
+  const running =
+    (
+      await db().query(
+        "SELECT 1 FROM ai_executions WHERE id=$1 AND state='running'",
+        [claim.executionId],
+      )
+    ).rowCount === 1
+  const released = ended && running
   await db().query(
     'UPDATE ai_runtime_requests SET state=$2,finished_at=CASE WHEN $3 THEN now() ELSE NULL END WHERE id=$1',
     [claim.requestId, ended ? 'finished' : 'unknown', ended],
@@ -131,7 +141,7 @@ export async function finishLocal(claim: LocalClaim, ended: boolean) {
     'UPDATE ai_executions SET runtime_state=$2,runtime_observed_at=now(),stop_confirmed_at=CASE WHEN $3 THEN now() ELSE NULL END,revision=revision+1 WHERE id=$1',
     [claim.executionId, ended ? 'finished' : 'unknown', ended],
   )
-  if (ended) {
+  if (released) {
     await db().query(
       "UPDATE ai_local_queue SET state='finished' WHERE execution_id=$1",
       [claim.executionId],
@@ -141,7 +151,7 @@ export async function finishLocal(claim: LocalClaim, ended: boolean) {
       [claim.executionId],
     )
   }
-  return held
+  return { held, released }
 }
 
 /**

@@ -178,13 +178,18 @@ export class OllamaAdapter implements StructuredModel {
  * the request was sent, or after the process confirmed its end, tells how
  * the work ended. A lost lease of a running process, or an error without
  * a confirmed end, leaves the process in an unknown state: the execution is
- * uncertain and keeps the shared local slot.
+ * uncertain and keeps the shared local slot. A process that ended after
+ * its lease lapsed released the slot: its outcome is not used, and the
+ * execution failed as interrupted.
  */
 export function ollamaEnd(observation: ProviderObservation): ExecutionEnd {
   if (observation.kind === 'outcome')
     return { state: 'failed', cause: observation.outcome }
   if (observation.kind === 'lost_lease')
-    return { state: 'uncertain', cause: 'interrupted' }
+    return {
+      state: observation.processEnded ? 'failed' : 'uncertain',
+      cause: 'interrupted',
+    }
   const error = observation.error
   if (!(error instanceof ModelError))
     return { state: 'uncertain', cause: 'unknown' }

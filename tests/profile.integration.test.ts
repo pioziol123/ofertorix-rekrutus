@@ -461,6 +461,7 @@ integration(
       })
       expect(await readLatestExecution(other.id)).toMatchObject({
         state: 'rejected',
+        rejectionReason: 'unconfirmed_quote',
         cost: { actual: '0.000150' },
       })
     })
@@ -768,6 +769,7 @@ integration(
       })
       expect(await readLatestExecution(id)).toMatchObject({
         state: 'rejected',
+        rejectionReason: 'stale_revision',
         cost: { actual: '0.000150' },
       })
     })

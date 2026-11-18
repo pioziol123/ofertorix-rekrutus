@@ -4,8 +4,19 @@ import {
   type Proposal,
 } from '../../../lib/profile/model.ts'
 
-/** A result the Profile does not accept, with the owner's message. */
-export class ProposalRejected extends Error {}
+/**
+ * A result the Profile does not accept: the owner's message, and the rule
+ * it broke as a diagnostic reason.
+ */
+export class ProposalRejected extends Error {
+  constructor(
+    message: string,
+    readonly reason: 'unconfirmed_quote' | 'invalid_proposal',
+    options?: ErrorOptions,
+  ) {
+    super(message, options)
+  }
+}
 
 /**
  * The proposal in a result that matches the response schema, checked by
@@ -20,6 +31,9 @@ export function readProposal(result: unknown, text: string): Proposal {
       cause instanceof ProposalEvidenceError
         ? 'Nie udało się potwierdzić cytatów AI w tekście CV. Profil pozostaje bez zmian.'
         : 'Odpowiedź AI ma nieprawidłowy format danych. Profil pozostaje bez zmian.',
+      cause instanceof ProposalEvidenceError
+        ? 'unconfirmed_quote'
+        : 'invalid_proposal',
       { cause },
     )
   }

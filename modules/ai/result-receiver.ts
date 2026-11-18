@@ -28,10 +28,13 @@ export type ExecutionFailureDelivery = ExecutionEnd & {
 }
 
 /**
- * The client's decision on a result. A rejected result ends the execution
- * as `rejected`; the client keeps its own reason in its own data.
+ * The client's decision on a result: accepted, or rejected with a reason.
+ * A rejected result ends the execution as `rejected`. The reason is the
+ * client's own diagnostic text; AI keeps it with the execution, apart from
+ * the cause, which only names why an execution ended without a result.
  */
-export type ReceiverDecision = { accepted: true } | { accepted: false }
+export type ReceiverDecision =
+  { accepted: true } | { accepted: false; reason: string }
 
 /**
  * The client's receiver of the results of a settings key. AI calls it in

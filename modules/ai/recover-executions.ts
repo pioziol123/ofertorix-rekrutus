@@ -26,7 +26,7 @@ async function endLapsed(executionId: string) {
     if (execution?.state !== 'running' || !adapter) return false
     const outcome = {
       ...noOutcome(),
-      end: adapter.endOf({ kind: 'lost_lease' }),
+      end: adapter.endOf({ kind: 'lost_lease', processEnded: false }),
     }
     const saved = await saveOutcome(
       executionId,

@@ -398,8 +398,14 @@ describe('A14-AC12: each adapter decides the public end of what it observed', ()
     ],
     [
       'a lost lease of a running process',
-      { kind: 'lost_lease' },
+      { kind: 'lost_lease', processEnded: false },
       'uncertain',
+      'interrupted',
+    ],
+    [
+      'a process that ended after its lease lapsed and released the slot',
+      { kind: 'lost_lease', processEnded: true },
+      'failed',
       'interrupted',
     ],
   ] as const)('Ollama: %s', (_, observation, state, cause) => {

@@ -1,5 +1,8 @@
 // The Profile's proposal preparation moves to the AI coordination
 // (task oferty-pracy-0mq.9).
+// - Executions keep the client's reason for rejecting a result in
+//   `rejection_reason`, apart from `cause`, which names only why an
+//   execution ended without a result.
 // - Executions get the public state `uncertain`. `end_state` keeps the end
 //   an adapter decided for an outcome without a result only while it waits
 //   for delivery (state `delivering`); once the execution ends, `state` and
@@ -13,10 +16,13 @@
 // - Attempts of the existing paid Profile path get an execution each, with
 //   the operation (the import), the input version (the text revision) and
 //   the result (the proposal).
-// - Work in progress of the old paths cannot continue, because their queue
-//   has no worker any more: work not yet started ends as failed and
-//   releases what it reserved; work that was running ends as uncertain and
-//   keeps its reservation. The import read shows these ends to the owner.
+// - Work in progress of the old paths cannot continue in their queue, which
+//   has no worker any more. Work not yet started (queued, or waiting for
+//   budget) ends as `retried` with the cause `interrupted` and releases
+//   what it reserved; the Profile requests its next attempt through the AI
+//   contract, which reserves again or waits for budget. Work that was
+//   running ends as uncertain and keeps its reservation, so nothing that may
+//   have been sent is sent again.
 // - The index of one attempt in progress per import gives way to the index
 //   of one execution in progress per operation.
 exports.up = (pgm) =>
@@ -24,16 +30,19 @@ exports.up = (pgm) =>
 ALTER TABLE ai_executions DROP CONSTRAINT ai_executions_state_check;
 ALTER TABLE ai_executions ADD CONSTRAINT ai_executions_state_check
  CHECK(state IN ('waiting_budget','queued','running','delivering','uncertain','completed','rejected','failed','retried'));
+ALTER TABLE ai_executions ADD COLUMN rejection_reason text;
 ALTER TABLE ai_executions ADD COLUMN end_state text
  CONSTRAINT ai_executions_end_state_check CHECK(end_state IS NULL OR (end_state IN ('failed','uncertain') AND state='delivering'));
 
 WITH legacy AS (
  SELECT e.id, a.text_revision, a.proposal, e.error_code, e.result_status,
+  e.disposition='superseded' AS superseded,
   CASE
    WHEN e.disposition='superseded' THEN 'retried'
    WHEN e.result_status='completed' THEN 'completed'
    WHEN e.result_status='failed' AND e.error_code='invalid_proposal' THEN 'rejected'
    WHEN e.runtime_state IN ('running','unknown') THEN 'uncertain'
+   WHEN e.result_status IS NULL THEN 'retried'
    ELSE 'failed'
   END AS new_state
  FROM ai_executions e JOIN ai_attempts a ON a.execution_id=e.id
@@ -45,7 +54,7 @@ UPDATE ai_executions e SET
  result=l.proposal,
  state=l.new_state,
  cause=CASE
-  WHEN l.new_state IN ('completed','rejected','retried') THEN NULL
+  WHEN l.new_state IN ('completed','rejected') OR l.superseded THEN NULL
   WHEN l.result_status IS NULL THEN 'interrupted'
   WHEN l.error_code IN ('configuration','network','http','format','aborted','model_unavailable','context_overflow') THEN l.error_code
   ELSE 'unknown'
@@ -64,7 +73,7 @@ INSERT INTO ai_executions(id,settings_key,operation_id,configuration,publication
 SELECT a.id,'profile',a.import_id,a.configuration,gen_random_uuid(),'single',a.text_revision::text,a.proposal,
  CASE
   WHEN EXISTS(SELECT 1 FROM ai_attempts n WHERE n.generation=a.generation AND n.attempt>a.attempt) THEN 'retried'
-  WHEN a.state IN ('queued','waiting_budget') THEN 'failed'
+  WHEN a.state IN ('queued','waiting_budget') THEN 'retried'
   WHEN a.state='running' THEN 'uncertain'
   WHEN a.proposal IS NOT NULL THEN 'completed'
   WHEN a.state='unknown' THEN 'uncertain'

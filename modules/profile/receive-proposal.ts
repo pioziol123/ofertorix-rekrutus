@@ -1,4 +1,4 @@
-import type { ExecutionCause } from '../ai/index.ts'
+import type { ExecutionCause, ReceiverDecision } from '../ai/index.ts'
 import { preparationMessage } from './domain/proposal-preparation.ts'
 import { ProposalRejected, readProposal } from './domain/proposal-result.ts'
 import {
@@ -11,24 +11,25 @@ import {
  * Takes over a prepared result for an import's text revision: checks the
  * proposal contract and the quotes against that revision and saves the
  * proposal with the import. A result for a revision that is no longer
- * current does not replace anything. Returns whether the result was
- * accepted; a rejected one leaves the owner's message with the import.
+ * current does not replace anything. Returns the decision; a rejected
+ * result leaves the owner's message with the import, and the reason names
+ * the rule it broke without any CV or model content.
  * Runs in the caller's transaction and may run again with the same result.
  */
 export async function recordPreparationResult(
   importId: string,
   revision: number,
   result: unknown,
-): Promise<boolean> {
+): Promise<ReceiverDecision> {
   const text = await lockCurrentText(importId, revision)
-  if (text === null) return false
+  if (text === null) return { accepted: false, reason: 'stale_revision' }
   try {
     await saveProposal(importId, revision, readProposal(result, text))
-    return true
+    return { accepted: true }
   } catch (error) {
     if (!(error instanceof ProposalRejected)) throw error
     await saveNoProposal(importId, revision, error.message)
-    return false
+    return { accepted: false, reason: error.reason }
   }
 }
 

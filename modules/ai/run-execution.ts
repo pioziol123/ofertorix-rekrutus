@@ -148,8 +148,10 @@ async function callProvider(
 /**
  * Runs the call while holding the shared local slot: the lease is renewed
  * during the call, and afterwards the slot is released unless the adapter
- * judged the end uncertain. An outcome reached after the lease lapsed is
- * not used: the adapter decides what the lost lease means.
+ * judged the end uncertain or recovery already ended the execution as
+ * uncertain. An outcome reached after the lease lapsed is not used: the
+ * adapter decides what the lost lease means, knowing whether the process
+ * ended and released the slot.
  */
 async function callOnSlot(
   execution: ExecutionRow,
@@ -167,12 +169,12 @@ async function callOnSlot(
     clearInterval(heartbeat)
   }
   const ended = outcome.end?.state !== 'uncertain'
-  const held = await transaction(() => finishLocal(local, ended))
+  const { held, released } = await transaction(() => finishLocal(local, ended))
   if (!held && adapter)
     outcome = {
       ...outcome,
       result: null,
-      end: adapter.endOf({ kind: 'lost_lease' }),
+      end: adapter.endOf({ kind: 'lost_lease', processEnded: released }),
     }
   return outcome
 }
@@ -287,7 +289,11 @@ async function deliver(executionId: string) {
         execution.id,
         decision.accepted
           ? { state: 'completed', cause: null }
-          : { state: 'rejected', cause: null },
+          : {
+              state: 'rejected',
+              cause: null,
+              rejectionReason: decision.reason,
+            },
       )
     })
   } catch (error) {

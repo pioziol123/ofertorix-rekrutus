@@ -373,14 +373,16 @@ integration('AI execution coordination with a real database and queue', () => {
   })
 
   it('A14-AC04: a rejected result still settles the cost incurred', async () => {
-    decide = async () => ({ accepted: false })
+    decide = async () => ({ accepted: false, reason: 'quote not found' })
     const admitted = await requestExecution(request())
     answers.push(completed({ text: 'unconfirmed' }))
     await work()
     expect(await readExecution(admitted.executionId)).toMatchObject({
       state: 'rejected',
       result: { text: 'unconfirmed' },
+      // The reason is kept apart from the cause, which stays in its list.
       cause: null,
+      rejectionReason: 'quote not found',
       cost: { reserved: ceiling, actual: '0.000800' },
     })
     expect(await readBudget()).toMatchObject({
@@ -932,19 +934,20 @@ integration('AI execution coordination with a real database and queue', () => {
       'delivering',
     )
     expect(await attempt()).toEqual({ state: 'open', error: null })
-    decide = async () => ({ accepted: false })
+    decide = async () => ({ accepted: false, reason: 'quote not found' })
     await runExecution(admitted.executionId)
     expect(await attempt()).toEqual({ state: 'settled', error: null })
     expect(
       (
         await pool.query(
-          'SELECT state, cause, result_status, error_code, disposition, publication_allowed, runtime_state FROM ai_executions WHERE id=$1',
+          'SELECT state, cause, rejection_reason, result_status, error_code, disposition, publication_allowed, runtime_state FROM ai_executions WHERE id=$1',
           [admitted.executionId],
         )
       ).rows[0],
     ).toEqual({
       state: 'rejected',
       cause: null,
+      rejection_reason: 'quote not found',
       result_status: null,
       error_code: null,
       disposition: 'active',

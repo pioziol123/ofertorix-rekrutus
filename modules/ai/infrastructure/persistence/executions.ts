@@ -46,6 +46,8 @@ export type ExecutionRow = {
   cause: ExecutionCause | null
   /** The end an adapter decided for an outcome without a result. */
   endState: ExecutionEnd['state'] | null
+  /** The client's reason for rejecting the result. */
+  rejectionReason: string | null
   delivery: { attempts: number; error: string | null }
   createdAt: Date
   finishedAt: Date | null
@@ -82,6 +84,7 @@ function toExecution(row: Record<string, unknown>): ExecutionRow {
     result: row.result ?? null,
     cause: row.cause as ExecutionCause | null,
     endState: row.end_state as ExecutionEnd['state'] | null,
+    rejectionReason: row.rejection_reason as string | null,
     delivery: {
       attempts: row.delivery_attempts as number,
       error: row.delivery_error as string | null,
@@ -317,11 +320,18 @@ export async function finishExecution(
   outcome: {
     state: 'completed' | 'rejected' | 'failed' | 'uncertain' | 'retried'
     cause: ExecutionCause | null
+    /** The client's reason for rejecting the result. */
+    rejectionReason?: string
   },
 ) {
   await db().query(
-    'UPDATE ai_executions SET state=$2,cause=$3,end_state=NULL,finished_at=now(),revision=revision+1 WHERE id=$1',
-    [executionId, outcome.state, outcome.cause],
+    'UPDATE ai_executions SET state=$2,cause=$3,rejection_reason=$4,end_state=NULL,finished_at=now(),revision=revision+1 WHERE id=$1',
+    [
+      executionId,
+      outcome.state,
+      outcome.cause,
+      outcome.rejectionReason?.slice(0, 500) ?? null,
+    ],
   )
 }
 

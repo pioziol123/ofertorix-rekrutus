@@ -121,3 +121,30 @@ export async function listImportRows(): Promise<ImportSummary[]> {
     )
   ).rows
 }
+
+/** The imports whose proposal preparation was requested but not started. */
+export async function importsWaitingForPreparation(): Promise<string[]> {
+  return (
+    await db().query(
+      "SELECT id FROM profile_imports WHERE status IN ('ai_queued','waiting_budget') ORDER BY updated_at",
+    )
+  ).rows.map((row) => row.id as string)
+}
+
+/**
+ * Locks an import whose proposal preparation for the revision was requested
+ * but not started, and reads that revision's text.
+ */
+export async function lockWaitingPreparation(
+  importId: string,
+  revision: number,
+): Promise<string | null> {
+  const row = (
+    await db().query(
+      `SELECT t.text FROM profile_imports i JOIN profile_import_texts t ON t.import_id=i.id AND t.revision=i.text_revision
+       WHERE i.id=$1 AND i.text_revision=$2 AND i.status IN ('ai_queued','waiting_budget') FOR UPDATE OF i`,
+      [importId, revision],
+    )
+  ).rows[0]
+  return (row?.text as string | undefined) ?? null
+}

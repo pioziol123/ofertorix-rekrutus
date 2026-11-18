@@ -314,5 +314,29 @@ integration('local profile executions in PostgreSQL', () => {
       ).rows[0]?.count,
     ).toBe(1)
     expect((await execution(task.executionId)).state).toBe('uncertain')
+    // The uncertain end keeps the slot even after the late response.
+    expect(await slotHolder()).toBe(task.executionId)
+  })
+  it('A9-AC03: ends a run whose process ended after its lease lapsed as interrupted, releases the slot and does not publish the result', async () => {
+    const task = await enqueue()
+    const mock = fetcher(async () => {
+      await pool.query(
+        "UPDATE ai_local_slots SET lease_until=now()-interval '1 second'",
+      )
+      return result()
+    })
+    await executeAi(task.executionId, mock)
+    expect(await execution(task.executionId)).toMatchObject({
+      runtime_state: 'finished',
+      state: 'failed',
+      cause: 'interrupted',
+      result: null,
+    })
+    expect(await slotHolder()).toBeNull()
+    expect(await imported(task.importId)).toMatchObject({
+      status: 'needs_attention',
+      proposal: null,
+      error: expect.stringContaining('Przerwano przygotowanie propozycji'),
+    })
   })
 })

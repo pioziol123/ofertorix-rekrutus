@@ -36,6 +36,8 @@ export type AiExecution = {
   }
   /** Why the execution ended without a result; null otherwise. */
   cause: ExecutionCause | null
+  /** The client's reason for rejecting the result; null otherwise. */
+  rejectionReason: string | null
   /**
    * Deliveries of the outcome to the client's receiver so far, and the
    * error of the last one that did not reach a decision.
@@ -63,6 +65,7 @@ function toPublic(row: ExecutionRow): AiExecution {
       actual: settled ? row.attempt.actual : null,
     },
     cause: row.cause,
+    rejectionReason: row.rejectionReason,
     delivery: {
       attempts: row.delivery.attempts,
       lastError: row.delivery.error,

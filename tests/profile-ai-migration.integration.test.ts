@@ -1,10 +1,20 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import type { PgBoss } from 'pg-boss'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
-import { readExecutionHistory } from '../modules/ai/index.ts'
-import { readImport } from '../modules/profile/index.ts'
+import {
+  readExecutionHistory,
+  registerResultReceiver,
+  useAiQueue,
+} from '../modules/ai/index.ts'
+import {
+  proposalReceiver,
+  proposalSettingsKey,
+  readImport,
+  resumeProposalPreparations,
+} from '../modules/profile/index.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -43,6 +53,10 @@ integration('migration of the profile AI rows', () => {
     await pool.query(
       "INSERT INTO profile_imports(id,kind,status,source_text,sha256,text_revision) VALUES($1,'text',$2,'PHP','x',1)",
       [id, status],
+    )
+    await pool.query(
+      "INSERT INTO profile_import_texts(import_id,revision,text) VALUES($1,1,'PHP')",
+      [id],
     )
   }
   async function paidAttempt(
@@ -205,7 +219,7 @@ integration('migration of the profile AI rows', () => {
   })
   it('ends work the old paths can no longer continue and releases what was not spent', async () => {
     expect(await latest('paidQueued')).toMatchObject({
-      state: 'failed',
+      state: 'retried',
       cause: 'interrupted',
     })
     expect(await attempt(ids.paidQueued)).toEqual({
@@ -221,7 +235,7 @@ integration('migration of the profile AI rows', () => {
       actual_pln: null,
     })
     expect(await latest('localQueued')).toMatchObject({
-      state: 'failed',
+      state: 'retried',
       cause: 'interrupted',
     })
     expect(
@@ -257,14 +271,37 @@ integration('migration of the profile AI rows', () => {
   })
   it('shows the owner the end of preparation that was in progress', async () => {
     expect(await readImport(imports.paidQueued)).toMatchObject({
-      status: 'needs_attention',
-      error: expect.stringContaining('Przerwano przygotowanie propozycji'),
+      status: 'ai_queued',
+      error: null,
     })
     expect(await readImport(imports.paidRunning)).toMatchObject({
       status: 'needs_attention',
       error: expect.stringContaining('Nie wiadomo, jak zakończyło się'),
     })
     expect((await readImport(imports.paidDone))!.status).toBe('proposal')
+  })
+  it('A9-AC03: requests again the preparations that had not started, as the former recovery resent them', async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'test-key-never-send')
+    const send = vi.fn(async () => randomUUID())
+    useAiQueue({ send } as unknown as PgBoss)
+    registerResultReceiver(proposalSettingsKey, proposalReceiver)
+    try {
+      await resumeProposalPreparations()
+      for (const key of ['paidQueued', 'localQueued'] as const) {
+        const history = await readExecutionHistory(imports[key])
+        expect(history.map((e) => e.state)).toEqual(['retried', 'queued'])
+        expect(history[1]).toMatchObject({ inputVersion: '1', attempt: 1 })
+        expect((await readImport(imports[key]))!.status).toBe('ai_queued')
+      }
+      expect(send).toHaveBeenCalledTimes(2)
+      // Uncertain and finished work is left alone, and a second run has
+      // no further effect.
+      expect((await readExecutionHistory(imports.paidRunning)).length).toBe(1)
+      await resumeProposalPreparations()
+      expect(send).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
   it('replaces the index of one attempt in progress per import', async () => {
     expect(
