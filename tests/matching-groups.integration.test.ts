@@ -470,6 +470,7 @@ integration(
       ).toBe('2')
       expect(send).toHaveBeenCalledOnce()
     })
+    // ASSUMPTION(oferty-pracy-0mq.18/ASM-2): a group found in sending ends as interrupted.
     it.each(['uploading', 'submitting'])(
       'does not recreate a paid batch after interrupted %s',
       async (state) => {

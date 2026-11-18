@@ -430,6 +430,7 @@ integration(
       expect(fetcher).toHaveBeenCalledOnce()
       expect(fetcher.mock.calls[0]![0]).toBe('https://api.openai.com/v1/files')
     })
+    // ASSUMPTION(oferty-pracy-0mq.18/ASM-2): a request found in sending ends as interrupted.
     it('does not resubmit an interrupted submission and retains unknown cost', async () => {
       const request = await enqueueMatching(boss, ad),
         provider = new Provider()
