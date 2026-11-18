@@ -380,13 +380,20 @@ export async function executionsInState(state: 'waiting_budget' | 'queued') {
   return rows.rows.map(toExecution)
 }
 
-/** Executions of a provider batch group, oldest first. */
-export async function readGroupExecutionRows(groupId: string) {
+/**
+ * Whether a provider batch group was already requested. Takes the group's
+ * turn until the caller's transaction ends, so two requests of one group
+ * are admitted one at a time.
+ */
+export async function groupRequested(groupId: string) {
+  await db().query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+    `ai-group-${groupId}`,
+  ])
   const rows = await db().query(
-    `${selectExecution} WHERE e.group_id=$1 AND e.mode='batch' AND e.state IS NOT NULL ORDER BY e.created_at,e.id`,
+    "SELECT 1 FROM ai_executions WHERE group_id=$1 AND mode='batch' LIMIT 1",
     [groupId],
   )
-  return rows.rows.map(toExecution)
+  return (rows.rowCount ?? 0) > 0
 }
 
 /** The latest execution of each given operation. */

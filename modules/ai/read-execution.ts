@@ -6,7 +6,6 @@ import { readArchiveArtifacts } from './infrastructure/persistence/batch-archive
 import {
   countActiveExecutionRows,
   readExecutionRow,
-  readGroupExecutionRows,
   readLatestExecutionRows,
   readLatestExecutionRow,
   readOperationExecutionRows,
@@ -116,20 +115,6 @@ export async function readLatestExecutions(
 ): Promise<AiExecution[]> {
   if (!operationIds.length) return []
   return (await readLatestExecutionRows([...operationIds])).map(toPublic)
-}
-
-// FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): its one client is Matching's interim
-// recognition of a repeated group command; the follow-up removes this read
-// or names the client that keeps it.
-/**
- * Every execution requested in a provider batch group, oldest first; empty
- * when the group has none. A client that names its groups uses it to
- * recognise a group it has already requested.
- */
-export async function readExecutionGroup(
-  groupId: string,
-): Promise<AiExecution[]> {
-  return (await readGroupExecutionRows(groupId)).map(toPublic)
 }
 
 /** How many executions requested under a settings key are in progress. */

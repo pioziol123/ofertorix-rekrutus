@@ -54,6 +54,41 @@ function retryDelay(value: string | null) {
       : Date.parse(value) - Date.now()
   return Number.isFinite(ms) && ms <= 60000 ? Math.max(1000, ms) : null
 }
+/**
+ * The exact body of a single call to the Responses API, as sent. The
+ * reasoning effort is `low` when not given and none when null.
+ */
+export function responsesBody(
+  request: ModelRequest,
+  options: { maxOutputTokens: number; reasoningEffort?: string | null },
+): string {
+  const effort =
+    options.reasoningEffort === undefined ? 'low' : options.reasoningEffort
+  return JSON.stringify({
+    model: request.model,
+    store: false,
+    tools: [],
+    service_tier: 'default',
+    max_output_tokens: options.maxOutputTokens,
+    ...(effort === null ? {} : { reasoning: { effort } }),
+    instructions: request.instructions,
+    input: [
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: request.input }],
+      },
+    ],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: request.output.name,
+        strict: true,
+        schema: request.output.schema,
+      },
+    },
+  })
+}
+
 /** The diagnostic archive asked for could not keep an artefact. */
 export class ArchiveError extends Error {
   constructor(
@@ -86,33 +121,7 @@ export class OpenAiAdapter implements StructuredModel {
       ? this.options.apiKey()
       : process.env.OPENAI_API_KEY
     if (!key) throw new ModelError('configuration')
-    const effort =
-      this.options.reasoningEffort === undefined
-        ? 'low'
-        : this.options.reasoningEffort
-    const body = JSON.stringify({
-      model: request.model,
-      store: false,
-      tools: [],
-      service_tier: 'default',
-      max_output_tokens: this.options.maxOutputTokens,
-      ...(effort === null ? {} : { reasoning: { effort } }),
-      instructions: request.instructions,
-      input: [
-        {
-          role: 'user',
-          content: [{ type: 'input_text', text: request.input }],
-        },
-      ],
-      text: {
-        format: {
-          type: 'json_schema',
-          name: request.output.name,
-          strict: true,
-          schema: request.output.schema,
-        },
-      },
-    })
+    const body = responsesBody(request, this.options)
     // The exact body is archived before it is sent; a request whose
     // archive was asked for is not sent without it.
     await this.keep('input', 'request', body, false)
@@ -245,6 +254,15 @@ export function openAiProvider(
           () => new BatchClient(process.env.OPENAI_API_KEY ?? '', fetcher),
         ),
     },
+    // ASSUMPTION(oferty-pracy-0mq.21/ASM-5): the exact body single mode
+    // sends, as the batch mode measures its exact batch line.
+    singleRequestBytes: (settings, request) =>
+      Buffer.byteLength(
+        responsesBody(request, {
+          maxOutputTokens: settings.maxOutputTokens,
+          reasoningEffort: settings.reasoningEffort,
+        }),
+      ),
     endOf: openAiEnd,
   }
 }

@@ -11,6 +11,7 @@ import {
   type ExecutionSettings,
 } from './execution-settings.ts'
 import {
+  groupRequested,
   hasActiveExecution,
   type ExecutionSnapshot,
 } from './infrastructure/persistence/executions.ts'
@@ -103,6 +104,16 @@ function snapshot(
   }
 }
 
+/** What the adapter is asked for, from a request and its settings. */
+function modelRequest(request: ExecutionRequest, settings: ExecutionSettings) {
+  return {
+    model: settings.model,
+    instructions: request.instruction,
+    input: request.input,
+    output: request.responseSchema,
+  }
+}
+
 async function admit(requests: ExecutionRequest[]) {
   for (const request of requests) validate(request)
   const first = requests[0]!
@@ -112,10 +123,19 @@ async function admit(requests: ExecutionRequest[]) {
   // A reservation covers the input cap of the price list, so a paid
   // request that asks for it is refused above the cap before anything is
   // reserved. ASSUMPTION(oferty-pracy-0mq.21/ASM-5)
+  // A batch item is checked by the batch's own admission below; a single
+  // request on the exact body its adapter sends, when the adapter measures
+  // it.
   const cap = settings.pricing?.maxInputTokens
+  const measure = providerAdapter(settings.provider)?.singleRequestBytes
   if (
     cap !== undefined &&
-    requests.some((r) => r.refuseAboveInputCap && exceedsInputCap(r, cap))
+    first.mode.kind === 'single' &&
+    requests.some(
+      (r) =>
+        r.refuseAboveInputCap &&
+        exceedsInputCap(r, cap, measure?.(settings, modelRequest(r, settings))),
+    )
   )
     throw new AiRequestError('input_too_large')
   // A provider's batch refuses, before anything is reserved, what it
@@ -127,16 +147,19 @@ async function admit(requests: ExecutionRequest[]) {
       .admit(
         requests.map((request) => ({
           itemId: request.operationId,
-          request: {
-            model: settings.model,
-            instructions: request.instruction,
-            input: request.input,
-            output: request.responseSchema,
-          },
+          request: modelRequest(request, settings),
         })),
       )
   const snapshots = requests.map((request) => snapshot(request, settings))
   return transaction(async () => {
+    // A group is requested once, so its budget covers the whole group: a
+    // second request under the same group ID is refused.
+    // ASSUMPTION(oferty-pracy-0mq.21/ASM-7)
+    if (
+      first.mode.kind === 'batch' &&
+      (await groupRequested(first.mode.groupId))
+    )
+      throw new AiRequestError('invalid_request')
     for (const request of requests)
       if (await hasActiveExecution(request.operationId))
         throw new AiRequestError('operation_busy')

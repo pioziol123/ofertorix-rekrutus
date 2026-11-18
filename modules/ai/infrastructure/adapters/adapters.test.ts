@@ -6,6 +6,7 @@ import {
   OpenAiAdapter,
   normalizeOpenAi,
   openAiEnd,
+  openAiProvider,
 } from './openai.ts'
 
 const facts = {
@@ -323,6 +324,45 @@ describe('OpenAI adapter owns protocol and transport metadata', () => {
       state: 'uncertain',
       cause: 'unknown',
     })
+  })
+  it('measures the input cap on the exact body single mode sends (0mq.21 ASM-5)', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        status: 'completed',
+        output: [message(JSON.stringify(facts))],
+      }),
+    )
+    vi.stubEnv('OPENAI_API_KEY', 'synthetic')
+    const provider = openAiProvider(fetcher)
+    const settings = {
+      provider: 'openai',
+      model: 'paid-model',
+      reasoningEffort: 'low',
+      maxOutputTokens: 500,
+      runtime: null,
+    }
+    await provider.modes.single!(settings, { fixed: {} }).generate({
+      ...request,
+      model: 'paid-model',
+    })
+    const sent = String(fetcher.mock.calls[0]![1]!.body)
+    expect(
+      provider.singleRequestBytes!(settings, {
+        ...request,
+        model: 'paid-model',
+      }),
+    ).toBe(Buffer.byteLength(sent))
+    // More than the instruction, input and schema alone.
+    expect(Buffer.byteLength(sent)).toBeGreaterThan(
+      Buffer.byteLength(
+        JSON.stringify({
+          instructions: request.instructions,
+          input: request.input,
+          schema: request.output,
+        }),
+      ),
+    )
+    vi.unstubAllEnvs()
   })
   it('marks transport failure as possibly sent and never invents usage', async () => {
     const fetcher = vi

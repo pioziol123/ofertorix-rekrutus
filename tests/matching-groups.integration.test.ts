@@ -486,6 +486,38 @@ integration(
       expect(queue.send).not.toHaveBeenCalled()
     })
 
+    it('does not recognise a repeated command whose every offer reused an assessment in progress: once that assessment has ended, the repeat requests new paid AI work (FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {
+      const single = await enqueueMatching(ad)
+      const commandId = randomUUID()
+      const first = await enqueue([ad], commandId)
+      expect(first.items).toMatchObject([{ id: single.id, reused: true }])
+      expect(await count('ai_executions')).toBe(1)
+      // While the reused assessment is in progress, a repeat reuses it
+      // again, without new work.
+      await expect(enqueue([ad], commandId)).resolves.toMatchObject({
+        items: [{ id: single.id, reused: true }],
+      })
+      expect(await count('ai_executions')).toBe(1)
+      await queue.work()
+      // Nothing records the command, so after the assessment ended the
+      // repeat is a new command: a new request, a new reservation.
+      const again = await enqueue([ad], commandId)
+      expect(again).toMatchObject({ groupId: commandId, reused: false })
+      expect(again.items).toMatchObject([{ reused: false, state: 'queued' }])
+      expect(again.items[0]!.id).not.toBe(single.id)
+      expect(await count('matching_requests')).toBe(2)
+      expect(await count('ai_executions')).toBe(2)
+    })
+
+    it('refuses a repeated command whose selection shares no offer with the group it requested, with nothing requested (0mq.21 ASM-7, FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {
+      const other = await anotherAd(),
+        commandId = randomUUID()
+      await enqueue([ad], commandId)
+      await expect(enqueue([other], commandId)).rejects.toThrow('innych ofert')
+      expect(await count('matching_requests')).toBe(1)
+      expect(await count('ai_executions')).toBe(1)
+    })
+
     it.todo(
       'recognises every repeated command from its recorded selection, including one that requested no AI work, and refuses any other selection (E03-AC04, target of FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))',
     )

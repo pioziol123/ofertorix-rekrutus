@@ -105,6 +105,8 @@ integration('AI execution coordination with a real database and queue', () => {
   let answers: Array<() => Promise<ModelResult>>
   let calls: Array<{ model: string; instructions: string; input: string }>
   let adapterPresent: boolean
+  /** The adapter's measure of the exact body it sends, when it has one. */
+  let measuredBytes: number | undefined
   let decide: (delivery: ExecutionResultDelivery) => Promise<ReceiverDecision>
   let results: ExecutionResultDelivery[]
   let failures: ExecutionFailureDelivery[]
@@ -235,6 +237,9 @@ integration('AI execution coordination with a real database and queue', () => {
     // uncertain.
     registerProviderAdapter({
       provider: 'simulated',
+      get singleRequestBytes() {
+        return measuredBytes === undefined ? undefined : () => measuredBytes!
+      },
       get modes() {
         return adapterPresent ? { single } : {}
       },
@@ -271,6 +276,7 @@ integration('AI execution coordination with a real database and queue', () => {
   beforeEach(async () => {
     answers = []
     adapterPresent = true
+    measuredBytes = undefined
     calls = []
     results = []
     failures = []
@@ -700,6 +706,25 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(await readExecutionArchive(notKept.executionId)).toEqual({
       archiveId: notKept.executionId,
       artifacts: [],
+    })
+  })
+
+  it('refuses on the size of the exact body the adapter sends, when the adapter measures it (0mq.21 ASM-5)', async () => {
+    // The instruction, input and schema fit the 1000-token cap; the body
+    // the adapter would send does not.
+    measuredBytes = 1001
+    const requested = request({
+      input: 'x'.repeat(800),
+      refuseAboveInputCap: true,
+    })
+    await expect(requestExecution(requested)).rejects.toEqual(
+      new AiRequestError('input_too_large'),
+    )
+    expect(await jobs()).toEqual([])
+    expect((await readBudget()).reserved).toBe('0.000000')
+    measuredBytes = 1000
+    await expect(requestExecution(requested)).resolves.toMatchObject({
+      state: 'queued',
     })
   })
 

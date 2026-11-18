@@ -117,18 +117,6 @@ export async function linkExecution(requestId: string, executionId: string) {
   ])
 }
 
-/** The ads of the given requests, by request. */
-export async function adsOfRequests(
-  ids: string[],
-): Promise<{ id: string; ad_id: string }[]> {
-  return (
-    await db().query<{ id: string; ad_id: string }>(
-      'SELECT id,ad_id FROM matching_requests WHERE id=ANY($1::uuid[]) ORDER BY id',
-      [ids],
-    )
-  ).rows
-}
-
 export type AssessmentHistoryRow = {
   id: string
   state: string
@@ -190,6 +178,42 @@ export async function lockCommand(commandId: string) {
 }
 
 /** Every request of an ad, newest first, with its state and time. */
+/**
+ * The requests of the given ads that asked AI for work.
+ * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): serves the interim recognition of
+ * a repeated group command.
+ */
+export async function requestedOfAds(
+  adIds: string[],
+): Promise<{ id: string; ad_id: string }[]> {
+  return (
+    await db().query<{ id: string; ad_id: string }>(
+      "SELECT id,ad_id FROM matching_requests WHERE ad_id=ANY($1::uuid[]) AND state='requested'",
+      [adIds],
+    )
+  ).rows
+}
+
+/**
+ * The requests that asked AI for work, saved in the same transaction as
+ * the given one (a transaction saves every row with its start time), with
+ * that moment.
+ * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): serves the interim recognition of
+ * a repeated group command.
+ */
+export async function requestedWith(
+  requestId: string,
+): Promise<{ id: string; ad_id: string; created_at: Date }[]> {
+  return (
+    await db().query<{ id: string; ad_id: string; created_at: Date }>(
+      `SELECT r.id,r.ad_id,r.created_at FROM matching_requests r
+       JOIN matching_requests o ON o.id=$1 AND r.created_at=o.created_at
+       WHERE r.state='requested'`,
+      [requestId],
+    )
+  ).rows
+}
+
 export async function requestsOfAd(
   adId: string,
 ): Promise<

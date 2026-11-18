@@ -213,6 +213,10 @@ export type BatchRunner = {
  *   model). It refuses with `AiRequestError`.
  * - `ready`: whether the provider's runtime is configured, without calling
  *   it.
+ * - `singleRequestBytes`: the UTF-8 size of the exact body single mode
+ *   sends for a request, so the input cap is checked on what the provider
+ *   receives, as the batch mode's `admit` checks its exact batch line
+ *   (ASSUMPTION(oferty-pracy-0mq.21/ASM-5)).
  */
 export type ProviderAdapter = {
   provider: string
@@ -227,4 +231,8 @@ export type ProviderAdapter = {
   sharedSlot?: boolean
   check?: (settings: ProviderSettings) => Promise<Record<string, unknown>>
   ready?: (settings: ProviderSettings) => boolean
+  singleRequestBytes?: (
+    settings: ProviderSettings,
+    request: ModelRequest,
+  ) => number
 }

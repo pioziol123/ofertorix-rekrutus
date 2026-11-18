@@ -2,9 +2,8 @@ import { z } from 'zod'
 import { transaction } from '../db.ts'
 import {
   AiRequestError,
-  readExecutionGroup,
   readExecutionHistory,
-  type AiExecution,
+  readLatestExecutions,
 } from '../../modules/ai/index.ts'
 import {
   assessmentReservation,
@@ -16,7 +15,8 @@ import {
   refusalMessage,
 } from '../../modules/matching/domain/assessment-state.ts'
 import {
-  adsOfRequests,
+  requestedOfAds,
+  requestedWith,
   requestsOfAd,
   linkExecution,
   lockCommand,
@@ -105,6 +105,33 @@ async function itemOutsideGroup(
 }
 
 /**
+ * The AI group a command requested, found from Matching's own requests:
+ * a request of a selected offer whose AI work belongs to the group named
+ * by the command, and every request saved in the same transaction whose
+ * work belongs to it. Null when no selected offer has work in the group.
+ * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): Matching does not record a
+ * command, so its group stands in for that record.
+ */
+async function commandGroup(commandId: string, offerIds: string[]) {
+  const ofOffers = await requestedOfAds(offerIds)
+  const anchor = (await readLatestExecutions(ofOffers.map((r) => r.id))).find(
+    (execution) => execution.groupId === commandId,
+  )
+  if (!anchor) return null
+  const saved = await requestedWith(anchor.operationId)
+  const latest = new Map(
+    (await readLatestExecutions(saved.map((r) => r.id)))
+      .filter((execution) => execution.groupId === commandId)
+      .map((execution) => [execution.operationId, execution]),
+  )
+  return {
+    acceptedAt: saved[0]!.created_at.getTime(),
+    requests: saved.filter((request) => latest.has(request.id)),
+    latest,
+  }
+}
+
+/**
  * The view of a group command already accepted: the requests its AI group
  * holds, and the offers it reused or excluded. A selection is a conflict
  * when the group holds an offer it does not name, or when it names an
@@ -114,16 +141,10 @@ async function itemOutsideGroup(
  */
 async function acceptedGroup(
   groupId: string,
-  executions: AiExecution[],
+  group: NonNullable<Awaited<ReturnType<typeof commandGroup>>>,
   offerIds: string[],
 ) {
-  const latest = new Map<string, AiExecution>()
-  for (const execution of executions)
-    latest.set(execution.operationId, execution)
-  const acceptedAt = Math.min(
-    ...executions.map((execution) => execution.createdAt.getTime()),
-  )
-  const requests = await adsOfRequests([...latest.keys()])
+  const { acceptedAt, requests, latest } = group
   if (requests.some((request) => !offerIds.includes(request.ad_id)))
     throw new MatchingError(otherOffers)
   const items: Item[] = requests.map((request) => ({
@@ -162,13 +183,12 @@ export async function enqueueMatchingGroup(value: unknown) {
   try {
     return await transaction(async () => {
       await lockCommand(command.commandId)
-      // FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the AI group of the command
-      // is the only record that it was accepted; a command that requested
-      // no AI work leaves none. The group read is interim code of the
-      // deviation, not part of ASM-4.
-      const accepted = await readExecutionGroup(command.commandId)
-      if (accepted.length)
-        return acceptedGroup(command.commandId, accepted, ids)
+      // FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the AI group of the command,
+      // found from the selected offers, is the only record that it was
+      // accepted. A command that requested no AI work leaves none, and its
+      // repeat is handled as a new command.
+      const accepted = await commandGroup(command.commandId, ids)
+      if (accepted) return acceptedGroup(command.commandId, accepted, ids)
       // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reservation read.
       if (assessmentReservation('group') === null)
         throw new MatchingError(notConfiguredMessage)
@@ -212,6 +232,12 @@ export async function enqueueMatchingGroup(value: unknown) {
       }
     })
   } catch (error) {
+    // A repeat whose selection shares no offer with the group its command
+    // requested is not recognised above; AI refuses a second request of
+    // the group. ASSUMPTION(oferty-pracy-0mq.21/ASM-7)
+    // FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the interim message of it.
+    if (error instanceof AiRequestError && error.code === 'invalid_request')
+      throw new MatchingError(otherOffers)
     if (error instanceof AiRequestError)
       throw new MatchingError(refusalMessage(error.code, 'group'))
     throw error

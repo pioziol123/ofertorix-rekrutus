@@ -13,7 +13,8 @@
  * - `batch_too_large`: the provider's batch cannot take the group: too
  *   many items or bytes for one batch (ASSUMPTION(oferty-pracy-0mq.21/ASM-4));
  * - `invalid_request`: the request is incomplete, or its check belongs to
- *   other settings.
+ *   other settings, or a group request names a group already requested
+ *   (ASSUMPTION(oferty-pracy-0mq.21/ASM-7)).
  */
 export type AiRequestErrorCode =
   | 'not_configured'
