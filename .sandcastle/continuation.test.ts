@@ -296,6 +296,45 @@ describe('5yd.2: the next attempt continues the kept work', () => {
     assert.equal(lastReturnData().last_review, 'Verdict: "fail"\n- F1: kept.txt lacks the header')
   })
 
+  it('ASM-1: a continuation stopped on an error carries the report it received, and one of its own review', async () => {
+    w = world(exhaustedAttempt(NOTE))
+    w.sandboxes.verdict = 'fail'
+    w.sandboxes.findings = ['F1: kept.txt lacks the header']
+    await cycle(w.runner)
+    w.db.handOffAgain('t-1')
+    w.sandboxes.agentTurn = () => {
+      throw new Error('agent process died')
+    }
+    await cycle(w.runner)
+    assert.match(returnComments().at(-1)!.text, /stopped the attempt on an error: Error: agent process died/)
+    assert.equal(lastReturnData().last_review, 'Verdict: "fail"\n- F1: kept.txt lacks the header')
+
+    // A review of the attempt itself, then an error in the next turn: its own report travels.
+    w.db.handOffAgain('t-1')
+    w.sandboxes.findings = ['F2: still wrong']
+    w.sandboxes.agentTurn = (ctx) => {
+      if (ctx.turn > 1) throw new Error('sandbox lost')
+      answer(doneResult())(ctx)
+    }
+    await cycle(w.runner)
+    assert.match(returnComments().at(-1)!.text, /stopped the attempt on an error: Error: sandbox lost/)
+    assert.equal(lastReturnData().last_review, 'Verdict: "fail"\n- F2: still wrong')
+  })
+
+  it('ASM-1: an error before the agent starts carries the continued attempt\'s report', async () => {
+    w = world(exhaustedAttempt(NOTE))
+    w.sandboxes.verdict = 'fail'
+    w.sandboxes.findings = ['F1: kept.txt lacks the header']
+    await cycle(w.runner)
+    w.db.handOffAgain('t-1')
+    w.sandboxes.warm = async () => {
+      throw new Error('docker gone')
+    }
+    await cycle(w.runner)
+    assert.match(returnComments().at(-1)!.text, /stopped the attempt on an error: Error: docker gone/)
+    assert.equal(lastReturnData().last_review, 'Verdict: "fail"\n- F1: kept.txt lacks the header')
+  })
+
   it('ASM-2: GitHub not giving the kept work: the task waits in selection, unclaimed, and the next task is taken', async () => {
     w = world(blockedAttempt(), ['t-1', 't-2'])
     w.db.update('t-2', { remove: ['ready-for-agent'] })

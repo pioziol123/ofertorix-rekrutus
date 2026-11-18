@@ -598,6 +598,12 @@ async function deliverInQueue(r: Runner, t: TaskRun): Promise<Delivery | 'unreac
  * Every failure that a correction can fix goes back into the same session as a feedback
  * turn, MAX_FEEDBACK_TURNS at most. Returns the delivered commit or the reason to return.
  */
+/** The reason of a return after an error of a sandbox, an agent or the task database. */
+function errorReason(error: unknown): string {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+  return `The runner stopped the attempt on an error: ${message}`
+}
+
 type Outcome = { ok: true; commit: string; result: AgentResult } | { ok: false; report: string; data: ReturnData }
 
 /**
@@ -667,6 +673,9 @@ async function runTask(r: Runner, issue: Issue, branch: string, baseSha: string,
       const stop = await feedback(delivery.feedback)
       if (stop) return stop
     }
+  } catch (error) {
+    // The return still carries the last review report this attempt knows (CON-R04).
+    return returned(errorReason(error))
   } finally {
     await sandbox.close()
   }
@@ -828,6 +837,7 @@ export async function processTask(shared: Runner, issue: Issue, baseSha: string)
   const r: Runner = { ...shared, log: shared.taskLog(issue.id) }
   shared.log(`${issue.id}: started on ${BASE_BRANCH} at ${baseSha.slice(0, 7)}`)
   let branch: string | null = null
+  let continuation: Continuation | null = null
   try {
     const start = startingPoint(r, issue, baseSha)
     if ('wait' in start) {
@@ -841,7 +851,8 @@ export async function processTask(shared: Runner, issue: Issue, baseSha: string)
     git(r.repo, ['branch', '--force', name, start.from])
     branch = name
     const ctx = epicContext(r, issue)
-    const outcome = await runTask(r, issue, branch, baseSha, ctx, start.continuation)
+    continuation = start.continuation
+    const outcome = await runTask(r, issue, branch, baseSha, ctx, continuation)
     if (!outcome.ok) {
       returnToPreparation(r, issue, outcome.report || 'Unknown failure.', branch, outcome.data, baseSha)
       shared.log(`${issue.id}: returned to preparation`)
@@ -866,8 +877,9 @@ export async function processTask(shared: Runner, issue: Issue, baseSha: string)
   } catch (error) {
     // A sandbox, agent or task database failure must not stop the runner or the other runs,
     // nor leave the task claimed: hand it back like any other failed attempt.
-    const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
-    returnToPreparation(r, issue, `The runner stopped the attempt on an error: ${message}`, branch, {}, baseSha)
+    // Before the agent's session exists the last review report is the continued attempt's.
+    const lastReview = continuation?.lastReview
+    returnToPreparation(r, issue, errorReason(error), branch, lastReview ? { last_review: lastReview } : {}, baseSha)
     shared.log(`${issue.id}: returned to preparation after an error`)
   }
 }
