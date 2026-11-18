@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { matchingCriterionLabel } from '../../lib/matching/view'
+import {
+  matchingCriterionLabel,
+  matchingPending,
+} from '../../lib/matching/view'
 const props = defineProps<{ offerId: string; refreshVersion?: number }>()
 const emit = defineEmits<{ updated: [] }>()
 const { data, refresh, error } = await useFetch(
@@ -15,22 +18,16 @@ const busy = ref(false),
   message = ref('')
 const pending = computed(() =>
   data.value?.history.some((row) =>
-    [
-      'waiting_budget',
-      'queued',
-      'uploading',
-      'submitting',
-      'submitted',
-    ].includes(row.state),
+    matchingPending.some((state) => state === row.state),
   ),
 )
+const money = (value: string) =>
+  Number(value).toLocaleString('pl-PL', { maximumFractionDigits: 6 })
 const current = computed(() => data.value?.current)
 const labels: Record<string, string> = {
   waiting_budget: 'Czeka na budżet',
   queued: 'W kolejce',
-  uploading: 'Przesyłanie danych',
-  submitting: 'Zlecanie partii',
-  submitted: 'Oczekiwanie na Batch — do 24 godzin',
+  running: 'Ocena w toku — w partii do 24 godzin',
   completed: 'Ocena gotowa',
   failed: 'Ocena nie powiodła się',
   unknown: 'Wysyłka lub koszt wymagają sprawdzenia',
@@ -85,7 +82,7 @@ onUnmounted(() => clearInterval(timer))
     </p>
     <p v-if="error" role="alert">Nie udało się wczytać ocen.</p>
     <p v-if="data && !data.configured" class="notice">
-      Oceny AI wymagają konfiguracji modelu i cennika Batch.
+      Oceny AI wymagają konfiguracji modelu i cennika.
     </p>
     <p v-if="data && !data.profileReady" class="notice">
       Najpierw zatwierdź <NuxtLink to="/profile">profil zawodowy</NuxtLink>.
@@ -111,8 +108,8 @@ onUnmounted(() => clearInterval(timer))
         labels[data.history[0].state] ?? data.history[0].state
       }}</strong>
       <p v-if="data.history[0].state === 'unknown'">
-        Przed kolejnym zleceniem sprawdź stan partii u dostawcy. Ponowna ocena
-        może wygenerować dodatkowy koszt.
+        Przed kolejnym zleceniem sprawdź stan wykonania u dostawcy. Ponowna
+        ocena może wygenerować dodatkowy koszt.
       </p>
       <p v-if="data.history[0].error">{{ data.history[0].error }}</p>
       <p v-for="check in data.history[0].checks" :key="check.criterion">
@@ -244,6 +241,14 @@ onUnmounted(() => clearInterval(timer))
           {{ row.calculation.completeness }}%
         </p>
         <p v-if="row.result">{{ row.result.summary }}</p>
+        <p v-if="row.cost">
+          Koszt:
+          {{
+            row.cost.actual === null
+              ? `zarezerwowano ${money(row.cost.reserved)} zł, nierozliczony`
+              : `${money(row.cost.actual)} zł`
+          }}
+        </p>
         <p>
           <a
             :href="`/api/matching/${encodeURIComponent(row.id)}/archive`"
@@ -262,10 +267,7 @@ onUnmounted(() => clearInterval(timer))
           Profil v{{ row.profile_number }} · ogłoszenie z
           {{ new Date(row.offer_version_at).toLocaleString('pl-PL') }}
         </p>
-        <small
-          >Zlecenie {{ row.id
-          }}<span v-if="row.batch_id"> · Partia {{ row.batch_id }}</span></small
-        >
+        <small>Zlecenie {{ row.id }}</small>
       </div>
     </details>
   </section>

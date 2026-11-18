@@ -75,6 +75,11 @@ export type ProviderSettings = {
   /** The reasoning effort the client chose; null sends none. */
   reasoningEffort: string | null
   maxOutputTokens: number
+  /**
+   * The input cap of the price list, in tokens; 0 when the model has no
+   * price list. Absent in settings fixed before it was recorded.
+   */
+  maxInputTokens?: number
   /** The local runtime from the AI configuration; null for a remote model. */
   runtime: LocalRuntime | null
 }
@@ -107,12 +112,85 @@ export type RequestContext = {
   archive?: (raw: string) => Promise<void>
 }
 
+/** One item of a provider batch: its identifier and its request. */
+export type BatchItem = { itemId: string; request: ModelRequest }
+
+/**
+ * What a batch delivered for one item: a response the coordination reads
+ * like that of a single call, or an end the adapter decided, with the usage
+ * it knows. `notCharged` says the provider charges nothing for the item.
+ */
+export type BatchItemOutcome =
+  | { kind: 'response'; response: ModelResult }
+  | {
+      kind: 'end'
+      end: ExecutionEnd
+      usage: ModelUsage
+      responseId: string | null
+      notCharged: boolean
+    }
+
+/**
+ * A step of a batch: the work goes on at the provider (or belongs to the
+ * run sending it), or the batch ended with an outcome for every item.
+ */
+export type BatchStep =
+  | { kind: 'wait' }
+  | {
+      kind: 'ended'
+      outcomes: Map<string, BatchItemOutcome>
+      /** The adapter's state of the ended batch, saved with the outcomes. */
+      state: unknown
+    }
+
+/** What the coordination gives a batch adapter for one step of a group. */
+export type BatchContext = {
+  /** The group the client requested the items in. */
+  groupId: string
+  /**
+   * The adapter's own state of the group, as it last saved it; null before
+   * its first save. Only the adapter reads it.
+   */
+  state: unknown
+  /** True only for the run that took the group's queued items. */
+  claimed: boolean
+  /**
+   * Saves the adapter's next state when no other run changed it since this
+   * step read it; false when another run did, and the step should stop.
+   */
+  save: (next: unknown) => Promise<boolean>
+  /** Keeps a raw provider artefact in the group's diagnostic archive. */
+  archive: (
+    kind: 'input' | 'output' | 'error' | 'metadata',
+    key: string,
+    content: string,
+  ) => Promise<void>
+}
+
+/**
+ * The batch mode of an adapter: the provider's cycle of sending, polling,
+ * collecting and cleaning up a batch.
+ * - `admit`: refuses, at request time, requests the provider's batch
+ *   cannot take (`AiRequestError` with `input_too_large`).
+ * - `advance`: carries the group one step further.
+ * - `cleanup`: removes what the batch left at the provider once its
+ *   outcomes are saved; `needsCleanup` says whether a saved state still
+ *   needs it.
+ */
+export type BatchRunner = {
+  admit: (items: BatchItem[]) => void
+  advance: (items: BatchItem[], context: BatchContext) => Promise<BatchStep>
+  cleanup: (context: BatchContext) => Promise<void>
+  needsCleanup: (state: unknown) => boolean
+}
+
 /**
  * The adapter contract of a provider. Coordination never sees the
  * provider's protocol, job states or usage format.
  * - `modes`: the execution modes the adapter supports, by providing them.
  *   Single mode: one request, its result and usage, with errors classified
- *   as `ModelError`. Batch and agent modes come with their adapters.
+ *   as `ModelError`. Batch: the provider's batch cycle (`BatchRunner`).
+ *   The agent mode comes with its adapter.
  * - `endOf`: the one place where the adapter decides which public state
  *   and cause what it observed means. Coordination saves what it returns
  *   and does not branch on provider facts.
@@ -131,6 +209,7 @@ export type ProviderAdapter = {
       settings: ProviderSettings,
       context: RequestContext,
     ) => StructuredModel
+    batch?: (settings: ProviderSettings) => BatchRunner
   }
   endOf: (observation: ProviderObservation) => ExecutionEnd
   sharedSlot?: boolean

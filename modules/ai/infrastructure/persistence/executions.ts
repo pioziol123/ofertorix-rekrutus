@@ -49,6 +49,8 @@ export type ExecutionRow = {
   /** The client's reason for rejecting the result. */
   rejectionReason: string | null
   delivery: { attempts: number; error: string | null }
+  /** The adapter's own state; only the adapter reads it. */
+  adapterState: unknown
   createdAt: Date
   finishedAt: Date | null
   attempt: {
@@ -89,6 +91,7 @@ function toExecution(row: Record<string, unknown>): ExecutionRow {
       attempts: row.delivery_attempts as number,
       error: row.delivery_error as string | null,
     },
+    adapterState: row.adapter_state ?? null,
     createdAt: row.created_at as Date,
     finishedAt: row.finished_at as Date | null,
     attempt: {
@@ -370,4 +373,127 @@ export async function executionsInState(state: 'waiting_budget' | 'queued') {
     [state],
   )
   return rows.rows.map(toExecution)
+}
+
+/** Executions of a provider batch group, oldest first. */
+export async function readGroupExecutionRows(groupId: string) {
+  const rows = await db().query(
+    `${selectExecution} WHERE e.group_id=$1 AND e.mode='batch' AND e.state IS NOT NULL ORDER BY e.created_at,e.id`,
+    [groupId],
+  )
+  return rows.rows.map(toExecution)
+}
+
+/** The latest execution of each given operation. */
+export async function readLatestExecutionRows(operationIds: string[]) {
+  const rows = await db().query(
+    `SELECT DISTINCT ON (e.operation_id) e.*,a.id AS attempt_id,a.attempt,a.generation,a.state AS attempt_state,a.month,
+      a.reserved_pln,a.actual_pln,a.usage FROM ai_executions e JOIN ai_attempts a ON a.execution_id=e.id
+     WHERE e.operation_id=ANY($1::uuid[]) AND e.state IS NOT NULL
+     ORDER BY e.operation_id,e.created_at DESC,a.attempt DESC`,
+    [operationIds],
+  )
+  return rows.rows.map(toExecution)
+}
+
+/** How many executions of a settings key are in progress. */
+export async function countActiveExecutionRows(settingsKey: string) {
+  const row = (
+    await db().query(
+      `SELECT count(*)::int AS n FROM ai_executions WHERE settings_key=$1 AND state IN ${inProgress}`,
+      [settingsKey],
+    )
+  ).rows[0]
+  return Number(row?.n ?? 0)
+}
+
+/**
+ * Takes the queued executions of a batch group for work, all in one
+ * statement, so that only one run sends the group. Returns how many it
+ * took.
+ */
+export async function claimGroup(groupId: string) {
+  const claimed = await db().query(
+    "UPDATE ai_executions SET state='running',revision=revision+1 WHERE group_id=$1 AND mode='batch' AND state='queued'",
+    [groupId],
+  )
+  return claimed.rowCount ?? 0
+}
+
+/** The running executions of a batch group. */
+export async function runningGroupRows(groupId: string) {
+  const rows = await db().query(
+    `${selectExecution} WHERE e.group_id=$1 AND e.mode='batch' AND e.state='running' ORDER BY e.id`,
+    [groupId],
+  )
+  return rows.rows.map(toExecution)
+}
+
+/**
+ * Saves the adapter's state of a group when it still holds the state the
+ * caller read; false when another run changed it since. The value is
+ * compared and stored as it is, never interpreted.
+ */
+export async function saveGroupAdapterState(
+  groupId: string,
+  expected: unknown,
+  next: unknown,
+) {
+  const saved = await db().query(
+    `UPDATE ai_executions SET adapter_state=$3::jsonb,revision=revision+1
+     WHERE group_id=$1 AND mode='batch' AND adapter_state IS NOT DISTINCT FROM $2::jsonb`,
+    [
+      groupId,
+      expected === null ? null : JSON.stringify(expected),
+      JSON.stringify(next),
+    ],
+  )
+  return (saved.rowCount ?? 0) > 0
+}
+
+/** The adapter's state and settings of a batch group that has one. */
+export async function readGroupAdapterState(groupId: string) {
+  const row = (
+    await db().query(
+      `SELECT adapter_state,configuration FROM ai_executions
+       WHERE group_id=$1 AND mode='batch' AND adapter_state IS NOT NULL LIMIT 1`,
+      [groupId],
+    )
+  ).rows[0]
+  return row
+    ? {
+        state: row.adapter_state as unknown,
+        snapshot: row.configuration as ExecutionSnapshot,
+      }
+    : null
+}
+
+/**
+ * Batch groups with work left for their next step: one execution of each
+ * group still running (to poll it), and the adapter state of each ended
+ * group that has one (the adapter says whether it needs cleaning up).
+ */
+export async function batchGroupsInProgress() {
+  const rows = await db().query(
+    `SELECT DISTINCT ON (group_id) id,group_id FROM ai_executions
+     WHERE mode='batch' AND state='running' ORDER BY group_id,id`,
+  )
+  return rows.rows.map((row) => ({
+    executionId: row.id as string,
+    groupId: row.group_id as string,
+  }))
+}
+
+export async function endedBatchGroups() {
+  const rows = await db().query(
+    `SELECT DISTINCT ON (group_id) id,group_id,adapter_state,configuration FROM ai_executions e
+     WHERE mode='batch' AND adapter_state IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM ai_executions r WHERE r.group_id=e.group_id AND r.mode='batch' AND r.state IN ('queued','running'))
+     ORDER BY group_id,id`,
+  )
+  return rows.rows.map((row) => ({
+    executionId: row.id as string,
+    state: row.adapter_state as unknown,
+    snapshot: row.configuration as ExecutionSnapshot,
+  }))
 }

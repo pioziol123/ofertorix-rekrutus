@@ -11,11 +11,15 @@ export {
   type RequestedExecution,
 } from './request-execution.ts'
 export { checkExecution, type ExecutionCheck } from './check-execution.ts'
-export { isConfigured } from './execution-settings.ts'
+export { isConfigured, readReservation } from './execution-settings.ts'
 export {
+  countActiveExecutions,
   readExecution,
+  readExecutionArchive,
+  readExecutionGroup,
   readExecutionHistory,
   readLatestExecution,
+  readLatestExecutions,
   type AiExecution,
 } from './read-execution.ts'
 export {

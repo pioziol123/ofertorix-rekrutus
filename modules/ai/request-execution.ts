@@ -3,6 +3,7 @@ import { transaction } from '../../lib/db.ts'
 import { admitExecutions, type RequestedExecution } from './admit-executions.ts'
 import { checkedValues, type ExecutionCheck } from './check-execution.ts'
 import { schemaValidator } from './domain/response-schema.ts'
+import { providerAdapter } from './provider-registry.ts'
 import { AiRequestError } from './errors.ts'
 import {
   executionSettings,
@@ -88,6 +89,22 @@ async function admit(requests: ExecutionRequest[]) {
   // Refused before anything is reserved: settings that are missing or
   // invalid, and a mode no adapter of the provider declares.
   const settings = executionSettings(first.settingsKey, first.mode.kind)
+  // A provider's batch refuses, before anything is reserved, what it
+  // cannot take.
+  if (first.mode.kind === 'batch')
+    providerAdapter(settings.provider)
+      ?.modes.batch?.(settings)
+      .admit(
+        requests.map((request) => ({
+          itemId: request.operationId,
+          request: {
+            model: settings.model,
+            instructions: request.instruction,
+            input: request.input,
+            output: request.responseSchema,
+          },
+        })),
+      )
   const snapshots = requests.map((request) => snapshot(request, settings))
   return transaction(async () => {
     for (const request of requests)

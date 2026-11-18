@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { createRequire } from 'node:module'
 import { Pool } from 'pg'
 import { closePool, setPool } from '../lib/db.ts'
 import {
@@ -24,6 +23,7 @@ import {
 import { emptyProfile } from '../lib/profile/model.ts'
 import { listOffers, parseFilters } from '../modules/offers/index.ts'
 import { usePricing } from './ai-test-configuration.ts'
+import { insertExecution, migrate } from './matching-ai.fixtures.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
 vi.mock(
@@ -61,30 +61,16 @@ integration('list matching projections in isolated PostgreSQL', () => {
       connectionString: process.env.DATABASE_URL,
       options: `-c search_path=${schema}`,
     })
-    const statements: string[] = []
-    for (const name of [
-      '1770000000000_setup',
-      '1770000000001_sources',
-      '1770000000004_profiles',
-      '1770000000006_matching',
-      '1770000000007_matching_payload',
-      '1770000000008_matching_groups',
-      '1770000000009_rating_revisions',
-    ]) {
-      createRequire(import.meta.url)(`../migrations/${name}.cjs`).up({
-        sql: (s: string) => statements.push(s),
-      })
-    }
-    await pool.query(statements.join('\n'))
+    await migrate(pool)
     // Profile reads go through the shared accessor (T-03).
     setPool(pool)
   })
   beforeEach(async () => {
     vi.unstubAllEnvs()
     vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-    usePricing('matching', pricing, 'batch')
+    usePricing('matching', pricing, ['single', 'batch'])
     await pool.query(
-      'TRUNCATE matching_requests,matching_batches,matching_groups,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
+      'TRUNCATE matching_requests,matching_rating_heads,matching_rating_revisions,ai_executions,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
     )
     ad = randomUUID()
     revision = randomUUID()
@@ -132,6 +118,10 @@ integration('list matching projections in isolated PostgreSQL', () => {
       last_seen_at: new Date(),
     }),
   ]
+  /**
+   * A request whose latest AI execution is in the given public state, or an
+   * excluded one.
+   */
   async function request(
     state: string,
     at: string,
@@ -140,8 +130,17 @@ integration('list matching projections in isolated PostgreSQL', () => {
     const id = randomUUID()
     await pool.query(
       `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state,calculation,created_at) VALUES($1,$2,$3,$4,'{}','{}',$5,$6,$7)`,
-      [id, ad, revision, profileVersion, state, calculation, at],
+      [
+        id,
+        ad,
+        revision,
+        profileVersion,
+        state === 'excluded' ? 'excluded' : 'requested',
+        calculation,
+        at,
+      ],
     )
+    if (state !== 'excluded') await insertExecution(pool, id, state)
     if (state === 'completed') {
       await pool.query(
         `INSERT INTO matching_rating_revisions(id,ad_id,request_id,profile_version_id,ad_revision_id,input,result,calculation,weights_version_id,author,assessment_author,reason) VALUES($1,$2,$1,$3,$4,'{}','{}',$5,(SELECT version_id FROM matching_weight_head),'ai','ai','Fixture')`,
@@ -207,7 +206,8 @@ integration('list matching projections in isolated PostgreSQL', () => {
       six.list.items.every((offer) => offer.assessment?.rating === 80),
     ).toBe(true)
     expect(six.queries).toBe(one.queries)
-    expect(one.queries).toBeLessThanOrEqual(4)
+    // Profile, current versions, assessments, and their AI work (0mq.21).
+    expect(one.queries).toBeLessThanOrEqual(5)
   })
   it('keeps an empty catalog and unassessed offers free of fabricated scores', async () => {
     expect(await decorateMatching(pool, [])).toEqual([])
@@ -215,9 +215,16 @@ integration('list matching projections in isolated PostgreSQL', () => {
       'assessment',
     )
   })
-  it.each(['failed', 'submitted'])(
-    'retains the latest successful score beside a newer %s request',
-    async (state) => {
+  it.each([
+    ['failed', 'failed'],
+    ['running', 'running'],
+    ['delivering', 'running'],
+    ['rejected', 'failed'],
+    ['uncertain', 'unknown'],
+    ['excluded', 'excluded'],
+  ])(
+    'retains the latest successful score beside a newer request whose AI work is %s',
+    async (state, shown) => {
       const older = await request('completed', '2026-01-01', {
         ...calculation,
         rating: 20,
@@ -228,7 +235,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
       expect(result.assessment).toEqual({
         requestId: latest,
         author: 'ai',
-        state,
+        state: shown,
         scoreId: score,
         rating: 80,
         completeness: 75,
@@ -337,8 +344,9 @@ integration('list matching projections in isolated PostgreSQL', () => {
     await assertSame()
   })
   it('reports configuration, profile readiness, pending count and reservation ceiling without any provider call', async () => {
-    await request('submitted', '2026-01-01')
-    expect(await matchingListStatus(pool)).toEqual({
+    await request('running', '2026-01-01')
+    await request('completed', '2026-01-02', calculation)
+    expect(await matchingListStatus()).toEqual({
       configured: true,
       profileReady: true,
       pending: 1,
@@ -346,7 +354,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
     })
     usePricing('matching', null)
     await pool.query('UPDATE profile_head SET active_version_id=NULL')
-    expect(await matchingListStatus(pool)).toEqual({
+    expect(await matchingListStatus()).toEqual({
       configured: false,
       profileReady: false,
       pending: 1,

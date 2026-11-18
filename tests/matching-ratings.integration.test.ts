@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { createRequire } from 'node:module'
 import { Pool } from 'pg'
 import { closePool, setPool, transaction } from '../lib/db.ts'
 import {
@@ -27,6 +26,7 @@ import { defaultWeights } from '../lib/matching/weights.ts'
 import type { Assessment, MatchingInput } from '../lib/matching/model.ts'
 import { readMatching } from '../lib/matching/store.ts'
 import { usePricing } from './ai-test-configuration.ts'
+import { insertExecution, migrate } from './matching-ai.fixtures.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
 vi.mock(
@@ -55,20 +55,7 @@ integration(
         connectionString: process.env.DATABASE_URL,
         options: `-c search_path=${schema}`,
       })
-      const sql: string[] = []
-      for (const migration of [
-        '1770000000000_setup',
-        '1770000000001_sources',
-        '1770000000004_profiles',
-        '1770000000006_matching',
-        '1770000000007_matching_payload',
-        '1770000000008_matching_groups',
-        '1770000000009_rating_revisions',
-      ])
-        createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
-          sql: (s: string) => sql.push(s),
-        })
-      await pool.query(sql.join('\n'))
+      await migrate(pool)
       // Profile reads go through the shared accessor (T-03).
       setPool(pool)
     })
@@ -76,7 +63,7 @@ integration(
       vi.stubEnv('OPENAI_API_KEY', '')
       usePricing('matching', null)
       await pool.query(
-        'TRUNCATE matching_rating_heads,matching_rating_revisions,matching_weight_head,matching_weight_versions,matching_groups,matching_requests,ai_attempts,ai_budget_months,profile_head,profile_versions,source_ads,source_scopes CASCADE',
+        'TRUNCATE matching_rating_heads,matching_rating_revisions,matching_weight_head,matching_weight_versions,matching_requests,ai_executions,ai_attempts,ai_budget_months,profile_head,profile_versions,source_ads,source_scopes CASCADE',
       )
       await pool.query(
         'INSERT INTO matching_weight_versions(id,weights) VALUES($1,$2)',
@@ -160,9 +147,10 @@ integration(
       const ctx = context ?? (await manualContext(ad))!,
         id = randomUUID()
       await pool.query(
-        "INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state) VALUES($1,$2,$3,$4,$5,'{}','completed')",
+        "INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state) VALUES($1,$2,$3,$4,$5,'{}','requested')",
         [id, ad, ctx.adRevisionId, ctx.profileVersionId, ctx.input],
       )
+      await insertExecution(pool, id, 'completed')
       return {
         id,
         ad_id: ad,
@@ -513,9 +501,10 @@ integration(
       expect(
         (await readRatings(pool, ad, await activeId())).ratings,
       ).toHaveLength(2)
+      // Only the request's own AI attempt exists; reweighting added none.
       expect(
         (await pool.query('SELECT count(*) FROM ai_attempts')).rows[0].count,
-      ).toBe('0')
+      ).toBe('1')
       expect(
         (await pool.query('SELECT count(*) FROM ai_budget_months')).rows[0]
           .count,

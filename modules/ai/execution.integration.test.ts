@@ -190,6 +190,9 @@ integration('AI execution coordination with a real database and queue', () => {
       '1770000000013_local_ai',
       '1770000000016_ai_execution_requests',
       '1770000000017_profile_ai_executions',
+      '1770000000007_matching_payload',
+      '1770000000008_matching_groups',
+      '1770000000018_matching_ai_executions',
     ])
       createRequire(import.meta.url)(`../../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),

@@ -1,4 +1,5 @@
 import { ModelError } from '../../provider-adapter.ts'
+import { BatchClient, openAiBatch } from './openai-batch.ts'
 import { record, tokenCount, validateRequest } from './response.ts'
 import type {
   ModelRequest,
@@ -173,8 +174,9 @@ export function openAiEnd(observation: ProviderObservation): ExecutionEnd {
 }
 
 /**
- * The OpenAI provider for the AI coordination, in single mode, on the
- * default endpoint with the key from the provider's secret.
+ * The OpenAI provider for the AI coordination, in single mode and as a
+ * provider batch, on the default endpoints with the key from the
+ * provider's secret.
  */
 export function openAiProvider(
   fetcher: typeof fetch = (input, init) => fetch(input, init),
@@ -187,6 +189,11 @@ export function openAiProvider(
           maxOutputTokens: settings.maxOutputTokens,
           reasoningEffort: settings.reasoningEffort,
         }),
+      batch: (settings) =>
+        openAiBatch(
+          settings,
+          () => new BatchClient(process.env.OPENAI_API_KEY ?? '', fetcher),
+        ),
     },
     endOf: openAiEnd,
   }

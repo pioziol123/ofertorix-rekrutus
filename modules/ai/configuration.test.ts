@@ -148,6 +148,7 @@ describe('A14-AC08: settings validation', () => {
       model: 'gpt-6-luna',
       reasoningEffort: 'high',
       maxOutputTokens: 6000,
+      maxInputTokens: 500000,
       runtime: null,
       pricing: aiCatalog.models[0]!.prices.single,
     })
@@ -155,19 +156,27 @@ describe('A14-AC08: settings validation', () => {
 })
 
 describe('A14-AC10: modes no adapter declares', () => {
-  it.each(['batch', 'agent'] as const)(
-    'refuses %s as unsupported_mode',
-    (mode) => {
-      ai.settings['client-x'] = {
-        provider: 'openai',
-        model: 'gpt-6-luna',
-        reasoningEffort: 'low',
-      }
-      expect(() => executionSettings('client-x', mode)).toThrow(
-        new AiRequestError('unsupported_mode'),
-      )
-    },
-  )
+  it('accepts batch on OpenAI once its batch adapter declares it (0mq.21)', () => {
+    ai.settings['client-x'] = {
+      provider: 'openai',
+      model: 'gpt-6-luna',
+      reasoningEffort: 'low',
+    }
+    expect(executionSettings('client-x', 'batch')).toMatchObject({
+      provider: 'openai',
+      pricing: aiCatalog.models[0]!.prices.batch,
+    })
+  })
+  it.each(['agent'] as const)('refuses %s as unsupported_mode', (mode) => {
+    ai.settings['client-x'] = {
+      provider: 'openai',
+      model: 'gpt-6-luna',
+      reasoningEffort: 'low',
+    }
+    expect(() => executionSettings('client-x', mode)).toThrow(
+      new AiRequestError('unsupported_mode'),
+    )
+  })
   it('accepts the local model in single mode without a price list, so nothing is reserved', () => {
     ai.settings['client-x'] = {
       provider: 'ollama',

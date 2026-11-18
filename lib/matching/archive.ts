@@ -1,39 +1,29 @@
-import { createHash } from 'node:crypto'
 import type { Pool } from 'pg'
-import type { QueryExecutor } from '../db.ts'
-import type { BatchArchive } from './batch.ts'
+import {
+  readExecutionArchive,
+  readLatestExecution,
+} from '../../modules/ai/index.ts'
 
-// Kept outside normal API history/logs: these artifacts contain professional
-// profile data and complete provider output, as requested by the owner.
-export function batchArchive(
-  pool: QueryExecutor,
-  operationId: string,
-): BatchArchive {
-  return async (kind, key, content) => {
-    const digest = createHash('sha256').update(content).digest('hex')
-    await pool.query(
-      `INSERT INTO matching_batch_artifacts(operation_id,kind,artifact_key,sha256,content)
-       VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
-      [operationId, kind, key, digest, content],
-    )
-  }
-}
-
+/**
+ * The diagnostic archive of a request's assessment, read through AI: the
+ * provider batch its latest AI work was sent in. The artefacts contain
+ * professional profile data and complete provider output, so they stay
+ * outside the normal history and logs, as requested by the owner.
+ */
 export async function readBatchArchive(pool: Pool, requestId: string) {
   const request = (
-    await pool.query('SELECT id,group_id FROM matching_requests WHERE id=$1', [
-      requestId,
-    ])
+    await pool.query<{ id: string }>(
+      'SELECT id FROM matching_requests WHERE id=$1',
+      [requestId],
+    )
   ).rows[0]
   if (!request) return null
-  const operationId = request.group_id ?? request.id
-  const artifacts = (
-    await pool.query(
-      'SELECT kind,artifact_key,sha256,content,created_at FROM matching_batch_artifacts WHERE operation_id=$1 ORDER BY created_at,kind,artifact_key,sha256',
-      [operationId],
-    )
-  ).rows
-  // Older input files can be reconstructed from the immutable saved payloads.
+  const execution = await readLatestExecution(request.id)
+  const archive = execution ? await readExecutionArchive(execution.id) : null
+  const operationId = archive?.archiveId ?? request.id
+  const artifacts = archive?.artifacts ?? []
+  // Inputs of requests sent before the archive kept them can be
+  // reconstructed from the immutable payloads those requests saved.
   // Explicitly distinguish this from a byte-for-byte archived upload.
   let reconstructedInput: string | null = null
   if (!artifacts.some((a) => a.kind === 'input')) {

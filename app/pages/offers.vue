@@ -623,7 +623,7 @@ const pageLink = (page: number) => ({
             Zatwierdź profil, aby oceniać oferty.
           </p>
           <p v-else-if="data && !data.matching.configured">
-            Oceny wymagają konfiguracji Batch.
+            Oceny grupowe wymagają konfiguracji modelu i cennika partii.
           </p>
         </div>
         <UButton

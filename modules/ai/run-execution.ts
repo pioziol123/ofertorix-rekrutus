@@ -29,11 +29,13 @@ import {
 import {
   emptyUsage,
   ModelError,
+  type ModelResult,
   type ModelUsage,
   type ProviderAdapter,
 } from './provider-adapter.ts'
 import { providerAdapter } from './provider-registry.ts'
 import { resultReceiver } from './result-receiver.ts'
+import { runBatch } from './run-batch.ts'
 
 /** The attempts an operation gets for transient errors, as before. */
 const maxAttempts = 2
@@ -82,6 +84,40 @@ async function claim(executionId: string) {
   })
 }
 
+/**
+ * What a provider's response means: a result that matches the response
+ * schema, or the end the adapter decides for a response the model refused,
+ * did not complete or left without content. Single calls and batch items
+ * read their responses the same way.
+ */
+export function responseOutcome(
+  response: ModelResult,
+  adapter: ProviderAdapter,
+  schema: Record<string, unknown>,
+): Outcome {
+  const outcome = {
+    ...noOutcome(),
+    usage: response.usage,
+    responseId: response.responseId,
+  }
+  if (response.outcome !== 'completed')
+    return {
+      ...outcome,
+      end: adapter.endOf({ kind: 'outcome', outcome: response.outcome }),
+    }
+  // A completed response without content: the adapter says what it means.
+  if (response.text === null)
+    return {
+      ...outcome,
+      end: adapter.endOf({ kind: 'outcome', outcome: 'no_content' }),
+    }
+  // Only a result that matches the response schema reaches the receiver.
+  const result = parseResult(response.text, schema)
+  return result === undefined
+    ? { ...outcome, end: { state: 'failed', cause: 'format' } }
+    : { ...outcome, result }
+}
+
 /** Calls the provider through its adapter and classifies what happened. */
 async function callProvider(
   execution: ExecutionRow,
@@ -116,24 +152,7 @@ async function callProvider(
       input,
       output: responseSchema,
     })
-    outcome.usage = response.usage
-    outcome.responseId = response.responseId
-    if (response.outcome !== 'completed')
-      return {
-        ...outcome,
-        end: adapter.endOf({ kind: 'outcome', outcome: response.outcome }),
-      }
-    // A completed response without content: the adapter says what it means.
-    if (response.text === null)
-      return {
-        ...outcome,
-        end: adapter.endOf({ kind: 'outcome', outcome: 'no_content' }),
-      }
-    // Only a result that matches the response schema reaches the receiver.
-    const result = parseResult(response.text, responseSchema.schema)
-    return result === undefined
-      ? { ...outcome, end: { state: 'failed', cause: 'format' } }
-      : { ...outcome, result }
+    return responseOutcome(response, adapter, responseSchema.schema)
   } catch (error) {
     const end = adapter.endOf({ kind: 'error', error })
     if (!(error instanceof ModelError)) return { ...outcome, end }
@@ -320,6 +339,14 @@ export async function wakeLocalQueue() {
  * calling the provider.
  */
 export async function runExecution(executionId: string): Promise<void> {
+  // An item of a provider batch moves with its group; its own job then
+  // delivers its outcome.
+  const row = await readExecutionRow(executionId)
+  if (row?.mode === 'batch' && row.groupId) {
+    await runBatch(row.groupId)
+    await deliver(executionId)
+    return
+  }
   const claimed = await claim(executionId)
   if (claimed) {
     const { execution, local } = claimed

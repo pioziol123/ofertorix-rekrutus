@@ -1,35 +1,54 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { z } from 'zod'
+import { AiRequestError } from '../../errors.ts'
+import type { BatchItem, ProviderSettings } from '../../provider-adapter.ts'
 import {
   BatchClient,
   BatchError,
-  batchFailure,
-  batchRequest,
-  readBatchResponse,
+  batchLine,
+  itemOutcome,
+  openAiBatch,
   terminal,
   type Batch,
-  type BatchLine,
   type BatchArchive,
-} from '../lib/matching/batch.ts'
-import type { AiConfiguration } from '../modules/ai/index.ts'
-import type { MatchingInput } from '../lib/matching/model.ts'
+  type BatchLine,
+} from './openai-batch.ts'
 
-const config: AiConfiguration = {
+// The OpenAI Batch adapter, moved from Matching (task oferty-pracy-0mq.21).
+const settings: ProviderSettings = {
+  provider: 'openai',
   model: 'test-model',
-  version: 'v1',
-  inputUsdPerMillion: '1',
-  outputUsdPerMillion: '4',
-  usdPln: '4',
-  fxVersion: 'test',
-  maxInputTokens: 100000,
+  reasoningEffort: 'low',
   maxOutputTokens: 500,
+  maxInputTokens: 100000,
+  runtime: null,
 }
-const input: MatchingInput = {
-  profile: 'PHP',
-  offer: 'PHP',
-  criteria: [],
-  checks: [],
-}
+const item = (itemId = 'offer_1', input = '{"profile":"PHP"}'): BatchItem => ({
+  itemId,
+  request: {
+    model: settings.model,
+    instructions: 'Evaluate job fit.',
+    input,
+    output: { name: 'offer_assessment', schema: { type: 'object' } },
+  },
+})
+const batchRequest = (
+  id: string,
+  options: { input?: string; model?: string; maxInputTokens?: number } = {},
+) =>
+  batchLine(
+    {
+      ...settings,
+      model: options.model ?? settings.model,
+      maxInputTokens: options.maxInputTokens ?? settings.maxInputTokens,
+    },
+    {
+      ...item(id, options.input),
+      request: {
+        ...item(id, options.input).request,
+        model: options.model ?? settings.model,
+      },
+    },
+  )
 const batch: Batch = {
   id: 'batch_test',
   input_file_id: 'file_input',
@@ -55,6 +74,15 @@ const line = (id = 'offer_1'): BatchLine => ({
 })
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status })
+const archived = (
+  key: string,
+  fetcher: typeof fetch,
+  archive?: BatchArchive,
+) => {
+  const client = new BatchClient(key, fetcher)
+  client.archive = archive
+  return client
+}
 const fakeClient = (
   impl: (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>,
 ) => {
@@ -68,7 +96,7 @@ afterEach(() => vi.useRealTimers())
 
 describe('batch request and upload', () => {
   it('builds Responses JSONL records with stable custom ID and constrained model output', () => {
-    const request = batchRequest('offer_1', input, config)
+    const request = batchRequest('offer_1')
     expect(request).toMatchObject({
       custom_id: 'offer_1',
       method: 'POST',
@@ -78,42 +106,57 @@ describe('batch request and upload', () => {
         store: false,
         tools: [],
         max_output_tokens: 500,
-        text: { format: { type: 'json_schema', strict: true } },
+        reasoning: { effort: 'low' },
+        instructions: 'Evaluate job fit.',
+        input: [
+          {
+            role: 'user',
+            content: [{ type: 'input_text', text: '{"profile":"PHP"}' }],
+          },
+        ],
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'offer_assessment',
+            strict: true,
+            schema: { type: 'object' },
+          },
+        },
       },
     })
     expect(JSON.stringify(request)).not.toContain('secret-test-key')
-    expect(() => batchRequest('../escape', input, config)).toThrow()
-    expect(() =>
-      batchRequest('offer', input, { ...config, maxInputTokens: 10 }),
-    ).toThrow(BatchError)
+    expect(() => batchRequest('../escape')).toThrow()
   })
-  it('accepts 200 criteria and rejects 201 before preparing a paid operation', () => {
-    const criteria = Array.from({ length: 200 }, (_, i) => ({
-      id: `criterion_${i}`,
-      group: 'technologies' as const,
-      label: 'PHP',
-      unknown: true,
-    }))
+  it('refuses at request time a line above the input cap, more than 100 lines or a file above 2 MiB', () => {
+    const noTransport = () => {
+      throw new Error('No transport at request time')
+    }
+    const runner = openAiBatch(settings, noTransport)
+    expect(() => runner.admit([item('a'), item('b')])).not.toThrow()
     expect(() =>
-      batchRequest(
-        'offer',
-        { ...input, criteria },
-        { ...config, maxInputTokens: 1000000 },
-      ),
-    ).not.toThrow()
+      openAiBatch({ ...settings, maxInputTokens: 10 }, noTransport).admit([
+        item(),
+      ]),
+    ).toThrow(new AiRequestError('input_too_large'))
     expect(() =>
-      batchRequest(
-        'offer',
-        { ...input, criteria: [...criteria, { ...criteria[0]!, id: 'extra' }] },
-        { ...config, maxInputTokens: 1000000 },
-      ),
-    ).toThrow(BatchError)
+      runner.admit(Array.from({ length: 101 }, (_, i) => item(`offer_${i}`))),
+    ).toThrow(new AiRequestError('input_too_large'))
+    const large = openAiBatch(
+      { ...settings, maxInputTokens: 3000000 },
+      noTransport,
+    )
+    expect(() =>
+      large.admit([
+        item('a', 'x'.repeat(1100000)),
+        item('b', 'x'.repeat(1100000)),
+      ]),
+    ).toThrow(new AiRequestError('input_too_large'))
   })
   it('uploads multipart batch purpose with newline-terminated JSONL and expiration', async () => {
     const { client, fetcher } = fakeClient(async () =>
       json({ id: 'file_input' }),
     )
-    const request = batchRequest('offer_1', input, config)
+    const request = batchRequest('offer_1')
     expect(await client.upload([request])).toBe('file_input')
     const [url, init] = fetcher.mock.calls[0]!
     expect(url).toBe('https://api.openai.com/v1/files')
@@ -131,22 +174,16 @@ describe('batch request and upload', () => {
   })
   it('rejects empty, duplicate, mixed-model and oversized uploads before any network call', async () => {
     const { client, fetcher } = fakeClient(async () => json({ id: 'file' }))
-    const request = batchRequest('one', input, config)
+    const request = batchRequest('one')
     for (const requests of [
       [],
       [request, request],
-      [request, batchRequest('two', input, { ...config, model: 'other' })],
-      Array.from({ length: 101 }, (_, i) =>
-        batchRequest(`offer_${i}`, input, config),
-      ),
+      [request, batchRequest('two', { model: 'other' })],
+      Array.from({ length: 101 }, (_, i) => batchRequest(`offer_${i}`)),
     ]) {
       await expect(client.upload(requests)).rejects.toBeInstanceOf(BatchError)
     }
-    const huge = batchRequest(
-      'huge',
-      { ...input, offer: 'x'.repeat(2100000) },
-      { ...config, maxInputTokens: 3000000 },
-    )
+    const huge = batchRequest('huge', { input: 'x'.repeat(2100000) })
     await expect(client.upload([huge])).rejects.toMatchObject({ code: 'limit' })
     expect(fetcher).not.toHaveBeenCalled()
   })
@@ -167,51 +204,54 @@ describe('batch request and upload', () => {
 })
 
 describe('bounded and redacted transport', () => {
-  it.each(['network', 'http', 'format', 'limit'] as const)(
-    'persists only the allowlisted %s code and valid HTTP status',
-    (code) => {
-      const error = new BatchError(code, 403)
+  it.each([
+    [new BatchError('http', 403), 'http'],
+    [new BatchError('network'), 'network'],
+    [new BatchError('format'), 'format'],
+    [new BatchError('limit'), 'format'],
+    [new BatchError('archive'), 'unknown'],
+    [new Error('secret-test-key private CV'), 'unknown'],
+  ] as const)(
+    'ends a group whose upload failed with a public cause only (%s)',
+    async (error, cause) => {
       error.message = 'secret-test-key private CV provider body'
-      expect(batchFailure('Upload failed.', error)).toBe(
-        `Upload failed. [Batch: ${code}${code === 'http' ? '; HTTP 403' : ''}]`,
+      const client = new BatchClient('secret-test-key', async () => {
+        throw new Error('No call expected')
+      })
+      client.upload = async () => {
+        throw error
+      }
+      const saved: unknown[] = []
+      const step = await openAiBatch(settings, () => client).advance(
+        [item('a'), item('b')],
+        {
+          groupId: 'group_1',
+          state: null,
+          claimed: true,
+          save: async (next) => {
+            saved.push(next)
+            return true
+          },
+          archive: async () => {},
+        },
+      )
+      expect(step).toMatchObject({ kind: 'ended' })
+      const outcomes = step.kind === 'ended' ? [...step.outcomes.values()] : []
+      expect(outcomes).toEqual([
+        {
+          kind: 'end',
+          end: { state: 'failed', cause },
+          usage: { inputTokens: null, outputTokens: null },
+          responseId: null,
+          notCharged: true,
+        },
+        expect.anything(),
+      ])
+      expect(JSON.stringify([step, saved])).not.toMatch(
+        /secret-test-key|private CV/,
       )
     },
   )
-  it.each([null, 99, 600, 403.5, NaN, Infinity, '403'])(
-    'omits invalid HTTP status %s',
-    (status) => {
-      const error = new BatchError('http')
-      Object.assign(error, { status })
-      expect(batchFailure('Upload failed.', error)).toBe(
-        'Upload failed. [Batch: http]',
-      )
-    },
-  )
-  it.each([100, 599])('accepts HTTP status boundary %s', (status) => {
-    expect(batchFailure('Upload failed.', new BatchError('http', status))).toBe(
-      `Upload failed. [Batch: http; HTTP ${status}]`,
-    )
-  })
-  it('classifies validation errors and rejects untrusted error messages and codes', () => {
-    const invalid = z.string().safeParse({ privateCV: 'secret-test-key' })
-    expect(batchFailure('Upload failed.', invalid.error)).toBe(
-      'Upload failed. [Batch: format]',
-    )
-    const forged = new BatchError('http', 403)
-    Object.assign(forged, { code: 'secret-test-key private CV' })
-    for (const error of [
-      forged,
-      new Error('secret-test-key private CV'),
-      { code: 'http', status: 403, message: 'secret-test-key private CV' },
-      'secret-test-key private CV',
-      null,
-      undefined,
-    ]) {
-      expect(batchFailure('Upload failed.', error)).toBe(
-        'Upload failed. [Batch: unknown]',
-      )
-    }
-  })
   it('sanitizes fetch exceptions and HTTP response errors without credentials or response content', async () => {
     for (const impl of [
       async () => {
@@ -323,8 +363,8 @@ describe('terminal and partial result processing', () => {
     ).rejects.toThrow()
     expect(fetcher).not.toHaveBeenCalled()
   })
-  it('retains usage for refusal, incomplete or invalid JSON without publishing assessment', () => {
-    for (const kind of ['refusal', 'incomplete', 'json', 'text_count']) {
+  it('reads a refusal, an incomplete response or a text that is not one content like a single call, keeping the usage', () => {
+    for (const kind of ['refusal', 'incomplete', 'text_count']) {
       const value = line()
       const body = value.response!.body as {
         status: string
@@ -332,31 +372,79 @@ describe('terminal and partial result processing', () => {
       }
       if (kind === 'refusal') body.output[0]!.content[0]!.type = 'refusal'
       if (kind === 'incomplete') body.status = 'incomplete'
-      if (kind === 'json')
-        body.output[0]!.content[0]!.text = 'private-provider-body-not-json'
       if (kind === 'text_count')
         body.output[0]!.content.push({ ...body.output[0]!.content[0]! })
-      expect(readBatchResponse(value)).toEqual({
-        id: 'resp_test',
-        usage: { input_tokens: 100, output_tokens: 20 },
-        assessment: null,
-        diagnostic: `response_${kind}`,
-      })
+      const outcome = itemOutcome(value, batch)
+      if (kind === 'text_count')
+        expect(outcome).toEqual({
+          kind: 'end',
+          end: { state: 'failed', cause: 'no_content' },
+          usage: { inputTokens: 100, outputTokens: 20 },
+          responseId: 'resp_test',
+          notCharged: false,
+        })
+      else
+        expect(outcome).toEqual({
+          kind: 'response',
+          response: {
+            outcome: kind === 'refusal' ? 'refused' : 'incomplete',
+            text: null,
+            usage: { inputTokens: 100, outputTokens: 20 },
+            responseId: 'resp_test',
+          },
+        })
     }
   })
-  it('parses completed assessment and rejects failed responses or invalid usage', () => {
-    expect(readBatchResponse(line())).toMatchObject({
-      assessment: { summary: 'Ocena' },
-      diagnostic: null,
+  it('reads a completed response; invalid usage leaves the cost unknown', () => {
+    expect(itemOutcome(line(), batch)).toEqual({
+      kind: 'response',
+      response: {
+        outcome: 'completed',
+        text: '{"summary":"Ocena"}',
+        usage: { inputTokens: 100, outputTokens: 20 },
+        responseId: 'resp_test',
+      },
     })
-    expect(() =>
-      readBatchResponse({ custom_id: 'offer', error: { code: 'failed' } }),
-    ).toThrow()
     const value = line()
     ;(
       value.response!.body as { usage: { input_tokens: number } }
     ).usage.input_tokens = -1
-    expect(() => readBatchResponse(value)).toThrow()
+    expect(itemOutcome(value, batch)).toMatchObject({
+      response: { usage: { inputTokens: null, outputTokens: 20 } },
+    })
+  })
+  it('tells a missing result from a valid one, charging nothing only when the provider charges nothing', () => {
+    expect(itemOutcome(undefined, batch)).toMatchObject({
+      kind: 'end',
+      end: { state: 'failed', cause: 'unknown' },
+      notCharged: false,
+    })
+    expect(
+      itemOutcome(undefined, {
+        ...batch,
+        status: 'failed',
+        output_file_id: null,
+      }),
+    ).toMatchObject({ kind: 'end', notCharged: true })
+    expect(
+      itemOutcome(
+        { custom_id: 'offer_1', error: { code: 'batch_expired' } },
+        batch,
+      ),
+    ).toMatchObject({ kind: 'end', notCharged: true })
+    expect(
+      itemOutcome({ custom_id: 'offer_1', error: { code: 'failed' } }, batch),
+    ).toMatchObject({ kind: 'end', notCharged: false })
+    expect(
+      itemOutcome(
+        { custom_id: 'offer_1', response: { status_code: 500, body: {} } },
+        batch,
+      ),
+    ).toMatchObject({
+      kind: 'end',
+      end: { state: 'failed', cause: 'http' },
+      notCharged: false,
+    })
   })
   it('treats cleanup 404 as already deleted and checks other deletion replies', async () => {
     const { client } = fakeClient(async () => new Response('', { status: 404 }))
@@ -388,8 +476,8 @@ describe('complete local batch archive', () => {
       events.push('network')
       return json({ id: 'file_input' })
     })
-    const client = new BatchClient('secret-test-key', fetcher, archive)
-    const request = batchRequest('offer_1', input, config)
+    const client = archived('secret-test-key', fetcher, archive)
+    const request = batchRequest('offer_1')
     await client.upload([request])
     expect(kept).toEqual([['input', 'request', JSON.stringify(request) + '\n']])
     expect(events).toEqual(['archive', 'network'])
@@ -399,11 +487,11 @@ describe('complete local batch archive', () => {
   })
   it('does not upload when the durable archive cannot save the input', async () => {
     const fetcher = vi.fn(async () => json({ id: 'file_input' }))
-    const client = new BatchClient('secret-test-key', fetcher, async () => {
+    const client = archived('secret-test-key', fetcher, async () => {
       throw new Error('private database details')
     })
     await expect(
-      client.upload([batchRequest('offer_1', input, config)]),
+      client.upload([batchRequest('offer_1')]),
     ).rejects.toMatchObject({ code: 'archive' })
     expect(fetcher).not.toHaveBeenCalled()
   })
@@ -412,7 +500,7 @@ describe('complete local batch archive', () => {
     async (method) => {
       const raw = ' { malformed provider metadata \n'
       const kept: unknown[][] = []
-      const client = new BatchClient(
+      const client = archived(
         'secret-test-key',
         async () => new Response(raw),
         async (...args) => {
@@ -437,13 +525,9 @@ describe('complete local batch archive', () => {
       async (url: RequestInfo | URL) =>
         new Response(String(url).includes('file_error') ? error : output),
     )
-    const client = new BatchClient(
-      'secret-test-key',
-      fetcher,
-      async (...args) => {
-        kept.push(args)
-      },
-    )
+    const client = archived('secret-test-key', fetcher, async (...args) => {
+      kept.push(args)
+    })
     await expect(
       client.results({ ...batch, error_file_id: 'file_error' }, ['offer_1']),
     ).rejects.toMatchObject({ code: 'format' })
@@ -465,7 +549,7 @@ describe('complete local batch archive', () => {
       },
       cancel,
     })
-    const client = new BatchClient(
+    const client = archived(
       'secret-test-key',
       async () => new Response(stream),
       archive,
@@ -480,7 +564,7 @@ describe('complete local batch archive', () => {
     const archive = vi.fn(async () => {
       throw new Error('private DB failure')
     })
-    const client = new BatchClient(
+    const client = archived(
       'secret-test-key',
       async () => new Response(JSON.stringify(line()) + '\n'),
       archive,
@@ -488,8 +572,5 @@ describe('complete local batch archive', () => {
     await expect(client.results(batch, ['offer_1'])).rejects.toMatchObject({
       code: 'archive',
     })
-    expect(batchFailure('Read failed.', new BatchError('archive'))).toBe(
-      'Read failed. [Batch: archive]',
-    )
   })
 })

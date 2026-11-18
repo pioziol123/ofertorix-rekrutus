@@ -371,7 +371,7 @@ describe('matching ratings in the offer list', () => {
   it('filters latest request state independently of a retained successful rating', () => {
     const values = [
       offer({}, 'none'),
-      assessed('pending', 80, { state: 'submitted' }),
+      assessed('pending', 80, { state: 'running' }),
       assessed('failed', 80, { state: 'failed' }),
       assessed('excluded', null, { state: 'excluded', scoreId: null }),
       assessed('unknown', null, { state: 'unknown', scoreId: null }),

@@ -4,6 +4,8 @@ import { decimal, money } from './domain/money.ts'
 import { resendExecutionJob, sendExecutionJob } from './execution-queue.ts'
 import { reserve } from './infrastructure/persistence/budget.ts'
 import {
+  batchGroupsInProgress,
+  endedBatchGroups,
   executionsInState,
   fundExecution,
   readExecutionRow,
@@ -43,8 +45,9 @@ async function endLapsed(executionId: string) {
  * Funds the executions that wait for budget, a group as a whole or not at
  * all, and sends again the jobs of queued executions whose job may be lost.
  * A running execution whose lease of the shared local slot lapsed ends as
- * its adapter decides, keeping the slot. Any other running execution is
- * left alone: detecting interrupted work belongs to task
+ * its adapter decides, keeping the slot. A provider batch gets its next
+ * step (polling, or cleaning up once it ended). Any other running
+ * execution is left alone: detecting interrupted work belongs to task
  * oferty-pracy-0mq.15.
  */
 export async function recoverExecutions(): Promise<void> {
@@ -52,6 +55,7 @@ export async function recoverExecutions(): Promise<void> {
     await endLapsed(executionId)
   for (const execution of await executionsInState('queued'))
     await resendExecutionJob(execution.id)
+  await continueBatches()
   const waiting = await executionsInState('waiting_budget')
   const groups = new Map<string, ExecutionRow[]>()
   for (const execution of waiting) {
@@ -59,6 +63,24 @@ export async function recoverExecutions(): Promise<void> {
     groups.set(key, [...(groups.get(key) ?? []), execution])
   }
   for (const group of groups.values()) await fund(group)
+}
+
+/**
+ * Sends a job for each provider batch that is still running, so that its
+ * adapter polls it, and for each ended one whose adapter still has to
+ * clean up at the provider. A batch in sending belongs to the run sending
+ * it: its adapter waits (detecting interrupted sending belongs to task
+ * oferty-pracy-0mq.15).
+ */
+async function continueBatches() {
+  for (const group of await batchGroupsInProgress())
+    await resendExecutionJob(group.executionId)
+  for (const group of await endedBatchGroups()) {
+    const settings = group.snapshot.settings
+    const runner = providerAdapter(settings.provider)?.modes.batch?.(settings)
+    if (runner?.needsCleanup(group.state))
+      await resendExecutionJob(group.executionId)
+  }
 }
 
 async function fund(group: ExecutionRow[]) {

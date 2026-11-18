@@ -1,21 +1,32 @@
+/**
+ * The states of an assessment request the owner sees: the stage of its AI
+ * work, or `excluded` when a required condition conflicts and nothing
+ * was requested.
+ */
+export const matchingStates = [
+  'waiting_budget',
+  'queued',
+  'running',
+  'completed',
+  'failed',
+  'unknown',
+  'excluded',
+] as const
+export type MatchingState = (typeof matchingStates)[number]
 export const matchingPending = [
   'waiting_budget',
   'queued',
-  'uploading',
-  'submitting',
-  'submitted',
-] as const
+  'running',
+] as const satisfies readonly MatchingState[]
 export const matchingStateLabels: Record<string, string> = {
   waiting_budget: 'Czeka na budżet',
   queued: 'W kolejce',
-  uploading: 'Przesyłanie',
-  submitting: 'Zlecanie',
-  submitted: 'Czeka na Batch',
+  running: 'Ocena w toku',
   completed: 'Ocena gotowa',
   failed: 'Błąd oceny',
   unknown: 'Wymaga sprawdzenia',
   excluded: 'Niezgodność wymagań',
-}
+} satisfies Record<MatchingState, string>
 export const matchingGroupLabels = {
   technologies: 'Technologie',
   experience: 'Doświadczenie',

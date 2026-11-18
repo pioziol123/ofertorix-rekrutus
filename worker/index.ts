@@ -4,11 +4,6 @@ import {
   recoverCompanyResearch,
 } from '../lib/companies/research.ts'
 import {
-  matchingGroupQueue,
-  executeMatchingGroup,
-  recoverMatchingGroups,
-} from '../lib/matching/groups.ts'
-import {
   aiExecutionQueue,
   recoverExecutions,
   registerResultReceiver,
@@ -37,10 +32,9 @@ import {
   recoverImports,
 } from '../lib/profile/imports.ts'
 import {
-  matchingQueue,
-  executeMatching,
-  recoverMatching,
-} from '../lib/matching/store.ts'
+  assessmentReceiver,
+  assessmentSettingsKey,
+} from '../modules/matching/index.ts'
 
 const pool = getPool()
 const boss = createBoss()
@@ -74,17 +68,10 @@ await recoverImports(boss)
 await boss.work<{ importId: string }>(parseQueue, async (jobs) => {
   for (const job of jobs) await extractImport(job.data.importId)
 })
-await recoverMatching(pool, boss)
-await boss.work<{ requestId: string }>(matchingQueue, async (jobs) => {
-  for (const job of jobs) await executeMatching(boss, job.data.requestId)
-})
-await recoverMatchingGroups(pool, boss)
-await boss.work<{ groupId: string }>(matchingGroupQueue, async (jobs) => {
-  for (const job of jobs) await executeMatchingGroup(boss, job.data.groupId)
-})
 await recoverCompanyResearch(boss)
 useAiQueue(boss)
 registerResultReceiver(proposalSettingsKey, proposalReceiver)
+registerResultReceiver(assessmentSettingsKey, assessmentReceiver)
 await resumeProposalPreparations()
 await recoverExecutions()
 await boss.work<{ executionId: string }>(aiExecutionQueue, async (jobs) => {
@@ -101,8 +88,6 @@ async function schedule() {
     await recoverSyncRuns()
     await requestScheduledSyncs()
     await recoverImports(boss)
-    await recoverMatching(pool, boss)
-    await recoverMatchingGroups(pool, boss)
     await recoverCompanyResearch(boss)
     await resumeProposalPreparations()
     await recoverExecutions()

@@ -1,19 +1,18 @@
-import type { Pool } from 'pg'
 import type { QueryExecutor } from '../db.ts'
 import type { OfferView } from '../../modules/offers/index.ts'
-import { chargeCeiling } from '../../modules/ai/index.ts'
-import { matchingConfiguration } from './store.ts'
-import { activeProfileVersion, currentAdVersions } from './ratings.ts'
+import { readLatestExecutions } from '../../modules/ai/index.ts'
 import {
-  matchingGroupLabels,
-  matchingPending,
-  type MatchingSummary,
-} from './view.ts'
+  activeAssessments,
+  assessmentReservation,
+} from '../../modules/matching/infrastructure/adapters/assessment-ai.ts'
+import { assessmentState } from '../../modules/matching/domain/assessment-state.ts'
+import { activeProfileVersion, currentAdVersions } from './ratings.ts'
+import { matchingGroupLabels, type MatchingSummary } from './view.ts'
 /**
  * Adds to each offer the summary of its match assessment. Reads in bulk, a
  * fixed number of queries for any number of offers: the active profile
- * version, the current ad versions from the Sources read and the
- * assessments.
+ * version, the current ad versions from the Sources read, the
+ * assessments, and the state of their AI work from the AI read.
  */
 export async function decorateMatching(
   pool: QueryExecutor,
@@ -30,6 +29,15 @@ export async function decorateMatching(
     LEFT JOIN matching_rating_heads rh ON rh.ad_id=a.id
     LEFT JOIN matching_rating_revisions s ON s.id=rh.revision_id`,
     [ids],
+  )
+  const executions = new Map(
+    (
+      await readLatestExecutions(
+        result.rows
+          .filter((row) => row.request_id && row.state !== 'excluded')
+          .map((row) => row.request_id),
+      )
+    ).map((execution) => [execution.operationId, execution]),
   )
   // Ads the Sources read no longer knows get no summary, as before.
   const byId = new Map(
@@ -61,7 +69,9 @@ export async function decorateMatching(
       ...offer,
       assessment: {
         requestId: row.request_id ?? null,
-        state: row.state ?? 'completed',
+        state: row.request_id
+          ? assessmentState(row.state, executions.get(row.request_id) ?? null)
+          : 'completed',
         author: row.assessment_author ?? undefined,
         scoreId: row.score_id ?? null,
         rating: percent(calculation?.rating),
@@ -75,21 +85,17 @@ export async function decorateMatching(
     }
   })
 }
-export async function matchingListStatus(pool: Pool) {
-  const config = matchingConfiguration()
+/**
+ * Whether groups of assessments can be requested, how many assessments are
+ * in progress and the most one item of a group reserves.
+ */
+export async function matchingListStatus() {
+  const reservation = assessmentReservation('group')
   const profile = await activeProfileVersion()
-  const state = (
-    await pool.query(
-      'SELECT count(*)::int AS pending FROM matching_requests WHERE state=ANY($1::text[])',
-      [matchingPending],
-    )
-  ).rows[0]
   return {
-    configured: config !== null,
+    configured: reservation !== null,
     profileReady: profile !== null,
-    pending: Number(state?.pending ?? 0),
-    maximumCostPln: config
-      ? chargeCeiling(config, config.maxInputTokens, config.maxOutputTokens)
-      : null,
+    pending: await activeAssessments(),
+    maximumCostPln: reservation,
   }
 }

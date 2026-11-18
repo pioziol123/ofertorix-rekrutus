@@ -1,5 +1,6 @@
 import { hasCredentials, settingsFor } from './configuration.ts'
 import type { ExecutionMode } from './domain/execution-mode.ts'
+import { attemptCeiling } from './domain/cost.ts'
 import { AiRequestError } from './errors.ts'
 import type { AiConfiguration } from './model-catalog.ts'
 import type { ProviderSettings } from './provider-adapter.ts'
@@ -39,6 +40,7 @@ export function executionSettings(
     model: settings.model,
     reasoningEffort: settings.reasoningEffort,
     maxOutputTokens: pricing?.maxOutputTokens ?? 0,
+    maxInputTokens: pricing?.maxInputTokens ?? 0,
     runtime: model.local ?? null,
     pricing,
   }
@@ -55,6 +57,26 @@ export function isConfigured(settingsKey: string): boolean {
     return providerAdapter(settings.provider)?.ready?.(settings) ?? true
   } catch (error) {
     if (error instanceof AiRequestError) return false
+    throw error
+  }
+}
+
+/**
+ * What one execution under a client's key reserves in a mode, in PLN as a
+ * decimal string: the cost of the price list's token caps, or zero for a
+ * model without a price list. Null when the key cannot be requested in the
+ * mode now. Nothing is called; a client uses it to show the most a request
+ * reserves.
+ */
+export function readReservation(
+  settingsKey: string,
+  mode: ExecutionMode,
+): string | null {
+  try {
+    const settings = executionSettings(settingsKey, mode)
+    return settings.pricing ? attemptCeiling(settings.pricing) : '0.000000'
+  } catch (error) {
+    if (error instanceof AiRequestError) return null
     throw error
   }
 }

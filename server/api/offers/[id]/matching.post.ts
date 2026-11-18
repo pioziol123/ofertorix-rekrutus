@@ -12,7 +12,9 @@ export default apiHandler(async (event) => {
     .strict()
     .parse(await jsonBody(event))
   try {
-    return await enqueueMatching(await queueClient(), id)
+    // Connects the AI execution queue before the request.
+    await queueClient()
+    return await enqueueMatching(id)
   } catch (error) {
     if (error instanceof MatchingError)
       throw createError({

@@ -2,8 +2,12 @@ import type {
   ExecutionCause,
   ExecutionState,
 } from './domain/execution-state.ts'
+import { readArchiveArtifacts } from './infrastructure/persistence/batch-archive.ts'
 import {
+  countActiveExecutionRows,
   readExecutionRow,
+  readGroupExecutionRows,
+  readLatestExecutionRows,
   readLatestExecutionRow,
   readOperationExecutionRows,
   type ExecutionRow,
@@ -99,4 +103,54 @@ export async function readLatestExecution(
 ): Promise<AiExecution | null> {
   const row = await readLatestExecutionRow(operationId)
   return row ? toPublic(row) : null
+}
+
+/**
+ * The latest execution of each given operation that has one, in one read,
+ * for a client that shows the state of many of its operations at once.
+ */
+export async function readLatestExecutions(
+  operationIds: readonly string[],
+): Promise<AiExecution[]> {
+  if (!operationIds.length) return []
+  return (await readLatestExecutionRows([...operationIds])).map(toPublic)
+}
+
+/**
+ * Every execution requested in a provider batch group, oldest first; empty
+ * when the group has none. A client that names its groups uses it to
+ * recognise a group it has already requested.
+ */
+export async function readExecutionGroup(
+  groupId: string,
+): Promise<AiExecution[]> {
+  return (await readGroupExecutionRows(groupId)).map(toPublic)
+}
+
+/** How many executions requested under a settings key are in progress. */
+export async function countActiveExecutions(
+  settingsKey: string,
+): Promise<number> {
+  return countActiveExecutionRows(settingsKey)
+}
+
+/**
+ * The diagnostic archive of the provider batch an execution was sent in:
+ * the exact files and replies, kept under the batch's group. Empty for an
+ * execution that was not sent in a batch; null for an unknown execution.
+ */
+export async function readExecutionArchive(executionId: string): Promise<{
+  archiveId: string
+  artifacts: {
+    kind: 'input' | 'output' | 'error' | 'metadata'
+    artifact_key: string
+    sha256: string
+    content: string
+    created_at: Date
+  }[]
+} | null> {
+  const row = await readExecutionRow(executionId)
+  if (!row) return null
+  const archiveId = row.mode === 'batch' && row.groupId ? row.groupId : row.id
+  return { archiveId, artifacts: await readArchiveArtifacts(archiveId) }
 }

@@ -28,13 +28,13 @@ export const aiCatalog: AiCatalog = {
 }
 
 /**
- * Gives a settings key a paid model with the price list in the mode, or
- * removes its settings with null.
+ * Gives a settings key a paid model with the price list in the mode (or in
+ * each of the modes), or removes its settings with null.
  */
 export function usePricing(
   key: string,
   pricing: AiConfiguration | null,
-  mode: 'single' | 'batch' = 'single',
+  mode: 'single' | 'batch' | ('single' | 'batch')[] = 'single',
 ) {
   Reflect.deleteProperty(clientSettings, key)
   if (!pricing) return
@@ -45,7 +45,9 @@ export function usePricing(
       provider: 'openai',
       model,
       reasoningEfforts: ['low'],
-      prices: { [mode]: pricing },
+      prices: Object.fromEntries(
+        (Array.isArray(mode) ? mode : [mode]).map((m) => [m, pricing]),
+      ),
     },
   ]
   clientSettings[key] = { provider: 'openai', model, reasoningEffort: 'low' }

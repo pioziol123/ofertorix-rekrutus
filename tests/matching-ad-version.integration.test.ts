@@ -1,7 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { createRequire } from 'node:module'
 import { Pool } from 'pg'
-import type { PgBoss } from 'pg-boss'
 import {
   afterAll,
   beforeAll,
@@ -20,19 +18,20 @@ import {
   RatingConflict,
   saveManualRating,
 } from '../lib/matching/ratings.ts'
+import { enqueueMatching, readMatching } from '../lib/matching/store.ts'
+import { registerResultReceiver, useAiQueue } from '../modules/ai/index.ts'
 import {
-  BatchClient,
-  type Batch,
-  type BatchLine,
-} from '../lib/matching/batch.ts'
-import {
-  enqueueMatching,
-  executeMatching,
-  readMatching,
-} from '../lib/matching/store.ts'
+  assessmentReceiver,
+  assessmentSettingsKey,
+} from '../modules/matching/index.ts'
 import { defaultWeights } from '../lib/matching/weights.ts'
 import { emptyProfile } from '../lib/profile/model.ts'
 import { usePricing } from './ai-test-configuration.ts'
+import {
+  migrate,
+  recordingQueue,
+  SimulatedOpenAi,
+} from './matching-ai.fixtures.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
 vi.mock(
@@ -91,7 +90,7 @@ integration(
       maxInputTokens: 20000,
       maxOutputTokens: 500,
     }
-    const boss = { send: vi.fn(async () => randomUUID()) } as unknown as PgBoss
+    const queue = recordingQueue()
 
     beforeAll(async () => {
       admin = new Pool({ connectionString: process.env.DATABASE_URL })
@@ -100,29 +99,20 @@ integration(
         connectionString: process.env.DATABASE_URL,
         options: `-c search_path=${schema}`,
       })
-      const sql: string[] = []
-      for (const migration of [
-        '1770000000000_setup',
-        '1770000000001_sources',
-        '1770000000004_profiles',
-        '1770000000006_matching',
-        '1770000000007_matching_payload',
-        '1770000000008_matching_groups',
-        '1770000000009_rating_revisions',
-      ])
-        createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
-          sql: (s: string) => sql.push(s),
-        })
-      await pool.query(sql.join('\n'))
+      await migrate(pool)
       setPool(pool)
+      useAiQueue(queue.boss)
+      registerResultReceiver(assessmentSettingsKey, assessmentReceiver)
     })
 
     beforeEach(async () => {
       vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-      usePricing('matching', pricing, 'batch')
+      usePricing('matching', pricing, ['single', 'batch'])
+      new SimulatedOpenAi()
+      queue.reset()
       injected.change = null
       await pool.query(
-        'TRUNCATE matching_rating_heads,matching_rating_revisions,matching_weight_head,matching_weight_versions,matching_groups,matching_requests,matching_batches,ai_attempts,ai_budget_months,profile_head,profile_versions,source_ads,source_scopes CASCADE',
+        'TRUNCATE matching_rating_heads,matching_rating_revisions,matching_weight_head,matching_weight_versions,matching_requests,ai_executions,ai_attempts,ai_budget_months,profile_head,profile_versions,source_ads,source_scopes CASCADE',
       )
       const weights = randomUUID()
       await pool.query(
@@ -199,72 +189,9 @@ integration(
       })),
     })
 
-    /** A batch provider that answers every request with unknown criteria. */
-    class Provider extends BatchClient {
-      constructor() {
-        super('test', async () => {
-          throw new Error('No external calls allowed')
-        })
-      }
-      override async upload() {
-        return 'file_input'
-      }
-      override async create() {
-        return {
-          id: 'batch_test',
-          input_file_id: 'file_input',
-          status: 'in_progress',
-        } satisfies Batch
-      }
-      override async retrieve() {
-        return {
-          id: 'batch_test',
-          input_file_id: 'file_input',
-          output_file_id: 'file_output',
-          status: 'completed',
-        } satisfies Batch
-      }
-      override async results(_batch: Batch, expected: string[]) {
-        const id = expected[0]!
-        const { input } = (
-          await pool.query('SELECT input FROM matching_requests WHERE id=$1', [
-            id,
-          ])
-        ).rows[0]
-        return new Map<string, BatchLine>([
-          [
-            id,
-            {
-              custom_id: id,
-              response: {
-                status_code: 200,
-                body: {
-                  id: 'resp_test',
-                  status: 'completed',
-                  usage: { input_tokens: 100, output_tokens: 20 },
-                  output: [
-                    {
-                      type: 'message',
-                      content: [
-                        {
-                          type: 'output_text',
-                          text: JSON.stringify(unknownResult(input)),
-                        },
-                      ],
-                    },
-                  ],
-                },
-              },
-            },
-          ],
-        ])
-      }
-      override async remove() {}
-    }
-
     it('saves the AI assessment for the version whose content it assessed', async () => {
       injected.change = changeAd
-      const request = await enqueueMatching(boss, ad)
+      const request = await enqueueMatching(ad)
       const stored = (
         await pool.query('SELECT * FROM matching_requests WHERE id=$1', [
           request.id,
@@ -300,11 +227,11 @@ integration(
     })
 
     it('publishes an AI result for the version assessed when the ad changes after the run read its current version (ASM-1)', async () => {
-      const request = await enqueueMatching(boss, ad)
-      // The run reads the current version before it takes its connection;
-      // the ad changes right after that read, before the result is saved.
+      const request = await enqueueMatching(ad)
+      // The receiver reads the current version without a lock; the ad
+      // changes right after that read, before the result is saved.
       injected.afterCurrentVersions = changeAd
-      await executeMatching(boss, request.id, new Provider())
+      await queue.work()
       expect(injected.afterCurrentVersions).toBeNull()
       expect((await currentAdVersions([ad])).get(ad)).toBe(changed)
       const rating = (

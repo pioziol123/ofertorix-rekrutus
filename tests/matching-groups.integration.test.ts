@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { createRequire } from 'node:module'
 import { Pool } from 'pg'
 import { closePool, setPool } from '../lib/db.ts'
-import type { PgBoss } from 'pg-boss'
 import {
   afterAll,
   beforeAll,
@@ -14,28 +12,29 @@ import {
 } from 'vitest'
 import { emptyProfile } from '../lib/profile/model.ts'
 import { confirmProfile, saveDraft } from '../modules/profile/index.ts'
-import { recoverExecutions, useAiQueue } from '../modules/ai/index.ts'
+import {
+  readExecutionHistory,
+  recoverExecutions,
+  registerResultReceiver,
+  runExecution,
+  useAiQueue,
+} from '../modules/ai/index.ts'
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
+import { BatchError } from '../modules/ai/infrastructure/adapters/openai-batch.ts'
 import {
-  BatchClient,
-  BatchError,
-  type batchRequest,
-  type Batch,
-  type BatchLine,
-} from '../lib/matching/batch.ts'
-import {
-  enqueueMatching,
-  executeMatching,
-  recoverMatching,
-} from '../lib/matching/store.ts'
-
-import {
-  enqueueMatchingGroup,
-  executeMatchingGroup,
-  recoverMatchingGroups,
-  matchingGroupQueue,
-} from '../lib/matching/groups.ts'
+  assessmentReceiver,
+  assessmentSettingsKey,
+} from '../modules/matching/index.ts'
+import { enqueueMatching, readMatching } from '../lib/matching/store.ts'
+import { enqueueMatchingGroup } from '../lib/matching/groups.ts'
+import { readBatchArchive } from '../lib/matching/archive.ts'
 import { usePricing } from './ai-test-configuration.ts'
+import {
+  migrate,
+  pricing,
+  recordingQueue,
+  SimulatedOpenAi,
+} from './matching-ai.fixtures.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
 vi.mock(
@@ -50,26 +49,16 @@ vi.mock(
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
 integration(
-  'multi-offer matching groups with isolated PostgreSQL and fake API',
+  'assessment groups as provider batches in AI, with isolated PostgreSQL and a fake API (0mq.21)',
   () => {
     const schema = `matching_groups_test_${randomUUID().replaceAll('-', '')}`
     let admin: Pool,
       pool: Pool,
       ad: string,
       revision: string,
-      profileVersion: string
-    const pricing = {
-      model: 'test-only',
-      version: 'test',
-      inputUsdPerMillion: '1',
-      outputUsdPerMillion: '1',
-      usdPln: '1',
-      fxVersion: 'test',
-      maxInputTokens: 20000,
-      maxOutputTokens: 500,
-    }
-    const send = vi.fn(async () => randomUUID())
-    const boss = { send } as unknown as PgBoss
+      profileVersion: string,
+      openAi: SimulatedOpenAi
+    const queue = recordingQueue()
     beforeAll(async () => {
       admin = new Pool({ connectionString: process.env.DATABASE_URL })
       await admin.query(`CREATE SCHEMA ${schema}`)
@@ -77,37 +66,19 @@ integration(
         connectionString: process.env.DATABASE_URL,
         options: `-c search_path=${schema}`,
       })
-      const statements: string[] = []
-      for (const name of [
-        '1770000000000_setup',
-        '1770000000001_sources',
-        '1770000000004_profiles',
-        '1770000000006_matching',
-        '1770000000007_matching_payload',
-        '1770000000008_matching_groups',
-        '1770000000009_rating_revisions',
-        '1770000000012_matching_batch_archives',
-        '1770000000013_local_ai',
-        '1770000000016_ai_execution_requests',
-        '1770000000017_profile_ai_executions',
-      ]) {
-        createRequire(import.meta.url)(`../migrations/${name}.cjs`).up({
-          sql: (s: string) => statements.push(s),
-        })
-      }
-      await pool.query(statements.join('\n'))
-      // Profile reads go through the shared accessor (T-03).
+      await migrate(pool)
       setPool(pool)
-      // CV proposals now recover through the AI coordination.
-      useAiQueue(boss)
+      useAiQueue(queue.boss)
+      registerResultReceiver(assessmentSettingsKey, assessmentReceiver)
     })
     beforeEach(async () => {
       vi.unstubAllEnvs()
       vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-      usePricing('matching', pricing, 'batch')
-      send.mockClear()
+      usePricing('matching', pricing, ['single', 'batch'])
+      openAi = new SimulatedOpenAi()
+      queue.reset()
       await pool.query(
-        'TRUNCATE matching_groups,matching_requests,matching_batches,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
+        'TRUNCATE matching_requests,matching_rating_heads,matching_rating_revisions,matching_batch_artifacts,ai_executions,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
       )
       ad = randomUUID()
       revision = randomUUID()
@@ -155,108 +126,20 @@ integration(
         await admin.end()
       }
     })
-    class Provider extends BatchClient {
-      uploaded: ReturnType<typeof batchRequest>[] = []
-      uploads = 0
-      creates = 0
-      removed: string[] = []
-      status: Batch['status'] = 'completed'
-      refusal = false
-      missing = false
-      failures = new Set<string>()
-      constructor() {
-        super('test', async () => {
-          throw new Error('No external calls allowed')
-        })
-      }
-      override async upload(lines: ReturnType<typeof batchRequest>[]) {
-        this.uploaded.push(...structuredClone(lines))
-        this.uploads++
-        return 'file_input'
-      }
-      override async create() {
-        this.creates++
-        return {
-          id: 'batch_test',
-          input_file_id: 'file_input',
-          status: 'in_progress',
-        } satisfies Batch
-      }
-      override async retrieve() {
-        return {
-          id: 'batch_test',
-          input_file_id: 'file_input',
-          output_file_id: 'file_output',
-          status: this.status,
-        } satisfies Batch
-      }
-      override async results(_batch: Batch, expected: string[]) {
-        const results = new Map<string, BatchLine>()
-        for (const id of [...expected].reverse()) {
-          const { input } = (
-            await pool.query(
-              'SELECT input FROM matching_requests WHERE id=$1',
-              [id],
-            )
-          ).rows[0]
-          const assessment = {
-            summary: 'Brak danych',
-            strengths: [],
-            gaps: [],
-            criteria: input.criteria.map((c: { id: string }) => ({
-              id: c.id,
-              state: 'unknown',
-              score: null,
-              profileEvidence: null,
-              offerEvidence: null,
-              reason: 'Brak danych',
-            })),
-          }
-          results.set(id, {
-            custom_id: id,
-            response: {
-              status_code: 200,
-              body: {
-                id: `resp_${id}`,
-                status: 'completed',
-                usage: {
-                  input_tokens: this.failures.has(id) ? 200 : 100,
-                  output_tokens: 20,
-                },
-                output: [
-                  {
-                    type: 'message',
-                    content: [
-                      {
-                        type: this.failures.has(id) ? 'refusal' : 'output_text',
-                        text: JSON.stringify(assessment),
-                      },
-                    ],
-                  },
-                ],
-              },
-            },
-          })
-        }
-        return results
-      }
-      override async remove(file: string) {
-        this.removed.push(file)
-      }
-    }
     const row = async (id: string) =>
       (await pool.query('SELECT * FROM matching_requests WHERE id=$1', [id]))
         .rows[0]
-    const attempt = async (id: string) =>
+    const latest = async (id: string) =>
+      (await readExecutionHistory(id)).at(-1)!
+    const revisions = async (id: string) =>
       (
         await pool.query(
-          'SELECT a.* FROM ai_attempts a JOIN matching_requests r ON r.attempt_id=a.id WHERE r.id=$1',
+          'SELECT count(*)::int AS n FROM matching_rating_revisions WHERE request_id=$1',
           [id],
         )
-      ).rows[0]
-    const groupRow = async (id: string) =>
-      (await pool.query('SELECT * FROM matching_groups WHERE id=$1', [id]))
-        .rows[0]
+      ).rows[0].n
+    const count = async (table: string) =>
+      (await pool.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0].n
     async function anotherAd(description = 'PHP backend') {
       const id = randomUUID(),
         rev = randomUUID()
@@ -279,7 +162,8 @@ integration(
       return id
     }
     const enqueue = async (ids: string[], commandId = randomUUID()) =>
-      enqueueMatchingGroup(boss, { commandId, offerIds: ids })
+      enqueueMatchingGroup({ commandId, offerIds: ids })
+
     it('uses one profile version for the whole group when a version is confirmed meanwhile (A10-AC03)', async () => {
       let active = profileVersion,
         revision = 0
@@ -309,105 +193,198 @@ integration(
         expect(versions).toHaveLength(1)
       }
     })
-    it('submits multiple offers in one upload/create, maps unordered results and settles each cost independently', async () => {
-      const group = await enqueue([ad, await anotherAd()]),
-        provider = new Provider()
-      provider.failures.add(group.items[1]!.id)
-      await executeMatchingGroup(boss, group.groupId, provider)
-      expect(provider.uploads).toBe(1)
-      expect(provider.creates).toBe(1)
-      expect(provider.uploaded.map((i) => i.custom_id).sort()).toEqual(
-        group.items.map((i) => i.id).sort(),
-      )
-      expect(await row(group.items[0]!.id)).toMatchObject({
-        state: 'completed',
-      })
-      expect(await row(group.items[1]!.id)).toMatchObject({
-        state: 'failed',
-        result: null,
-      })
-      expect(await attempt(group.items[0]!.id)).toMatchObject({
-        state: 'settled',
-        actual_pln: '0.000120',
-      })
-      expect(await attempt(group.items[1]!.id)).toMatchObject({
-        state: 'settled',
-        actual_pln: '0.000220',
-      })
-      expect(await groupRow(group.groupId)).toMatchObject({
-        state: 'completed',
-        cleaned: true,
-      })
-      expect(provider.removed).toEqual(['file_input', 'file_output'])
-      await executeMatchingGroup(boss, group.groupId, provider)
-      expect(provider.uploads).toBe(1)
-      expect(provider.removed).toHaveLength(2)
-    })
-    it('persists safe HTTP upload diagnostics for every member without resubmission or analysis cost', async () => {
+
+    it('sends several offers in one batch, maps unordered results to their items and settles each one (AM-AC01, E03-AC02, E03-AC03)', async () => {
       const group = await enqueue([ad, await anotherAd()])
-      const fetcher = vi.fn(
-        async (_url: RequestInfo | URL, _init?: RequestInit) =>
-          new Response('never-send-test-key private CV provider body', {
-            status: 403,
-          }),
+      const [first, second] = group.items.map((item) => item.id) as [
+        string,
+        string,
+      ]
+      openAi.batch.refusals.add(second)
+      await queue.work()
+      expect(openAi.batch.uploads).toBe(1)
+      expect(openAi.batch.creates).toBe(1)
+      // The batch items keep the request identifiers as their custom_id.
+      expect(openAi.batch.uploaded.map((i) => i.custom_id).sort()).toEqual(
+        [first, second].sort(),
       )
-      const provider = new BatchClient('never-send-test-key', fetcher)
-      await executeMatchingGroup(boss, group.groupId, provider)
-      const failure = {
+      expect(await latest(first)).toMatchObject({
+        mode: 'batch',
+        groupId: group.groupId,
+        state: 'completed',
+        cost: { actual: '0.000120' },
+      })
+      expect(await latest(second)).toMatchObject({
         state: 'failed',
-        error:
-          'Nie udało się przesłać pliku partii. Nie zlecono analiz. [Batch: http; HTTP 403]',
-      }
-      expect(await groupRow(group.groupId)).toMatchObject(failure)
-      for (const member of group.items) {
-        expect(await row(member.id)).toMatchObject({
-          ...failure,
-          result: null,
-          calculation: null,
-        })
-        expect(await attempt(member.id)).toMatchObject({
-          state: 'settled',
-          actual_pln: '0.000000',
-          usage: null,
-        })
-      }
-      await recoverMatchingGroups(pool, boss)
-      await executeMatchingGroup(boss, group.groupId, provider)
-      expect(fetcher).toHaveBeenCalledOnce()
-      expect(fetcher.mock.calls[0]![0]).toBe('https://api.openai.com/v1/files')
+        cause: 'refused',
+        cost: { actual: '0.000220' },
+      })
+      expect(await revisions(first)).toBe(1)
+      expect(await revisions(second)).toBe(0)
+      expect((await row(second)).result).toBeNull()
+      expect(openAi.batch.removed).toEqual(['file_input', 'file_output'])
+      await recoverExecutions()
+      await queue.work()
+      expect(openAi.batch.uploads).toBe(1)
+      expect(openAi.batch.removed).toHaveLength(2)
+      // The archive of the batch is read through AI, the same for every item.
+      const archive = await readBatchArchive(pool, first)
+      expect(await readBatchArchive(pool, second)).toEqual(archive)
+      expect(archive).toMatchObject({
+        operationId: group.groupId,
+        reconstructedInput: null,
+      })
+      expect(archive!.artifacts.map((a) => a.kind).sort()).toEqual([
+        'input',
+        'output',
+      ])
     })
-    it('keeps results retryable and remote files intact when local archiving fails', async () => {
-      const group = await enqueue([ad, await anotherAd()]),
-        provider = new Provider()
-      const original = provider.results.bind(provider)
-      provider.results = vi.fn(async () => {
+
+    it('polls a batch still in progress in the next recovery cycle without sending it again', async () => {
+      openAi.batch.status = 'in_progress'
+      const group = await enqueue([ad, await anotherAd()])
+      await queue.work()
+      for (const item of group.items)
+        expect((await latest(item.id)).state).toBe('running')
+      expect((await readMatching(pool, ad)).history[0]!.state).toBe('running')
+      openAi.batch.status = 'completed'
+      await recoverExecutions()
+      await queue.work()
+      for (const item of group.items)
+        expect((await latest(item.id)).state).toBe('completed')
+      expect(openAi.batch.uploads).toBe(1)
+      expect(openAi.batch.creates).toBe(1)
+    })
+
+    it('ends every item without cost when the upload fails, and does not send again (AM-AC01)', async () => {
+      const group = await enqueue([ad, await anotherAd()])
+      openAi.batch.upload = async () => {
+        throw new BatchError('http', 403)
+      }
+      await queue.work()
+      for (const item of group.items) {
+        expect(await latest(item.id)).toMatchObject({
+          state: 'failed',
+          cause: 'http',
+          cost: { actual: '0.000000' },
+        })
+        expect((await row(item.id)).error).toBe(
+          'Ocena nie została wykonana. Poprzednie wyniki pozostały bez zmian. [AI: http]',
+        )
+      }
+      await recoverExecutions()
+      await queue.work()
+      expect(openAi.batch.creates).toBe(0)
+    })
+
+    it('keeps an unconfirmed batch creation uncertain with its cost reserved and creates no other paid batch (E03-AC05)', async () => {
+      const group = await enqueue([ad, await anotherAd()])
+      openAi.batch.create = async () => {
+        openAi.batch.creates++
+        throw new BatchError('network')
+      }
+      await queue.work()
+      await recoverExecutions()
+      await queue.work()
+      expect(openAi.batch.creates).toBe(1)
+      for (const item of group.items) {
+        expect(await latest(item.id)).toMatchObject({
+          state: 'uncertain',
+          cause: 'network',
+          cost: { reserved: '0.020500', actual: null },
+        })
+        expect((await readMatching(pool, ad)).history.length).toBe(1)
+      }
+      expect(
+        (await readMatching(pool, group.items[0]!.offerId)).history[0],
+      ).toMatchObject({
+        state: 'unknown',
+        cost: { actual: null },
+        error: expect.stringContaining('Koszt pozostaje zarezerwowany'),
+      })
+      // The uncertain batch keeps its input file for the owner to check.
+      expect(openAi.batch.removed).toEqual([])
+    })
+
+    it('ends an item without a result with its cost unknown, apart from the valid ones (E03-AC02)', async () => {
+      const group = await enqueue([ad, await anotherAd()])
+      const [first, second] = group.items.map((item) => item.id) as [
+        string,
+        string,
+      ]
+      openAi.batch.missing.add(second)
+      await queue.work()
+      expect(await latest(first)).toMatchObject({ state: 'completed' })
+      expect(await latest(second)).toMatchObject({
+        state: 'failed',
+        cause: 'unknown',
+        cost: { actual: null },
+      })
+    })
+
+    it('keeps results retryable and remote files intact when archiving fails', async () => {
+      const group = await enqueue([ad, await anotherAd()])
+      const original = openAi.batch.results.bind(openAi.batch)
+      openAi.batch.results = vi.fn(async () => {
         throw new BatchError('archive')
       })
-      await executeMatchingGroup(boss, group.groupId, provider)
-      expect(await groupRow(group.groupId)).toMatchObject({
-        state: 'submitted',
-        cleaned: false,
-      })
-      expect((await groupRow(group.groupId)).error).toContain(
-        '[Batch: archive]',
-      )
-      expect(provider.removed).toEqual([])
-      for (const member of group.items) {
-        expect((await row(member.id)).state).toBe('submitted')
-        expect((await attempt(member.id)).actual_pln).toBeNull()
-      }
-      await recoverMatchingGroups(pool, boss)
-      provider.results = original
-      await executeMatchingGroup(boss, group.groupId, provider)
-      expect(await groupRow(group.groupId)).toMatchObject({
-        state: 'completed',
-        cleaned: true,
-      })
-      expect(provider.uploads).toBe(1)
-      expect(provider.creates).toBe(1)
-      expect(provider.removed).toEqual(['file_input', 'file_output'])
+      await queue.work()
+      for (const item of group.items)
+        expect(await latest(item.id)).toMatchObject({
+          state: 'running',
+          cost: { actual: null },
+        })
+      expect(openAi.batch.removed).toEqual([])
+      openAi.batch.results = original
+      await recoverExecutions()
+      await queue.work()
+      for (const item of group.items)
+        expect((await latest(item.id)).state).toBe('completed')
+      expect(openAi.batch.uploads).toBe(1)
+      expect(openAi.batch.creates).toBe(1)
+      expect(openAi.batch.removed).toEqual(['file_input', 'file_output'])
     })
-    it('deduplicates concurrent command ID even reordered offers and rejects changed selection', async () => {
+
+    it('delivers each item on its own: a failed delivery of one does not hold back the others, and a repeated delivery publishes once (E03-AC03, E03-AC04)', async () => {
+      const other = await anotherAd()
+      const group = await enqueue([ad, other])
+      const blocked = group.items.find((item) => item.offerId === other)!
+      const free = group.items.find((item) => item.offerId === ad)!
+      await pool.query(
+        'UPDATE source_ads SET current_revision_id=NULL WHERE id=$1',
+        [other],
+      )
+      const jobs = async () => {
+        for (;;) {
+          try {
+            await queue.work()
+            return
+          } catch {
+            // The blocked item's delivery fails; the queue retries it.
+          }
+        }
+      }
+      await jobs()
+      expect(await latest(free.id)).toMatchObject({ state: 'completed' })
+      expect(await latest(blocked.id)).toMatchObject({
+        state: 'delivering',
+        cost: { actual: null },
+      })
+      await pool.query(
+        'UPDATE source_ads SET current_revision_id=(SELECT id FROM source_ad_revisions WHERE source_ad_id=$1) WHERE id=$1',
+        [other],
+      )
+      const execution = (await latest(blocked.id)).id
+      await Promise.all([runExecution(execution), runExecution(execution)])
+      expect(await latest(blocked.id)).toMatchObject({
+        state: 'completed',
+        cost: { actual: '0.000120' },
+      })
+      expect(await revisions(blocked.id)).toBe(1)
+      expect(openAi.batch.creates).toBe(1)
+    })
+
+    it('accepts a command once, even with reordered offers, and refuses a changed selection (E03-AC04)', async () => {
       const other = await anotherAd(),
         commandId = randomUUID()
       const [a, b] = await Promise.all([
@@ -416,158 +393,112 @@ integration(
       ])
       expect(a.groupId).toBe(b.groupId)
       expect([a.reused, b.reused].sort()).toEqual([false, true])
-      expect(send).toHaveBeenCalledOnce()
+      expect(await count('matching_requests')).toBe(2)
+      expect(await count('ai_executions')).toBe(2)
       await expect(enqueue([ad], commandId)).rejects.toThrow('innych ofert')
-      expect(
-        (await pool.query('SELECT count(*) FROM matching_groups')).rows[0]
-          .count,
-      ).toBe('1')
+      expect(await count('ai_executions')).toBe(2)
     })
+
     it('canonicalizes UUID casing for idempotent commands and duplicate selection checks', async () => {
       const commandId = randomUUID()
       const first = await enqueue([ad], commandId)
       const again = await enqueue([ad.toUpperCase()], commandId.toUpperCase())
       expect(again).toMatchObject({ groupId: first.groupId, reused: true })
-      expect(send).toHaveBeenCalledOnce()
+      expect(await count('ai_executions')).toBe(1)
       await expect(enqueue([ad, ad.toUpperCase()])).rejects.toThrow()
-      expect(
-        (await pool.query('SELECT count(*) FROM matching_groups')).rows[0]
-          .count,
-      ).toBe('1')
+      expect(await count('matching_requests')).toBe(1)
     })
-    it('does not absorb reused single pending requests into group submission', async () => {
-      const single = await enqueueMatching(boss, ad)
-      const group = await enqueue([ad, await anotherAd()]),
-        provider = new Provider()
+
+    it('keeps a single assessment in progress out of the group', async () => {
+      const single = await enqueueMatching(ad)
+      const group = await enqueue([ad, await anotherAd()])
       expect(group.items.find((i) => i.offerId === ad)).toMatchObject({
         id: single.id,
         reused: true,
       })
-      expect((await row(single.id)).group_id).toBeNull()
-      await executeMatchingGroup(boss, group.groupId, provider)
-      expect(provider.uploaded).toHaveLength(1)
-      expect(provider.uploaded[0]!.custom_id).not.toBe(single.id)
-      expect((await row(single.id)).state).toBe('queued')
+      expect((await latest(single.id)).mode).toBe('single')
+      await queue.work()
+      expect(openAi.batch.uploaded).toHaveLength(1)
+      expect(openAi.batch.uploaded[0]!.custom_id).not.toBe(single.id)
+      expect(openAi.singleCalls).toHaveLength(1)
     })
-    it('reserves all-or-none group budget and resumes after budget increases', async () => {
+
+    it('reserves the budget of the whole group or nothing, and funds it when room returns (E03-AC03)', async () => {
       await pool.query(
         'INSERT INTO ai_budget_months(month,limit_pln) VALUES($1,0.03)',
         [budgetMonth()],
       )
       const group = await enqueue([ad, await anotherAd()])
-      expect((await groupRow(group.groupId)).state).toBe('waiting_budget')
-      expect(
-        (await pool.query('SELECT count(*) FROM ai_attempts')).rows[0].count,
-      ).toBe('0')
-      expect(send).not.toHaveBeenCalled()
-      for (const member of group.items)
-        expect((await row(member.id)).state).toBe('waiting_budget')
+      expect(group.state).toBe('waiting_budget')
+      expect(queue.executionJobs()).toEqual([])
+      for (const item of group.items)
+        expect(await latest(item.id)).toMatchObject({
+          state: 'waiting_budget',
+          cost: { reserved: '0.000000' },
+        })
       await pool.query('UPDATE ai_budget_months SET limit_pln=1')
-      await executeMatchingGroup(boss, group.groupId, new Provider())
-      expect((await groupRow(group.groupId)).state).toBe('queued')
-      expect(
-        (await pool.query('SELECT count(*) FROM ai_attempts')).rows[0].count,
-      ).toBe('2')
-      expect(send).toHaveBeenCalledOnce()
-    })
-    it.each(['uploading', 'submitting'])(
-      'leaves a group found in %s alone without recreating a paid batch, until oferty-pracy-0mq.15',
-      async (state) => {
-        const group = await enqueue([ad, await anotherAd()]),
-          provider = new Provider()
-        await pool.query('UPDATE matching_groups SET state=$2 WHERE id=$1', [
-          group.groupId,
-          state,
-        ])
-        await pool.query(
-          'UPDATE matching_requests SET state=$2 WHERE group_id=$1',
-          [group.groupId, state],
-        )
-        await executeMatchingGroup(boss, group.groupId, provider)
-        expect(provider.uploads + provider.creates).toBe(0)
-        expect((await groupRow(group.groupId)).state).toBe(state)
-        for (const member of group.items) {
-          expect((await row(member.id)).state).toBe(state)
-          expect(await attempt(member.id)).toMatchObject({
-            state: 'queued',
-            actual_pln: null,
-          })
-        }
-      },
-    )
-    it('does not settle an already completed member again after partial recovery', async () => {
-      const group = await enqueue([ad, await anotherAd()]),
-        provider = new Provider()
-      provider.status = 'in_progress'
-      await executeMatchingGroup(boss, group.groupId, provider)
-      const member = group.items[0]!
-      await pool.query(
-        "UPDATE matching_requests SET state='completed',result='{}' WHERE id=$1",
-        [member.id],
-      )
-      await pool.query(
-        "UPDATE ai_attempts SET state='settled',actual_pln=0.000123,finished_at=now() WHERE id=(SELECT attempt_id FROM matching_requests WHERE id=$1)",
-        [member.id],
-      )
-      provider.status = 'completed'
-      await executeMatchingGroup(boss, group.groupId, provider)
-      expect(await attempt(member.id)).toMatchObject({ actual_pln: '0.000123' })
-      expect((await row(member.id)).result).toEqual({})
-      expect(provider.creates).toBe(1)
-    })
-    it('keeps group attempts isolated from CV and single recovery and execution', async () => {
-      const group = await enqueue([ad, await anotherAd()]),
-        provider = new Provider()
-      send.mockClear()
       await recoverExecutions()
-      await recoverMatching(pool, boss)
-      expect(send).not.toHaveBeenCalled()
-      await executeMatching(boss, group.items[0]!.id, provider)
-      expect(provider.uploads + provider.creates).toBe(0)
-      await recoverMatchingGroups(pool, boss)
-      expect(send).toHaveBeenCalledWith(
-        matchingGroupQueue,
-        { groupId: group.groupId },
-        expect.any(Object),
-      )
-      expect((await row(group.items[0]!.id)).state).toBe('queued')
+      for (const item of group.items)
+        expect(await latest(item.id)).toMatchObject({
+          state: 'queued',
+          cost: { reserved: '0.020500' },
+        })
+      await queue.work()
+      expect(openAi.batch.uploads).toBe(1)
     })
-    it('rejects duplicate IDs and more than100 selected offers before any mutations', async () => {
+
+    it('leaves a group another run is sending alone, without sending it again, until oferty-pracy-0mq.15', async () => {
+      const group = await enqueue([ad, await anotherAd()])
+      // Another run took the group and is sending it.
+      await pool.query(
+        "UPDATE ai_executions SET state='running',adapter_state=$1 WHERE group_id=$2",
+        [
+          {
+            stage: 'sending',
+            inputFileId: null,
+            batchId: null,
+            status: null,
+            outputFileId: null,
+            errorFileId: null,
+            cleaned: false,
+          },
+          group.groupId,
+        ],
+      )
+      await recoverExecutions()
+      await queue.work()
+      expect(openAi.batch.uploads + openAi.batch.creates).toBe(0)
+      for (const item of group.items)
+        expect(await latest(item.id)).toMatchObject({
+          state: 'running',
+          cost: { actual: null },
+        })
+    })
+
+    it('refuses duplicate IDs and more than 100 offers before any change', async () => {
       await expect(enqueue([ad, ad])).rejects.toThrow()
       await expect(
         enqueue(Array.from({ length: 101 }, () => randomUUID())),
       ).rejects.toThrow()
-      expect(
-        (await pool.query('SELECT count(*) FROM matching_groups')).rows[0]
-          .count,
-      ).toBe('0')
-      expect(
-        (await pool.query('SELECT count(*) FROM matching_requests')).rows[0]
-          .count,
-      ).toBe('0')
-      expect(send).not.toHaveBeenCalled()
+      expect(await count('matching_requests')).toBe(0)
+      expect(queue.send).not.toHaveBeenCalled()
     })
-    it('rolls back a group whose JSONL exceeds2MiB without reserving or queueing', async () => {
-      const larger = { ...pricing, maxInputTokens: 1000000 }
-      usePricing('matching', larger, 'batch')
+
+    it('rolls back a group too large for one batch file without reserving or queueing', async () => {
+      usePricing('matching', { ...pricing, maxInputTokens: 1000000 }, [
+        'single',
+        'batch',
+      ])
       const ids = await Promise.all(
         Array.from({ length: 12 }, () =>
           anotherAd('PHP backend '.repeat(18000)),
         ),
       )
-      await expect(enqueue(ids)).rejects.toThrow('2 MiB')
-      expect(
-        (await pool.query('SELECT count(*) FROM matching_groups')).rows[0]
-          .count,
-      ).toBe('0')
-      expect(
-        (await pool.query('SELECT count(*) FROM matching_requests')).rows[0]
-          .count,
-      ).toBe('0')
-      expect(
-        (await pool.query('SELECT count(*) FROM ai_attempts')).rows[0].count,
-      ).toBe('0')
-      expect(send).not.toHaveBeenCalled()
+      await expect(enqueue(ids)).rejects.toThrow('limit danych partii')
+      expect(await count('matching_requests')).toBe(0)
+      expect(await count('ai_executions')).toBe(0)
+      expect(await count('ai_attempts')).toBe(0)
+      expect(queue.send).not.toHaveBeenCalled()
     })
   },
 )

@@ -4,7 +4,9 @@ import { apiHandler, jsonBody, queueClient } from '../../utils/http'
 export default apiHandler(async (event) => {
   const body = await jsonBody(event)
   try {
-    return await enqueueMatchingGroup(await queueClient(), body)
+    // Connects the AI execution queue before the request.
+    await queueClient()
+    return await enqueueMatchingGroup(body)
   } catch (error) {
     if (error instanceof MatchingError)
       throw createError({

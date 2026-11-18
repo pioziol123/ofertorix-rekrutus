@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { createRequire } from 'node:module'
 import { Pool } from 'pg'
+import { z } from 'zod'
 import { closePool, setPool } from '../lib/db.ts'
-import type { PgBoss } from 'pg-boss'
 import {
   afterAll,
   beforeAll,
@@ -13,21 +12,29 @@ import {
   vi,
 } from 'vitest'
 import { emptyProfile } from '../lib/profile/model.ts'
-import { recoverExecutions, useAiQueue } from '../modules/ai/index.ts'
+import {
+  readExecution,
+  readExecutionHistory,
+  recoverExecutions,
+  registerResultReceiver,
+  useAiQueue,
+} from '../modules/ai/index.ts'
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import {
-  BatchClient,
-  type batchRequest,
-  type Batch,
-  type BatchLine,
-} from '../lib/matching/batch.ts'
-import {
-  enqueueMatching,
-  executeMatching,
-  readMatching,
-  recoverMatching,
-} from '../lib/matching/store.ts'
+  assessmentReceiver,
+  assessmentSettingsKey,
+} from '../modules/matching/index.ts'
+import { assessmentSchema, type MatchingInput } from '../lib/matching/model.ts'
+import { enqueueMatching, readMatching } from '../lib/matching/store.ts'
 import { usePricing } from './ai-test-configuration.ts'
+import {
+  migrate,
+  pricing,
+  recordingQueue,
+  responseBody,
+  SimulatedOpenAi,
+  unknownAssessment,
+} from './matching-ai.fixtures.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
 vi.mock(
@@ -42,26 +49,16 @@ vi.mock(
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
 integration(
-  'matching lifecycle in isolated PostgreSQL with no external API',
+  'single assessments through the AI contract in isolated PostgreSQL with no external API (0mq.21)',
   () => {
     const schema = `matching_test_${randomUUID().replaceAll('-', '')}`
     let admin: Pool,
       pool: Pool,
       ad: string,
       revision: string,
-      profileVersion: string
-    const pricing = {
-      model: 'test-only',
-      version: 'test',
-      inputUsdPerMillion: '1',
-      outputUsdPerMillion: '1',
-      usdPln: '1',
-      fxVersion: 'test',
-      maxInputTokens: 20000,
-      maxOutputTokens: 500,
-    }
-    const send = vi.fn(async () => randomUUID())
-    const boss = { send } as unknown as PgBoss
+      profileVersion: string,
+      openAi: SimulatedOpenAi
+    const queue = recordingQueue()
     beforeAll(async () => {
       admin = new Pool({ connectionString: process.env.DATABASE_URL })
       await admin.query(`CREATE SCHEMA ${schema}`)
@@ -69,36 +66,19 @@ integration(
         connectionString: process.env.DATABASE_URL,
         options: `-c search_path=${schema}`,
       })
-      const statements: string[] = []
-      for (const name of [
-        '1770000000000_setup',
-        '1770000000001_sources',
-        '1770000000004_profiles',
-        '1770000000006_matching',
-        '1770000000007_matching_payload',
-        '1770000000008_matching_groups',
-        '1770000000009_rating_revisions',
-        '1770000000013_local_ai',
-        '1770000000016_ai_execution_requests',
-        '1770000000017_profile_ai_executions',
-      ]) {
-        createRequire(import.meta.url)(`../migrations/${name}.cjs`).up({
-          sql: (s: string) => statements.push(s),
-        })
-      }
-      await pool.query(statements.join('\n'))
-      // Profile reads go through the shared accessor (T-03).
+      await migrate(pool)
       setPool(pool)
-      // CV proposals now recover through the AI coordination.
-      useAiQueue(boss)
+      useAiQueue(queue.boss)
+      registerResultReceiver(assessmentSettingsKey, assessmentReceiver)
     })
     beforeEach(async () => {
       vi.unstubAllEnvs()
       vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-      usePricing('matching', pricing, 'batch')
-      send.mockClear()
+      usePricing('matching', pricing, ['single', 'batch'])
+      openAi = new SimulatedOpenAi()
+      queue.reset()
       await pool.query(
-        'TRUNCATE matching_requests,matching_batches,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
+        'TRUNCATE matching_requests,matching_rating_heads,matching_rating_revisions,ai_executions,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
       )
       ad = randomUUID()
       revision = randomUUID()
@@ -146,336 +126,184 @@ integration(
         await admin.end()
       }
     })
-    class Provider extends BatchClient {
-      uploaded: ReturnType<typeof batchRequest>[] = []
-      uploads = 0
-      creates = 0
-      removed: string[] = []
-      status: Batch['status'] = 'completed'
-      refusal = false
-      missing = false
-      constructor() {
-        super('test', async () => {
-          throw new Error('No external calls allowed')
-        })
-      }
-      override async upload(lines: ReturnType<typeof batchRequest>[]) {
-        this.uploaded.push(...structuredClone(lines))
-        this.uploads++
-        return 'file_input'
-      }
-      override async create() {
-        this.creates++
-        return {
-          id: 'batch_test',
-          input_file_id: 'file_input',
-          status: 'in_progress',
-        } satisfies Batch
-      }
-      override async retrieve() {
-        return {
-          id: 'batch_test',
-          input_file_id: 'file_input',
-          output_file_id: 'file_output',
-          status: this.status,
-        } satisfies Batch
-      }
-      override async results(_batch: Batch, expected: string[]) {
-        if (this.missing) return new Map<string, BatchLine>()
-        const id = expected[0]!
-        const { input } = (
-          await pool.query('SELECT input FROM matching_requests WHERE id=$1', [
-            id,
-          ])
-        ).rows[0]
-        const assessment = {
-          summary: 'Brak danych',
-          strengths: [],
-          gaps: [],
-          criteria: input.criteria.map((c: { id: string }) => ({
-            id: c.id,
-            state: 'unknown',
-            score: null,
-            profileEvidence: null,
-            offerEvidence: null,
-            reason: 'Brak potwierdzenia',
-          })),
-        }
-        return new Map<string, BatchLine>([
-          [
-            id,
-            {
-              custom_id: id,
-              response: {
-                status_code: 200,
-                body: {
-                  id: 'resp_test',
-                  status: 'completed',
-                  usage: { input_tokens: 100, output_tokens: 20 },
-                  output: [
-                    {
-                      type: 'message',
-                      content: [
-                        {
-                          type: this.refusal ? 'refusal' : 'output_text',
-                          text: JSON.stringify(assessment),
-                        },
-                      ],
-                    },
-                  ],
-                },
-              },
-            },
-          ],
-        ])
-      }
-      override async remove(file: string) {
-        this.removed.push(file)
-      }
-    }
     const row = async (id: string) =>
       (await pool.query('SELECT * FROM matching_requests WHERE id=$1', [id]))
         .rows[0]
-    const attempt = async (id: string) =>
+    const latest = async (id: string) =>
+      (await readExecutionHistory(id)).at(-1)!
+    const revisions = async (id: string) =>
       (
         await pool.query(
-          'SELECT a.* FROM ai_attempts a JOIN matching_requests r ON r.attempt_id=a.id WHERE r.id=$1',
+          'SELECT count(*)::int AS n FROM matching_rating_revisions WHERE request_id=$1',
           [id],
         )
-      ).rows[0]
-    it('deduplicates concurrent enqueue and reserves one attempt with version snapshots', async () => {
+      ).rows[0].n
+
+    it('deduplicates concurrent requests of one offer into one single execution of the request (AM-AC01)', async () => {
       const [a, b] = await Promise.all([
-        enqueueMatching(boss, ad),
-        enqueueMatching(boss, ad),
+        enqueueMatching(ad),
+        enqueueMatching(ad),
       ])
       expect(a.id).toBe(b.id)
       expect([a.reused, b.reused].sort()).toEqual([false, true])
-      expect(send).toHaveBeenCalledOnce()
-      expect(await row(a.id)).toMatchObject({
-        state: 'queued',
+      expect(queue.executionJobs()).toHaveLength(1)
+      const stored = await row(a.id)
+      expect(stored).toMatchObject({
+        state: 'requested',
         profile_version_id: profileVersion,
         ad_revision_id: revision,
+        attempt_id: null,
+        request_payload: null,
       })
-      expect(await attempt(a.id)).toMatchObject({
-        state: 'queued',
-        operation_type: 'matching',
-      })
-    })
-    it('uploads the exact snapshotted provider body with prompt and schema versions despite configuration changes', async () => {
-      const request = await enqueueMatching(boss, ad)
-      const snapshot = await row(request.id)
-      expect(snapshot).toMatchObject({
-        prompt_version: 'matching-v1',
-        schema_version: 1,
-        request_payload: { model: 'test-only', max_output_tokens: 500 },
-      })
-      expect(snapshot.request_payload).not.toHaveProperty('Authorization')
-      usePricing(
-        'matching',
+      expect(await readExecutionHistory(a.id)).toMatchObject([
         {
-          ...pricing,
-          model: 'changed-model',
-          maxOutputTokens: 50,
-        },
-        'batch',
-      )
-      const provider = new Provider()
-      await executeMatching(boss, request.id, provider)
-      expect(provider.uploaded).toEqual([
-        {
-          custom_id: request.id,
-          method: 'POST',
-          url: '/v1/responses',
-          body: snapshot.request_payload,
+          id: stored.execution_id,
+          settingsKey: 'matching',
+          mode: 'single',
+          state: 'queued',
+          cost: { reserved: '0.020500', actual: null },
         },
       ])
-      expect((await row(request.id)).configuration).toEqual(pricing)
     })
-    it('settles usage, saves completed assessment, cleans files and preserves unknown rating', async () => {
-      const request = await enqueueMatching(boss, ad),
-        provider = new Provider()
-      await executeMatching(boss, request.id, provider)
+
+    it('sends the instruction, the schema and the input of the request (E03-AC01)', async () => {
+      const request = await enqueueMatching(ad)
+      const stored = await row(request.id)
+      await queue.work()
+      expect(openAi.singleCalls).toHaveLength(1)
+      const body = openAi.singleCalls[0]!
+      expect(body).toMatchObject({
+        model: 'test-only',
+        max_output_tokens: 500,
+        reasoning: { effort: 'low' },
+        instructions: expect.stringMatching(
+          /^Evaluate job fit in Polish using only supplied professional profile and offer/,
+        ),
+        text: {
+          format: {
+            name: 'offer_assessment',
+            schema: z.toJSONSchema(assessmentSchema),
+          },
+        },
+      })
+      expect(JSON.parse(body.input[0]!.content[0]!.text)).toEqual(stored.input)
+      expect(JSON.stringify(body)).not.toContain('never-send-test-key')
+    })
+
+    it('settles usage, publishes the assessment and shows its state and cost in the history (AM-AC01)', async () => {
+      const request = await enqueueMatching(ad)
+      await queue.work()
       expect(await row(request.id)).toMatchObject({
-        state: 'completed',
+        state: 'requested',
+        error: null,
         calculation: { rating: null, completeness: 0 },
       })
-      expect(await attempt(request.id)).toMatchObject({
-        state: 'settled',
-        actual_pln: '0.000120',
-        usage: { input_tokens: 100, output_tokens: 20 },
+      expect(await latest(request.id)).toMatchObject({
+        state: 'completed',
+        cost: { reserved: '0.020500', actual: '0.000120' },
+        usage: { inputTokens: 100, outputTokens: 20 },
       })
-      expect(provider.removed).toEqual(['file_input', 'file_output'])
-      expect((await readMatching(pool, ad)).history[0]).toMatchObject({
+      expect(await revisions(request.id)).toBe(1)
+      const view = await readMatching(pool, ad)
+      expect(view).toMatchObject({
+        configured: true,
+        maximumCostPln: '0.020500',
+        current: { request_id: request.id, stale: false },
+      })
+      expect(view.history[0]).toMatchObject({
+        id: request.id,
+        state: 'completed',
+        cost: { reserved: '0.020500', actual: '0.000120' },
         stale: false,
-        cleaned: true,
       })
-      await executeMatching(boss, request.id, provider)
-      expect(provider.uploads).toBe(1)
-      expect(provider.creates).toBe(1)
+      await queue.work()
+      expect(openAi.singleCalls).toHaveLength(1)
     })
-    it('funds, settles and publishes a request once when two runs of it overlap, without a session lock (0mq.18)', async () => {
-      const month = budgetMonth()
+
+    it('calls the provider and publishes once when the job of an execution runs twice at the same time (E03-AC04)', async () => {
+      const request = await enqueueMatching(ad)
+      const [job] = queue.executionJobs()
+      const { runExecution } = await import('../modules/ai/index.ts')
+      await Promise.all([runExecution(job!), runExecution(job!)])
+      expect(openAi.singleCalls).toHaveLength(1)
+      expect(await revisions(request.id)).toBe(1)
+      expect((await latest(request.id)).cost.actual).toBe('0.000120')
+    })
+
+    it('keeps the result when its delivery fails and publishes it once on the next delivery (E03-AC04)', async () => {
+      const request = await enqueueMatching(ad)
+      // The ad is gone from the Sources read for the first delivery.
       await pool.query(
-        'INSERT INTO ai_budget_months(month,limit_pln) VALUES($1,0)',
-        [month],
+        'UPDATE source_ads SET current_revision_id=NULL WHERE id=$1',
+        [ad],
       )
-      const request = await enqueueMatching(boss, ad),
-        provider = new Provider()
-      expect((await row(request.id)).state).toBe('waiting_budget')
-      await pool.query('UPDATE ai_budget_months SET limit_pln=1')
-      provider.status = 'in_progress'
-      // A run that reads the request after the other funded it may go on to
-      // send it; either way it is funded and sent once.
-      await Promise.all([
-        executeMatching(boss, request.id, provider),
-        executeMatching(boss, request.id, provider),
-      ])
-      expect(['queued', 'submitted']).toContain((await row(request.id)).state)
-      expect(
-        (
-          await pool.query(
-            "SELECT count(*)::int AS n FROM ai_attempts WHERE operation_type='matching'",
-          )
-        ).rows[0].n,
-      ).toBe(1)
-      expect(send).toHaveBeenCalledOnce()
-      await executeMatching(boss, request.id, provider)
-      expect((await row(request.id)).state).toBe('submitted')
-      provider.status = 'completed'
-      await Promise.all([
-        executeMatching(boss, request.id, provider),
-        executeMatching(boss, request.id, provider),
-      ])
-      expect(provider.uploads).toBe(1)
-      expect(provider.creates).toBe(1)
-      expect(await row(request.id)).toMatchObject({ state: 'completed' })
-      expect(await attempt(request.id)).toMatchObject({
-        state: 'settled',
-        actual_pln: '0.000120',
+      await expect(queue.work()).rejects.toThrow('Nie znaleziono oferty.')
+      expect(await latest(request.id)).toMatchObject({
+        state: 'delivering',
+        cost: { actual: null },
+        delivery: { attempts: 1 },
       })
-      expect(
-        (
-          await pool.query(
-            'SELECT count(*)::int AS n FROM matching_rating_revisions WHERE request_id=$1',
-            [request.id],
-          )
-        ).rows[0].n,
-      ).toBe(1)
+      expect(await revisions(request.id)).toBe(0)
+      await pool.query(
+        'UPDATE source_ads SET current_revision_id=$2 WHERE id=$1',
+        [ad, revision],
+      )
+      const { runExecution } = await import('../modules/ai/index.ts')
+      await runExecution((await latest(request.id)).id)
+      await runExecution((await latest(request.id)).id)
+      expect(await latest(request.id)).toMatchObject({
+        state: 'completed',
+        cost: { actual: '0.000120' },
+      })
+      expect(openAi.singleCalls).toHaveLength(1)
+      expect(await revisions(request.id)).toBe(1)
     })
-    it('publishes an AI result on the run’s own connection and accepts a profile confirmed during the download', async () => {
-      const request = await enqueueMatching(boss, ad)
-      // One connection only: the run holds it, so any read needing a second
-      // connection while it is held would time out.
-      const single = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        options: `-c search_path=${schema}`,
-        max: 1,
-        connectionTimeoutMillis: 2000,
-      })
+
+    it('publishes a result for the profile version the request recorded and shows it stale after a newer one is confirmed', async () => {
+      const request = await enqueueMatching(ad)
       const confirmed = randomUUID()
-      class ConfirmingProvider extends Provider {
-        override async results(batch: Batch, expected: string[]) {
-          // The owner confirms a new version while results are downloaded.
-          await pool.query(
-            'INSERT INTO profile_versions(id,number,data,command_id,draft_revision) VALUES($1,2,$2,$3,2)',
-            [confirmed, emptyProfile(), randomUUID()],
-          )
-          await pool.query('UPDATE profile_head SET active_version_id=$1', [
-            confirmed,
-          ])
-          return super.results(batch, expected)
-        }
-      }
-      setPool(single)
-      try {
-        await executeMatching(boss, request.id, new ConfirmingProvider())
-      } finally {
-        await single.end()
-        setPool(pool)
-      }
-      expect(await row(request.id)).toMatchObject({ state: 'completed' })
+      await pool.query(
+        'INSERT INTO profile_versions(id,number,data,command_id,draft_revision) VALUES($1,2,$2,$3,2)',
+        [confirmed, emptyProfile(), randomUUID()],
+      )
+      await pool.query('UPDATE profile_head SET active_version_id=$1', [
+        confirmed,
+      ])
+      await queue.work()
       const view = await readMatching(pool, ad)
       expect(view.current).toMatchObject({
         request_id: request.id,
         profile_number: 1,
         stale: true,
       })
-      expect(view.history[0]).toMatchObject({ stale: true })
+      expect(view.history[0]).toMatchObject({ state: 'completed', stale: true })
     })
-    it('persists a safe HTTP upload failure without resubmission or analysis cost', async () => {
-      const request = await enqueueMatching(boss, ad)
-      const fetcher = vi.fn(
-        async (_url: RequestInfo | URL, _init?: RequestInit) =>
-          new Response('never-send-test-key private CV provider body', {
-            status: 403,
-          }),
-      )
-      const provider = new BatchClient('never-send-test-key', fetcher)
-      await executeMatching(boss, request.id, provider)
+
+    it('settles paid usage on a refusal without publishing an assessment', async () => {
+      openAi.answer = (input) =>
+        responseBody(JSON.stringify(unknownAssessment(input)), {
+          type: 'refusal',
+        })
+      const request = await enqueueMatching(ad)
+      await queue.work()
       expect(await row(request.id)).toMatchObject({
-        state: 'failed',
+        result: null,
+        calculation: null,
         error:
-          'Nie udało się przesłać pliku Batch. Nie zlecono analizy. [Batch: http; HTTP 403]',
-        result: null,
-        calculation: null,
+          'Nie udało się potwierdzić wiarygodnej oceny. Poprzednie wyniki pozostały bez zmian. [Ocena: response_refusal]',
       })
-      expect(await attempt(request.id)).toMatchObject({
-        state: 'settled',
-        actual_pln: '0.000000',
-        usage: null,
-      })
-      send.mockClear()
-      await recoverMatching(pool, boss)
-      await executeMatching(boss, request.id, provider)
-      expect(fetcher).toHaveBeenCalledOnce()
-      expect(fetcher.mock.calls[0]![0]).toBe('https://api.openai.com/v1/files')
-    })
-    it.each(['uploading', 'submitting'])(
-      'leaves a request found in %s alone, without resubmitting it or settling its reservation, until oferty-pracy-0mq.15',
-      async (state) => {
-        const request = await enqueueMatching(boss, ad),
-          provider = new Provider()
-        await pool.query('UPDATE matching_requests SET state=$2 WHERE id=$1', [
-          request.id,
-          state,
-        ])
-        const reserved = await attempt(request.id)
-        await recoverMatching(pool, boss)
-        await executeMatching(boss, request.id, provider)
-        await executeMatching(boss, request.id, provider)
-        expect(provider.uploads + provider.creates).toBe(0)
-        expect(await row(request.id)).toMatchObject({ state, error: null })
-        expect(await attempt(request.id)).toEqual(reserved)
-      },
-    )
-    it('keeps submitted work retryable during polling without a second upload', async () => {
-      const request = await enqueueMatching(boss, ad),
-        provider = new Provider()
-      provider.status = 'in_progress'
-      await executeMatching(boss, request.id, provider)
-      expect((await row(request.id)).state).toBe('submitted')
-      await recoverMatching(pool, boss)
-      provider.status = 'completed'
-      await executeMatching(boss, request.id, provider)
-      expect((await row(request.id)).state).toBe('completed')
-      expect(provider.uploads).toBe(1)
-      expect(provider.creates).toBe(1)
-    })
-    it('settles paid usage on refusal without publishing an assessment', async () => {
-      const request = await enqueueMatching(boss, ad),
-        provider = new Provider()
-      provider.refusal = true
-      await executeMatching(boss, request.id, provider)
-      expect(await row(request.id)).toMatchObject({
+      expect(await latest(request.id)).toMatchObject({
         state: 'failed',
-        result: null,
-        calculation: null,
+        cause: 'refused',
+        cost: { actual: '0.000120' },
       })
-      expect(await attempt(request.id)).toMatchObject({
-        state: 'settled',
-        actual_pln: '0.000120',
+      expect(await revisions(request.id)).toBe(0)
+      expect((await readMatching(pool, ad)).history[0]).toMatchObject({
+        state: 'failed',
+        cost: { actual: '0.000120' },
       })
     })
+
     it.each([
       'schema',
       'criterion_mismatch',
@@ -487,16 +315,11 @@ integration(
       'unsupported_assessment',
       'profile_evidence_missing',
       'offer_evidence_missing',
-      'response_incomplete',
-      'response_refusal',
-      'response_text_count',
-      'response_json',
-      'response_format',
       'accepted',
     ])(
-      'retains safe %s diagnostic after files are cleaned and settles known usage',
+      'rejects an assessment Matching cannot confirm (%s) with a safe diagnostic and settles its cost (E03-AC01)',
       async (code) => {
-        const request = await enqueueMatching(boss, ad)
+        const request = await enqueueMatching(ad)
         await pool.query('UPDATE matching_requests SET input=$2 WHERE id=$1', [
           request.id,
           {
@@ -511,151 +334,91 @@ integration(
               },
             ],
             checks: [],
-          },
+          } satisfies MatchingInput,
         ])
-        class DiagnosticProvider extends Provider {
-          override async results(batch: Batch, expected: string[]) {
-            const lines = await super.results(batch, expected)
-            const line = lines.get(expected[0]!)!
-            const value = {
-              summary: 'Potwierdzone PHP',
-              strengths: [],
-              gaps: [],
-              criteria: [
-                {
-                  id: 'php',
-                  state: 'match',
-                  score: 100 as number | null,
-                  profileEvidence: 'PHP' as string | null,
-                  offerEvidence: 'PHP' as string | null,
-                  reason: 'PHP obecne w obu źródłach',
-                },
-              ],
-            }
-            const criterion = value.criteria[0]!
-            if (code === 'schema')
-              Object.assign(value, {
-                secretProviderField: 'provider private source secret',
-              })
-            if (code === 'criterion_mismatch') value.criteria = []
-            if (code === 'missing_criterion')
-              criterion.id = 'private forged identifier'
-            if (code === 'unknown_score') criterion.state = 'unknown'
-            if (code === 'rated_score_missing') criterion.score = null
-            if (code === 'rated_evidence_missing')
-              criterion.offerEvidence = null
-            if (code === 'unsupported_assessment') criterion.reason = '   '
-            if (code === 'profile_evidence_missing')
-              criterion.profileEvidence = 'private invented profile secret'
-            if (code === 'offer_evidence_missing')
-              criterion.offerEvidence = 'private invented offer secret'
-            const body = line.response!.body as {
-              status: string
-              usage: { input_tokens: number; output_tokens: number }
-              output: {
-                type: string
-                content: { type: string; text: string }[]
-              }[]
-            }
-            body.output[0]!.content[0]!.text = JSON.stringify(value)
-            if (code === 'response_incomplete') body.status = 'incomplete'
-            if (code === 'response_refusal')
-              body.output[0]!.content[0]!.type = 'refusal'
-            if (code === 'response_text_count')
-              body.output[0]!.content.push({ ...body.output[0]!.content[0]! })
-            if (code === 'response_json')
-              body.output[0]!.content[0]!.text =
-                'private provider invalid JSON secret'
-            if (code === 'response_format') body.usage.input_tokens = -1
-            return lines
-          }
-        }
-        const provider = new DiagnosticProvider()
-        await executeMatching(boss, request.id, provider)
-        const saved = await row(request.id)
-        expect(saved).toMatchObject(
-          code === 'accepted'
-            ? {
-                state: 'completed',
-                error: null,
-                result: { criteria: [{ id: 'php', score: 100 }] },
-                calculation: { rating: 100, completeness: 40 },
-              }
-            : {
-                state: 'failed',
-                result: null,
-                calculation: null,
-                error: `Nie udało się potwierdzić wiarygodnej oceny. Poprzednie wyniki pozostały bez zmian. [Ocena: ${code}]`,
+        openAi.answer = () => {
+          const value = {
+            summary: 'Potwierdzone PHP',
+            strengths: [],
+            gaps: [],
+            criteria: [
+              {
+                id: 'php',
+                state: 'match',
+                score: 100 as number | null,
+                profileEvidence: 'PHP' as string | null,
+                offerEvidence: 'PHP' as string | null,
+                reason: 'PHP obecne w obu źródłach',
               },
-        )
+            ],
+          }
+          const criterion = value.criteria[0]!
+          if (code === 'schema') criterion.score = 101
+          if (code === 'criterion_mismatch') value.criteria = []
+          if (code === 'missing_criterion')
+            criterion.id = 'private forged identifier'
+          if (code === 'unknown_score') criterion.state = 'unknown'
+          if (code === 'rated_score_missing') criterion.score = null
+          if (code === 'rated_evidence_missing') criterion.offerEvidence = null
+          if (code === 'unsupported_assessment') criterion.reason = '   '
+          if (code === 'profile_evidence_missing')
+            criterion.profileEvidence = 'private invented profile secret'
+          if (code === 'offer_evidence_missing')
+            criterion.offerEvidence = 'private invented offer secret'
+          return responseBody(JSON.stringify(value))
+        }
+        await queue.work()
+        const saved = await row(request.id)
+        const execution = await latest(request.id)
+        if (code === 'accepted') {
+          expect(saved).toMatchObject({
+            error: null,
+            result: { criteria: [{ id: 'php', score: 100 }] },
+            calculation: { rating: 100, completeness: 40 },
+          })
+          expect(execution.state).toBe('completed')
+        } else if (code === 'schema') {
+          // AI passes on only a result that matches the response schema.
+          expect(saved).toMatchObject({
+            result: null,
+            error:
+              'Nie udało się potwierdzić wiarygodnej oceny. Poprzednie wyniki pozostały bez zmian. [Ocena: response_json]',
+          })
+          expect(execution).toMatchObject({ state: 'failed', cause: 'format' })
+        } else {
+          expect(saved).toMatchObject({
+            result: null,
+            calculation: null,
+            error: `Nie udało się potwierdzić wiarygodnej oceny. Poprzednie wyniki pozostały bez zmian. [Ocena: ${code}]`,
+          })
+          expect(execution).toMatchObject({
+            state: 'rejected',
+            rejectionReason: code,
+          })
+        }
         expect(saved.error ?? '').not.toMatch(
           /private|secret|provider|forged|Zod/,
         )
-        expect(await attempt(request.id)).toMatchObject(
-          code === 'response_format'
-            ? {
-                state: 'unknown',
-                actual_pln: null,
-                usage: null,
-              }
-            : {
-                state: 'settled',
-                actual_pln: '0.000120',
-                usage: { input_tokens: 100, output_tokens: 20 },
-                response_id: 'resp_test',
-              },
-        )
-        expect(provider.removed).toEqual(['file_input', 'file_output'])
+        expect(execution.cost.actual).toBe('0.000120')
         expect((await readMatching(pool, ad)).history[0]!.error).toBe(
           saved.error,
         )
       },
     )
-    it('retains unknown cost if completed batch has no result rather than charging zero', async () => {
-      const request = await enqueueMatching(boss, ad),
-        provider = new Provider()
-      provider.missing = true
-      await executeMatching(boss, request.id, provider)
-      expect((await row(request.id)).state).toBe('failed')
-      expect(await attempt(request.id)).toMatchObject({
-        state: 'unknown',
-        actual_pln: null,
-      })
-    })
-    it('marks history stale after either active profile or source revision changes', async () => {
-      const request = await enqueueMatching(boss, ad)
-      await executeMatching(boss, request.id, new Provider())
-      const next = randomUUID()
-      await pool.query(
-        "INSERT INTO source_ad_revisions(id,source_ad_id,content_hash,payload) VALUES($1,$2,'changed','{}')",
-        [next, ad],
-      )
-      await pool.query(
-        'UPDATE source_ads SET current_revision_id=$2 WHERE id=$1',
-        [ad, next],
-      )
-      expect((await readMatching(pool, ad)).history[0].stale).toBe(true)
-      await pool.query(
-        'UPDATE source_ads SET current_revision_id=$2 WHERE id=$1',
-        [ad, revision],
-      )
+
+    it('rejects a missing active profile or configuration before reserving or queueing', async () => {
       await pool.query('UPDATE profile_head SET active_version_id=NULL')
-      expect((await readMatching(pool, ad)).history[0].stale).toBe(true)
-      expect((await row(request.id)).result).not.toBeNull()
-    })
-    it('rejects missing active profile or pricing before queueing or reserving', async () => {
-      await pool.query('UPDATE profile_head SET active_version_id=NULL')
-      await expect(enqueueMatching(boss, ad)).rejects.toThrow(
-        'zatwierdź profil',
-      )
+      await expect(enqueueMatching(ad)).rejects.toThrow('zatwierdź profil')
       usePricing('matching', null)
-      await expect(enqueueMatching(boss, ad)).rejects.toThrow('cennik Batch')
-      expect(send).not.toHaveBeenCalled()
+      await expect(enqueueMatching(ad)).rejects.toThrow('cennik')
+      expect(queue.send).not.toHaveBeenCalled()
       expect(
-        (await pool.query('SELECT count(*) FROM ai_attempts')).rows[0].count,
-      ).toBe('0')
+        (await pool.query('SELECT count(*)::int AS n FROM ai_attempts')).rows[0]
+          .n,
+      ).toBe(0)
     })
-    it('excludes a confirmed required workmode conflict without reserving money or calling provider', async () => {
+
+    it('excludes a confirmed required work mode conflict without requesting AI work', async () => {
       const data = emptyProfile()
       data.expectations.workMode = {
         state: 'specified',
@@ -670,82 +433,78 @@ integration(
         'UPDATE source_ad_revisions SET payload=payload || \'{"isRemote":false,"isHybrid":false}\'::jsonb WHERE id=$1',
         [revision],
       )
-      const request = await enqueueMatching(boss, ad)
-      expect((await row(request.id)).state).toBe('excluded')
-      expect(
-        (await pool.query('SELECT count(*) FROM ai_attempts')).rows[0].count,
-      ).toBe('0')
-      expect(send).not.toHaveBeenCalled()
+      const request = await enqueueMatching(ad)
+      expect(request.state).toBe('excluded')
+      expect(await row(request.id)).toMatchObject({
+        state: 'excluded',
+        execution_id: null,
+      })
+      expect(await readExecutionHistory(request.id)).toEqual([])
+      expect(queue.send).not.toHaveBeenCalled()
+      expect((await readMatching(pool, ad)).history[0]).toMatchObject({
+        state: 'excluded',
+        cost: null,
+      })
     })
-    it('preserves a previous successful result when a later refusal is settled', async () => {
-      const first = await enqueueMatching(boss, ad)
-      await executeMatching(boss, first.id, new Provider())
-      const second = await enqueueMatching(boss, ad),
-        provider = new Provider()
-      provider.refusal = true
-      // Each real submission receives a distinct provider batch ID.
-      provider.create = async () => ({
-        id: 'batch_second',
-        input_file_id: 'file_input',
-        status: 'in_progress',
-      })
-      provider.retrieve = async () => ({
-        id: 'batch_second',
-        input_file_id: 'file_input',
-        output_file_id: 'file_output',
-        status: 'completed',
-      })
-      await executeMatching(boss, second.id, provider)
-      const history = (await readMatching(pool, ad)).history
-      expect(history).toHaveLength(2)
-      expect(history.find((r) => r.id === first.id)).toMatchObject({
+
+    it('keeps an earlier published assessment when a later one is refused', async () => {
+      const first = await enqueueMatching(ad)
+      await queue.work()
+      openAi.answer = (input) =>
+        responseBody(JSON.stringify(unknownAssessment(input)), {
+          type: 'refusal',
+        })
+      const second = await enqueueMatching(ad)
+      expect(second.id).not.toBe(first.id)
+      await queue.work()
+      const view = await readMatching(pool, ad)
+      expect(view.history).toHaveLength(2)
+      expect(view.history.find((r) => r.id === first.id)).toMatchObject({
         state: 'completed',
         result: expect.objectContaining({ criteria: expect.any(Array) }),
       })
-      expect(history.find((r) => r.id === second.id)).toMatchObject({
+      expect(view.history.find((r) => r.id === second.id)).toMatchObject({
         state: 'failed',
         result: null,
       })
+      expect(view.current).toMatchObject({ request_id: first.id })
     })
-    it('does not let CV recovery claim matching ledger attempts in any pending state', async () => {
-      const request = await enqueueMatching(boss, ad)
-      for (const state of ['queued', 'running', 'waiting_budget']) {
-        await pool.query(
-          'UPDATE ai_attempts SET state=$2 WHERE id=(SELECT attempt_id FROM matching_requests WHERE id=$1)',
-          [request.id, state],
-        )
-        send.mockClear()
-        await recoverExecutions()
-        expect((await attempt(request.id)).state).toBe(state)
-        expect(send).not.toHaveBeenCalled()
-      }
+
+    it('shares the budget with other AI work and is funded when room returns', async () => {
+      await pool.query(
+        'INSERT INTO ai_budget_months(month,limit_pln) VALUES($1,0)',
+        [budgetMonth()],
+      )
+      const request = await enqueueMatching(ad)
+      expect(request.state).toBe('waiting_budget')
+      expect((await readMatching(pool, ad)).history[0]!.state).toBe(
+        'waiting_budget',
+      )
+      expect(queue.executionJobs()).toEqual([])
+      // A second request of the offer meets the waiting one.
+      expect(await enqueueMatching(ad)).toMatchObject({
+        id: request.id,
+        reused: true,
+      })
+      await pool.query('UPDATE ai_budget_months SET limit_pln=1')
+      await recoverExecutions()
+      expect((await latest(request.id)).state).toBe('queued')
+      await queue.work()
+      expect((await latest(request.id)).state).toBe('completed')
     })
-    it('shares the budget with pending CV reservations and resumes when room returns', async () => {
-      const month = budgetMonth(),
-        imported = randomUUID(),
-        reservation = randomUUID()
-      await pool.query(
-        'INSERT INTO ai_budget_months(month,limit_pln) VALUES($1,1)',
-        [month],
-      )
-      await pool.query(
-        "INSERT INTO profile_imports(id,kind,status) VALUES($1,'text','ready')",
-        [imported],
-      )
-      await pool.query(
-        "INSERT INTO ai_attempts(id,import_id,text_revision,month,attempt,generation,state,reserved_pln,configuration) VALUES($1,$2,1,$3,1,$4,'running',1,$5)",
-        [reservation, imported, month, randomUUID(), pricing],
-      )
-      const request = await enqueueMatching(boss, ad)
-      expect((await row(request.id)).state).toBe('waiting_budget')
-      expect(send).not.toHaveBeenCalled()
-      await pool.query(
-        "UPDATE ai_attempts SET state='settled',actual_pln=0 WHERE id=$1",
-        [reservation],
-      )
-      await executeMatching(boss, request.id, new Provider())
-      expect((await row(request.id)).state).toBe('queued')
-      expect(send).toHaveBeenCalledOnce()
+
+    it('ends a response without usage as published with its cost unknown and reserved', async () => {
+      openAi.answer = (input) => ({
+        ...responseBody(JSON.stringify(unknownAssessment(input))),
+        usage: null,
+      })
+      const request = await enqueueMatching(ad)
+      await queue.work()
+      const execution = await readExecution((await latest(request.id)).id)
+      expect(execution).toMatchObject({
+        state: 'completed',
+        cost: { reserved: '0.020500', actual: null },
+      })
     })
   },
 )

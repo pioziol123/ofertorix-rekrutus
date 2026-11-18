@@ -2,7 +2,6 @@ import { matchingListStatus } from '../../../lib/matching/list'
 import { listOffers, parseFilters } from '../../../modules/offers'
 import { readSourceCatalog, readSyncState } from '../../../modules/sources'
 import { source as solidJobs } from '../../../lib/sources/solid'
-import { database } from '../../utils/database'
 export default defineEventHandler(async (event) => {
   let filters
   try {
@@ -14,7 +13,7 @@ export default defineEventHandler(async (event) => {
     listOffers(filters),
     readSyncState({ source: solidJobs, scope: {} }),
     readSourceCatalog(),
-    matchingListStatus(database),
+    matchingListStatus(),
   ])
   return {
     ...list,

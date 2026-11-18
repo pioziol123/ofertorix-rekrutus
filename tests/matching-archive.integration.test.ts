@@ -1,14 +1,22 @@
 import { randomUUID, createHash } from 'node:crypto'
-import { createRequire } from 'node:module'
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { batchArchive, readBatchArchive } from '../lib/matching/archive.ts'
+import { closePool, setPool } from '../lib/db.ts'
+import { readBatchArchive } from '../lib/matching/archive.ts'
+import { archiveArtifact } from '../modules/ai/infrastructure/persistence/batch-archive.ts'
+import { emptyProfile } from '../lib/profile/model.ts'
+import { migrate } from './matching-ai.fixtures.ts'
 
+/**
+ * The batch archive passed to AI ownership (0mq.21): the batch adapter
+ * keeps the artefacts under the batch's group, and the archive view of a
+ * request reads them through the AI read of its execution.
+ */
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
 integration('full batch artifacts in isolated PostgreSQL', () => {
   const schema = `matching_archive_test_${randomUUID().replaceAll('-', '')}`
-  let admin: Pool, pool: Pool
+  let admin: Pool, pool: Pool, ad: string, revision: string, profile: string
   beforeAll(async () => {
     admin = new Pool({ connectionString: process.env.DATABASE_URL })
     await admin.query(`CREATE SCHEMA ${schema}`)
@@ -16,41 +24,105 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
       connectionString: process.env.DATABASE_URL,
       options: `-c search_path=${schema}`,
     })
-    await pool.query(
-      'CREATE TABLE matching_requests(id uuid PRIMARY KEY,group_id uuid,request_payload jsonb)',
-    )
-    const sql: string[] = []
-    createRequire(import.meta.url)(
-      '../migrations/1770000000012_matching_batch_archives.cjs',
-    ).up({ sql: (s: string) => sql.push(s) })
-    await pool.query(sql.join('\n'))
+    await migrate(pool)
+    setPool(pool)
   })
   beforeEach(async () => {
-    await pool.query('TRUNCATE matching_batch_artifacts,matching_requests')
+    await pool.query(
+      'TRUNCATE matching_batch_artifacts,matching_requests,matching_groups,ai_executions,ai_attempts,profile_head,profile_versions,source_ads,source_scopes CASCADE',
+    )
+    ad = randomUUID()
+    revision = randomUUID()
+    profile = randomUUID()
+    const scope = randomUUID()
+    await pool.query(
+      "INSERT INTO source_scopes(id,source,fingerprint,parameters) VALUES($1,'solid',$2,'{}')",
+      [scope, randomUUID()],
+    )
+    await pool.query(
+      "INSERT INTO source_ads(id,source,external_id,last_seen_scope_id) VALUES($1,'solid',$2,$3)",
+      [ad, randomUUID(), scope],
+    )
+    await pool.query(
+      "INSERT INTO source_ad_revisions(id,source_ad_id,content_hash,payload) VALUES($1,$2,'test','{}')",
+      [revision, ad],
+    )
+    await pool.query(
+      'INSERT INTO profile_versions(id,number,data,command_id,draft_revision) VALUES($1,1,$2,$3,1)',
+      [profile, emptyProfile(), randomUUID()],
+    )
   })
   afterAll(async () => {
-    await pool?.end()
+    await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
       await admin.end()
     }
   })
+  /** A request with an execution sent in the batch of the given group. */
+  async function request(
+    id: string,
+    options: {
+      group?: string | null
+      oldGroup?: string
+      payload?: unknown
+      excluded?: boolean
+    } = {},
+  ) {
+    await pool.query(
+      `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state,group_id,request_payload)
+       VALUES($1,$2,$3,$4,'{}','{}',$5,$6,$7)`,
+      [
+        id,
+        ad,
+        revision,
+        profile,
+        options.excluded ? 'excluded' : 'requested',
+        options.oldGroup ?? null,
+        options.payload ?? null,
+      ],
+    )
+    if (options.excluded) return
+    const execution = randomUUID()
+    await pool.query(
+      `INSERT INTO ai_executions(id,settings_key,operation_id,configuration,publication_token,state,mode,group_id)
+       VALUES($1,'matching',$2,'{}',$3,'completed',$4,$5)`,
+      [
+        execution,
+        id,
+        randomUUID(),
+        options.group === null ? 'single' : 'batch',
+        options.group === null ? null : (options.group ?? id),
+      ],
+    )
+    await pool.query(
+      `INSERT INTO ai_attempts(id,import_id,text_revision,attempt,generation,operation_type,state,reserved_pln,actual_pln,configuration,execution_id)
+       VALUES($1,NULL,0,1,$2,'execution','settled',0,0,'{}',$1)`,
+      [execution, randomUUID()],
+    )
+  }
+  const keep =
+    (archiveId: string) => (kind: string, key: string, content: string) =>
+      archiveArtifact(
+        archiveId,
+        kind as 'input' | 'output' | 'error' | 'metadata',
+        key,
+        content,
+      )
+
   it('preserves exact content, deduplicates repeats and keeps changing metadata versions', async () => {
     const id = randomUUID()
-    await pool.query(
-      'INSERT INTO matching_requests(id,request_payload) VALUES($1,$2)',
-      [id, { model: 'original' }],
-    )
-    const keep = batchArchive(pool, id),
+    await request(id, { payload: { model: 'original' } })
+    const archive = keep(id),
       input = ' { "input": "żółć" }\n\n'
     await Promise.all([
-      keep('input', 'request', input),
-      keep('input', 'request', input),
+      archive('input', 'request', input),
+      archive('input', 'request', input),
     ])
-    await keep('metadata', 'batch_test', '{"status":"in_progress"}')
-    await keep('metadata', 'batch_test', '{"status":"completed"}')
-    await keep('output', 'file_output', 'malformed output\n')
-    await keep('error', 'file_error', 'raw error\n')
+    await archive('metadata', 'batch_test', '{"status":"in_progress"}')
+    await archive('metadata', 'batch_test', '{"status":"completed"}')
+    await archive('output', 'file_output', 'malformed output\n')
+    await archive('error', 'file_error', 'raw error\n')
     const result = await readBatchArchive(pool, id)
     expect(result).toMatchObject({ operationId: id, reconstructedInput: null })
     expect(result!.artifacts).toHaveLength(5)
@@ -68,16 +140,15 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
       'raw error\n',
     )
   })
-  it('resolves all members to the same complete group archive', async () => {
+
+  it('resolves all items of a batch to the same complete group archive', async () => {
     const group = randomUUID(),
       a = randomUUID(),
       b = randomUUID()
-    await pool.query(
-      'INSERT INTO matching_requests(id,group_id,request_payload) VALUES($1,$3,$4),($2,$3,$4)',
-      [a, b, group, { model: 'test' }],
-    )
-    await batchArchive(pool, group)('input', 'request', 'exact whole group\n')
-    await batchArchive(pool, group)('output', 'file_output', 'all results\n')
+    await request(a, { group })
+    await request(b, { group })
+    await keep(group)('input', 'request', 'exact whole group\n')
+    await keep(group)('output', 'file_output', 'all results\n')
     const first = await readBatchArchive(pool, a),
       second = await readBatchArchive(pool, b)
     expect(first).toEqual(second)
@@ -88,6 +159,7 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
     expect(first!.artifacts).toHaveLength(2)
     expect(await readBatchArchive(pool, randomUUID())).toBeNull()
   })
+
   it('clearly marks reconstructed old inputs and never invents missing output', async () => {
     const group = randomUUID(),
       a = randomUUID(),
@@ -98,14 +170,15 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
       instructions: 'safe saved payload',
       input: [],
     }
+    // Requests sent before the archive kept inputs, in an old group and
+    // as a single batch, linked to their back-filled executions.
     await pool.query(
-      'INSERT INTO matching_requests(id,group_id,request_payload) VALUES($1,$3,$4),($2,$3,$4)',
-      [a, b, group, body],
+      "INSERT INTO matching_groups(id,command_id,ad_ids,state,configuration) VALUES($1,$2,$3,'completed','{}')",
+      [group, randomUUID(), [ad]],
     )
-    await pool.query(
-      'INSERT INTO matching_requests(id,request_payload) VALUES($1,$2)',
-      [single, body],
-    )
+    await request(a, { group, oldGroup: group, payload: body })
+    await request(b, { group, oldGroup: group, payload: body })
+    await request(single, { payload: body })
     const result = await readBatchArchive(pool, a)
     expect(result!.artifacts).toEqual([])
     expect(result!.reconstructedInput!.endsWith('\n')).toBe(true)
@@ -115,14 +188,12 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
         .split('\n')
         .map((l) => JSON.parse(l)),
     ).toEqual(
-      [a, b]
-        .sort()
-        .map((id) => ({
-          custom_id: id,
-          method: 'POST',
-          url: '/v1/responses',
-          body,
-        })),
+      [a, b].sort().map((id) => ({
+        custom_id: id,
+        method: 'POST',
+        url: '/v1/responses',
+        body,
+      })),
     )
     const one = await readBatchArchive(pool, single)
     expect(one!.operationId).toBe(single)
@@ -132,11 +203,15 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
       url: '/v1/responses',
       body,
     })
-    const missing = randomUUID()
-    await pool.query('INSERT INTO matching_requests(id) VALUES($1)', [missing])
-    expect(await readBatchArchive(pool, missing)).toMatchObject({
-      artifacts: [],
-      reconstructedInput: null,
-    })
+    // A single execution and an excluded request have no batch archive.
+    const direct = randomUUID(),
+      excluded = randomUUID()
+    await request(direct, { group: null })
+    await request(excluded, { excluded: true })
+    for (const id of [direct, excluded])
+      expect(await readBatchArchive(pool, id)).toMatchObject({
+        artifacts: [],
+        reconstructedInput: null,
+      })
   })
 })
