@@ -7,6 +7,7 @@ import {
   batchLine,
   itemOutcome,
   openAiBatch,
+  reconstructBatchInput,
   terminal,
   type Batch,
   type BatchArchive,
@@ -572,5 +573,26 @@ describe('complete local batch archive', () => {
     await expect(client.results(batch, ['offer_1'])).rejects.toMatchObject({
       code: 'archive',
     })
+  })
+})
+
+describe('the input of a batch sent before the archive kept inputs (0mq.21 ASM-8)', () => {
+  it('is rebuilt from the saved bodies with the framing of every batch line, one line each', () => {
+    const sent = batchRequest('offer_1')
+    const rebuilt = reconstructBatchInput([
+      { itemId: 'offer_1', body: sent.body },
+      { itemId: 'offer_2', body: { model: 'old' } },
+    ])
+    expect(rebuilt).toBe(
+      JSON.stringify(sent) +
+        '\n' +
+        JSON.stringify({
+          custom_id: 'offer_2',
+          method: 'POST',
+          url: '/v1/responses',
+          body: { model: 'old' },
+        }) +
+        '\n',
+    )
   })
 })

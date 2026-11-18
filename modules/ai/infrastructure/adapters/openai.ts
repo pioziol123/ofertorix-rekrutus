@@ -1,5 +1,9 @@
 import { ModelError } from '../../provider-adapter.ts'
-import { BatchClient, openAiBatch } from './openai-batch.ts'
+import {
+  BatchClient,
+  openAiBatch,
+  reconstructBatchInput,
+} from './openai-batch.ts'
 import { record, tokenCount, validateRequest } from './response.ts'
 import type {
   ModelRequest,
@@ -263,6 +267,9 @@ export function openAiProvider(
           reasoningEffort: settings.reasoningEffort,
         }),
       ),
+    // ASSUMPTION(oferty-pracy-0mq.21/ASM-8): old batch inputs are framed
+    // by the batch mode that frames every batch line.
+    reconstructBatchInput,
     endOf: openAiEnd,
   }
 }

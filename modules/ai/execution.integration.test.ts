@@ -706,6 +706,7 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(await readExecutionArchive(notKept.executionId)).toEqual({
       archiveId: notKept.executionId,
       artifacts: [],
+      reconstructedInput: null,
     })
   })
 

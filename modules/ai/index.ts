@@ -25,6 +25,9 @@ export {
   readLatestExecutions,
   type AiExecution,
 } from './read-execution.ts'
+// ASSUMPTION(oferty-pracy-0mq.21/ASM-8): the saved bodies a client gives the
+// archive read.
+export type { SavedBatchBody } from './provider-adapter.ts'
 export {
   executionCauses,
   executionStates,
@@ -57,9 +60,8 @@ export {
 export { runExecution } from './run-execution.ts'
 export { recoverExecutions } from './recover-executions.ts'
 
-// Transitional: what Matching and Companies use today, until task
-// oferty-pracy-0mq.17 moves them to the contract above and removes these
-// exports.
+// Transitional: what Companies uses today, until task oferty-pracy-0mq.22
+// moves it to the contract above and removes these exports.
 export { aiConfiguration, type AiConfiguration } from './configuration.ts'
 export { chargeCeiling } from './domain/cost.ts'
 export { reserve } from './infrastructure/persistence/budget.ts'

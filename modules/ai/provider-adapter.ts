@@ -126,6 +126,13 @@ export type RequestContext = {
 export type BatchItem = { itemId: string; request: ModelRequest }
 
 /**
+ * A request body a client saved before AI archived batch inputs, with the
+ * item id it was sent under.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-8)
+ */
+export type SavedBatchBody = { itemId: string; body: unknown }
+
+/**
  * What a batch delivered for one item: a response the coordination reads
  * like that of a single call, or an end the adapter decided, with the usage
  * it knows. `notCharged` says the provider charges nothing for the item.
@@ -218,6 +225,9 @@ export type BatchRunner = {
  *   sends for a request, so the input cap is checked on what the provider
  *   receives, as the batch mode's `admit` checks its exact batch line
  *   (ASSUMPTION(oferty-pracy-0mq.21/ASM-5)).
+ * - `reconstructBatchInput`: the batch input file rebuilt from request
+ *   bodies saved before the archive kept inputs, framed as the batch mode
+ *   frames its lines (ASSUMPTION(oferty-pracy-0mq.21/ASM-8)).
  */
 export type ProviderAdapter = {
   provider: string
@@ -236,4 +246,5 @@ export type ProviderAdapter = {
     settings: ProviderSettings,
     request: ModelRequest,
   ) => number
+  reconstructBatchInput?: (bodies: SavedBatchBody[]) => string
 }

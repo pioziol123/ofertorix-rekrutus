@@ -10,9 +10,11 @@ import {
   readLatestExecutionRow,
   readOperationExecutionRows,
   type ExecutionRow,
+  type ExecutionSnapshot,
 } from './infrastructure/persistence/executions.ts'
+import { providerAdapter, providerBeforeSettings } from './provider-registry.ts'
 import type { ExecutionMode } from './execution-settings.ts'
-import type { ModelUsage } from './provider-adapter.ts'
+import type { ModelUsage, SavedBatchBody } from './provider-adapter.ts'
 
 /**
  * The public read of an execution. Its state and cause are values of the
@@ -130,8 +132,15 @@ export async function countActiveExecutions(
  * single-mode execution whose client asked for it, the exact request body
  * and raw response, kept under the execution. Empty when nothing was kept;
  * null for an unknown execution.
+ * When a batch kept no input, `savedBodies` may give the request bodies
+ * its client saved before the archive kept inputs; the provider's adapter
+ * then rebuilds the input file from them as `reconstructedInput`, which
+ * is never the original upload. ASSUMPTION(oferty-pracy-0mq.21/ASM-8)
  */
-export async function readExecutionArchive(executionId: string): Promise<{
+export async function readExecutionArchive(
+  executionId: string,
+  savedBodies?: (archiveId: string) => Promise<SavedBatchBody[]>,
+): Promise<{
   archiveId: string
   artifacts: {
     kind: 'input' | 'output' | 'error' | 'metadata'
@@ -140,9 +149,20 @@ export async function readExecutionArchive(executionId: string): Promise<{
     content: string
     created_at: Date
   }[]
+  reconstructedInput: string | null
 } | null> {
   const row = await readExecutionRow(executionId)
   if (!row) return null
   const archiveId = row.mode === 'batch' && row.groupId ? row.groupId : row.id
-  return { archiveId, artifacts: await readArchiveArtifacts(archiveId) }
+  const artifacts = await readArchiveArtifacts(archiveId)
+  let reconstructedInput: string | null = null
+  if (savedBodies && !artifacts.some((a) => a.kind === 'input')) {
+    const bodies = await savedBodies(archiveId)
+    const provider =
+      (row.snapshot as Partial<ExecutionSnapshot>).settings?.provider ??
+      providerBeforeSettings
+    const reconstruct = providerAdapter(provider)?.reconstructBatchInput
+    if (bodies.length && reconstruct) reconstructedInput = reconstruct(bodies)
+  }
+  return { archiveId, artifacts, reconstructedInput }
 }

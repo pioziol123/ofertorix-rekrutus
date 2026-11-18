@@ -17,30 +17,21 @@ export async function readBatchArchive(requestId: string) {
   if (!(await requestExists(requestId))) return null
   const execution = await readLatestExecution(requestId)
   // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the public archive read.
-  const archive = execution ? await readExecutionArchive(execution.id) : null
-  const operationId = archive?.archiveId ?? requestId
-  const artifacts = archive?.artifacts ?? []
-  // Inputs of requests sent before the archive kept them can be
-  // reconstructed from the immutable payloads those requests saved.
-  // Explicitly distinguish this from a byte-for-byte archived upload.
-  // ASSUMPTION(oferty-pracy-0mq.21/ASM-8): the framing of the old batch
-  // lines stays here, on Matching's read-only legacy payloads, which AI
-  // may not read.
-  let reconstructedInput: string | null = null
-  if (!artifacts.some((a) => a.kind === 'input')) {
-    const rows = await legacyPayloads(operationId)
-    if (rows.length)
-      reconstructedInput =
-        rows
-          .map((row) =>
-            JSON.stringify({
-              custom_id: row.id,
-              method: 'POST',
-              url: '/v1/responses',
-              body: row.request_payload,
-            }),
-          )
-          .join('\n') + '\n'
+  // ASSUMPTION(oferty-pracy-0mq.21/ASM-8): inputs of requests sent before
+  // the archive kept them are rebuilt by AI from the immutable payloads
+  // those requests saved, which only Matching reads; AI marks them as
+  // reconstructed, never as the original upload.
+  const archive = execution
+    ? await readExecutionArchive(execution.id, async (archiveId) =>
+        (await legacyPayloads(archiveId)).map((row) => ({
+          itemId: row.id,
+          body: row.request_payload,
+        })),
+      )
+    : null
+  return {
+    operationId: archive?.archiveId ?? requestId,
+    artifacts: archive?.artifacts ?? [],
+    reconstructedInput: archive?.reconstructedInput ?? null,
   }
-  return { operationId, artifacts, reconstructedInput }
 }

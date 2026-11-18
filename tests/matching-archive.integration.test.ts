@@ -197,6 +197,22 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
     )
     const one = await readBatchArchive(single)
     expect(one!.operationId).toBe(single)
+    // Byte for byte the line the former batch path rebuilt from the saved
+    // payload, in the key order PostgreSQL returns it.
+    const saved = (
+      await pool.query(
+        'SELECT request_payload FROM matching_requests WHERE id=$1',
+        [single],
+      )
+    ).rows[0].request_payload
+    expect(one!.reconstructedInput).toBe(
+      JSON.stringify({
+        custom_id: single,
+        method: 'POST',
+        url: '/v1/responses',
+        body: saved,
+      }) + '\n',
+    )
     expect(JSON.parse(one!.reconstructedInput!)).toEqual({
       custom_id: single,
       method: 'POST',

@@ -6,6 +6,7 @@ import {
   ModelError,
   type BatchContext,
   type BatchItem,
+  type SavedBatchBody,
   type BatchItemOutcome,
   type BatchRunner,
   type BatchStep,
@@ -63,6 +64,14 @@ export type BatchRequestLine = {
   body: Record<string, unknown>
 }
 
+/** The framing of a batch line around the body of a Responses API request. */
+function frame(
+  itemId: string,
+  body: BatchRequestLine['body'],
+): BatchRequestLine {
+  return { custom_id: itemId, method: 'POST', url: '/v1/responses', body }
+}
+
 /** The batch line of one item, with the body of a Responses API request. */
 export function batchLine(
   settings: ProviderSettings,
@@ -70,35 +79,30 @@ export function batchLine(
 ): BatchRequestLine {
   identifier.parse(item.itemId)
   const request: ModelRequest = item.request
-  return {
-    custom_id: item.itemId,
-    method: 'POST',
-    url: '/v1/responses',
-    body: {
-      model: request.model,
-      store: false,
-      tools: [],
-      max_output_tokens: settings.maxOutputTokens,
-      ...(settings.reasoningEffort === null
-        ? {}
-        : { reasoning: { effort: settings.reasoningEffort } }),
-      instructions: request.instructions,
-      input: [
-        {
-          role: 'user',
-          content: [{ type: 'input_text', text: request.input }],
-        },
-      ],
-      text: {
-        format: {
-          type: 'json_schema',
-          name: request.output.name,
-          strict: true,
-          schema: request.output.schema,
-        },
+  return frame(item.itemId, {
+    model: request.model,
+    store: false,
+    tools: [],
+    max_output_tokens: settings.maxOutputTokens,
+    ...(settings.reasoningEffort === null
+      ? {}
+      : { reasoning: { effort: settings.reasoningEffort } }),
+    instructions: request.instructions,
+    input: [
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: request.input }],
+      },
+    ],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: request.output.name,
+        strict: true,
+        schema: request.output.schema,
       },
     },
-  }
+  })
 }
 
 /** The most lines and bytes one batch file takes. */
@@ -106,6 +110,19 @@ const maxLines = 100
 const maxFileBytes = 2 * 1024 * 1024
 const jsonl = (lines: BatchRequestLine[]) =>
   lines.map((l) => JSON.stringify(l)).join('\n') + '\n'
+
+/**
+ * The input file of a batch sent before the archive kept inputs, rebuilt
+ * from the request bodies saved then, framed as every batch line is.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-8)
+ */
+export function reconstructBatchInput(bodies: SavedBatchBody[]): string {
+  return jsonl(
+    bodies.map(({ itemId, body }) =>
+      frame(itemId, body as BatchRequestLine['body']),
+    ),
+  )
+}
 
 export type BatchArchive = (
   kind: 'input' | 'output' | 'error' | 'metadata',
