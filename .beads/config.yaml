@@ -4,3 +4,5 @@ export:
     auto: true
 routing:
     contributor: .
+sync:
+    remote: "git+ssh://git@github.com/pioziol123/ofertorix-rekrutus.git"
