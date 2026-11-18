@@ -37,14 +37,14 @@ An ad that was not found during a complete check of the source; its absence alon
 **Ad expired at the source** (ogłoszenie wygasłe w źródle):
 An ad whose expiry follows from the source's information, e.g. a validity date; this state does not automatically mean the owner's application has ended.
 
-**Offer sync** (synchronizacja ofert):
+**Ad sync** (synchronizacja ogłoszeń):
 One execution of fetching ads from a source; its results may arrive in many portions.
 
 **Complete source sync** (pełna synchronizacja źródła):
-An offer sync that checked all ads in the set scope of a source, finished with no missing parts.
+An ad sync that checked all ads in the set scope of a source, finished with no missing parts.
 
 **Incomplete source sync** (niepełna synchronizacja źródła):
-An offer sync that fetched only part of the set scope; the valid results stay available, and the absence of the other ads does not show that they are unavailable.
+An ad sync that fetched only part of the set scope; the valid results stay available, and the absence of the other ads does not show that they are unavailable.
 
 **Organisation** (organizacja):
 A specific entity, e.g. a Polish or German company; it may be linked to other organisations through a shared brand or group.

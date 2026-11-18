@@ -14,7 +14,7 @@ Linking several ads to one job offer and presenting that offer belong to the Off
 
 Fetching concerns a chosen source and a set **scope**. The scope defines which ads are to be checked, for example through a choice of technology, experience level and limits on the number of results. It is set for a given run, so that its result can be related to what was actually meant to be fetched.
 
-An **offer sync** is one execution of such a fetch. Results may arrive in many portions. The module keeps valid ads as they are received, so a later error does not wipe out the data already collected.
+An **ad sync** is one execution of such a fetch. Results may arrive in many portions. The module keeps valid ads as they are received, so a later error does not wipe out the data already collected.
 
 | Run state   | Meaning                                                                                                   |
 | ----------- | --------------------------------------------------------------------------------------------------------- |

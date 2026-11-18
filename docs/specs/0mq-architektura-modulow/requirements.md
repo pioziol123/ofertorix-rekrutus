@@ -143,7 +143,7 @@ The system finds a source's connector by a fixed name in one registry. Rules: F2
 
 <a id="a3"></a>
 
-## Task 0mq.3 — Offer sync state in one place
+## Task 0mq.3 — Ad sync state in one place
 
 The Sources module keeps the state of runs in one place: acceptance, start, finish, and reading the state needed for recovery. The run is controlled by the code that manages it; tasks 0mq.5 and 0mq.16 connect execution and requesting to it. Rules: F2-07, F2-08.
 
@@ -203,7 +203,7 @@ Example: A was unavailable, B available. The first batch contains A as active, t
 
 <a id="a5"></a>
 
-## Task 0mq.5 — Shared execution of an offer sync
+## Task 0mq.5 — Shared execution of an ad sync
 
 Every run, whatever the source, is executed by one shared process. It reads the run's saved settings, starts the source's connector, saves the batches and finishes the run. Rules: F2-01–F2-04, F2-11–F2-13.
 
