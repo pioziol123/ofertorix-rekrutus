@@ -383,7 +383,7 @@ export async function executionsInState(state: 'waiting_budget' | 'queued') {
 /**
  * Whether a provider batch group was already requested. Takes the group's
  * turn until the caller's transaction ends, so two requests of one group
- * are admitted one at a time.
+ * are admitted one at a time. ASSUMPTION(oferty-pracy-0mq.21/ASM-7)
  */
 export async function groupRequested(groupId: string) {
   await db().query('SELECT pg_advisory_xact_lock(hashtext($1))', [
