@@ -120,7 +120,7 @@ describe('uuk.3: delivery with a changing exchange point', () => {
     w = world(agent(() => void pushFiles(w.other, { 'owner.txt': 'owner\n' })))
     w.sandboxes.gate = (_kind, worktree) => (existsSync(join(worktree, 'owner.txt')) ? 1 : 0)
     await cycle(w.runner)
-    assert.equal(w.sandboxes.prompts.length, 4, 'the first turn and three feedback turns')
+    assert.equal(w.sandboxes.prompts.length, 5, 'the first turn, three feedback turns and the request for a state note')
     assert.match(w.sandboxes.prompts[1]!, /failed in a fresh sandbox/)
     assert.ok(w.db.show('t-1').labels?.includes('needs-info'))
     assert.match(commentsOf('t-1'), /Runner returned the task\. scripts\/gate\.sh failed/)

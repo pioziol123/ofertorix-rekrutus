@@ -94,8 +94,11 @@ describe('uuk.2: runner in its own copy', () => {
     w.db.handOffAgain('t-1')
     w.sandboxes.gateExits = [0]
     w.sandboxes.gateCalls = 0
+    // The next attempt continues the kept work (oferty-pracy-5yd, CON-R02) and adds to it.
+    w.sandboxes.agentTurn = committingAgent('second.txt', 'second\n')
     await cycle(w.runner)
     assert.equal(w.db.show('t-1').status, 'closed')
+    assert.equal(exchangeFile(w, 'feature.txt'), 'feature')
     assert.equal(sh(w.exchange, 'for-each-ref', 'refs/heads/agent/'), '')
   })
 

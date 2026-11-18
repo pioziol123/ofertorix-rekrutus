@@ -8,7 +8,11 @@ import { join } from 'node:path'
 import {
   BASE_BRANCH,
   branchExists,
+  commitExists,
+  deleteRemoteBranch,
   deleteReturnBranch,
+  EXCHANGE_REF,
+  fetchKeptWork,
   fetchMain,
   git,
   imageInputs,
@@ -34,6 +38,21 @@ import {
   resultShapeProblems,
 } from './followups.ts'
 import type { Images, Notifier, Sandboxes, TaskDb, WarmSandbox } from './ports.ts'
+import {
+  type Continuation,
+  type ReturnData,
+  type StateNote,
+  KEPT_BASE,
+  KEPT_BRANCH,
+  RETURN_COMMENT,
+  START_FRESH,
+  continuationBrief,
+  keptWork,
+  parseReturnData,
+  returnDataBlock,
+  sinceReturn,
+  stateNote,
+} from './continuation.ts'
 
 export const RESULT_FILE = '.agent-result.json'
 export const REVIEW_FILE = '.agent-review.json'
@@ -250,9 +269,11 @@ export function missingDocuments(r: Runner, issue: Issue, mainSha: string): stri
 
 /**
  * Gives the task back to preparation. The agent's work, when there is any, goes to the
- * exchange point's repository under the return prefix so the owner can inspect it (U2-R14).
+ * exchange point's repository under the return prefix so the owner can inspect it (U2-R14),
+ * and the task records it as kept work for the next attempt (oferty-pracy-5yd, CON-R01).
+ * The state note and the last review report travel as data at the end of the comment (CON-R10).
  */
-export function returnToPreparation(r: Runner, issue: Issue, reason: string, branch: string | null): void {
+export function returnToPreparation(r: Runner, issue: Issue, reason: string, branch: string | null, data: ReturnData = {}): void {
   r.log(`${issue.id}: returned to preparation: ${firstLine(reason)}`)
   let kept = ''
   if (branch && branchExists(r.repo, branch)) {
@@ -260,9 +281,19 @@ export function returnToPreparation(r: Runner, issue: Issue, reason: string, bra
     kept = pushed.ok
       ? `\nThe work is on GitHub on branch ${returnBranchName(branch)}.`
       : `\nThe work stayed only in the runner's copy on branch ${branch}: pushing it to GitHub failed: ${firstLine(pushed.out)}`
-    if (!pushed.ok) r.log(`${issue.id}: pushing ${returnBranchName(branch)} failed: ${firstLine(pushed.out)}`)
+    if (pushed.ok) {
+      // The commit of main the work sits on: the newest fetched main it shares with the branch.
+      const base = tryGit(r.repo, ['merge-base', `refs/heads/${branch}`, EXCHANGE_REF])
+      if (base.ok) {
+        quietly(r, `bd update ${issue.id}`, () => r.db.update(issue.id, { setMetadata: { [KEPT_BRANCH]: returnBranchName(branch), [KEPT_BASE]: base.out } }))
+      } else {
+        r.log(`${issue.id}: the kept work is not recorded in the task, its base on ${BASE_BRANCH} is unknown: ${firstLine(base.out)}`)
+      }
+    } else {
+      r.log(`${issue.id}: pushing ${returnBranchName(branch)} failed: ${firstLine(pushed.out)}`)
+    }
   }
-  quietly(r, `bd comment ${issue.id}`, () => r.db.comment(issue.id, `Runner returned the task. ${reason}${kept}`))
+  quietly(r, `bd comment ${issue.id}`, () => r.db.comment(issue.id, `${RETURN_COMMENT} ${reason}${kept}${returnDataBlock(data)}`))
   quietly(r, `bd update ${issue.id}`, () => r.db.update(issue.id, { remove: ['ready-for-agent'], add: ['needs-info'] }))
   quietly(r, `bd unclaim ${issue.id}`, () => r.db.unclaim(issue.id))
   r.notifier.notify(`${issue.id} needs attention`, reason)
@@ -291,7 +322,7 @@ function bearingNote(assumptions: NonNullable<AgentResult['assumptions']>, ctx: 
   return `These assumptions settle load-bearing requirements of the epic: ${bearing.map((b) => `${b.id} (${b.touched.join(', ')})`).join('; ')}. Later tasks build on how they are read. Check each strictly: the reading must be the only one that keeps today's behaviour, or the conflict must belong to a later step of the classification (blocked). A reading that fixes the requirement's meaning for the rest of the epic is a finding.`
 }
 
-function implementPrompt(issue: Issue, ctx: EpicContext, baseSha: string): string {
+function implementPrompt(issue: Issue, ctx: EpicContext, baseSha: string, continuation: Continuation | null): string {
   const task = {
     id: issue.id,
     title: issue.title,
@@ -305,8 +336,19 @@ function implementPrompt(issue: Issue, ctx: EpicContext, baseSha: string): strin
     'Use the implement-task skill.',
     `Task:\n${JSON.stringify(task, null, 2)}`,
     epicBrief(ctx),
-    `The task branch starts at commit ${baseSha}, the current ${BASE_BRANCH}.`,
+    continuation
+      ? continuationBrief(continuation, baseSha, BASE_BRANCH)
+      : `The task branch starts at commit ${baseSha}, the current ${BASE_BRANCH}.`,
     `Result file: ${RESULT_FILE} in the worktree root.`,
+  ].join('\n\n')
+}
+
+/** The one request for a state note before a return (CON-R09); not a feedback turn. */
+function notePrompt(reason: string): string {
+  return [
+    'The runner is returning this task to preparation, so this attempt ends here:',
+    reason,
+    `Write a state note for the next attempt with the task-state-note skill: it goes into ${RESULT_FILE} as state_note. Change nothing else: no code, no commits.`,
   ].join('\n\n')
 }
 
@@ -318,11 +360,13 @@ function feedbackPrompt(report: string): string {
   ].join('\n\n')
 }
 
-function reviewPrompt(issue: Issue, result: AgentResult, ctx: EpicContext, baseSha: string, database: boolean): string {
+function reviewPrompt(issue: Issue, result: AgentResult, ctx: EpicContext, baseSha: string, database: boolean, continuation: boolean): string {
   const deviations = result.deviations ?? []
   const assumptions = result.assumptions ?? []
   return [
     `Review the change on this branch against its specification. Diff: git diff ${baseSha}...HEAD. Do not modify tracked files.`,
+    // CON-R07: the kept work of the returned attempt is part of the task's change.
+    continuation ? `This attempt continued the kept work of an earlier, returned attempt. The diff covers the task's whole change against ${BASE_BRANCH}, the kept commits included; review all of it.` : '',
     `The gate already passed here: every test ran, those on a real database included. ${
       database
         ? 'PostgreSQL is running with the schema migrated, so you can run a single test to check a claim, for example RUN_INTEGRATION=1 pnpm vitest run <test file>.'
@@ -367,6 +411,10 @@ interface TaskRun {
   warmInputs: string
   /** The image was rebuilt from a newer main during the task, so the warm sandbox is out of date. */
   envChanged: boolean
+  /** The returned attempt this one continues, or null for a start from main. */
+  continuation: Continuation | null
+  /** The last review report, of this attempt or, before its first review, of the one it continues. */
+  lastReview: string | null
 }
 
 type Step = { ok: true } | { ok: false; report: string; final?: boolean }
@@ -405,7 +453,8 @@ async function warmCheck(r: Runner, t: TaskRun): Promise<Step> {
     return { ok: false, report: 'There are no commits on the task branch.' }
   }
   // The base is a commit the runner fetched, not the main branch the sandbox can write to.
-  const replayed = replay(worktree, t.gateBase ?? t.base, t.base)
+  // Kept work of a returned attempt is replayed from the commit of main it was built on.
+  const replayed = replay(worktree, t.gateBase ?? t.continuation?.keptBase ?? t.base, t.base)
   if (!replayed.ok) return replayed
   const shape = resultShapeProblems(result)
   if (shape.length) return { ok: false, report: `${RESULT_FILE} does not match the shape in the implement-task skill:\n- ${shape.join('\n- ')}` }
@@ -449,13 +498,14 @@ async function verify(r: Runner, t: TaskRun, withReview: boolean): Promise<Step>
         const database = await sandbox.exec(REVIEW_DATABASE)
         if (database.exitCode !== 0) r.log(`${t.issue.id}: the reviewer's database did not start:\n${tail(`${database.stdout}${database.stderr}`)}`)
         r.log(`${t.issue.id}: running the spec review`)
-        await sandbox.review(reviewPrompt(t.issue, t.result!, t.ctx, t.base, database.exitCode === 0))
+        await sandbox.review(reviewPrompt(t.issue, t.result!, t.ctx, t.base, database.exitCode === 0, t.continuation !== null))
         if (git(r.repo, ['rev-parse', `refs/heads/${gateBranch}`]) !== commit) {
           return { ok: false, report: 'The reviewer committed to the branch under review.', final: true }
         }
         const review = readJson<Review>(join(sandbox.worktreePath, REVIEW_FILE))
         if (!review) return { ok: false, report: `The reviewer did not write ${REVIEW_FILE}.` }
         const findings = Array.isArray(review.findings) ? review.findings.map(String) : []
+        t.lastReview = [`Verdict: ${JSON.stringify(review.verdict)}`, ...findings.map((f) => `- ${f}`)].join('\n')
         // Exactly one verdict passes: pass-with-deferral when the result has deviations, pass otherwise.
         const expected = t.result!.deviations?.length ? 'pass-with-deferral' : 'pass'
         if (review.verdict !== expected) {
@@ -546,39 +596,72 @@ async function deliverInQueue(r: Runner, t: TaskRun): Promise<Delivery | 'unreac
  * Every failure that a correction can fix goes back into the same session as a feedback
  * turn, MAX_FEEDBACK_TURNS at most. Returns the delivered commit or the reason to return.
  */
-async function runTask(r: Runner, issue: Issue, branch: string, baseSha: string, ctx: EpicContext): Promise<{ ok: true; commit: string; result: AgentResult } | { ok: false; report: string }> {
+type Outcome = { ok: true; commit: string; result: AgentResult } | { ok: false; report: string; data: ReturnData }
+
+/**
+ * Before a return because the feedback turns are used up, the runner resumes the agent's
+ * session once and asks for a state note (CON-R09, D3). The request is not a feedback turn;
+ * a failed turn, a missing or a malformed note all leave the return without a note.
+ */
+async function askForStateNote(r: Runner, t: TaskRun, reason: string): Promise<StateNote | null> {
+  r.log(`${t.issue.id}: asking the agent for a state note before the return (not a feedback turn; feedback turns used: ${t.turns} of ${MAX_FEEDBACK_TURNS})`)
+  try {
+    if (!(await t.sandbox.resume(notePrompt(reason)))) {
+      r.log(`${t.issue.id}: no agent session to ask for a state note; returning without one`)
+      return null
+    }
+  } catch (error) {
+    r.log(`${t.issue.id}: the request for a state note failed; returning without one: ${firstLine(error instanceof Error ? error.message : String(error))}`)
+    return null
+  }
+  const written = readJson<AgentResult>(join(t.sandbox.worktreePath, RESULT_FILE))?.state_note
+  const note = stateNote(written)
+  if (!note) r.log(`${t.issue.id}: ${written === undefined ? 'the agent wrote no state note' : 'the state note is not a JSON object'}; returning without one`)
+  return note
+}
+
+async function runTask(r: Runner, issue: Issue, branch: string, baseSha: string, ctx: EpicContext, continuation: Continuation | null): Promise<Outcome> {
   const sandbox = await r.sandboxes.warm(branch)
+  // Feedback turns and delivery retries count from zero in every attempt (CON-R08).
   const t: TaskRun = {
     issue, branch, ctx, sandbox, base: baseSha, gateBase: null, commit: null, result: null, review: null,
     turns: 0, retries: 0, warmInputs: imageInputs(r.repo, baseSha), envChanged: false,
+    continuation, lastReview: continuation?.lastReview ?? null,
   }
-  /** Sends a report back to the agent; returns why the task goes back instead, if it must. */
-  const feedback = async (report: string): Promise<string | null> => {
-    if (t.envChanged) return `The environment changed during the task (the dependency list or the image recipe on ${BASE_BRANCH}), and the agent's sandbox is out of date, so it cannot correct the work:\n${report}`
-    if (t.turns >= MAX_FEEDBACK_TURNS) return report
+  const returned = (report: string, note: StateNote | null = null): Outcome => ({
+    ok: false, report, data: { ...(note ? { state_note: note } : {}), ...(t.lastReview ? { last_review: t.lastReview } : {}) },
+  })
+  /** Sends a report back to the agent; returns the outcome of a return instead, if the task must go back. */
+  const feedback = async (report: string): Promise<Outcome | null> => {
+    if (t.envChanged) return returned(`The environment changed during the task (the dependency list or the image recipe on ${BASE_BRANCH}), and the agent's sandbox is out of date, so it cannot correct the work:\n${report}`)
+    if (t.turns >= MAX_FEEDBACK_TURNS) {
+      const reason = `${report}\n\nAll ${MAX_FEEDBACK_TURNS} feedback turns of the attempt are used (${t.turns} of ${MAX_FEEDBACK_TURNS}).`
+      return returned(reason, await askForStateNote(r, t, reason))
+    }
     t.turns++
     r.log(`${issue.id}: feedback turn ${t.turns}: ${firstLine(report)}`)
     await sandbox.exec(`rm -f ${RESULT_FILE}`)
-    if (!(await sandbox.resume(feedbackPrompt(report)))) return `${report}\n(No agent session to resume.)`
+    if (!(await sandbox.resume(feedbackPrompt(report)))) return returned(`${report}\n(No agent session to resume.)`)
     return null
   }
   try {
-    r.log(`${issue.id}: implementing in ${sandbox.worktreePath}`)
+    r.log(`${issue.id}: implementing in ${sandbox.worktreePath}${continuation ? `, continuing the kept work of ${continuation.keptBranch}` : ''}`)
     await sandbox.exec(`rm -f ${RESULT_FILE} ${REVIEW_FILE}`)
-    await sandbox.start(implementPrompt(issue, ctx, baseSha))
+    await sandbox.start(implementPrompt(issue, ctx, baseSha, continuation))
     for (;;) {
       const checked = await fullChecks(r, t)
       if (!checked.ok) {
-        if (checked.final) return { ok: false, report: checked.report }
+        // A blocked agent wrote its state note with the question (CON-R10).
+        if (checked.final) return returned(checked.report, t.result?.status === 'blocked' ? stateNote(t.result.state_note) : null)
         const stop = await feedback(checked.report)
-        if (stop) return { ok: false, report: stop }
+        if (stop) return stop
         continue
       }
       const delivery = await deliver(r, t)
       if (delivery.delivered) return { ok: true, commit: t.commit!, result: t.result! }
-      if ('returned' in delivery) return { ok: false, report: delivery.returned }
+      if ('returned' in delivery) return returned(delivery.returned)
       const stop = await feedback(delivery.feedback)
-      if (stop) return { ok: false, report: stop }
+      if (stop) return stop
     }
   } finally {
     await sandbox.close()
@@ -693,6 +776,45 @@ function recordAssumptions(r: Runner, issue: Issue, assumptions: NonNullable<Age
   }))
 }
 
+type Start = { from: string; continuation: Continuation | null } | { wait: string }
+
+/**
+ * Where an attempt starts (CON-R02–R06, D2): the kept work the task records, fetched from
+ * GitHub, or the fetched main when there is none, when the owner ordered a fresh start or
+ * when the branch is gone. GitHub unreachable makes the task wait like an unreachable main.
+ */
+function startingPoint(r: Runner, issue: Issue, baseSha: string): Start {
+  const kept = keptWork(issue)
+  if (issue.labels?.includes(START_FRESH)) {
+    r.log(`${issue.id}: the task carries ${START_FRESH}; starting from ${BASE_BRANCH}${kept ? `, the kept work of ${kept.branch} ignored` : ''}`)
+    r.db.update(issue.id, { remove: [START_FRESH], unsetMetadata: [KEPT_BRANCH, KEPT_BASE] })
+    return { from: baseSha, continuation: null }
+  }
+  if (!kept) return { from: baseSha, continuation: null }
+  const fetched = fetchKeptWork(r.repo, kept.branch)
+  if (!fetched.ok) {
+    if (!fetched.missing) return { wait: `cannot fetch the kept work ${kept.branch} from GitHub: ${firstLine(fetched.out)}` }
+    r.log(`${issue.id}: the kept work ${kept.branch} recorded in the task is no longer on GitHub; starting from ${BASE_BRANCH} at ${baseSha.slice(0, 7)}`)
+    return { from: baseSha, continuation: null }
+  }
+  const keptBase = commitExists(r.repo, kept.base) ? kept.base : null
+  if (!keptBase) r.log(`${issue.id}: the runner's copy does not have ${kept.base}, the commit the kept work was built on`)
+  const { latest, after } = sinceReturn(r.db.listComments(issue.id))
+  const parsed = latest ? parseReturnData(latest.text) : null
+  if (parsed && 'malformed' in parsed) r.log(`${issue.id}: the data of the return's comment is malformed, going on without it: ${parsed.malformed}`)
+  const data = parsed && 'data' in parsed ? parsed.data : {}
+  const documents = Object.values(documentLinks(issue)).filter(Boolean)
+  const documentsDiff = keptBase ? git(r.repo, ['diff', keptBase, baseSha, '--', ...documents]) : null
+  r.log(`${issue.id}: continuing the kept work ${kept.branch} at ${fetched.sha.slice(0, 7)}, built on ${kept.base.slice(0, 7)}`)
+  return {
+    from: fetched.sha,
+    continuation: {
+      keptBranch: kept.branch, keptBase, note: data.state_note ?? null, lastReview: data.last_review ?? null,
+      comments: after, documentsDiff,
+    },
+  }
+}
+
 /**
  * Runs one claimed task from the fetched exchange point state `baseSha` to delivery or
  * return. The run gets its own context with its own log; an error in it returns this task
@@ -703,12 +825,21 @@ export async function processTask(shared: Runner, issue: Issue, baseSha: string)
   shared.log(`${issue.id}: started on ${BASE_BRANCH} at ${baseSha.slice(0, 7)}`)
   let branch: string | null = null
   try {
-    branch = taskBranch(r, issue)
-    git(r.repo, ['branch', '--force', branch, baseSha])
+    const start = startingPoint(r, issue, baseSha)
+    if ('wait' in start) {
+      // Nothing was started; the task stays ready and the kept work recorded.
+      r.log(`${issue.id}: waits, released for the next cycle: ${start.wait}`)
+      shared.log(`${issue.id}: waits: ${start.wait}`)
+      quietly(r, `bd unclaim ${issue.id}`, () => r.db.unclaim(issue.id))
+      return
+    }
+    const name = taskBranch(r, issue)
+    git(r.repo, ['branch', '--force', name, start.from])
+    branch = name
     const ctx = epicContext(r, issue)
-    const outcome = await runTask(r, issue, branch, baseSha, ctx)
+    const outcome = await runTask(r, issue, branch, baseSha, ctx, start.continuation)
     if (!outcome.ok) {
-      returnToPreparation(r, issue, outcome.report || 'Unknown failure.', branch)
+      returnToPreparation(r, issue, outcome.report || 'Unknown failure.', branch, outcome.data)
       shared.log(`${issue.id}: returned to preparation`)
       return
     }
@@ -718,6 +849,12 @@ export async function processTask(shared: Runner, issue: Issue, baseSha: string)
     const deferred = result.deviations?.length ? ` with ${result.deviations.length} deviation(s) deferred to follow-ups` : ''
     quietly(r, `bd close ${issue.id}`, () => r.db.close(issue.id, `Delivered ${branch} to ${BASE_BRANCH} on GitHub at ${sha} by the agent runner${deferred}.`))
     deleteReturnBranch(r.repo, branch)
+    const kept = keptWork(issue)
+    if (kept) {
+      // The kept work is delivered; a renamed task left it under its earlier branch name.
+      if (kept.branch !== returnBranchName(branch)) deleteRemoteBranch(r.repo, kept.branch)
+      quietly(r, `bd update ${issue.id}`, () => r.db.update(issue.id, { unsetMetadata: [KEPT_BRANCH, KEPT_BASE] }))
+    }
     tryGit(r.repo, ['branch', '-D', branch])
     r.log(`${issue.id}: delivered to ${BASE_BRANCH} on GitHub at ${sha} and closed`)
     shared.log(`${issue.id}: delivered at ${sha}`)

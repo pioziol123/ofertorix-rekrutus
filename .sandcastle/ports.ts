@@ -64,6 +64,12 @@ export interface NewIssue {
   parent?: string
 }
 
+export interface TaskComment {
+  text: string
+  /** When the comment was added, as bd reports it; the list is in the order comments were added. */
+  created_at?: string
+}
+
 /** Operations on the task database. Their meaning is the bd commands named beside them. */
 export interface TaskDb {
   /** bd ready --label ready-for-agent */
@@ -81,6 +87,8 @@ export interface TaskDb {
   claim(id: string): boolean
   unclaim(id: string): void
   comment(id: string, text: string): void
+  /** bd comments <id>: the task's comments, oldest first. */
+  listComments(id: string): TaskComment[]
   update(id: string, change: LabelChange): void
   /** Returns the new id. */
   create(issue: NewIssue): string

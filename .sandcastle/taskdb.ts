@@ -5,7 +5,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import type { Issue } from './followups.ts'
-import type { NewIssue, TaskDb } from './ports.ts'
+import type { NewIssue, TaskComment, TaskDb } from './ports.ts'
 
 /** Exit code of bd when an --if-assignee or --if-status condition does not hold. */
 const CONDITION_NOT_MET = 13
@@ -41,6 +41,13 @@ export function bdTaskDb({ repo, beadsDir, assignee }: { repo: string; beadsDir:
     },
     unclaim: (id) => void bd(['unclaim', id]),
     comment: (id, text) => void bd(['comment', id, text]),
+    listComments: (id) => {
+      const list = json<TaskComment[] | null>(['comments', id]) ?? []
+      // Oldest first; comments without a time keep their place.
+      return list.map((c, i) => ({ c, i }))
+        .sort((a, b) => (a.c.created_at && b.c.created_at ? a.c.created_at.localeCompare(b.c.created_at) : 0) || a.i - b.i)
+        .map(({ c }) => ({ text: String(c.text ?? ''), ...(c.created_at ? { created_at: c.created_at } : {}) }))
+    },
     update: (id, change) => {
       const args = ['update', id]
       for (const label of change.add ?? []) args.push('--add-label', label)

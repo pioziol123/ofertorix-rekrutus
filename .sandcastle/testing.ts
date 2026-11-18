@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { excludeAgentFiles, GATE, RESULT_FILE, REVIEW_DATABASE, REVIEW_FILE, type Runner, serialLane } from './flow.ts'
 import type { AgentResult, Issue } from './followups.ts'
-import type { ExecResult, FreshSandbox, NewIssue, Sandboxes, TaskDb, WarmSandbox } from './ports.ts'
+import type { ExecResult, FreshSandbox, LabelChange, NewIssue, Sandboxes, TaskDb, WarmSandbox } from './ports.ts'
 
 export function sh(cwd: string, ...args: string[]): string {
   return execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
@@ -84,9 +84,13 @@ export class FakeDb implements TaskDb {
     this.get(id).status = 'open'
   }
   comment = (id: string, text: string) => void this.comments.push({ id, text })
-  update = (id: string, change: { add?: string[]; remove?: string[] }) => {
+  listComments = (id: string) => this.comments.filter((c) => c.id === id).map((c) => ({ text: c.text }))
+  update = (id: string, change: LabelChange) => {
     const issue = this.get(id)
     issue.labels = [...(issue.labels ?? []).filter((l) => !change.remove?.includes(l)), ...(change.add ?? [])]
+    const metadata = { ...issue.metadata, ...change.setMetadata }
+    for (const key of change.unsetMetadata ?? []) delete metadata[key]
+    issue.metadata = metadata
   }
   create = (issue: NewIssue) => {
     const id = `new-${this.next++}`
@@ -130,6 +134,8 @@ export class FakeSandboxes implements Sandboxes {
   /** Overrides gateExits: the gate's exit code from the kind of sandbox and its worktree. */
   gate?: (kind: 'warm' | 'fresh', worktree: string) => number
   verdict: 'pass' | 'fail' = 'pass'
+  /** Findings the stand-in reviewer reports with its verdict. */
+  findings: string[] = []
   gateCalls = 0
   /** Gate runs and image builds in order, e.g. 'gate:warm', 'gate:fresh', 'image:<sha>'. */
   events: string[] = []
@@ -201,7 +207,7 @@ export class FakeSandboxes implements Sandboxes {
         this.reviewPrompts.push(prompt)
         this.reviews++
         this.events.push('review')
-        writeFile(worktree, REVIEW_FILE, JSON.stringify({ verdict: this.verdict, findings: [] }))
+        writeFile(worktree, REVIEW_FILE, JSON.stringify({ verdict: this.verdict, findings: this.findings }))
       },
       close: async () => void sh(this.repo, 'worktree', 'remove', '--force', worktree),
     }

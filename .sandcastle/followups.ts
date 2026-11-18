@@ -57,6 +57,8 @@ export interface AgentResult {
   /** Older name of new_scope. */
   followups?: NewScope[]
   question: string | null
+  /** What a blocked agent, or one asked before a return, leaves for the next attempt (task-state-note skill). */
+  state_note?: unknown
 }
 
 function strings(value: unknown): boolean {

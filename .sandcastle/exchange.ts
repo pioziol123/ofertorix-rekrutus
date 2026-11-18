@@ -79,7 +79,11 @@ export function pushReturnBranch(repo: string, branch: string): { ok: boolean; o
 
 /** Removes the branch an earlier return left; its absence is not an error. */
 export function deleteReturnBranch(repo: string, branch: string): void {
-  const name = returnBranchName(branch)
+  deleteRemoteBranch(repo, returnBranchName(branch))
+}
+
+/** Removes a branch from the exchange point's repository; its absence is not an error. */
+export function deleteRemoteBranch(repo: string, name: string): void {
   if (!tryGit(repo, ['ls-remote', '--exit-code', '--heads', REMOTE, name]).ok) return
   tryGit(repo, ['push', '--quiet', REMOTE, '--delete', name])
 }
@@ -96,4 +100,28 @@ export function imageInputs(repo: string, commit: string): string {
   const hash = createHash('sha256')
   for (const file of IMAGE_INPUT_FILES) hash.update(`${file}\0${tryGit(repo, ['show', `${commit}:${file}`]).ok ? git(repo, ['show', `${commit}:${file}`]) : ''}\0`)
   return hash.digest('hex').slice(0, 16)
+}
+
+export type KeptWork = { ok: true; sha: string } | { ok: false; missing: boolean; out: string }
+
+/**
+ * Fetches the kept work of a returned attempt, a branch under the return prefix, and gives
+ * its commit. `missing` tells a branch GitHub no longer has from GitHub being unreachable.
+ */
+export function fetchKeptWork(repo: string, keptBranch: string): KeptWork {
+  const ref = `refs/remotes/${REMOTE}/${keptBranch}`
+  const fetch = tryGit(repo, ['fetch', '--quiet', '--no-tags', REMOTE, `+refs/heads/${keptBranch}:${ref}`])
+  if (fetch.ok) return { ok: true, sha: git(repo, ['rev-parse', ref]) }
+  // ls-remote --exit-code ends with 2 when the remote answers without the branch.
+  let missing = false
+  try {
+    git(repo, ['ls-remote', '--exit-code', '--heads', REMOTE, keptBranch])
+  } catch (error) {
+    missing = (error as { status?: number }).status === 2
+  }
+  return { ok: false, missing, out: fetch.out }
+}
+
+export function commitExists(repo: string, commit: string): boolean {
+  return tryGit(repo, ['cat-file', '-e', `${commit}^{commit}`]).ok
 }
