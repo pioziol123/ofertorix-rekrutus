@@ -44,6 +44,8 @@ export {
 } from './read-budget.ts'
 export { AiRequestError, type AiRequestErrorCode } from './errors.ts'
 export type { ExecutionMode } from './execution-settings.ts'
+// ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the closed list of agent tools.
+export { agentTools, type AgentTool } from './domain/execution-mode.ts'
 export {
   registerResultReceiver,
   type ExecutionCost,

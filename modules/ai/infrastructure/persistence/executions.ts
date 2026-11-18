@@ -4,6 +4,7 @@ import type {
   ExecutionMode,
   ExecutionSettings,
 } from '../../execution-settings.ts'
+import type { AgentTool } from '../../domain/execution-mode.ts'
 import type { ModelUsage } from '../../provider-adapter.ts'
 import {
   inProgressStates,
@@ -21,8 +22,11 @@ export type ExecutionSnapshot = {
   instruction: string
   responseSchema: { name: string; schema: Record<string, unknown> }
   input: string
-  tools: string[]
-  /** How an agent writes its result from its materials (agent mode). */
+  tools: AgentTool[]
+  /**
+   * How an agent writes its result from its materials (agent mode).
+   * ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
+   */
   resultInstruction?: string
   /**
    * What the adapter fixed with its check before the request; only the
@@ -79,6 +83,7 @@ function toExecution(row: Record<string, unknown>): ExecutionRow {
   const usage = row.usage as {
     input_tokens: number | null
     output_tokens: number | null
+    // ASSUMPTION(oferty-pracy-0mq.22/ASM-4): the calls of a paid tool.
     tool_calls?: number | null
   } | null
   return {
@@ -254,6 +259,7 @@ function attemptValues(executionId: string, settlement: Settlement) {
     {
       input_tokens: settlement.usage.inputTokens,
       output_tokens: settlement.usage.outputTokens,
+      // ASSUMPTION(oferty-pracy-0mq.22/ASM-4): the calls of a paid tool.
       ...(settlement.usage.toolCalls !== undefined
         ? { tool_calls: settlement.usage.toolCalls }
         : {}),
@@ -304,6 +310,7 @@ export async function saveOutcome(
 /**
  * Saves the adapter's own state of a running execution; false when the
  * execution no longer runs. The value is stored as it is, never read here.
+ * It is what an agent saves step by step. ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
  */
 export async function saveAdapterState(executionId: string, state: unknown) {
   const saved = await db().query(

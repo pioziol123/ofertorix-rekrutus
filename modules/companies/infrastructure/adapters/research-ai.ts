@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   AiRequestError,
   checkExecution,
+  type AgentTool,
   readLatestExecutions,
   readReservation,
   requestExecution,
@@ -29,8 +30,11 @@ import {
 /** The key under which AI keeps the settings of Companies' research. */
 export const researchSettingsKey = 'research'
 
-/** The tool research needs: web search. */
-const tools = ['web_search']
+/**
+ * The tool research needs: web search, named from AI's closed list of
+ * agent tools. ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
+ */
+const tools: AgentTool[] = ['web_search']
 
 /** How the agent gathers material about the company. */
 const searchInstruction =
@@ -124,6 +128,8 @@ export const researchReceiver: ResultReceiver = {
     recordResearchResult(
       delivery.operationId,
       delivery.result,
+      // ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the agent's materials are
+      // the evidence the report is validated against.
       delivery.materials ?? [],
     ),
   async receiveFailure(delivery) {

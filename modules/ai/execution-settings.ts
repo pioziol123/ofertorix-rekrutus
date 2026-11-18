@@ -41,6 +41,7 @@ export function executionSettings(
     reasoningEffort: settings.reasoningEffort,
     maxOutputTokens: pricing?.maxOutputTokens ?? 0,
     maxInputTokens: pricing?.maxInputTokens ?? 0,
+    // ASSUMPTION(oferty-pracy-0mq.22/ASM-4): the tool calls of the price list.
     ...(pricing?.maxToolCalls !== undefined
       ? { maxToolCalls: pricing.maxToolCalls }
       : {}),

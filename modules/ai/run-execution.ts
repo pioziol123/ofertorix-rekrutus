@@ -36,7 +36,7 @@ import {
   type ModelUsage,
   type ProviderAdapter,
 } from './provider-adapter.ts'
-import { adapterOfExecution, providerAdapter } from './provider-registry.ts'
+import { providerAdapter } from './provider-registry.ts'
 import { resultReceiver } from './result-receiver.ts'
 import { runBatch } from './run-batch.ts'
 
@@ -55,6 +55,7 @@ export type Outcome = {
   /** Nothing reached the provider, so nothing was spent. */
   notSent: boolean
   /**
+   * ASSUMPTION(oferty-pracy-0mq.22/ASM-4)
    * A request was sent whose usage is not known: the cost stays unknown
    * and reserved, although the usage measured for other steps is kept.
    */
@@ -190,6 +191,7 @@ async function callProvider(
   // side with its own cause; nothing reached a provider.
   const single = execution.mode === 'single' ? adapter?.modes.single : undefined
   const agent = execution.mode === 'agent' ? adapter?.modes.agent : undefined
+  // ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
   if (adapter && agent) return callAgent(execution, adapter)
   if (!adapter || !single)
     return {
@@ -355,7 +357,7 @@ async function retry(
  */
 function materialsOf(execution: ExecutionRow): AgentMaterial[] {
   const settings = execution.snapshot.settings
-  const agent = adapterOfExecution(settings.provider)?.modes.agent
+  const agent = providerAdapter(settings.provider)?.modes.agent
   if (!agent) throw new Error('No agent adapter for the execution')
   return agent(settings).materials(execution.adapterState)
 }
@@ -405,6 +407,7 @@ async function deliver(executionId: string) {
       const decision = await receiver.receiveResult({
         ...delivery,
         result: execution.result,
+        // ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the materials of agent work.
         ...(execution.mode === 'agent'
           ? { materials: materialsOf(execution) }
           : {}),

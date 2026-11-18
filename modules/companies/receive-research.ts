@@ -25,6 +25,8 @@ import {
  * together, and may run again with the same draft: the research is locked,
  * and a report already published for it is not published again. The
  * previous report of the company stays available whatever happens.
+ * ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the evidence is the materials AI
+ * delivers with the result of agent work.
  */
 export async function recordResearchResult(
   researchId: string,

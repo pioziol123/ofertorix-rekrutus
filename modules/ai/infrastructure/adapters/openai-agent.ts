@@ -9,6 +9,7 @@ import type {
   ProviderSettings,
 } from '../../provider-adapter.ts'
 import type { ExecutionEnd } from '../../domain/execution-state.ts'
+import { agentTools, type AgentTool } from '../../domain/execution-mode.ts'
 
 /**
  * The agent mode of the OpenAI adapter: web search and synthesis in two
@@ -145,8 +146,8 @@ export function citedMaterials(
   return units.slice(0, 40)
 }
 
-/** The tool the agent mode runs: OpenAI's web search. */
-const webSearch = 'web_search'
+/** Each public tool the agent offers, as OpenAI's protocol names it. */
+const protocolTools: Record<AgentTool, string> = { web_search: 'web_search' }
 
 /** The adapter's own state of an execution: its step log and materials. */
 const agentState = z.object({
@@ -213,6 +214,7 @@ export function openAiAgent(
   apiKey: () => string | undefined = () => process.env.OPENAI_API_KEY,
 ): AgentRunner {
   return {
+    tools: agentTools,
     fits: () => fits(settings),
     materials: (state) => agentState.parse(state).materials,
     async run(request, context) {
@@ -347,11 +349,13 @@ async function runAgent(
   }
 
   if (!key) return finish({ kind: 'end', end: failed('configuration') })
-  if (!request.tools.every((tool) => tool === webSearch))
+  // The search step needs web search; the request names it (checked when
+  // the work was requested).
+  if (!request.tools.includes('web_search'))
     return finish({ kind: 'end', end: failed('configuration') })
   try {
     const searched = await step('search', {
-      tools: [{ type: webSearch, search_context_size: 'low' }],
+      tools: [{ type: protocolTools.web_search, search_context_size: 'low' }],
       tool_choice: 'required',
       max_tool_calls: settings.maxToolCalls,
       instructions: request.instructions,

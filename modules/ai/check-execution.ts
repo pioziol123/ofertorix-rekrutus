@@ -30,6 +30,8 @@ const contents = new WeakMap<ExecutionCheck, CheckContent>()
  */
 export async function checkExecution(
   settingsKey: string,
+  // ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the mode, as the reservation
+  // read readReservation(key, mode) of 0mq.21 takes it.
   mode: ExecutionMode = 'single',
 ): Promise<ExecutionCheck> {
   const settings = executionSettings(settingsKey, mode)

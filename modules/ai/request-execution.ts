@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { transaction } from '../../lib/db.ts'
 import { admitExecutions, type RequestedExecution } from './admit-executions.ts'
 import { checkedValues, type ExecutionCheck } from './check-execution.ts'
+import { agentTools, type AgentTool } from './domain/execution-mode.ts'
 import { exceedsInputCap } from './domain/input-cap.ts'
 import { schemaValidator } from './domain/response-schema.ts'
 import { providerAdapter } from './provider-registry.ts'
@@ -32,7 +33,7 @@ export type { RequestedExecution } from './admit-executions.ts'
 export type ExecutionModeRequest =
   | { kind: 'single' }
   | { kind: 'batch'; groupId: string }
-  | { kind: 'agent'; tools: string[]; resultInstruction: string }
+  | { kind: 'agent'; tools: AgentTool[]; resultInstruction: string }
 
 export type ExecutionRequest = {
   /**
@@ -86,9 +87,14 @@ function validate(request: ExecutionRequest) {
     !Object.keys(request.responseSchema.schema).length ||
     !schemaValidator(request.responseSchema.schema) ||
     (mode.kind === 'batch' && !uuid.test(mode.groupId)) ||
+    // ASSUMPTION(oferty-pracy-0mq.22/ASM-3): tools from the closed list and
+    // the result instruction.
     (mode.kind === 'agent' &&
       (!Array.isArray(mode.tools) ||
-        mode.tools.some((t) => typeof t !== 'string' || !t.trim()) ||
+        !mode.tools.length ||
+        mode.tools.some(
+          (t) => !(agentTools as readonly unknown[]).includes(t),
+        ) ||
         typeof mode.resultInstruction !== 'string' ||
         !mode.resultInstruction.trim()))
   )
@@ -111,6 +117,7 @@ function snapshot(
     responseSchema: request.responseSchema,
     input: request.input,
     tools: request.mode.kind === 'agent' ? request.mode.tools : [],
+    // ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
     ...(request.mode.kind === 'agent'
       ? { resultInstruction: request.mode.resultInstruction }
       : {}),
@@ -154,6 +161,18 @@ async function admit(requests: ExecutionRequest[]) {
     )
   )
     throw new AiRequestError('input_too_large')
+  // An agent refuses, before anything is reserved, tools it does not
+  // offer. ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
+  if (
+    first.mode.kind === 'agent' &&
+    first.mode.tools.some(
+      (tool) =>
+        !providerAdapter(settings.provider)
+          ?.modes.agent?.(settings)
+          .tools.includes(tool),
+    )
+  )
+    throw new AiRequestError('unsupported_mode')
   // A provider's batch refuses, before anything is reserved, what it
   // cannot take.
   // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the refusal of the batch mode.

@@ -258,6 +258,7 @@ export function openAiProvider(
           settings,
           () => new BatchClient(process.env.OPENAI_API_KEY ?? '', fetcher),
         ),
+      // ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
       agent: (settings) => openAiAgent(settings, fetcher),
     },
     // ASSUMPTION(oferty-pracy-0mq.21/ASM-5): the exact body single mode

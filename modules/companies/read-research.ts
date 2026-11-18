@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { db } from '../../lib/db.ts'
 import { CompanyNotFound } from '../../lib/companies/store.ts'
 import type {
   ResearchReport,
@@ -14,7 +13,10 @@ import {
   readResearchExecutions,
   researchReservation,
 } from './infrastructure/adapters/research-ai.ts'
-import { companyResearchRows } from './infrastructure/persistence/research-records.ts'
+import {
+  companyResearchRows,
+  readResearchTarget,
+} from './infrastructure/persistence/research-records.ts'
 
 /**
  * The research of a company, newest first, for its page: each research
@@ -26,8 +28,7 @@ import { companyResearchRows } from './infrastructure/persistence/research-recor
 export async function readCompanyResearch(companyId: string) {
   if (
     !z.uuid().safeParse(companyId).success ||
-    !(await db().query('SELECT id FROM companies WHERE id=$1', [companyId]))
-      .rowCount
+    !(await readResearchTarget(companyId))
   )
     throw new CompanyNotFound()
   const rows = await companyResearchRows(companyId)

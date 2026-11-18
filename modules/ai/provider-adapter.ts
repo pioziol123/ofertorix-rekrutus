@@ -1,3 +1,4 @@
+import type { AgentTool } from './domain/execution-mode.ts'
 import type { ExecutionEnd } from './domain/execution-state.ts'
 
 export type ModelRequest = {
@@ -88,6 +89,7 @@ export type ProviderSettings = {
   /**
    * The most calls of a paid tool the reservation covers (agent mode);
    * absent when the price list covers no paid tool.
+   * ASSUMPTION(oferty-pracy-0mq.22/ASM-4)
    */
   maxToolCalls?: number
   /** The local runtime from the AI configuration; null for a remote model. */
@@ -160,7 +162,7 @@ export type AgentMaterial = {
  */
 export type AgentRequest = ModelRequest & {
   resultInstructions: string
-  tools: string[]
+  tools: AgentTool[]
 }
 
 /** One step of agent work as the adapter observed it. */
@@ -199,6 +201,8 @@ export type AgentContext = {
 
 /**
  * The agent mode of an adapter.
+ * - `tools`: the tools the agent offers; a request naming another is
+ *   refused with `unsupported_mode` before anything is reserved.
  * - `fits`: whether the settings let the agent run its steps (the model,
  *   the token caps and the tool calls the reservation covers); a request
  *   under settings that do not fit is refused with `not_configured`.
@@ -208,6 +212,8 @@ export type AgentContext = {
  *   adapter saved; they reach the client with the result.
  */
 export type AgentRunner = {
+  /** The tools of the public list the agent offers. */
+  tools: readonly AgentTool[]
   fits: () => boolean
   run: (request: AgentRequest, context: AgentContext) => Promise<AgentOutcome>
   materials: (state: unknown) => AgentMaterial[]

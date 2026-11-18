@@ -1,11 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { db, transaction } from '../../lib/db.ts'
+import { transaction } from '../../lib/db.ts'
 import { CompanyConflict, CompanyNotFound } from '../../lib/companies/store.ts'
-import {
-  researchCommand,
-  type ResearchTarget,
-} from '../../lib/companies/research-model.ts'
+import { researchCommand } from '../../lib/companies/research-model.ts'
 import {
   checkResearchExecution,
   isRefusal,
@@ -16,6 +13,10 @@ import {
   companyResearchRows,
   insertResearch,
   linkResearchExecution,
+  lockCompanyResearch,
+  lockResearchCommand,
+  readResearchTarget,
+  saveResearchReceipt,
 } from './infrastructure/persistence/research-records.ts'
 
 /** Research cannot be requested now: its AI settings are not configured. */
@@ -42,32 +43,16 @@ export async function requestResearch(companyId: string, value: unknown) {
   // Outside the transaction, as AI requires; a reused research needs none.
   const check = await checkResearchExecution()
   return transaction(async () => {
-    const client = db()
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-      `research-command-${command.commandId}`,
-    ])
-    const receipt = (
-      await client.query(
-        'SELECT * FROM company_research_commands WHERE id=$1',
-        [command.commandId],
-      )
-    ).rows[0]
+    const receipt = await lockResearchCommand(command.commandId)
     if (receipt) {
       if (receipt.fingerprint !== fingerprint) throw new CompanyConflict()
-      return receipt.result as { id: string; reused: boolean }
+      return receipt.result
     }
     // One research in progress per company: requests of a company are
     // decided one at a time, from the stage of its research in AI.
     // ASSUMPTION(oferty-pracy-0mq.22/ASM-1)
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-      `company-research-${companyId}`,
-    ])
-    const company = (
-      await client.query(
-        'SELECT name,kind,website,description FROM companies WHERE id=$1',
-        [companyId],
-      )
-    ).rows[0] as ResearchTarget | undefined
+    await lockCompanyResearch(companyId)
+    const company = await readResearchTarget(companyId)
     if (!company) throw new CompanyNotFound()
     const researches = await companyResearchRows(companyId)
     const executions = await readResearchExecutions(
@@ -102,10 +87,7 @@ export async function requestResearch(companyId: string, value: unknown) {
       }
       result = { id, reused: false }
     }
-    await client.query(
-      'INSERT INTO company_research_commands(id,fingerprint,result) VALUES($1,$2,$3)',
-      [command.commandId, fingerprint, result],
-    )
+    await saveResearchReceipt(command.commandId, { fingerprint, result })
     return result
   })
 }
