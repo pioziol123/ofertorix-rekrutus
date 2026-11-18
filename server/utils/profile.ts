@@ -9,13 +9,15 @@ import type { H3Event } from 'h3'
 import { ZodError } from 'zod'
 import { createBoss } from '../../lib/queue'
 import { ProfileConflict } from '../../lib/profile/store'
-import { ModelError } from '../../modules/ai/index'
+import { AiRequestError, useAiQueue } from '../../modules/ai/index'
 let bossPromise: Promise<ReturnType<typeof createBoss>> | undefined
 export function profileBoss() {
   bossPromise ??= (async () => {
     const boss = createBoss()
     boss.on('error', () => console.error('Profile queue unavailable'))
     await boss.start()
+    // Requests from the profile routes send AI executions on this client.
+    useAiQueue(boss)
     return boss
   })().catch((error) => {
     bossPromise = undefined
@@ -69,9 +71,9 @@ export function profileHandler<T>(run: (event: H3Event) => Promise<T>) {
     try {
       return await run(event)
     } catch (error) {
-      if (error instanceof ModelError)
+      if (error instanceof AiRequestError)
         throw createError({
-          statusCode: error.code === 'configuration' ? 422 : 503,
+          statusCode: error.code === 'provider_unavailable' ? 503 : 422,
           statusMessage: 'AI unavailable; check server configuration and model',
           data: { code: error.code },
         })

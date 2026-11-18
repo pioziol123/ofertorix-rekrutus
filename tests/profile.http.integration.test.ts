@@ -11,12 +11,7 @@ import { Pool } from 'pg'
 import { PgBoss } from 'pg-boss'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { emptyProfile } from '../lib/profile/model.ts'
-import {
-  aiQueue,
-  digest,
-  extractImport,
-  parseQueue,
-} from '../lib/profile/imports.ts'
+import { digest, extractImport, parseQueue } from '../lib/profile/imports.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -49,7 +44,6 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
     boss.on('error', () => {})
     await boss.start()
     await boss.createQueue(parseQueue)
-    await boss.createQueue(aiQueue)
     root = await mkdtemp(join(tmpdir(), 'profile-http-'))
     const probe = createServer()
     probe.listen(0, '127.0.0.1')

@@ -2,11 +2,14 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { transaction } from '../../lib/db.ts'
 import { admitExecutions } from './admit-executions.ts'
 import { chargeCeiling } from './domain/cost.ts'
+import type { ExecutionEnd } from './domain/execution-state.ts'
 import { parseResult } from './domain/response-schema.ts'
+import { resendExecutionJob } from './execution-queue.ts'
 import {
   claimDelivery,
   claimExecution,
   finishExecution,
+  readExecutionRow,
   recordFailedDelivery,
   saveOutcome,
   settleAttempt,
@@ -14,17 +17,34 @@ import {
   type ExecutionRow,
   type Settlement,
 } from './infrastructure/persistence/executions.ts'
-import { emptyUsage, ModelError, type ModelUsage } from './provider-adapter.ts'
+import {
+  archiveLocal,
+  authorizeLocalRequest,
+  claimLocalSlot,
+  finishLocal,
+  queuedLocalExecutions,
+  renewLocal,
+  type LocalClaim,
+} from './infrastructure/persistence/local-slot.ts'
+import {
+  emptyUsage,
+  ModelError,
+  type ModelUsage,
+  type ProviderAdapter,
+} from './provider-adapter.ts'
 import { providerAdapter } from './provider-registry.ts'
 import { resultReceiver } from './result-receiver.ts'
 
 /** The attempts an operation gets for transient errors, as before. */
 const maxAttempts = 2
+/** How often a worker on the shared local slot extends its lease. */
+const leaseRenewalMs = 15_000
 
-type Outcome = {
+export type Outcome = {
   /** The parsed result, or null when the execution ended without one. */
   result: unknown
-  cause: string | null
+  /** The end the adapter decided for an outcome without a result. */
+  end: ExecutionEnd | null
   usage: ModelUsage
   responseId: string | null
   /** Nothing reached the provider, so nothing was spent. */
@@ -33,30 +53,64 @@ type Outcome = {
   retryAfterMs: number
 }
 
+export const noOutcome = (): Outcome => ({
+  result: null,
+  end: null,
+  usage: emptyUsage(),
+  responseId: null,
+  notSent: false,
+  retry: false,
+  retryAfterMs: 1000,
+})
+
+/**
+ * Takes a queued execution for work. An execution of a provider on the
+ * shared local slot is taken only together with the slot, in request
+ * order; otherwise it stays queued until the slot is free.
+ */
+async function claim(executionId: string) {
+  return transaction(async () => {
+    const queued = await readExecutionRow(executionId)
+    if (queued?.state !== 'queued') return null
+    let local: LocalClaim | null = null
+    if (providerAdapter(queued.snapshot.settings.provider)?.sharedSlot) {
+      local = await claimLocalSlot(executionId)
+      if (!local) return null
+    }
+    const execution = await claimExecution(executionId)
+    return execution ? { execution, local } : null
+  })
+}
+
 /** Calls the provider through its adapter and classifies what happened. */
-async function callProvider(execution: ExecutionRow): Promise<Outcome> {
+async function callProvider(
+  execution: ExecutionRow,
+  adapter: ProviderAdapter | undefined,
+  local: LocalClaim | null,
+): Promise<Outcome> {
   const { settings, instruction, input, responseSchema } = execution.snapshot
-  const outcome: Outcome = {
-    result: null,
-    cause: null,
-    usage: emptyUsage(),
-    responseId: null,
-    notSent: false,
-    retry: false,
-    retryAfterMs: 1000,
-  }
+  const outcome = noOutcome()
   // A request is accepted only in a mode the adapter declares (refused
   // otherwise with unsupported_mode, before any reservation). An adapter
   // that no longer declares it when the job runs is a failure on the AI
   // side with its own cause; nothing reached a provider.
-  const single =
-    execution.mode === 'single'
-      ? providerAdapter(settings.provider)?.modes.single
-      : undefined
-  if (!single)
-    return { ...outcome, cause: 'adapter_unavailable', notSent: true }
+  const single = execution.mode === 'single' ? adapter?.modes.single : undefined
+  if (!adapter || !single)
+    return {
+      ...outcome,
+      end: { state: 'failed', cause: 'adapter_unavailable' },
+      notSent: true,
+    }
   try {
-    const response = await single(settings).generate({
+    const response = await single(settings, {
+      fixed: execution.snapshot.fixed ?? {},
+      ...(local
+        ? {
+            beforeSend: () => authorizeLocalRequest(local),
+            archive: (raw: string) => archiveLocal(local, raw),
+          }
+        : {}),
+    }).generate({
       model: settings.model,
       instructions: instruction,
       input,
@@ -64,18 +118,25 @@ async function callProvider(execution: ExecutionRow): Promise<Outcome> {
     })
     outcome.usage = response.usage
     outcome.responseId = response.responseId
-    if (response.outcome !== 'completed' || response.text === null)
-      return { ...outcome, cause: response.outcome }
+    if (response.outcome !== 'completed')
+      return {
+        ...outcome,
+        end: adapter.endOf({ kind: 'outcome', outcome: response.outcome }),
+      }
     // Only a result that matches the response schema reaches the receiver.
-    const result = parseResult(response.text, responseSchema.schema)
+    const result =
+      response.text === null
+        ? undefined
+        : parseResult(response.text, responseSchema.schema)
     return result === undefined
-      ? { ...outcome, cause: 'format' }
+      ? { ...outcome, end: { state: 'failed', cause: 'format' } }
       : { ...outcome, result }
   } catch (error) {
-    if (!(error instanceof ModelError)) return { ...outcome, cause: 'unknown' }
+    const end = adapter.endOf({ kind: 'error', error })
+    if (!(error instanceof ModelError)) return { ...outcome, end }
     return {
       ...outcome,
-      cause: error.code,
+      end,
       usage: error.details.usage ?? outcome.usage,
       responseId: error.details.responseId ?? outcome.responseId,
       retry: error.details.transient === true,
@@ -85,23 +146,61 @@ async function callProvider(execution: ExecutionRow): Promise<Outcome> {
 }
 
 /**
+ * Runs the call while holding the shared local slot: the lease is renewed
+ * during the call, and afterwards the slot is released unless the adapter
+ * judged the end uncertain. An outcome reached after the lease lapsed is
+ * not used: the adapter decides what the lost lease means.
+ */
+async function callOnSlot(
+  execution: ExecutionRow,
+  adapter: ProviderAdapter | undefined,
+  local: LocalClaim,
+): Promise<Outcome> {
+  const heartbeat = setInterval(() => {
+    void renewLocal(local).catch(() => {})
+  }, leaseRenewalMs)
+  heartbeat.unref()
+  let outcome: Outcome
+  try {
+    outcome = await callProvider(execution, adapter, local)
+  } finally {
+    clearInterval(heartbeat)
+  }
+  const ended = outcome.end?.state !== 'uncertain'
+  const held = await transaction(() => finishLocal(local, ended))
+  if (!held && adapter)
+    outcome = {
+      ...outcome,
+      result: null,
+      end: adapter.endOf({ kind: 'lost_lease' }),
+    }
+  return outcome
+}
+
+/**
  * The confirmed cost from the usage and the saved price list. Usage that is
  * missing or beyond the recorded caps leaves the cost unknown and reserved.
+ * Work on a model without a price list costs nothing.
  */
-function settlementOf(execution: ExecutionRow, outcome: Outcome): Settlement {
+export function settlementOf(
+  execution: ExecutionRow,
+  outcome: Outcome,
+): Settlement {
   const pricing = execution.snapshot.settings.pricing
   const { inputTokens, outputTokens } = outcome.usage
   const known =
+    pricing !== null &&
     inputTokens !== null &&
     outputTokens !== null &&
     inputTokens <= pricing.maxInputTokens &&
     outputTokens <= pricing.maxOutputTokens
   return {
-    actual: outcome.notSent
-      ? '0.000000'
-      : known
-        ? chargeCeiling(pricing, inputTokens, outputTokens)
-        : null,
+    actual:
+      outcome.notSent || pricing === null
+        ? '0.000000'
+        : known
+          ? chargeCeiling(pricing, inputTokens, outputTokens)
+          : null,
     usage: outcome.usage,
     responseId: outcome.responseId,
   }
@@ -111,13 +210,13 @@ function settlementOf(execution: ExecutionRow, outcome: Outcome): Settlement {
 async function retry(
   execution: ExecutionRow,
   settlement: Settlement,
-  cause: string | null,
+  end: ExecutionEnd | null,
 ) {
   await transaction(async () => {
     await settleAttempt(execution.id, settlement)
     await finishExecution(execution.id, {
       state: 'retried',
-      cause,
+      cause: end?.cause ?? null,
     })
     await admitExecutions(
       [
@@ -148,7 +247,8 @@ function deliveryError(error: unknown) {
 /**
  * Hands the saved outcome to the client's receiver and, in the same
  * transaction, settles the attempt and ends the execution with the
- * receiver's decision. When the receiver throws, everything of this
+ * receiver's decision, or with the end the adapter decided for an outcome
+ * without a result. When the receiver throws, everything of this
  * delivery is rolled back, the execution stays `delivering` with its cost
  * reserved, and the error is raised so that the queue retries the job.
  */
@@ -171,9 +271,12 @@ async function deliver(executionId: string) {
       }
       await settleSavedAttempt(execution.id)
       if (execution.result === null) {
-        const cause = execution.cause ?? 'unknown'
-        await receiver.receiveFailure({ ...delivery, cause })
-        await finishExecution(execution.id, { state: 'failed', cause })
+        const end: ExecutionEnd = {
+          state: execution.endState ?? 'failed',
+          cause: execution.cause ?? 'unknown',
+        }
+        await receiver.receiveFailure({ ...delivery, ...end })
+        await finishExecution(execution.id, end)
         return
       }
       const decision = await receiver.receiveResult({
@@ -184,13 +287,19 @@ async function deliver(executionId: string) {
         execution.id,
         decision.accepted
           ? { state: 'completed', cause: null }
-          : { state: 'rejected', cause: decision.reason },
+          : { state: 'rejected', cause: null },
       )
     })
   } catch (error) {
     await recordFailedDelivery(executionId, deliveryError(error))
     throw error
   }
+}
+
+/** Sends again the jobs of the executions waiting for the shared slot. */
+export async function wakeLocalQueue() {
+  for (const executionId of await queuedLocalExecutions())
+    await resendExecutionJob(executionId)
 }
 
 /**
@@ -201,22 +310,28 @@ async function deliver(executionId: string) {
  * calling the provider.
  */
 export async function runExecution(executionId: string): Promise<void> {
-  const execution = await transaction(() => claimExecution(executionId))
-  if (execution) {
-    const outcome = await callProvider(execution)
+  const claimed = await claim(executionId)
+  if (claimed) {
+    const { execution, local } = claimed
+    const adapter = providerAdapter(execution.snapshot.settings.provider)
+    const outcome = local
+      ? await callOnSlot(execution, adapter, local)
+      : await callProvider(execution, adapter, null)
     const settlement = settlementOf(execution, outcome)
     if (outcome.retry && execution.attempt.number < maxAttempts) {
       await delay(outcome.retryAfterMs)
-      await retry(execution, settlement, outcome.cause)
+      await retry(execution, settlement, outcome.end)
       return
     }
     await transaction(() =>
       saveOutcome(
         execution.id,
-        { result: outcome.result, cause: outcome.cause },
+        { result: outcome.result, end: outcome.end },
         settlement,
       ),
     )
+    // The slot may be free now; the next local execution takes it.
+    if (local) await wakeLocalQueue()
   }
   await deliver(executionId)
 }

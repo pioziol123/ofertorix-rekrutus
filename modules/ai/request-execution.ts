@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { transaction } from '../../lib/db.ts'
 import { admitExecutions, type RequestedExecution } from './admit-executions.ts'
+import { checkedValues, type ExecutionCheck } from './check-execution.ts'
 import { schemaValidator } from './domain/response-schema.ts'
 import { AiRequestError } from './errors.ts'
 import {
@@ -34,6 +35,11 @@ export type ExecutionRequest = {
   instruction: string
   responseSchema: { name: string; schema: Record<string, unknown> }
   input: string
+  /**
+   * The result of the check before the request, for the same settings
+   * key. Required when the provider fixes something before a request.
+   */
+  check?: ExecutionCheck
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -62,6 +68,11 @@ function snapshot(
   settings: ExecutionSettings,
 ): ExecutionSnapshot {
   return {
+    fixed: checkedValues(request.check, {
+      settingsKey: request.settingsKey,
+      provider: settings.provider,
+      model: settings.model,
+    }),
     kind: 'ai-execution',
     settings,
     instruction: request.instruction,
@@ -77,19 +88,20 @@ async function admit(requests: ExecutionRequest[]) {
   // Refused before anything is reserved: settings that are missing or
   // invalid, and a mode no adapter of the provider declares.
   const settings = executionSettings(first.settingsKey, first.mode.kind)
+  const snapshots = requests.map((request) => snapshot(request, settings))
   return transaction(async () => {
     for (const request of requests)
       if (await hasActiveExecution(request.operationId))
         throw new AiRequestError('operation_busy')
     return admitExecutions(
-      requests.map((request) => ({
+      requests.map((request, index) => ({
         settingsKey: request.settingsKey,
         operationId: request.operationId,
         inputVersion: request.inputVersion ?? null,
         mode: request.mode.kind,
         groupId: request.mode.kind === 'batch' ? request.mode.groupId : null,
         supersedes: null,
-        snapshot: snapshot(request, settings),
+        snapshot: snapshots[index]!,
         attempt: 1,
         generation: randomUUID(),
       })),

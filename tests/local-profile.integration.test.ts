@@ -12,13 +12,24 @@ import {
   it,
   vi,
 } from 'vitest'
-import { budgetMonth } from '../modules/ai/index.ts'
-import { prepareProposal, executeAi } from '../lib/profile/ai.ts'
-import {
-  retryLocalProfile,
-  recoverLocalProfiles,
-} from '../lib/profile/local-ai.ts'
+import { closePool, setPool } from '../lib/db.ts'
 import { createTextImport } from '../lib/profile/imports.ts'
+import {
+  budgetMonth,
+  readLatestExecution,
+  recoverExecutions,
+  registerResultReceiver,
+  runExecution,
+  useAiQueue,
+} from '../modules/ai/index.ts'
+import { ollamaProvider } from '../modules/ai/infrastructure/adapters/ollama.ts'
+import { registerProviderAdapter } from '../modules/ai/provider-registry.ts'
+import {
+  prepareProposal,
+  proposalReceiver,
+  proposalSettingsKey,
+  readImport,
+} from '../modules/profile/index.ts'
 import { useLocalModel, usePricing } from './ai-test-configuration.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
@@ -30,6 +41,9 @@ vi.mock(
   '../modules/ai/model-catalog.ts',
   () => import('./ai-test-configuration.ts'),
 )
+
+const uncertain =
+  'Nie wiadomo, jak zakończyło się przygotowanie propozycji. Profil pozostaje bez zmian. Sprawdź stan wykonania przed ponowieniem.'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -59,24 +73,37 @@ integration('local profile executions in PostgreSQL', () => {
     vi.fn<typeof fetch>(async (url) =>
       String(url).endsWith('/api/tags') ? tags() : response(),
     )
+  /** The local runtime, simulated by the fetcher each step sets. */
+  let runtime: typeof fetch = fetcher()
   async function enqueue(input = 'PHP experience') {
     const importId = await createTextImport(pool, input)
-    const prepared = await prepareProposal(
-      pool,
-      boss,
-      importId,
-      input,
-      0,
-      fetcher(),
-    )
-    if (!('executionId' in prepared) || !prepared.executionId)
-      throw new Error('Expected local execution')
+    runtime = fetcher()
+    const prepared = await prepareProposal(importId, input, 0)
+    if (!('executionId' in prepared)) throw new Error('Expected a request')
     return { ...prepared, importId }
   }
-  const attempt = async (id: string) =>
-    (await pool.query('SELECT * FROM ai_attempts WHERE id=$1', [id])).rows[0]
+  async function executeAi(executionId: string, mock: typeof fetch) {
+    runtime = mock
+    await runExecution(executionId)
+  }
+  const attempt = async (executionId: string) =>
+    (
+      await pool.query('SELECT * FROM ai_attempts WHERE execution_id=$1', [
+        executionId,
+      ])
+    ).rows[0]
   const execution = async (id: string) =>
     (await pool.query('SELECT * FROM ai_executions WHERE id=$1', [id])).rows[0]
+  const imported = async (id: string) =>
+    (
+      await pool.query(
+        'SELECT status,proposal,error FROM profile_imports WHERE id=$1',
+        [id],
+      )
+    ).rows[0]
+  const slotHolder = async () =>
+    (await pool.query('SELECT execution_id FROM ai_local_slots')).rows[0]
+      ?.execution_id
   beforeAll(async () => {
     admin = new Pool({ connectionString: process.env.DATABASE_URL })
     await admin.query(`CREATE SCHEMA ${schema}`)
@@ -87,14 +114,23 @@ integration('local profile executions in PostgreSQL', () => {
     const require = createRequire(import.meta.url)
     const sql: string[] = []
     for (const migration of [
+      '1770000000001_sources',
       '1770000000004_profiles',
+      '1770000000006_matching',
       '1770000000013_local_ai',
       '1770000000016_ai_execution_requests',
+      '1770000000017_profile_ai_executions',
     ])
       require(`../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),
       })
     await pool.query(sql.join('\n'))
+    setPool(pool)
+    useAiQueue(boss)
+    registerProviderAdapter(
+      ollamaProvider((input, init) => runtime(input, init)),
+    )
+    registerResultReceiver(proposalSettingsKey, proposalReceiver)
   })
   beforeEach(async () => {
     vi.stubEnv('OPENAI_API_KEY', '')
@@ -109,31 +145,39 @@ integration('local profile executions in PostgreSQL', () => {
   })
   afterEach(() => vi.unstubAllEnvs())
   afterAll(async () => {
-    await pool?.end()
+    await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
       await admin.end()
     }
   })
-  it('runs without paid configuration or budget and uses the saved model and inputs', async () => {
+  it('A9-AC01: runs without paid configuration or budget and uses the saved model and inputs', async () => {
     await pool.query('INSERT INTO ai_budget_months VALUES ($1,0)', [
       budgetMonth(),
     ])
     const task = await enqueue()
+    expect(task.state).toBe('queued')
     // The settings change after the request; the saved snapshot is used.
     usePricing('profile', null)
+    useLocalModel('other', 4096)
     const mock = fetcher()
-    await executeAi(pool, boss, task.id, mock)
-    expect(await attempt(task.id)).toMatchObject({
+    await executeAi(task.executionId, mock)
+    expect(await attempt(task.executionId)).toMatchObject({
       state: 'settled',
       month: null,
       reserved_pln: '0.000000',
       actual_pln: '0.000000',
-      proposal,
     })
     expect(await execution(task.executionId)).toMatchObject({
       runtime_state: 'finished',
-      result_status: 'completed',
+      state: 'completed',
+      input_version: '1',
+      result: proposal,
+    })
+    expect(await imported(task.importId)).toEqual({
+      status: 'proposal',
+      proposal,
+      error: null,
     })
     expect(mock.mock.calls.map(([url]) => url)).toEqual([
       'http://ollama.test/api/tags',
@@ -143,15 +187,34 @@ integration('local profile executions in PostgreSQL', () => {
       model: 'gpt-oss:20b',
       options: { num_ctx: 8192 },
     })
+    expect(await slotHolder()).toBeNull()
   })
-  it('archives an invalid result and explicit retry copies the original snapshot', async () => {
+  it('refuses a model whose version changed after the check, before inference', async () => {
+    const task = await enqueue()
+    const mock = vi.fn<typeof fetch>(async (url) =>
+      String(url).endsWith('/api/tags')
+        ? Response.json({
+            models: [{ name: selection.model, digest: 'other-digest' }],
+          })
+        : result(),
+    )
+    await executeAi(task.executionId, mock)
+    expect(mock).toHaveBeenCalledOnce()
+    expect(await execution(task.executionId)).toMatchObject({
+      state: 'failed',
+      cause: 'model_unavailable',
+    })
+    expect(await slotHolder()).toBeNull()
+  })
+  it('archives an invalid result and accepts a new request of the import', async () => {
     const task = await enqueue()
     const mock = fetcher(() => result('{invalid'))
-    await executeAi(pool, boss, task.id, mock)
+    await executeAi(task.executionId, mock)
     const old = await execution(task.executionId)
     expect(old).toMatchObject({
       runtime_state: 'finished',
-      result_status: 'failed',
+      state: 'failed',
+      cause: 'format',
     })
     expect(mock).toHaveBeenCalledTimes(2)
     expect(
@@ -162,20 +225,12 @@ integration('local profile executions in PostgreSQL', () => {
         )
       ).rows[0]?.content,
     ).toContain('{invalid')
-    useLocalModel('profile', 4096)
-    const next = await retryLocalProfile(
-      pool,
-      boss,
-      task.id,
-      Number(old.revision),
-    )
-    expect(next.executionId).not.toBe(old.id)
-    expect((await execution(next.executionId)).configuration).toEqual(
-      old.configuration,
-    )
-    expect((await execution(old.id)).publication_allowed).toBe(false)
+    expect((await imported(task.importId)).error).toContain('format danych')
+    runtime = fetcher()
+    const next = await prepareProposal(task.importId, 'PHP experience', 1)
+    expect(next.state).toBe('queued')
   })
-  it('keeps the slot after uncertain HTTP and prevents another worker from generating', async () => {
+  it('A9-AC03, A9-AC08: keeps the slot after uncertain HTTP, prevents another worker from generating and shows the uncertain message', async () => {
     const first = await enqueue(),
       second = await enqueue('Vue experience')
     let start!: () => void, fail!: (error: Error) => void
@@ -189,28 +244,33 @@ integration('local profile executions in PostgreSQL', () => {
       start()
       return response
     })
-    const running = executeAi(pool, boss, first.id, mock)
+    const running = executeAi(first.executionId, mock)
     try {
       await started
-      await executeAi(pool, boss, second.id, mock)
+      await executeAi(second.executionId, mock)
       expect(mock).toHaveBeenCalledTimes(2)
+      expect((await readImport(first.importId))!.status).toBe('ai_running')
+      expect((await readImport(second.importId))!.status).toBe('ai_queued')
     } finally {
       fail(new Error('Connection lost'))
       await running
     }
-    await recoverLocalProfiles(pool, boss)
-    await executeAi(pool, boss, second.id, mock)
+    await recoverExecutions()
+    await executeAi(second.executionId, mock)
     expect(mock).toHaveBeenCalledTimes(2)
     expect(await execution(first.executionId)).toMatchObject({
       runtime_state: 'unknown',
+      state: 'uncertain',
+      cause: 'network',
     })
-    expect(
-      (await pool.query('SELECT execution_id FROM ai_local_slots')).rows[0]
-        ?.execution_id,
-    ).toBe(first.executionId)
-    expect((await attempt(second.id)).state).toBe('queued')
+    expect(await slotHolder()).toBe(first.executionId)
+    expect((await readLatestExecution(second.importId))!.state).toBe('queued')
+    expect(await imported(first.importId)).toMatchObject({
+      status: 'needs_attention',
+      error: uncertain,
+    })
   })
-  it('archives the superseded result without publishing it or starting the retry early', async () => {
+  it('A9-AC03: ends a run whose lease lapsed as uncertain, keeps the slot and does not publish its late result', async () => {
     const task = await enqueue()
     const entered = Promise.withResolvers<undefined>()
     const reply = Promise.withResolvers<Response>()
@@ -218,31 +278,33 @@ integration('local profile executions in PostgreSQL', () => {
       entered.resolve(undefined)
       return reply.promise
     })
-    const running = executeAi(pool, boss, task.id, mock)
+    const running = executeAi(task.executionId, mock)
     await entered.promise
-    let retry: Awaited<ReturnType<typeof retryLocalProfile>>
     try {
-      retry = await retryLocalProfile(
-        pool,
-        boss,
-        task.id,
-        Number((await execution(task.executionId)).revision),
+      await pool.query(
+        "UPDATE ai_local_slots SET lease_until=now()-interval '1 second'",
       )
-      await executeAi(pool, boss, retry.id, mock)
-      expect(mock).toHaveBeenCalledTimes(2)
+      await recoverExecutions()
+      await runExecution(task.executionId)
+      expect(await execution(task.executionId)).toMatchObject({
+        runtime_state: 'unknown',
+        state: 'uncertain',
+        cause: 'interrupted',
+      })
+      expect(await imported(task.importId)).toMatchObject({
+        status: 'needs_attention',
+        error: uncertain,
+      })
+      expect(await slotHolder()).toBe(task.executionId)
     } finally {
       reply.resolve(result())
       await running
     }
-    expect(
-      (
-        await pool.query(
-          'SELECT status,proposal FROM profile_imports WHERE id=$1',
-          [task.importId],
-        )
-      ).rows[0],
-    ).toEqual({ status: 'ai_queued', proposal: null })
-    expect(await attempt(task.id)).toMatchObject({ proposal })
+    // The late response is kept in the history, not published.
+    expect(await imported(task.importId)).toMatchObject({
+      status: 'needs_attention',
+      proposal: null,
+    })
     expect(
       (
         await pool.query(
@@ -251,10 +313,6 @@ integration('local profile executions in PostgreSQL', () => {
         )
       ).rows[0]?.count,
     ).toBe(1)
-    await executeAi(pool, boss, retry.id, fetcher())
-    expect(await attempt(retry.id)).toMatchObject({
-      state: 'settled',
-      proposal,
-    })
+    expect((await execution(task.executionId)).state).toBe('uncertain')
   })
 })

@@ -5,6 +5,14 @@ import type {
   ExecutionSettings,
 } from '../../execution-settings.ts'
 import type { ModelUsage } from '../../provider-adapter.ts'
+import {
+  inProgressStates,
+  type ExecutionCause,
+  type ExecutionEnd,
+  type ExecutionState,
+} from '../../domain/execution-state.ts'
+
+export type { ExecutionState } from '../../domain/execution-state.ts'
 
 /** What AI fixes at request time: the settings and the work to send. */
 export type ExecutionSnapshot = {
@@ -14,23 +22,14 @@ export type ExecutionSnapshot = {
   responseSchema: { name: string; schema: Record<string, unknown> }
   input: string
   tools: string[]
+  /**
+   * What the adapter fixed with its check before the request; only the
+   * adapter reads it. Absent in snapshots saved before the check existed.
+   */
+  fixed?: Record<string, unknown>
 }
 
-/**
- * The stage of an execution. `delivering` holds a saved outcome that the
- * client's receiver has not taken over yet; it is still in progress.
- */
-export type ExecutionState =
-  | 'waiting_budget'
-  | 'queued'
-  | 'running'
-  | 'delivering'
-  | 'completed'
-  | 'rejected'
-  | 'failed'
-  | 'retried'
-
-const inProgress = "('waiting_budget','queued','running','delivering')"
+const inProgress = `(${inProgressStates.map((s) => `'${s}'`).join(',')})`
 
 export type ExecutionRow = {
   id: string
@@ -44,7 +43,9 @@ export type ExecutionRow = {
   snapshot: ExecutionSnapshot
   /** The saved result, or null when the execution has none. */
   result: unknown
-  cause: string | null
+  cause: ExecutionCause | null
+  /** The end an adapter decided for an outcome without a result. */
+  endState: ExecutionEnd['state'] | null
   delivery: { attempts: number; error: string | null }
   createdAt: Date
   finishedAt: Date | null
@@ -79,7 +80,8 @@ function toExecution(row: Record<string, unknown>): ExecutionRow {
     state: row.state as ExecutionState,
     snapshot: row.configuration as ExecutionSnapshot,
     result: row.result ?? null,
-    cause: row.cause as string | null,
+    cause: row.cause as ExecutionCause | null,
+    endState: row.end_state as ExecutionEnd['state'] | null,
     delivery: {
       attempts: row.delivery_attempts as number,
       error: row.delivery_error as string | null,
@@ -123,8 +125,11 @@ export type NewExecution = {
     id: string
     number: number
     generation: string
-    /** The funded month and reservation, or null while waiting for budget. */
-    funding: { month: string; reserved: string } | null
+    /**
+     * The funded month and reservation, or null while waiting for budget.
+     * Work that costs nothing is funded without a month.
+     */
+    funding: { month: string | null; reserved: string } | null
   }
 }
 
@@ -137,7 +142,9 @@ function isActiveExecutionConflict(error: unknown) {
 }
 
 /** Saves an execution with its attempt, the settlement record. */
-export async function insertExecution(execution: NewExecution) {
+export async function insertExecution(
+  execution: NewExecution,
+): Promise<'queued' | 'waiting_budget'> {
   const state = execution.attempt.funding ? 'queued' : 'waiting_budget'
   try {
     await db().query(
@@ -246,25 +253,29 @@ export async function settleAttempt(
 /**
  * Saves what the provider returned and the cost it implies, without
  * settling: the attempt keeps its reservation until the outcome is
- * delivered. The execution waits for delivery.
+ * delivered. The execution waits for delivery. Only a running execution
+ * takes an outcome; false when it no longer runs.
  */
 export async function saveOutcome(
   executionId: string,
-  outcome: { result: unknown; cause: string | null },
+  outcome: { result: unknown; end: ExecutionEnd | null },
   settlement: Settlement,
-) {
-  await db().query(
-    "UPDATE ai_executions SET state='delivering',result=$2,cause=$3,revision=revision+1 WHERE id=$1 AND state='running'",
+): Promise<boolean> {
+  const saved = await db().query(
+    "UPDATE ai_executions SET state='delivering',result=$2,cause=$3,end_state=$4,revision=revision+1 WHERE id=$1 AND state='running'",
     [
       executionId,
       outcome.result === null ? null : JSON.stringify(outcome.result),
-      outcome.cause,
+      outcome.end?.cause ?? null,
+      outcome.end?.state ?? null,
     ],
   )
+  if (!saved.rowCount) return false
   await db().query(
     `UPDATE ai_attempts SET ${attemptOutcome} WHERE execution_id=$1`,
     attemptValues(executionId, settlement),
   )
+  return true
 }
 
 /**
@@ -299,8 +310,8 @@ export async function recordFailedDelivery(executionId: string, error: string) {
 export async function finishExecution(
   executionId: string,
   outcome: {
-    state: 'completed' | 'rejected' | 'failed' | 'retried'
-    cause: string | null
+    state: 'completed' | 'rejected' | 'failed' | 'uncertain' | 'retried'
+    cause: ExecutionCause | null
   },
 ) {
   await db().query(
@@ -325,6 +336,17 @@ export async function readOperationExecutionRows(operationId: string) {
     [operationId],
   )
   return rows.rows.map(toExecution)
+}
+
+/** The latest execution of an operation, or null when it has none. */
+export async function readLatestExecutionRow(operationId: string) {
+  const row = (
+    await db().query(
+      `${selectExecution} WHERE e.operation_id=$1 AND e.state IS NOT NULL ORDER BY e.created_at DESC,a.attempt DESC LIMIT 1`,
+      [operationId],
+    )
+  ).rows[0]
+  return row ? toExecution(row) : null
 }
 
 export async function executionsInState(state: 'waiting_budget' | 'queued') {

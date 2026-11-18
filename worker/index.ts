@@ -11,9 +11,14 @@ import {
 import {
   aiExecutionQueue,
   recoverExecutions,
+  registerResultReceiver,
   runExecution,
   useAiQueue,
 } from '../modules/ai/index.ts'
+import {
+  proposalReceiver,
+  proposalSettingsKey,
+} from '../modules/profile/index.ts'
 import { closePool, getPool } from '../lib/db.ts'
 import { createBoss, smokeQueue } from '../lib/queue.ts'
 
@@ -26,12 +31,9 @@ import {
 
 import {
   parseQueue,
-  aiQueue,
   extractImport,
   recoverImports,
 } from '../lib/profile/imports.ts'
-import { executeAi, resumeAi } from '../lib/profile/ai.ts'
-import { recoverLocalProfiles } from '../lib/profile/local-ai.ts'
 import {
   matchingQueue,
   executeMatching,
@@ -66,13 +68,8 @@ scheduleDay()
 await recoverSyncQueues(boss)
 await workSyncQueues(boss)
 await recoverImports(pool, boss)
-await resumeAi(pool, boss)
-await recoverLocalProfiles(pool, boss)
 await boss.work<{ importId: string }>(parseQueue, async (jobs) => {
   for (const job of jobs) await extractImport(pool, job.data.importId)
-})
-await boss.work<{ attemptId: string }>(aiQueue, async (jobs) => {
-  for (const job of jobs) await executeAi(pool, boss, job.data.attemptId)
 })
 await recoverMatching(pool, boss)
 await boss.work<{ requestId: string }>(matchingQueue, async (jobs) => {
@@ -85,6 +82,7 @@ await boss.work<{ groupId: string }>(matchingGroupQueue, async (jobs) => {
 })
 await recoverCompanyResearch(pool, boss)
 useAiQueue(boss)
+registerResultReceiver(proposalSettingsKey, proposalReceiver)
 await recoverExecutions()
 await boss.work<{ executionId: string }>(aiExecutionQueue, async (jobs) => {
   for (const job of jobs) await runExecution(job.data.executionId)
@@ -101,8 +99,6 @@ async function schedule() {
     await recoverSyncQueues(boss)
     await enqueueSync(pool, boss, 'scheduled')
     await recoverImports(pool, boss)
-    await resumeAi(pool, boss)
-    await recoverLocalProfiles(pool, boss)
     await recoverMatching(pool, boss)
     await recoverMatchingGroups(pool, boss)
     await recoverCompanyResearch(pool, boss)

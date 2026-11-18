@@ -13,8 +13,11 @@ import {
   vi,
 } from 'vitest'
 import { emptyProfile } from '../lib/profile/model.ts'
-import { budgetMonth } from '../modules/ai/index.ts'
-import { resumeAi } from '../lib/profile/ai.ts'
+import {
+  budgetMonth,
+  recoverExecutions,
+  useAiQueue,
+} from '../modules/ai/index.ts'
 import {
   BatchClient,
   type batchRequest,
@@ -78,6 +81,9 @@ integration(
         '1770000000007_matching_payload',
         '1770000000008_matching_groups',
         '1770000000009_rating_revisions',
+        '1770000000013_local_ai',
+        '1770000000016_ai_execution_requests',
+        '1770000000017_profile_ai_executions',
       ]) {
         createRequire(import.meta.url)(`../migrations/${name}.cjs`).up({
           sql: (s: string) => statements.push(s),
@@ -86,6 +92,8 @@ integration(
       await pool.query(statements.join('\n'))
       // Profile reads go through the shared accessor (T-03).
       setPool(pool)
+      // CV proposals now recover through the AI coordination.
+      useAiQueue(boss)
     })
     beforeEach(async () => {
       vi.unstubAllEnvs()
@@ -668,7 +676,7 @@ integration(
           [request.id, state],
         )
         send.mockClear()
-        await resumeAi(pool, boss)
+        await recoverExecutions()
         expect((await attempt(request.id)).state).toBe(state)
         expect(send).not.toHaveBeenCalled()
       }

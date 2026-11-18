@@ -9,7 +9,6 @@ import type { Pool } from 'pg'
 import type { PgBoss } from 'pg-boss'
 import { tx } from './store.ts'
 export const parseQueue = 'profile-parse'
-export const aiQueue = 'profile-ai'
 export const documentRoot = () => process.env.DOCUMENTS_DIR ?? '/data/documents'
 export const digest = (data: Buffer | string) =>
   createHash('sha256').update(data).digest('hex')

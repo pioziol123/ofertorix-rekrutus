@@ -9,8 +9,7 @@ import {
   ProposalEvidenceError,
 } from '../lib/profile/model.ts'
 import { budgetMonth, chargeCeiling } from '../modules/ai/index.ts'
-import type { AiConfiguration, ModelResult } from '../modules/ai/index.ts'
-import { readAiProposal } from '../lib/profile/ai-result.ts'
+import type { AiConfiguration } from '../modules/ai/index.ts'
 import { scrubContacts, validateDocument } from '../lib/profile/imports.ts'
 
 const config: AiConfiguration = {
@@ -227,52 +226,6 @@ describe('professional profile validation and selective proposals', () => {
       ),
     ).toThrow()
   })
-})
-describe('safe AI response diagnostics', () => {
-  const marker = 'PRIVATE_CV_SENTINEL'
-  const valid = { summary: null, skills: [], experience: [] }
-  const result = (
-    outcome: ModelResult['outcome'],
-    text: string | null,
-  ): ModelResult => ({
-    outcome,
-    text,
-    usage: { inputTokens: null, outputTokens: null },
-    responseId: null,
-  })
-  it.each([
-    [result('incomplete', marker), 'nie ukończyło'],
-    [result('refused', marker), 'odmówiło'],
-    [result('completed', null), 'jednej kompletnej'],
-    [result('completed', marker), 'format danych'],
-    [
-      result('completed', JSON.stringify({ ...valid, unexpected: marker })),
-      'format danych',
-    ],
-    [
-      result(
-        'completed',
-        JSON.stringify({
-          ...valid,
-          skills: [{ name: marker, description: marker, evidence: marker }],
-        }),
-      ),
-      'potwierdzić cytatów',
-    ],
-  ] as const)(
-    'reports the failure category without leaking model or CV content',
-    (value, message) => {
-      let caught: unknown
-      try {
-        readAiProposal(value, 'Different reviewed professional text')
-      } catch (error) {
-        caught = error
-      }
-      expect(caught).toBeInstanceOf(Error)
-      expect((caught as Error).message).toContain(message)
-      expect((caught as Error).message).not.toContain(marker)
-    },
-  )
 })
 describe('bounded document and AI inputs', () => {
   it('accepts matching magic bytes and rejects spoofed, blank and oversized documents', () => {

@@ -1,8 +1,20 @@
+import { z } from 'zod'
+import {
+  aiEndpointSchema,
+  resolveEndpoint,
+  savedEndpoint,
+  type AiEndpoint,
+} from '../../configuration.ts'
+import type { ExecutionEnd } from '../../domain/execution-state.ts'
+import { AiRequestError } from '../../errors.ts'
 import { ModelError } from '../../provider-adapter.ts'
 import { record, tokenCount, validateRequest } from './response.ts'
 import type {
   ModelRequest,
   ModelResult,
+  ProviderAdapter,
+  ProviderObservation,
+  ProviderSettings,
   StructuredModel,
 } from '../../provider-adapter.ts'
 import { localFetch } from './local-http.ts'
@@ -157,5 +169,108 @@ export class OllamaAdapter implements StructuredModel {
       usage,
       responseId: null,
     }
+  }
+}
+
+/**
+ * What an observation of the Ollama adapter means publicly. The adapter
+ * records whether the local process confirmed its end. An error before
+ * the request was sent, or after the process confirmed its end, tells how
+ * the work ended. A lost lease of a running process, or an error without
+ * a confirmed end, leaves the process in an unknown state: the execution is
+ * uncertain and keeps the shared local slot.
+ */
+export function ollamaEnd(observation: ProviderObservation): ExecutionEnd {
+  if (observation.kind === 'outcome')
+    return { state: 'failed', cause: observation.outcome }
+  if (observation.kind === 'lost_lease')
+    return { state: 'uncertain', cause: 'interrupted' }
+  const error = observation.error
+  if (!(error instanceof ModelError))
+    return { state: 'uncertain', cause: 'unknown' }
+  if (!error.details.requestSent) return { state: 'failed', cause: error.code }
+  if (error.details.runtimeEnded)
+    return {
+      state: 'failed',
+      cause: error.code === 'format' ? 'no_content' : error.code,
+    }
+  return { state: 'uncertain', cause: error.code }
+}
+
+/** What the Ollama adapter fixes before a request. */
+const fixedSchema = z.object({
+  endpoint: aiEndpointSchema,
+  modelDigest: z.string().nullable(),
+})
+
+function endpointOf(settings: ProviderSettings): AiEndpoint {
+  if (!settings.runtime) throw new ModelError('configuration')
+  return resolveEndpoint(
+    settings.runtime.endpointRef,
+    settings.runtime.endpointVersion,
+  )
+}
+
+const credentialOf = (endpoint: AiEndpoint) => () =>
+  endpoint.credentialEnv ? process.env[endpoint.credentialEnv] : undefined
+
+/**
+ * The Ollama provider for the AI coordination, in single mode, on the
+ * installation's shared local slot. Its check fixes the endpoint and the
+ * version (digest) of the model before a request; the execution refuses a
+ * changed endpoint or model instead of redirecting queued work.
+ */
+export function ollamaProvider(
+  fetcher: typeof fetch = localFetch,
+): ProviderAdapter {
+  return {
+    provider: 'ollama',
+    sharedSlot: true,
+    ready(settings) {
+      try {
+        endpointOf(settings)
+        return true
+      } catch {
+        return false
+      }
+    },
+    async check(settings) {
+      let endpoint: AiEndpoint
+      try {
+        endpoint = endpointOf(settings)
+      } catch {
+        throw new AiRequestError('not_configured')
+      }
+      try {
+        const modelDigest = await new OllamaAdapter(fetcher, {
+          url: endpoint.url,
+          numCtx: settings.runtime!.numCtx,
+          credential: credentialOf(endpoint),
+        }).checkModelAvailability(settings.model)
+        return { endpoint, modelDigest }
+      } catch {
+        throw new AiRequestError('provider_unavailable')
+      }
+    },
+    modes: {
+      single(settings, context) {
+        const fixed = fixedSchema.safeParse(context.fixed)
+        if (!fixed.success || !settings.runtime)
+          throw new ModelError('configuration')
+        const endpoint = savedEndpoint(fixed.data.endpoint)
+        return new OllamaAdapter(fetcher, {
+          url: endpoint.url,
+          numCtx: settings.runtime.numCtx,
+          modelDigest: fixed.data.modelDigest,
+          credential: credentialOf(endpoint),
+          archive: context.archive,
+          beforeGenerate: async () => {
+            if (context.beforeSend && !(await context.beforeSend()))
+              throw new ModelError('configuration')
+          },
+        })
+      },
+    },
+    endOf: ollamaEnd,
   }
 }

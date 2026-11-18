@@ -1,11 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  OpenAiAdapter,
-  normalizeOpenAi,
-} from '../modules/ai/infrastructure/adapters/openai.ts'
-import { OllamaAdapter } from '../modules/ai/index.ts'
-import type { ModelRequest } from '../modules/ai/index.ts'
-import { readAiProposal } from '../lib/profile/ai-result.ts'
+import { ModelError, type ModelRequest } from '../../provider-adapter.ts'
+import { OllamaAdapter, ollamaEnd } from './ollama.ts'
+import { OpenAiAdapter, normalizeOpenAi, openAiEnd } from './openai.ts'
 
 const facts = {
   summary: null,
@@ -77,7 +73,7 @@ describe('Ollama native protocol and normalized results', () => {
       responseId: null,
     })
     expect(archive).toHaveBeenCalledExactlyOnceWith(raw)
-    expect(readAiProposal(result, request.input)).toEqual(facts)
+    expect(JSON.parse(result.text!)).toEqual(facts)
   })
   it.each(['length', 'load', undefined])(
     'does not accept completion reason %s',
@@ -94,9 +90,9 @@ describe('Ollama native protocol and normalized results', () => {
       }).generate(request)
       expect(result.outcome).toBe('incomplete')
       expect(result.text).toBeNull()
-      expect(() => readAiProposal(result, request.input)).toThrow(
-        'nie ukończyło',
-      )
+      expect(
+        ollamaEnd({ kind: 'outcome', outcome: result.outcome as 'incomplete' }),
+      ).toEqual({ state: 'failed', cause: 'incomplete' })
     },
   )
   it('archives malformed HTTP JSON without retrying or claiming confirmed termination', async () => {
@@ -286,5 +282,127 @@ describe('OpenAI adapter owns protocol and transport metadata', () => {
         usage: { input_tokens: -1, output_tokens: 1.5 },
       }).usage,
     ).toEqual({ inputTokens: null, outputTokens: null })
+  })
+})
+
+describe('A14-AC12: each adapter decides the public end of what it observed', () => {
+  const sent = { requestSent: true, responseReceived: true }
+  it.each([
+    ['a refusal', { kind: 'outcome', outcome: 'refused' }, 'failed', 'refused'],
+    [
+      'an incomplete response',
+      { kind: 'outcome', outcome: 'incomplete' },
+      'failed',
+      'incomplete',
+    ],
+    [
+      'no single content in a response',
+      {
+        kind: 'error',
+        error: new ModelError('format', { ...sent, runtimeEnded: true }),
+      },
+      'failed',
+      'no_content',
+    ],
+    [
+      'an error before sending',
+      { kind: 'error', error: new ModelError('configuration') },
+      'failed',
+      'configuration',
+    ],
+    [
+      'an HTTP error response without usage',
+      {
+        kind: 'error',
+        error: new ModelError('http', { ...sent, httpStatus: 401 }),
+      },
+      'uncertain',
+      'http',
+    ],
+    [
+      'a lost connection without usage',
+      {
+        kind: 'error',
+        error: new ModelError('network', { requestSent: true }),
+      },
+      'uncertain',
+      'network',
+    ],
+    [
+      'an unreadable response without usage',
+      { kind: 'error', error: new ModelError('format', sent) },
+      'uncertain',
+      'format',
+    ],
+    [
+      'an unexpected error',
+      { kind: 'error', error: new Error('bug') },
+      'uncertain',
+      'unknown',
+    ],
+  ] as const)('OpenAI: %s', (_, observation, state, cause) => {
+    expect(openAiEnd(observation)).toEqual({ state, cause })
+  })
+  it.each([
+    ['a refusal', { kind: 'outcome', outcome: 'refused' }, 'failed', 'refused'],
+    [
+      'a model missing before sending',
+      { kind: 'error', error: new ModelError('model_unavailable') },
+      'failed',
+      'model_unavailable',
+    ],
+    [
+      'a lease lost before sending',
+      { kind: 'error', error: new ModelError('configuration') },
+      'failed',
+      'configuration',
+    ],
+    [
+      'a confirmed end with no content',
+      {
+        kind: 'error',
+        error: new ModelError('format', { ...sent, runtimeEnded: true }),
+      },
+      'failed',
+      'no_content',
+    ],
+    [
+      'a confirmed context overflow',
+      {
+        kind: 'error',
+        error: new ModelError('context_overflow', {
+          ...sent,
+          runtimeEnded: true,
+        }),
+      },
+      'failed',
+      'context_overflow',
+    ],
+    [
+      'a lost connection while the process runs',
+      {
+        kind: 'error',
+        error: new ModelError('network', { requestSent: true }),
+      },
+      'uncertain',
+      'network',
+    ],
+    [
+      'a generic HTTP failure that does not prove the end',
+      {
+        kind: 'error',
+        error: new ModelError('http', { ...sent, runtimeEnded: false }),
+      },
+      'uncertain',
+      'http',
+    ],
+    [
+      'a lost lease of a running process',
+      { kind: 'lost_lease' },
+      'uncertain',
+      'interrupted',
+    ],
+  ] as const)('Ollama: %s', (_, observation, state, cause) => {
+    expect(ollamaEnd(observation)).toEqual({ state, cause })
   })
 })

@@ -8,7 +8,7 @@ import { syncJobOptions } from '../modules/sources/index.ts'
 
 import { matchingQueue } from '../lib/matching/store.ts'
 
-import { parseQueue, aiQueue } from '../lib/profile/imports.ts'
+import { parseQueue } from '../lib/profile/imports.ts'
 
 const boss = createBoss(true)
 try {
@@ -20,7 +20,6 @@ try {
     await boss.updateQueue(queue, syncJobOptions)
   }
   await boss.createQueue(parseQueue, { retryLimit: 0, expireInSeconds: 120 })
-  await boss.createQueue(aiQueue, { retryLimit: 0, expireInSeconds: 300 })
   await boss.createQueue(matchingQueue, { retryLimit: 0, expireInSeconds: 300 })
   await boss.createQueue(matchingGroupQueue, {
     retryLimit: 0,

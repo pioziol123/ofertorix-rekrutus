@@ -14,8 +14,11 @@ import {
 } from 'vitest'
 import { emptyProfile } from '../lib/profile/model.ts'
 import { confirmProfile, saveDraft } from '../lib/profile/store.ts'
-import { budgetMonth } from '../modules/ai/index.ts'
-import { resumeAi } from '../lib/profile/ai.ts'
+import {
+  budgetMonth,
+  recoverExecutions,
+  useAiQueue,
+} from '../modules/ai/index.ts'
 import {
   BatchClient,
   BatchError,
@@ -87,6 +90,9 @@ integration(
         '1770000000008_matching_groups',
         '1770000000009_rating_revisions',
         '1770000000012_matching_batch_archives',
+        '1770000000013_local_ai',
+        '1770000000016_ai_execution_requests',
+        '1770000000017_profile_ai_executions',
       ]) {
         createRequire(import.meta.url)(`../migrations/${name}.cjs`).up({
           sql: (s: string) => statements.push(s),
@@ -95,6 +101,8 @@ integration(
       await pool.query(statements.join('\n'))
       // Profile reads go through the shared accessor (T-03).
       setPool(pool)
+      // CV proposals now recover through the AI coordination.
+      useAiQueue(boss)
     })
     beforeEach(async () => {
       vi.unstubAllEnvs()
@@ -514,7 +522,7 @@ integration(
       const group = await enqueue([ad, await anotherAd()]),
         provider = new Provider()
       send.mockClear()
-      await resumeAi(pool, boss)
+      await recoverExecutions()
       await recoverMatching(pool, boss)
       expect(send).not.toHaveBeenCalled()
       await executeMatching(pool, boss, group.items[0]!.id, provider)

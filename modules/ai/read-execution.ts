@@ -1,12 +1,21 @@
+import type {
+  ExecutionCause,
+  ExecutionState,
+} from './domain/execution-state.ts'
 import {
   readExecutionRow,
+  readLatestExecutionRow,
   readOperationExecutionRows,
   type ExecutionRow,
-  type ExecutionState,
 } from './infrastructure/persistence/executions.ts'
 import type { ExecutionMode } from './execution-settings.ts'
 import type { ModelUsage } from './provider-adapter.ts'
 
+/**
+ * The public read of an execution. Its state and cause are values of the
+ * exported lists, the same for every provider; it tells nothing about how
+ * the execution reached them.
+ */
 export type AiExecution = {
   id: string
   /** The client's settings key the execution was requested under. */
@@ -22,13 +31,11 @@ export type AiExecution = {
   usage: ModelUsage | null
   cost: {
     reserved: string
-    /** The settled cost; null until settled or while it is unknown. */
+    /** The settled cost; null while it is not settled. */
     actual: string | null
-    /** The cost could not be confirmed and stays reserved. */
-    unknown: boolean
   }
-  /** Why the execution failed, or why the client rejected its result. */
-  cause: string | null
+  /** Why the execution ended without a result; null otherwise. */
+  cause: ExecutionCause | null
   /**
    * Deliveries of the outcome to the client's receiver so far, and the
    * error of the last one that did not reach a decision.
@@ -54,7 +61,6 @@ function toPublic(row: ExecutionRow): AiExecution {
     cost: {
       reserved: row.attempt.reserved,
       actual: settled ? row.attempt.actual : null,
-      unknown: row.attempt.state === 'unknown',
     },
     cause: row.cause,
     delivery: {
@@ -79,4 +85,15 @@ export async function readExecutionHistory(
   operationId: string,
 ): Promise<AiExecution[]> {
   return (await readOperationExecutionRows(operationId)).map(toPublic)
+}
+
+/**
+ * The latest execution of an operation, for a client that shows the state
+ * of its own operation; null when the operation has none.
+ */
+export async function readLatestExecution(
+  operationId: string,
+): Promise<AiExecution | null> {
+  const row = await readLatestExecutionRow(operationId)
+  return row ? toPublic(row) : null
 }

@@ -4,8 +4,10 @@ import type {
   ModelRequest,
   ModelResult,
   ProviderAdapter,
+  ProviderObservation,
   StructuredModel,
 } from '../../provider-adapter.ts'
+import type { ExecutionEnd } from '../../domain/execution-state.ts'
 
 export function normalizeOpenAi(value: unknown): ModelResult {
   const result = record(value),
@@ -149,6 +151,28 @@ export class OpenAiAdapter implements StructuredModel {
 }
 
 /**
+ * What an observation of the OpenAI adapter means publicly. A response
+ * the model refused or did not complete, or that held no single content,
+ * tells how the work ended. An error before the request was sent means it
+ * did not start. Any other error leaves a response without usage: AI
+ * cannot tell how the work ended or what it cost, so it is uncertain and
+ * the reservation stays.
+ */
+export function openAiEnd(observation: ProviderObservation): ExecutionEnd {
+  if (observation.kind === 'outcome')
+    return { state: 'failed', cause: observation.outcome }
+  if (observation.kind === 'lost_lease')
+    return { state: 'uncertain', cause: 'interrupted' }
+  const error = observation.error
+  if (!(error instanceof ModelError))
+    return { state: 'uncertain', cause: 'unknown' }
+  if (error.code === 'format' && error.details.runtimeEnded)
+    return { state: 'failed', cause: 'no_content' }
+  if (!error.details.requestSent) return { state: 'failed', cause: error.code }
+  return { state: 'uncertain', cause: error.code }
+}
+
+/**
  * The OpenAI provider for the AI coordination, in single mode, on the
  * default endpoint with the key from the provider's secret.
  */
@@ -164,5 +188,6 @@ export function openAiProvider(
           reasoningEffort: settings.reasoningEffort,
         }),
     },
+    endOf: openAiEnd,
   }
 }

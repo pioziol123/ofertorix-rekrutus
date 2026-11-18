@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { uuid } from '../../../../../lib/profile/model'
-import { prepareProposal } from '../../../../../lib/profile/ai'
-import { database } from '../../../../utils/database'
+import { prepareProposal } from '../../../../../modules/profile/index'
 import {
   profileBody,
   profileBoss,
@@ -15,9 +14,9 @@ export default profileHandler(async (event) => {
     })
     .strict()
     .parse(await profileBody(event))
+  // Connects the AI execution queue before the request.
+  await profileBoss()
   return prepareProposal(
-    database,
-    await profileBoss(),
     uuid.parse(getRouterParam(event, 'id')),
     body.text,
     body.expectedRevision,

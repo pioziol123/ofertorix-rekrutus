@@ -1,10 +1,14 @@
 import type { ExecutionMode } from './domain/execution-mode.ts'
+import { ollamaProvider } from './infrastructure/adapters/ollama.ts'
 import { openAiProvider } from './infrastructure/adapters/openai.ts'
 import type { ProviderAdapter } from './provider-adapter.ts'
 
 /** The adapters AI runs, by provider; the built-in ones are registered. */
 const adapters = new Map<string, ProviderAdapter>(
-  [openAiProvider()].map((adapter) => [adapter.provider, adapter]),
+  [openAiProvider(), ollamaProvider()].map((adapter) => [
+    adapter.provider,
+    adapter,
+  ]),
 )
 
 /**

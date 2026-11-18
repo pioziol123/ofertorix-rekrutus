@@ -10,12 +10,20 @@ export {
   type ExecutionRequest,
   type RequestedExecution,
 } from './request-execution.ts'
+export { checkExecution, type ExecutionCheck } from './check-execution.ts'
+export { isConfigured } from './execution-settings.ts'
 export {
   readExecution,
   readExecutionHistory,
+  readLatestExecution,
   type AiExecution,
 } from './read-execution.ts'
-export type { ExecutionState } from './infrastructure/persistence/executions.ts'
+export {
+  executionCauses,
+  executionStates,
+  type ExecutionCause,
+  type ExecutionState,
+} from './domain/execution-state.ts'
 export { readBudget, type AiBudget } from './read-budget.ts'
 export { AiRequestError, type AiRequestErrorCode } from './errors.ts'
 export type { ExecutionMode } from './execution-settings.ts'
@@ -37,30 +45,9 @@ export {
 export { runExecution } from './run-execution.ts'
 export { recoverExecutions } from './recover-executions.ts'
 
-// Transitional: what the Profile, Matching and Companies use today, until
-// tasks oferty-pracy-0mq.9 and oferty-pracy-0mq.17 move them to the
-// contract above and remove these exports.
-export {
-  aiConfiguration,
-  isExecutionSnapshot,
-  localExecutionChoice,
-  resolveEndpoint,
-  savedEndpoint,
-  type AiConfiguration,
-  type AiEndpoint,
-  type AiExecutionConfig,
-  type ExecutionSnapshot,
-} from './configuration.ts'
+// Transitional: what Matching and Companies use today, until task
+// oferty-pracy-0mq.17 moves them to the contract above and removes these
+// exports.
+export { aiConfiguration, type AiConfiguration } from './configuration.ts'
 export { budgetMonth, chargeCeiling } from './domain/cost.ts'
 export { reserve } from './infrastructure/persistence/budget.ts'
-export {
-  emptyUsage,
-  ModelError,
-  type ModelRequest,
-  type ModelResult,
-  type ModelUsage,
-  type StructuredModel,
-} from './provider-adapter.ts'
-export { OpenAiAdapter } from './infrastructure/adapters/openai.ts'
-export { OllamaAdapter } from './infrastructure/adapters/ollama.ts'
-export { localFetch } from './infrastructure/adapters/local-http.ts'

@@ -43,43 +43,9 @@ export function aiConfiguration(
   return resolved.model.prices[mode] ?? null
 }
 
-/**
- * The stored choice of an execution on a local runtime. The existing local
- * Profile path saves it in its snapshot.
- */
-export type AiExecutionConfig = {
-  version: 1
-  provider: 'ollama'
-  execution: 'direct'
-  model: string
-  endpointRef: string
-  endpointVersion: number
-  runtimeParameters: { numCtx: number }
-}
-
-/**
- * The local execution chosen for a settings key, or null when the key's
- * settings name no local model (or are invalid).
- */
-export function localExecutionChoice(key: string): AiExecutionConfig | null {
-  const resolved = settingsFor(key)
-  const local = resolved?.model.local
-  if (!resolved || !local || resolved.settings.provider !== 'ollama')
-    return null
-  return {
-    version: 1,
-    provider: 'ollama',
-    execution: 'direct',
-    model: resolved.model.model,
-    endpointRef: local.endpointRef,
-    endpointVersion: local.endpointVersion,
-    runtimeParameters: { numCtx: local.numCtx },
-  }
-}
-
 const name = z.string().trim().min(1)
 const integer = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
-const endpointSchema = z
+export const aiEndpointSchema = z
   .object({
     ref: name,
     version: integer,
@@ -103,7 +69,7 @@ const endpointSchema = z
   })
   .strict()
 export const aiEndpointsSchema = z
-  .array(endpointSchema)
+  .array(aiEndpointSchema)
   .superRefine((values, context) => {
     const keys = values.map((v) => JSON.stringify([v.ref, v.version]))
     if (new Set(keys).size !== keys.length)
@@ -112,7 +78,7 @@ export const aiEndpointsSchema = z
         message: 'Duplicate endpoint version',
       })
   })
-export type AiEndpoint = z.infer<typeof endpointSchema>
+export type AiEndpoint = z.infer<typeof aiEndpointSchema>
 export function resolveEndpoint(ref: string, version: number): AiEndpoint {
   try {
     const entries = aiEndpointsSchema.parse(
@@ -131,40 +97,16 @@ export function resolveEndpoint(ref: string, version: number): AiEndpoint {
 }
 
 /**
- * The snapshot the existing Profile path saves for an explicit execution
- * choice. Rows saved before the settings key may still name OpenAI with
- * its own endpoint and price list.
+ * The endpoint fixed for an execution, checked against the configuration
+ * when the execution runs: a changed or removed endpoint version is
+ * refused instead of redirecting queued work.
  */
-export type ExecutionSnapshot = (
-  | AiExecutionConfig
-  | (Omit<AiExecutionConfig, 'provider' | 'runtimeParameters'> & {
-      provider: 'openai'
-      runtimeParameters: Record<string, never>
-    })
-) & {
-  promptVersion: string
-  schemaVersion: string
-  instructions: string
-  input: string
-  output: { name: string; schema: Record<string, unknown> }
-  modelDigest: string | null
-  endpoint: AiEndpoint
-  pricing?: AiConfiguration
-}
-export function savedEndpoint(snapshot: ExecutionSnapshot): AiEndpoint {
-  const endpoint = resolveEndpoint(
-    snapshot.endpointRef,
-    snapshot.endpointVersion,
-  )
+export function savedEndpoint(saved: AiEndpoint): AiEndpoint {
+  const endpoint = resolveEndpoint(saved.ref, saved.version)
   if (
-    endpoint.url !== snapshot.endpoint.url ||
-    endpoint.credentialEnv !== snapshot.endpoint.credentialEnv
+    endpoint.url !== saved.url ||
+    endpoint.credentialEnv !== saved.credentialEnv
   )
     throw new ModelError('configuration')
   return endpoint
-}
-export function isExecutionSnapshot(
-  value: AiConfiguration | ExecutionSnapshot,
-): value is ExecutionSnapshot {
-  return value.version === 1
 }

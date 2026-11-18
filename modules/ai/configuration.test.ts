@@ -148,6 +148,7 @@ describe('A14-AC08: settings validation', () => {
       model: 'gpt-6-luna',
       reasoningEffort: 'high',
       maxOutputTokens: 6000,
+      runtime: null,
       pricing: aiCatalog.models[0]!.prices.single,
     })
   })
@@ -167,13 +168,18 @@ describe('A14-AC10: modes no adapter declares', () => {
       )
     },
   )
-  it('refuses a provider without an adapter in the coordination as unsupported_mode', () => {
+  it('accepts the local model in single mode without a price list, so nothing is reserved', () => {
     ai.settings['client-x'] = {
       provider: 'ollama',
       model: 'gpt-oss:20b',
       reasoningEffort: null,
     }
-    expect(() => executionSettings('client-x', 'single')).toThrow(
+    expect(executionSettings('client-x', 'single')).toMatchObject({
+      provider: 'ollama',
+      pricing: null,
+      runtime: { endpointRef: 'ollama', endpointVersion: 1 },
+    })
+    expect(() => executionSettings('client-x', 'batch')).toThrow(
       new AiRequestError('unsupported_mode'),
     )
   })
@@ -231,10 +237,12 @@ describe('A14-AC08: the settings of today give the same provider requests', () =
         input: 'Some text',
         output: { name: 'facts', schema: { type: 'object' } },
       }
-      await openAiProvider(fetcher).modes.single!(settings).generate(request)
+      await openAiProvider(fetcher).modes.single!(settings, {
+        fixed: {},
+      }).generate(request)
       // The existing paths: the price list's output cap and a low effort.
       await new OpenAiAdapter(fetcher, {
-        maxOutputTokens: settings.pricing.maxOutputTokens,
+        maxOutputTokens: settings.pricing!.maxOutputTokens,
       }).generate(request)
       expect(bodies[0]).toBe(bodies[1])
       expect(JSON.parse(bodies[0]!)).toMatchObject({

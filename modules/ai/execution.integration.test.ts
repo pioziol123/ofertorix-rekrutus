@@ -18,7 +18,7 @@ import {
   aiExecutionJobOptions,
   aiExecutionQueue,
   budgetMonth,
-  ModelError,
+  executionCauses,
   readBudget,
   readExecution,
   readExecutionHistory,
@@ -31,13 +31,16 @@ import {
   type ExecutionFailureDelivery,
   type ExecutionRequest,
   type ExecutionResultDelivery,
-  type ModelResult,
-  type ModelUsage,
   type ReceiverDecision,
 } from './index.ts'
 import { admitExecutions } from './admit-executions.ts'
 import { executionSettings } from './execution-settings.ts'
-import type { ProviderAdapter } from './provider-adapter.ts'
+import {
+  ModelError,
+  type ModelResult,
+  type ModelUsage,
+  type ProviderAdapter,
+} from './provider-adapter.ts'
 import { registerProviderAdapter } from './provider-registry.ts'
 
 // A client's own settings key, a simulated provider and its price list.
@@ -186,6 +189,7 @@ integration('AI execution coordination with a real database and queue', () => {
       '1770000000006_matching',
       '1770000000013_local_ai',
       '1770000000016_ai_execution_requests',
+      '1770000000017_profile_ai_executions',
     ])
       createRequire(import.meta.url)(`../../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),
@@ -213,10 +217,26 @@ integration('AI execution coordination with a real database and queue', () => {
       },
     })
     // The simulated adapter declares single mode while it is present.
+    // The simulated adapter decides the public end of what it observed:
+    // its errors carry the cause, and an error it marks as not ended is
+    // uncertain.
     registerProviderAdapter({
       provider: 'simulated',
       get modes() {
         return adapterPresent ? { single } : {}
+      },
+      endOf(observation) {
+        if (observation.kind === 'outcome')
+          return { state: 'failed', cause: observation.outcome }
+        if (observation.kind === 'lost_lease')
+          return { state: 'uncertain', cause: 'interrupted' }
+        const error = observation.error
+        if (!(error instanceof ModelError))
+          return { state: 'failed', cause: 'unknown' }
+        return {
+          state: error.details.runtimeEnded === false ? 'uncertain' : 'failed',
+          cause: error.code,
+        }
       },
     })
     registerResultReceiver(settingsKey, {
@@ -272,7 +292,7 @@ integration('AI execution coordination with a real database and queue', () => {
       state: 'queued',
       operationId: requested.operationId,
       inputVersion: '3',
-      cost: { reserved: ceiling, actual: null, unknown: false },
+      cost: { reserved: ceiling, actual: null },
     })
     expect((await readBudget()).reserved).toBe(ceiling)
 
@@ -292,7 +312,7 @@ integration('AI execution coordination with a real database and queue', () => {
       result: { text: 'summary' },
       usage: { inputTokens: 100, outputTokens: 50 },
       // (100 * 1 + 50 * 2) / 1e6 USD * 4 PLN
-      cost: { reserved: ceiling, actual: '0.000800', unknown: false },
+      cost: { reserved: ceiling, actual: '0.000800' },
       cause: null,
       attempt: 1,
     })
@@ -353,15 +373,15 @@ integration('AI execution coordination with a real database and queue', () => {
   })
 
   it('A14-AC04: a rejected result still settles the cost incurred', async () => {
-    decide = async () => ({ accepted: false, reason: 'quote not found' })
+    decide = async () => ({ accepted: false })
     const admitted = await requestExecution(request())
     answers.push(completed({ text: 'unconfirmed' }))
     await work()
     expect(await readExecution(admitted.executionId)).toMatchObject({
       state: 'rejected',
       result: { text: 'unconfirmed' },
-      cause: 'quote not found',
-      cost: { reserved: ceiling, actual: '0.000800', unknown: false },
+      cause: null,
+      cost: { reserved: ceiling, actual: '0.000800' },
     })
     expect(await readBudget()).toMatchObject({
       reserved: '0.000000',
@@ -377,7 +397,7 @@ integration('AI execution coordination with a real database and queue', () => {
     await work()
     expect(await readExecution(admitted.executionId)).toMatchObject({
       state: 'completed',
-      cost: { reserved: ceiling, actual: null, unknown: true },
+      cost: { reserved: ceiling, actual: null },
     })
     expect(results[0]!.cost).toEqual({ reserved: ceiling, actual: null })
     expect(await readBudget()).toMatchObject({
@@ -395,7 +415,6 @@ integration('AI execution coordination with a real database and queue', () => {
     expect((await readExecution(admitted.executionId))!.cost).toEqual({
       reserved: ceiling,
       actual: null,
-      unknown: true,
     })
   })
 
@@ -417,7 +436,7 @@ integration('AI execution coordination with a real database and queue', () => {
       state: 'delivering',
       result: { text: 'summary' },
       usage: { inputTokens: 100, outputTokens: 50 },
-      cost: { reserved: ceiling, actual: null, unknown: false },
+      cost: { reserved: ceiling, actual: null },
       cause: null,
       delivery: { attempts: 1, lastError: 'Error: client bug' },
       finishedAt: null,
@@ -438,7 +457,7 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(await clientRows()).toHaveLength(1)
     expect(await readExecution(admitted.executionId)).toMatchObject({
       state: 'completed',
-      cost: { reserved: ceiling, actual: '0.000800', unknown: false },
+      cost: { reserved: ceiling, actual: '0.000800' },
       delivery: { attempts: 2, lastError: 'Error: client bug' },
     })
     expect(await readBudget()).toMatchObject({
@@ -477,7 +496,7 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(await readExecution(admitted.executionId)).toMatchObject({
       state: 'delivering',
       result: { text: 'summary' },
-      cost: { reserved: ceiling, actual: null, unknown: false },
+      cost: { reserved: ceiling, actual: null },
       delivery: {
         attempts: aiExecutionJobOptions.retryLimit + 1,
         lastError: 'Error: still broken',
@@ -507,13 +526,13 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(await readExecution(admitted.executionId)).toMatchObject({
       state: 'delivering',
       cause: 'http',
-      cost: { actual: null, unknown: false },
+      cost: { actual: null },
     })
     await runExecution(admitted.executionId)
     expect(await readExecution(admitted.executionId)).toMatchObject({
       state: 'failed',
       cause: 'http',
-      cost: { actual: null, unknown: true },
+      cost: { actual: null },
     })
     expect(failures).toHaveLength(2)
     expect(calls).toHaveLength(1)
@@ -534,6 +553,7 @@ integration('AI execution coordination with a real database and queue', () => {
         executionId: admitted.executionId,
         operationId: requested.operationId,
         inputVersion: '3',
+        state: 'failed',
         cause: 'refused',
         cost: { reserved: ceiling, actual: '0.000080' },
       },
@@ -556,7 +576,7 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(await readExecution(first.executionId)).toMatchObject({
       state: 'retried',
       cause: 'network',
-      cost: { actual: null, unknown: true },
+      cost: { actual: null },
     })
     await work()
     const history = await readExecutionHistory(requested.operationId)
@@ -633,7 +653,7 @@ integration('AI execution coordination with a real database and queue', () => {
       state: 'failed',
       result: null,
       cause: 'format',
-      cost: { actual: '0.000800', unknown: false },
+      cost: { actual: '0.000800' },
     })
   })
 
@@ -751,7 +771,7 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(await readExecution(admitted.executionId)).toMatchObject({
       state: 'failed',
       cause: 'adapter_unavailable',
-      cost: { actual: '0.000000', unknown: false },
+      cost: { actual: '0.000000' },
     })
   })
 
@@ -765,7 +785,7 @@ integration('AI execution coordination with a real database and queue', () => {
       state: 'failed',
       result: null,
       cause: 'format',
-      cost: { actual: '0.000800', unknown: false },
+      cost: { actual: '0.000800' },
     })
   })
 
@@ -789,7 +809,7 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(await readExecution(admitted.executionId)).toMatchObject({
       state: 'delivering',
       result: { text: 'summary' },
-      cost: { reserved: ceiling, actual: null, unknown: false },
+      cost: { reserved: ceiling, actual: null },
       delivery: {
         attempts: 1,
         lastError: 'Error: No receiver for settings key unreceived',
@@ -819,6 +839,41 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(results).toHaveLength(1)
   })
 
+  it('A14-AC12: an end the adapter judges uncertain keeps the cost reserved, reaches the receiver and frees the operation', async () => {
+    const requested = request()
+    const admitted = await requestExecution(requested)
+    answers.push(async () => {
+      throw new ModelError('network', {
+        requestSent: true,
+        runtimeEnded: false,
+      })
+    })
+    await work()
+    const execution = await readExecution(admitted.executionId)
+    expect(execution).toMatchObject({
+      state: 'uncertain',
+      cause: 'network',
+      result: null,
+      cost: { reserved: ceiling, actual: null },
+    })
+    expect(Object.keys(execution!.cost)).toEqual(['reserved', 'actual'])
+    expect(executionCauses).toContain(execution!.cause)
+    expect(failures).toMatchObject([
+      { state: 'uncertain', cause: 'network', cost: { actual: null } },
+    ])
+    expect((await readBudget()).reserved).toBe(ceiling)
+    // A person checks the execution before trying again; the operation
+    // takes a new request.
+    expect(
+      (
+        await requestExecution({
+          ...request(),
+          operationId: requested.operationId,
+        })
+      ).state,
+    ).toBe('queued')
+  })
+
   it('A14-AC11: keeps the stage only in the execution; the attempt holds the settlement status', async () => {
     decide = async () => {
       throw new Error('client bug')
@@ -838,7 +893,7 @@ integration('AI execution coordination with a real database and queue', () => {
       'delivering',
     )
     expect(await attempt()).toEqual({ state: 'open', error: null })
-    decide = async () => ({ accepted: false, reason: 'quote not found' })
+    decide = async () => ({ accepted: false })
     await runExecution(admitted.executionId)
     expect(await attempt()).toEqual({ state: 'settled', error: null })
     expect(
@@ -850,7 +905,7 @@ integration('AI execution coordination with a real database and queue', () => {
       ).rows[0],
     ).toEqual({
       state: 'rejected',
-      cause: 'quote not found',
+      cause: null,
       result_status: null,
       error_code: null,
       disposition: 'active',

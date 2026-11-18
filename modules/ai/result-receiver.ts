@@ -1,3 +1,5 @@
+import type { ExecutionEnd } from './domain/execution-state.ts'
+
 /** The cost of an execution's attempt at the moment of delivery. */
 export type ExecutionCost = {
   reserved: string
@@ -13,16 +15,23 @@ export type ExecutionResultDelivery = {
   cost: ExecutionCost
 }
 
-export type ExecutionFailureDelivery = {
+/**
+ * A final state without a result: `failed` when AI knows how the work
+ * ended, `uncertain` when it cannot tell, with the cause from the
+ * exported list.
+ */
+export type ExecutionFailureDelivery = ExecutionEnd & {
   executionId: string
   operationId: string
   inputVersion: string | null
-  cause: string
   cost: ExecutionCost
 }
 
-export type ReceiverDecision =
-  { accepted: true } | { accepted: false; reason: string }
+/**
+ * The client's decision on a result. A rejected result ends the execution
+ * as `rejected`; the client keeps its own reason in its own data.
+ */
+export type ReceiverDecision = { accepted: true } | { accepted: false }
 
 /**
  * The client's receiver of the results of a settings key. AI calls it in
