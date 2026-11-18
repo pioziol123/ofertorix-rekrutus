@@ -142,6 +142,11 @@ export class FakeSandboxes implements Sandboxes {
   reviews = 0
   reviewPrompts: string[] = []
   prompts: string[] = []
+  /** Sandboxes opened, of each kind. */
+  warmOpens = 0
+  freshOpens = 0
+  /** Worktrees kept by a closed warm sandbox because they had uncommitted changes, by branch. */
+  private kept = new Map<string, string>()
   private counter = 0
 
   private repo: string
@@ -179,8 +184,14 @@ export class FakeSandboxes implements Sandboxes {
     return { exitCode: 0, stdout: '', stderr: '' }
   }
 
+  /**
+   * Opens a sandbox on the branch's work directory. Like Sandcastle, closing keeps a worktree
+   * with uncommitted changes and a new sandbox on the same branch reuses it.
+   */
   async warm(branch: string): Promise<WarmSandbox> {
-    const worktree = this.worktree(branch)
+    this.warmOpens++
+    const worktree = this.kept.get(branch) ?? this.worktree(branch)
+    this.kept.delete(branch)
     let turn = 0
     const play = async (prompt: string) => {
       this.prompts.push(prompt)
@@ -194,11 +205,15 @@ export class FakeSandboxes implements Sandboxes {
         await play(prompt)
         return true
       },
-      close: async () => void sh(this.repo, 'worktree', 'remove', '--force', worktree),
+      close: async () => {
+        if (sh(worktree, 'status', '--porcelain')) this.kept.set(branch, worktree)
+        else sh(this.repo, 'worktree', 'remove', '--force', worktree)
+      },
     }
   }
 
   async fresh(branch: string): Promise<FreshSandbox> {
+    this.freshOpens++
     const worktree = this.worktree(branch)
     return {
       worktreePath: worktree,

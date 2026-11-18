@@ -306,7 +306,8 @@ describe('5yd.2: the next attempt continues the kept work', () => {
       throw new Error('agent process died')
     }
     await cycle(w.runner)
-    assert.match(returnComments().at(-1)!.text, /stopped the attempt on an error: Error: agent process died/)
+    // Every turn fails: an environment failure, retried twice, then the task goes back (ENV-R05).
+    assert.match(returnComments().at(-1)!.text, /The cause is the environment[\s\S]*3\. the agent's turn in the implementing agent's sandbox failed: Error: agent process died/)
     assert.equal(lastReturnData().last_review, 'Verdict: "fail"\n- F1: kept.txt lacks the header')
 
     // A review of the attempt itself, then an error in the next turn: its own report travels.
@@ -317,7 +318,7 @@ describe('5yd.2: the next attempt continues the kept work', () => {
       answer(doneResult())(ctx)
     }
     await cycle(w.runner)
-    assert.match(returnComments().at(-1)!.text, /stopped the attempt on an error: Error: sandbox lost/)
+    assert.match(returnComments().at(-1)!.text, /The cause is the environment[\s\S]*3\. the agent's turn in the implementing agent's sandbox failed: Error: sandbox lost/)
     assert.equal(lastReturnData().last_review, 'Verdict: "fail"\n- F2: still wrong')
   })
 
@@ -331,7 +332,7 @@ describe('5yd.2: the next attempt continues the kept work', () => {
       throw new Error('docker gone')
     }
     await cycle(w.runner)
-    assert.match(returnComments().at(-1)!.text, /stopped the attempt on an error: Error: docker gone/)
+    assert.match(returnComments().at(-1)!.text, /The cause is the environment[\s\S]*3\. opening the implementing agent's sandbox failed: Error: docker gone/)
     assert.equal(lastReturnData().last_review, 'Verdict: "fail"\n- F1: kept.txt lacks the header')
   })
 

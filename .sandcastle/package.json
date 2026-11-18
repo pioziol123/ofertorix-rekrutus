@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --project tsconfig.json",
-    "test": "node --test continuation.test.ts followups.test.ts flow.test.ts delivery.test.ts parallel.test.ts setup.test.ts taskdb.test.ts"
+    "test": "node --test continuation.test.ts environment.test.ts followups.test.ts flow.test.ts delivery.test.ts parallel.test.ts setup.test.ts taskdb.test.ts"
   },
   "devDependencies": {
     "typescript": "5.9.3",

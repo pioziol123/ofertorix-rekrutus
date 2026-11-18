@@ -25,11 +25,15 @@ function pairedAgents(waitMs: number, extra: AgentTurn = () => {}) {
     seen.add(ctx.branch)
     state.active++
     state.peak = Math.max(state.peak, state.active)
-    for (let waited = 0; seen.size < 2 && waited < waitMs; waited += 10) await sleep(10)
-    if (ctx.branch.startsWith('1-')) await sleep(50)
-    await extra(ctx)
-    committingAgent(`${ctx.branch}.txt`, `${ctx.branch}\n`)(ctx)
-    state.active--
+    try {
+      for (let waited = 0; seen.size < 2 && waited < waitMs; waited += 10) await sleep(10)
+      if (ctx.branch.startsWith('1-')) await sleep(50)
+      await extra(ctx)
+      committingAgent(`${ctx.branch}.txt`, `${ctx.branch}\n`)(ctx)
+    } finally {
+      // A turn that fails ends too; the runner then starts a new agent (oferty-pracy-5yd, ENV-R01).
+      state.active--
+    }
   }
   return { turn, state }
 }
@@ -86,7 +90,8 @@ describe('uuk.4: runs of tasks independent of each other', () => {
     w = world(agents.turn, ['t-1', 't-2'])
     w.runner.slots = 2
     await serve(w.runner, { stopWhenIdle: true })
-    assert.match(commentsOf('t-1'), /stopped the attempt on an error: Error: sandbox lost/)
+    // A failing agent is an environment failure: retried twice, then the task goes back.
+    assert.match(commentsOf('t-1'), /The cause is the environment[\s\S]*3\. the agent's turn in the implementing agent's sandbox failed: Error: sandbox lost/)
     assert.equal(w.db.show('t-2').status, 'closed')
   })
 

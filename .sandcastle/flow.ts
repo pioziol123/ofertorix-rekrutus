@@ -37,7 +37,7 @@ import {
   marker,
   resultShapeProblems,
 } from './followups.ts'
-import type { Images, Notifier, Sandboxes, TaskDb, WarmSandbox } from './ports.ts'
+import type { FreshSandbox, Images, Notifier, Sandboxes, TaskDb, WarmSandbox } from './ports.ts'
 import {
   type Continuation,
   type ReturnData,
@@ -53,6 +53,7 @@ import {
   sinceReturn,
   stateNote,
 } from './continuation.ts'
+import { EnvironmentExhausted, EnvironmentFailure, MAX_ENVIRONMENT_RETRIES, closeQuietly, guardedSandboxes } from './retries.ts'
 
 export const RESULT_FILE = '.agent-result.json'
 export const REVIEW_FILE = '.agent-review.json'
@@ -354,6 +355,19 @@ function notePrompt(reason: string): string {
   ].join('\n\n')
 }
 
+/**
+ * What the new agent after an environment failure receives beside the implementing prompt
+ * (ENV-R02): that the previous agent stopped on the environment, the failure's first line,
+ * and the last review report of the attempt when the continuation part does not carry it.
+ */
+function retryBrief(failure: EnvironmentFailure, lastReview: string | null, continuedReview: string | null): string {
+  return [
+    `The previous agent of this attempt stopped on an environment failure, not because of the task: ${firstLine(failure.message)}`,
+    `You are a new agent; its conversation is not resumed. The runner opened a new sandbox on the same work directory: the task branch holds the previous agent's commits, and files it changed but did not commit are still in the worktree. Check git status and git log, keep what is sound, and finish the task as the implement-task skill says.`,
+    lastReview && lastReview !== continuedReview ? `The last review report of this attempt:\n${lastReview}` : '',
+  ].filter(Boolean).join('\n\n')
+}
+
 function feedbackPrompt(report: string): string {
   return [
     'The runner checked your work and the task is not done yet:',
@@ -398,7 +412,8 @@ interface TaskRun {
   issue: Issue
   branch: string
   ctx: EpicContext
-  sandbox: WarmSandbox
+  /** The implementing agent's sandbox; null until it is open, and after an environment failure until a new one is. */
+  sandbox: WarmSandbox | null
   /** The exchange point commit the work must sit on: the fetched base, or the newer main it was replayed onto. */
   base: string
   /** The commit of main on which the work last passed the gate; null before the first pass. */
@@ -417,6 +432,22 @@ interface TaskRun {
   continuation: Continuation | null
   /** The last review report, of this attempt or, before its first review, of the one it continues. */
   lastReview: string | null
+  /** Every environment failure of the attempt, in order; counted from zero in every attempt (CON-R08, ENV-R04). */
+  environmentFailures: string[]
+}
+
+/**
+ * Counts an environment failure of the attempt (D4). While retries remain it logs the retry;
+ * the failure after the last retry throws EnvironmentExhausted, which returns the task.
+ */
+function environmentFailure(r: Runner, t: TaskRun, failure: EnvironmentFailure): void {
+  t.environmentFailures.push(failure.message)
+  const count = t.environmentFailures.length
+  if (count > MAX_ENVIRONMENT_RETRIES) {
+    r.log(`${t.issue.id}: environment failure ${count}, no retry left: ${firstLine(failure.message)}`)
+    throw new EnvironmentExhausted(t.environmentFailures)
+  }
+  r.log(`${t.issue.id}: environment failure ${count}, retry ${count} of ${MAX_ENVIRONMENT_RETRIES} (not a feedback turn): ${firstLine(failure.message)}`)
 }
 
 type Step = { ok: true } | { ok: false; report: string; final?: boolean }
@@ -443,7 +474,7 @@ function replay(worktree: string, from: string, onto: string): Step {
 
 /** The runner's own checks in the implementing agent's warm sandbox, after each agent turn. */
 async function warmCheck(r: Runner, t: TaskRun): Promise<Step> {
-  const worktree = t.sandbox.worktreePath
+  const worktree = t.sandbox!.worktreePath
   const result = readJson<AgentResult>(join(worktree, RESULT_FILE))
   if (!result) return { ok: false, report: `You did not write ${RESULT_FILE}.` }
   t.result = result
@@ -474,7 +505,7 @@ async function warmCheck(r: Runner, t: TaskRun): Promise<Step> {
   }
 
   r.log(`${t.issue.id}: running the gate in the warm sandbox`)
-  const gate = await t.sandbox.exec(GATE)
+  const gate = await t.sandbox!.exec(GATE)
   if (gate.exitCode !== 0) return { ok: false, report: `${GATE} failed in your sandbox:\n${tail(`${gate.stdout}${gate.stderr}`)}` }
   return { ok: true }
 }
@@ -487,46 +518,68 @@ async function warmCheck(r: Runner, t: TaskRun): Promise<Step> {
 async function verify(r: Runner, t: TaskRun, withReview: boolean): Promise<Step> {
   const commit = git(r.repo, ['rev-parse', `refs/heads/${t.branch}`])
   const gateBranch = `${t.branch}-gate`
-  git(r.repo, ['branch', '--force', gateBranch, commit])
   try {
-    const sandbox = await r.sandboxes.fresh(gateBranch)
-    try {
-      r.log(`${t.issue.id}: running the gate in a fresh sandbox on ${BASE_BRANCH} at ${t.base.slice(0, 7)}`)
-      const gate = await sandbox.exec(GATE)
-      if (gate.exitCode !== 0) {
-        return { ok: false, report: `${GATE} failed in a fresh sandbox, which sees only committed work:\n${tail(`${gate.stdout}${gate.stderr}`)}` }
+    // An environment failure in the fresh sandbox repeats the check in a new one (ENV-R03).
+    for (;;) {
+      git(r.repo, ['branch', '--force', gateBranch, commit])
+      try {
+        return await verifyInFresh(r, t, withReview, commit, gateBranch)
+      } catch (error) {
+        if (!(error instanceof EnvironmentFailure) || error.kind !== 'fresh') throw error
+        environmentFailure(r, t, error)
+        r.log(`${t.issue.id}: repeating the check in a new fresh sandbox`)
       }
-      if (withReview) {
-        const database = await sandbox.exec(REVIEW_DATABASE)
-        if (database.exitCode !== 0) r.log(`${t.issue.id}: the reviewer's database did not start:\n${tail(`${database.stdout}${database.stderr}`)}`)
-        r.log(`${t.issue.id}: running the spec review`)
-        await sandbox.review(reviewPrompt(t.issue, t.result!, t.ctx, t.base, database.exitCode === 0, t.continuation !== null))
-        if (git(r.repo, ['rev-parse', `refs/heads/${gateBranch}`]) !== commit) {
-          return { ok: false, report: 'The reviewer committed to the branch under review.', final: true }
-        }
-        const review = readJson<Review>(join(sandbox.worktreePath, REVIEW_FILE))
-        if (!review) return { ok: false, report: `The reviewer did not write ${REVIEW_FILE}.` }
-        const findings = Array.isArray(review.findings) ? review.findings.map(String) : []
-        t.lastReview = [`Verdict: ${JSON.stringify(review.verdict)}`, ...findings.map((f) => `- ${f}`)].join('\n')
-        // Exactly one verdict passes: pass-with-deferral when the result has deviations, pass otherwise.
-        const expected = t.result!.deviations?.length ? 'pass-with-deferral' : 'pass'
-        if (review.verdict !== expected) {
-          const report = review.verdict === 'fail'
-            ? `The spec review failed:\n- ${findings.join('\n- ')}`
-            : `The spec review did not pass (verdict ${JSON.stringify(review.verdict)}, expected ${expected}):\n- ${findings.join('\n- ')}`
-          return { ok: false, report }
-        }
-        t.review = review.verdict
-      }
-      t.commit = commit
-      t.gateBase = t.base
-      return { ok: true }
-    } finally {
-      await sandbox.close()
     }
   } finally {
     tryGit(r.repo, ['branch', '-D', gateBranch])
   }
+}
+
+/** One run of the fresh check. A failed operation closes the sandbox quietly and throws; a failed close throws too. */
+async function verifyInFresh(r: Runner, t: TaskRun, withReview: boolean, commit: string, gateBranch: string): Promise<Step> {
+  const sandbox = await r.sandboxes.fresh(gateBranch)
+  let step: Step
+  try {
+    step = await checkInFresh(r, t, withReview, commit, gateBranch, sandbox)
+  } catch (error) {
+    await closeQuietly(sandbox, r.log)
+    throw error
+  }
+  await sandbox.close()
+  return step
+}
+
+async function checkInFresh(r: Runner, t: TaskRun, withReview: boolean, commit: string, gateBranch: string, sandbox: FreshSandbox): Promise<Step> {
+  r.log(`${t.issue.id}: running the gate in a fresh sandbox on ${BASE_BRANCH} at ${t.base.slice(0, 7)}`)
+  const gate = await sandbox.exec(GATE)
+  if (gate.exitCode !== 0) {
+    return { ok: false, report: `${GATE} failed in a fresh sandbox, which sees only committed work:\n${tail(`${gate.stdout}${gate.stderr}`)}` }
+  }
+  if (withReview) {
+    const database = await sandbox.exec(REVIEW_DATABASE)
+    if (database.exitCode !== 0) r.log(`${t.issue.id}: the reviewer's database did not start:\n${tail(`${database.stdout}${database.stderr}`)}`)
+    r.log(`${t.issue.id}: running the spec review`)
+    await sandbox.review(reviewPrompt(t.issue, t.result!, t.ctx, t.base, database.exitCode === 0, t.continuation !== null))
+    if (git(r.repo, ['rev-parse', `refs/heads/${gateBranch}`]) !== commit) {
+      return { ok: false, report: 'The reviewer committed to the branch under review.', final: true }
+    }
+    const review = readJson<Review>(join(sandbox.worktreePath, REVIEW_FILE))
+    if (!review) return { ok: false, report: `The reviewer did not write ${REVIEW_FILE}.` }
+    const findings = Array.isArray(review.findings) ? review.findings.map(String) : []
+    t.lastReview = [`Verdict: ${JSON.stringify(review.verdict)}`, ...findings.map((f) => `- ${f}`)].join('\n')
+    // Exactly one verdict passes: pass-with-deferral when the result has deviations, pass otherwise.
+    const expected = t.result!.deviations?.length ? 'pass-with-deferral' : 'pass'
+    if (review.verdict !== expected) {
+      const report = review.verdict === 'fail'
+        ? `The spec review failed:\n- ${findings.join('\n- ')}`
+        : `The spec review did not pass (verdict ${JSON.stringify(review.verdict)}, expected ${expected}):\n- ${findings.join('\n- ')}`
+      return { ok: false, report }
+    }
+    t.review = review.verdict
+  }
+  t.commit = commit
+  t.gateBase = t.base
+  return { ok: true }
 }
 
 /** Checks after an agent turn: the warm checks, then the fresh gate and the review. */
@@ -572,7 +625,7 @@ async function deliverInQueue(r: Runner, t: TaskRun): Promise<Delivery | 'unreac
         r.images.ensure(fetched.sha, r.log)
         t.envChanged = true
       }
-      const replayed = replay(t.sandbox.worktreePath, from, fetched.sha)
+      const replayed = replay(t.sandbox!.worktreePath, from, fetched.sha)
       if (!replayed.ok) return { feedback: replayed.report }
       const changed = git(r.repo, ['diff', '--name-only', from, fetched.sha]).split('\n').filter(Boolean)
       const documents = Object.values(documentLinks(t.issue)).filter(Boolean)
@@ -593,12 +646,7 @@ async function deliverInQueue(r: Runner, t: TaskRun): Promise<Delivery | 'unreac
   }
 }
 
-/**
- * One implementing session in one warm sandbox, from the first agent turn to delivery.
- * Every failure that a correction can fix goes back into the same session as a feedback
- * turn, MAX_FEEDBACK_TURNS at most. Returns the delivered commit or the reason to return.
- */
-/** The reason of a return after an error of a sandbox, an agent or the task database. */
+/** The reason of a return after an error that is not an environment failure, such as one of the task database. */
 function errorReason(error: unknown): string {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
   return `The runner stopped the attempt on an error: ${message}`
@@ -615,8 +663,8 @@ async function askForStateNote(r: Runner, t: TaskRun, reason: string): Promise<S
   r.log(`${t.issue.id}: asking the agent for a state note before the return (not a feedback turn; feedback turns used: ${t.turns} of ${MAX_FEEDBACK_TURNS})`)
   try {
     // Only a note written in answer to this request counts, not one left in an earlier result.
-    await t.sandbox.exec(`rm -f ${RESULT_FILE}`)
-    if (!(await t.sandbox.resume(notePrompt(reason)))) {
+    await t.sandbox!.exec(`rm -f ${RESULT_FILE}`)
+    if (!(await t.sandbox!.resume(notePrompt(reason)))) {
       r.log(`${t.issue.id}: no agent session to ask for a state note; returning without one`)
       return null
     }
@@ -624,19 +672,25 @@ async function askForStateNote(r: Runner, t: TaskRun, reason: string): Promise<S
     r.log(`${t.issue.id}: the request for a state note failed; returning without one: ${firstLine(error instanceof Error ? error.message : String(error))}`)
     return null
   }
-  const written = readJson<AgentResult>(join(t.sandbox.worktreePath, RESULT_FILE))?.state_note
+  const written = readJson<AgentResult>(join(t.sandbox!.worktreePath, RESULT_FILE))?.state_note
   const note = stateNote(written)
   if (!note) r.log(`${t.issue.id}: ${written === undefined ? 'the agent wrote no state note' : 'the state note is not a JSON object'}; returning without one`)
   return note
 }
 
+/**
+ * One attempt from the first agent turn to delivery. Every failure that a correction can fix
+ * goes back into the same session as a feedback turn, MAX_FEEDBACK_TURNS at most. An
+ * environment failure in the agent's sandbox starts a new agent in a new sandbox on the same
+ * work directory instead (ENV-R01), MAX_ENVIRONMENT_RETRIES times per attempt together with
+ * those of the fresh sandbox. Returns the delivered commit or the reason to return.
+ */
 async function runTask(r: Runner, issue: Issue, branch: string, baseSha: string, ctx: EpicContext, continuation: Continuation | null): Promise<Outcome> {
-  const sandbox = await r.sandboxes.warm(branch)
-  // Feedback turns and delivery retries count from zero in every attempt (CON-R08).
+  // Feedback turns, delivery retries and environment retries count from zero in every attempt (CON-R08).
   const t: TaskRun = {
-    issue, branch, ctx, sandbox, base: baseSha, gateBase: null, commit: null, result: null, review: null,
+    issue, branch, ctx, sandbox: null, base: baseSha, gateBase: null, commit: null, result: null, review: null,
     turns: 0, retries: 0, warmInputs: imageInputs(r.repo, baseSha), envChanged: false,
-    continuation, lastReview: continuation?.lastReview ?? null,
+    continuation, lastReview: continuation?.lastReview ?? null, environmentFailures: [],
   }
   const returned = (report: string, note: StateNote | null = null): Outcome => ({
     ok: false, report, data: { ...(note ? { state_note: note } : {}), ...(t.lastReview ? { last_review: t.lastReview } : {}) },
@@ -650,34 +704,58 @@ async function runTask(r: Runner, issue: Issue, branch: string, baseSha: string,
     }
     t.turns++
     r.log(`${issue.id}: feedback turn ${t.turns}: ${firstLine(report)}`)
-    await sandbox.exec(`rm -f ${RESULT_FILE}`)
-    if (!(await sandbox.resume(feedbackPrompt(report)))) return returned(`${report}\n(No agent session to resume.)`)
+    await t.sandbox!.exec(`rm -f ${RESULT_FILE}`)
+    if (!(await t.sandbox!.resume(feedbackPrompt(report)))) return returned(`${report}\n(No agent session to resume.)`)
     return null
   }
+  let prompt = implementPrompt(issue, ctx, baseSha, continuation)
   try {
-    r.log(`${issue.id}: implementing in ${sandbox.worktreePath}${continuation ? `, continuing the kept work of ${continuation.keptBranch}` : ''}`)
-    await sandbox.exec(`rm -f ${RESULT_FILE} ${REVIEW_FILE}`)
-    await sandbox.start(implementPrompt(issue, ctx, baseSha, continuation))
     for (;;) {
-      const checked = await fullChecks(r, t)
-      if (!checked.ok) {
-        // A blocked agent wrote its state note with the question (CON-R10).
-        if (checked.final) return returned(checked.report, t.result?.status === 'blocked' ? stateNote(t.result.state_note) : null)
-        const stop = await feedback(checked.report)
-        if (stop) return stop
-        continue
+      try {
+        if (!t.sandbox) {
+          t.sandbox = await r.sandboxes.warm(branch)
+          r.log(`${issue.id}: implementing in ${t.sandbox.worktreePath}${continuation ? `, continuing the kept work of ${continuation.keptBranch}` : ''}`)
+          await t.sandbox.exec(`rm -f ${RESULT_FILE} ${REVIEW_FILE}`)
+          await t.sandbox.start(prompt)
+        }
+        for (;;) {
+          const checked = await fullChecks(r, t)
+          if (!checked.ok) {
+            // A blocked agent wrote its state note with the question (CON-R10).
+            if (checked.final) return returned(checked.report, t.result?.status === 'blocked' ? stateNote(t.result.state_note) : null)
+            const stop = await feedback(checked.report)
+            if (stop) return stop
+            continue
+          }
+          const delivery = await deliver(r, t)
+          if (delivery.delivered) return { ok: true, commit: t.commit!, result: t.result! }
+          if ('returned' in delivery) return returned(delivery.returned)
+          const stop = await feedback(delivery.feedback)
+          if (stop) return stop
+        }
+      } catch (error) {
+        // An environment failure in the agent's sandbox (ENV-R01, D4): close it, ignoring
+        // errors, and start a new agent in a new sandbox on the same branch. The work
+        // directory lives outside the container, so committed and uncommitted work stays.
+        if (!(error instanceof EnvironmentFailure) || error.kind !== 'warm') throw error
+        environmentFailure(r, t, error)
+        await closeQuietly(t.sandbox, r.log)
+        t.sandbox = null
+        // The new sandbox runs on the image built for the main the work now sits on.
+        t.warmInputs = imageInputs(r.repo, t.base)
+        t.envChanged = false
+        prompt = [implementPrompt(issue, ctx, t.base, continuation), retryBrief(error, t.lastReview, continuation?.lastReview ?? null)].join('\n\n')
+        r.log(`${issue.id}: starting a new agent in a new sandbox on the same work directory`)
       }
-      const delivery = await deliver(r, t)
-      if (delivery.delivered) return { ok: true, commit: t.commit!, result: t.result! }
-      if ('returned' in delivery) return returned(delivery.returned)
-      const stop = await feedback(delivery.feedback)
-      if (stop) return stop
     }
   } catch (error) {
     // The return still carries the last review report this attempt knows (CON-R04).
+    if (error instanceof EnvironmentExhausted) return returned(error.message)
     return returned(errorReason(error))
   } finally {
-    await sandbox.close()
+    // The attempt is over, delivered or about to be returned; a failed close changes neither.
+    // ASSUMPTION(oferty-pracy-5yd.3/ASM-1)
+    await closeQuietly(t.sandbox, r.log)
   }
 }
 
@@ -834,7 +912,8 @@ function startingPoint(r: Runner, issue: Issue, baseSha: string): Start {
  * and leaves the other runs alone (U4-R01, U4-R05).
  */
 export async function processTask(shared: Runner, issue: Issue, baseSha: string): Promise<void> {
-  const r: Runner = { ...shared, log: shared.taskLog(issue.id) }
+  // Every sandbox operation of the run reports its errors as environment failures (D4).
+  const r: Runner = { ...shared, log: shared.taskLog(issue.id), sandboxes: guardedSandboxes(shared.sandboxes) }
   shared.log(`${issue.id}: started on ${BASE_BRANCH} at ${baseSha.slice(0, 7)}`)
   let branch: string | null = null
   let continuation: Continuation | null = null
