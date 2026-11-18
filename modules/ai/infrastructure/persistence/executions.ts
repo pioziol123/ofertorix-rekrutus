@@ -192,8 +192,8 @@ export async function insertExecution(
   // The attempt is the settlement record only. Its state is the settlement
   // status ('open', then 'settled' or 'unknown'), never the execution's
   // stage, which lives in the execution's state and cause alone. General
-  // attempts carry their own operation type, so the paths that still read
-  // attempts by Profile, Matching or Companies never pick them.
+  // attempts carry their own operation type, apart from the attempts the
+  // former paths of the clients saved.
   await db().query(
     `INSERT INTO ai_attempts(id,import_id,text_revision,month,attempt,generation,operation_type,state,reserved_pln,configuration,execution_id)
      VALUES($1,NULL,0,$2,$3,$4,'execution','open',$5,$6,$7)`,

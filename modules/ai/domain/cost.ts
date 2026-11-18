@@ -41,7 +41,7 @@ export function toolCallFee(config: AiConfiguration, calls: number): string {
 
 /**
  * The PLN cost of a usage: its tokens and its calls of the paid tool, each
- * rounded up on its own and then added, as research was settled before.
+ * rounded up on its own and then added.
  */
 export function chargeCost(
   config: AiConfiguration,

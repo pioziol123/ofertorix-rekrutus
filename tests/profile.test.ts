@@ -8,8 +8,7 @@ import {
   profileSchema,
   ProposalEvidenceError,
 } from '../lib/profile/model.ts'
-import { chargeCeiling } from '../modules/ai/index.ts'
-import { budgetMonth } from '../modules/ai/domain/cost.ts'
+import { budgetMonth, chargeCeiling } from '../modules/ai/domain/cost.ts'
 import type { AiConfiguration } from '../modules/ai/model-catalog.ts'
 import { scrubContacts } from '../lib/contact-details.ts'
 import { validateDocument } from '../lib/profile/imports.ts'
