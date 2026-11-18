@@ -89,6 +89,31 @@ describe('5yd.2: the return keeps the work and asks for a state note', () => {
     assert.match(w.taskLogs.get('t-1')!.join('\n'), /the agent wrote no state note; returning without one/)
   })
 
+  it('ASM-4: a state note that is not a JSON object counts as no note', async () => {
+    w = world(exhaustedAttempt(null))
+    const agent = w.sandboxes.agentTurn
+    w.sandboxes.agentTurn = (ctx) => (isNoteRequest(ctx.prompt) ? answer({ ...doneResult(), state_note: 'just text' })(ctx) : agent(ctx))
+    w.sandboxes.verdict = 'fail'
+    await cycle(w.runner)
+    assert.equal(lastReturnData().state_note, undefined)
+    assert.match(w.taskLogs.get('t-1')!.join('\n'), /the state note is not a JSON object; returning without one/)
+  })
+
+  it('ASM-3: a continuation returned before its replay records the commit of main its kept work still sits on', async () => {
+    w = world(blockedAttempt())
+    await cycle(w.runner)
+    const oldBase = w.db.show('t-1').metadata![KEPT_BASE]
+    pushFiles(w.other, { 'other.txt': 'other\n' }, 'owner: unrelated change')
+    w.db.handOffAgain('t-1')
+    w.sandboxes.agentTurn = blockedAttempt('more.txt', 'more\n')
+    await cycle(w.runner)
+    const meta = w.db.show('t-1').metadata!
+    assert.equal(meta[KEPT_BASE], oldBase)
+    assert.notEqual(meta[KEPT_BASE], exchangeMain(w))
+    assert.equal(sh(w.exchange, 'show', 'agent/1-task-t-1:kept.txt'), 'kept')
+    assert.equal(sh(w.exchange, 'show', 'agent/1-task-t-1:more.txt'), 'more')
+  })
+
   it('CON-R10: a blocked agent\'s state note travels in the return comment without a separate request', async () => {
     w = world(blockedAttempt())
     await cycle(w.runner)
