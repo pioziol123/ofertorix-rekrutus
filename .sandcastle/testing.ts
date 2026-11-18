@@ -135,7 +135,7 @@ export class FakeSandboxes implements Sandboxes {
   gate?: (kind: 'warm' | 'fresh', worktree: string) => number
   verdict: 'pass' | 'fail' = 'pass'
   /** Findings the stand-in reviewer reports with its verdict. */
-  findings: string[] = []
+  findings: unknown[] = []
   gateCalls = 0
   /** Gate runs and image builds in order, e.g. 'gate:warm', 'gate:fresh', 'image:<sha>'. */
   events: string[] = []

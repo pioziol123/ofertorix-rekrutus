@@ -68,7 +68,40 @@ export const MAX_FEEDBACK_TURNS = 3
 
 export interface Review {
   verdict: 'pass' | 'pass-with-deferral' | 'fail'
-  findings: string[]
+  /** Marked findings; a plain string, as an older reviewer writes it, counts as a fix finding (D5). */
+  findings: (string | Finding)[]
+}
+
+/**
+ * A finding of the review (D5). A fix finding goes back to the agent as a feedback turn; an
+ * owner finding needs a choice the documents leave open or a change of a document, and ends
+ * the attempt. Its question has the shape of the state note's question (REV-R02).
+ */
+export interface Finding {
+  kind: 'fix' | 'owner'
+  text: string
+  question?: unknown
+}
+
+/** Reads the review's findings: a finding not marked `owner` is a fix finding (REV-AC03). */
+export function findingsOf(raw: unknown): Finding[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((item): Finding => {
+    if (!item || typeof item !== 'object') return { kind: 'fix', text: String(item) }
+    const { kind, text, question } = item as Record<string, unknown>
+    const body = typeof text === 'string' ? text : JSON.stringify(item)
+    // An owner finding without its question still ends the attempt.
+    // ASSUMPTION(oferty-pracy-5yd.4/ASM-1)
+    if (kind === 'owner') return question === undefined ? { kind, text: body } : { kind, text: body, question }
+    return { kind: 'fix', text: body }
+  })
+}
+
+/** One line of the review report per finding; an owner finding is labelled and carries its question. */
+function findingLine(finding: Finding): string {
+  if (finding.kind === 'fix') return finding.text
+  const question = finding.question === undefined ? '' : `\n  Question: ${JSON.stringify(finding.question)}`
+  return `Owner finding: ${finding.text}${question}`
 }
 
 /** The epic a task belongs to and its children, read once when the task starts. */
@@ -347,12 +380,14 @@ function implementPrompt(issue: Issue, ctx: EpicContext, baseSha: string, contin
 }
 
 /** The one request for a state note before a return (CON-R09); not a feedback turn. */
-function notePrompt(reason: string): string {
+function notePrompt(reason: string, owner: boolean): string {
   return [
     'The runner is returning this task to preparation, so this attempt ends here:',
     reason,
     `Write a state note for the next attempt with the task-state-note skill: it goes into ${RESULT_FILE} as state_note. Change nothing else: no code, no commits.`,
-  ].join('\n\n')
+    // REV-R03: the note carries the owner findings and the fix findings.
+    owner ? "Carry the review's findings in the note: the owner findings in its question, with their options and the reviewer's recommendation, and the fix findings in what remains." : '',
+  ].filter(Boolean).join('\n\n')
 }
 
 /**
@@ -395,7 +430,15 @@ function reviewPrompt(issue: Issue, result: AgentResult, ctx: EpicContext, baseS
     `The implementing agent recorded these assumptions:\n${JSON.stringify(assumptions, null, 2)}\nFor each, check that every acceptance criterion is really met, that the choice follows the precedence order, and that a test covers the edge case. An assumption that leaves a criterion unmet is a finding.`,
     bearingNote(assumptions, ctx),
     `And these deviations, each deferring part of the task to a follow-up:\n${JSON.stringify(deviations, null, 2)}\nFor each, check against the classification and qualification rules in that section: that it does not belong to an earlier step (assumption or blocked), that the interim code follows precedence and carries its marker, and that the follow-up description lets a developer with no context understand the business and technical problem, the decision needed and how to verify the target. Check that each deviation's requirement IDs cover every requirement its interim code affects, including shared rules of the epic rather than only a narrower task criterion. Also check that the diff builds nothing new on the interim code of the epic's open follow-ups.`,
-    `Write ${REVIEW_FILE} in the repository root as JSON: {"verdict": "pass" | "pass-with-deferral" | "fail", "findings": ["..."]}. Use "fail" when any finding means a criterion that is not deferred or a design contract is not met, or when any deviation or assumption does not hold, or when the diff, an assumption or interim code takes an option the solution design records as discarded. Use "pass-with-deferral" when the work passes and you accept every deviation; "pass" only when there are no deviations.`,
+    // REV-R01, REV-R02, REV-R05: the two kinds of finding.
+    [
+      'Mark every finding with its kind:',
+      '- "fix": the implementing agent can remove it from the documents and the code alone. It goes back to the agent as a correction.',
+      '- "owner": removing it needs a choice the documents leave open, or a change of a document. The runner then ends the attempt without a correction round and returns the task to the owner with the findings, so mark a finding "owner" only when no reading of the documents settles it.',
+      'Two cases are always "fix" findings, because the documents settle them: taking an option the solution design records as discarded (the fix is to drop it), and a stop the agent did not need, that is a stop where the classification in that section allows an assumption or a qualifying deviation with a follow-up (the fix is to record the assumption or the deviation and carry on). So a spec conflict that an assumption or a qualifying deviation settles is a "fix" finding, not an "owner" one.',
+      'An owner finding also carries a "question" in the shape of the question of a state note, as the task-state-note skill defines it (read that skill): it states the conflict and quotes the requirements involved, lists the options with their consequences, and gives your recommendation.',
+    ].join('\n'),
+    `Write ${REVIEW_FILE} in the repository root as JSON: {"verdict": "pass" | "pass-with-deferral" | "fail", "findings": [{"kind": "fix", "text": "..."}, {"kind": "owner", "text": "...", "question": {...}}]}. Use "fail" when any finding means a criterion that is not deferred or a design contract is not met, or when any deviation or assumption does not hold, or when the diff, an assumption or interim code takes an option the solution design records as discarded. Use "pass-with-deferral" when the work passes and you accept every deviation; "pass" only when there are no deviations.`,
   ].filter(Boolean).join('\n\n')
 }
 
@@ -450,7 +493,8 @@ function environmentFailure(r: Runner, t: TaskRun, failure: EnvironmentFailure):
   r.log(`${t.issue.id}: environment failure ${count}, retry ${count} of ${MAX_ENVIRONMENT_RETRIES} (not a feedback turn): ${firstLine(failure.message)}`)
 }
 
-type Step = { ok: true } | { ok: false; report: string; final?: boolean }
+/** `owner`: the review has an owner finding, so the attempt ends without a feedback turn (REV-R03). */
+type Step = { ok: true } | { ok: false; report: string; final?: boolean; owner?: boolean }
 
 /**
  * Replays the task branch, checked out in the worktree, on top of `onto`. On a conflict the
@@ -565,8 +609,18 @@ async function checkInFresh(r: Runner, t: TaskRun, withReview: boolean, commit: 
     }
     const review = readJson<Review>(join(sandbox.worktreePath, REVIEW_FILE))
     if (!review) return { ok: false, report: `The reviewer did not write ${REVIEW_FILE}.` }
-    const findings = Array.isArray(review.findings) ? review.findings.map(String) : []
+    const marked = findingsOf(review.findings)
+    const findings = marked.map(findingLine)
     t.lastReview = [`Verdict: ${JSON.stringify(review.verdict)}`, ...findings.map((f) => `- ${f}`)].join('\n')
+    // An owner finding ends the attempt whatever the verdict; the fix findings travel with it (REV-R03).
+    const owners = marked.filter((f) => f.kind === 'owner').length
+    if (owners) {
+      return {
+        ok: false,
+        owner: true,
+        report: `The spec review has ${owners} owner finding${owners > 1 ? 's' : ''}, which only the owner can settle, so the attempt ends without a feedback turn:\n- ${findings.join('\n- ')}`,
+      }
+    }
     // Exactly one verdict passes: pass-with-deferral when the result has deviations, pass otherwise.
     const expected = t.result!.deviations?.length ? 'pass-with-deferral' : 'pass'
     if (review.verdict !== expected) {
@@ -588,7 +642,11 @@ async function fullChecks(r: Runner, t: TaskRun): Promise<Step> {
   return warm.ok ? verify(r, t, true) : warm
 }
 
-type Delivery = { delivered: true } | { delivered?: false; feedback: string } | { delivered?: false; returned: string }
+type Delivery =
+  | { delivered: true }
+  | { delivered?: false; feedback: string }
+  | { delivered?: false; returned: string }
+  | { delivered?: false; owner: string }
 
 /**
  * Delivery with a changing exchange point (task uuk.3, "Delivery steps"). Runs before the
@@ -632,7 +690,7 @@ async function deliverInQueue(r: Runner, t: TaskRun): Promise<Delivery | 'unreac
       const touched = documents.filter((doc) => changed.includes(doc))
       if (touched.length) r.log(`${t.issue.id}: the change of ${BASE_BRANCH} includes task documents (${touched.join(', ')}); the review runs again`)
       const checked = await verify(r, t, touched.length > 0)
-      if (!checked.ok) return checked.final ? { returned: checked.report } : { feedback: checked.report }
+      if (!checked.ok) return checked.final ? { returned: checked.report } : checked.owner ? { owner: checked.report } : { feedback: checked.report }
       continue
     }
     // 5. Push the checked commit, never forced.
@@ -655,16 +713,16 @@ function errorReason(error: unknown): string {
 type Outcome = { ok: true; commit: string; result: AgentResult } | { ok: false; report: string; data: ReturnData }
 
 /**
- * Before a return because the feedback turns are used up, the runner resumes the agent's
- * session once and asks for a state note (CON-R09, D3). The request is not a feedback turn;
+ * Before a return because of an owner finding or because the feedback turns are used up, the
+ * runner resumes the agent's session once and asks for a state note (CON-R09, D3). The request is not a feedback turn;
  * a failed turn, a missing or a malformed note all leave the return without a note.
  */
-async function askForStateNote(r: Runner, t: TaskRun, reason: string): Promise<StateNote | null> {
+async function askForStateNote(r: Runner, t: TaskRun, reason: string, owner = false): Promise<StateNote | null> {
   r.log(`${t.issue.id}: asking the agent for a state note before the return (not a feedback turn; feedback turns used: ${t.turns} of ${MAX_FEEDBACK_TURNS})`)
   try {
     // Only a note written in answer to this request counts, not one left in an earlier result.
     await t.sandbox!.exec(`rm -f ${RESULT_FILE}`)
-    if (!(await t.sandbox!.resume(notePrompt(reason)))) {
+    if (!(await t.sandbox!.resume(notePrompt(reason, owner)))) {
       r.log(`${t.issue.id}: no agent session to ask for a state note; returning without one`)
       return null
     }
@@ -695,6 +753,11 @@ async function runTask(r: Runner, issue: Issue, branch: string, baseSha: string,
   const returned = (report: string, note: StateNote | null = null): Outcome => ({
     ok: false, report, data: { ...(note ? { state_note: note } : {}), ...(t.lastReview ? { last_review: t.lastReview } : {}) },
   })
+  /** An owner finding returns the task at once, after the one request for a state note (REV-R03). */
+  const ownerReturn = async (report: string): Promise<Outcome> => {
+    r.log(`${issue.id}: the review has an owner finding; returning the task without a feedback turn`)
+    return returned(report, await askForStateNote(r, t, report, true))
+  }
   /** Sends a report back to the agent; returns the outcome of a return instead, if the task must go back. */
   const feedback = async (report: string): Promise<Outcome | null> => {
     if (t.envChanged) return returned(`The environment changed during the task (the dependency list or the image recipe on ${BASE_BRANCH}), and the agent's sandbox is out of date, so it cannot correct the work:\n${report}`)
@@ -731,6 +794,7 @@ async function runTask(r: Runner, issue: Issue, branch: string, baseSha: string,
           if (!checked.ok) {
             // A blocked agent wrote its state note with the question (CON-R10).
             if (checked.final) return returned(checked.report, t.result?.status === 'blocked' ? stateNote(t.result.state_note) : null)
+            if (checked.owner) return await ownerReturn(checked.report)
             const stop = await feedback(checked.report)
             if (stop) return stop
             continue
@@ -738,6 +802,7 @@ async function runTask(r: Runner, issue: Issue, branch: string, baseSha: string,
           const delivery = await deliver(r, t)
           if (delivery.delivered) return { ok: true, commit: t.commit!, result: t.result! }
           if ('returned' in delivery) return returned(delivery.returned)
+          if ('owner' in delivery) return await ownerReturn(delivery.owner)
           const stop = await feedback(delivery.feedback)
           if (stop) return stop
         }
