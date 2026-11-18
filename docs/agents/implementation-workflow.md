@@ -63,7 +63,7 @@ A task leaves preparation with `ready-for-agent` only. Mark a task `ready-for-hu
 | Task | `type` | Runner | `follow-up` on a task created from a deviation. |
 | Task | `marker`, `origin` | Runner | On a follow-up: the code marker it owns and the task that created it. |
 | Task | `type`, `epic` | Runner | `assumptions` and the epic id on the triage task that collects assumptions to confirm. |
-| Task | `kept_branch`, `kept_base` | Runner | On a returned task: the return branch on GitHub holding the attempt's kept work, and the commit of `main` that work sits on. Set by a return that pushed the branch, cleared by `start-fresh` and by delivery. See [Continuation](#continuation). |
+| Task | `kept_branch`, `kept_base` | Runner | On a returned task: the return branch on GitHub holding the attempt's kept work, and the commit of `main` the attempt worked on. Set by a return that pushed the branch, cleared by `start-fresh` and by delivery. See [Continuation](#continuation). |
 
 ## Epic hand-off
 
@@ -141,7 +141,7 @@ Only work that passed the gate on exactly the `main` commit it is pushed onto re
 
 The task is returned when a fourth feedback turn would be needed, when `main` changes a sixth time during delivery, and when a feedback turn would be needed after the image was rebuilt during the task: the agent's sandbox is then out of date.
 
-**Return of a task.** Remove `ready-for-agent`, add `needs-info`, release the claim and comment the concrete reason. When the task has a branch, push it to GitHub as `agent/<task branch>`, forced over an earlier return, and name it in the comment; when that push fails, the comment says the work stayed only in the runner's copy. After a successful push the task records the kept work: `kept_branch` is the return branch and `kept_base` the commit of `main` the work sits on (the newest fetched `main` the branch contains), overwriting an earlier return's values. The comment starts with `Runner returned the task.` and, when there is anything to carry, ends with a fenced `json` block holding `state_note`, the [state note](#state-note) the agent wrote, and `last_review`, the last review report of the attempt or of the attempt it continued. The next attempt reads that block; the owner's agent can read it too.
+**Return of a task.** Remove `ready-for-agent`, add `needs-info`, release the claim and comment the concrete reason. When the task has a branch, push it to GitHub as `agent/<task branch>`, forced over an earlier return, and name it in the comment; when that push fails, the comment says the work stayed only in the runner's copy. After a successful push the task records the kept work: `kept_branch` is the return branch and `kept_base` the commit of `main` the attempt worked on: the commit it started from, or, for kept work it never replayed, the older commit that work is built on. A replay onto a newer `main` during delivery does not move it, so the owner's answer still shows every document change the attempt did not work on, overwriting an earlier return's values. The comment starts with `Runner returned the task.` and, when there is anything to carry, ends with a fenced `json` block holding `state_note`, the [state note](#state-note) the agent wrote, and `last_review`, the last review report of the attempt or of the attempt it continued. The next attempt reads that block; the owner's agent can read it too.
 
 The runner never syncs Dolt.
 
@@ -150,14 +150,14 @@ The runner never syncs Dolt.
 What the implementing agent leaves when an attempt stops before it is done; the agents' `task-state-note` skill, mounted in the agent's sandbox, defines its shape. The runner keeps it as a JSON object in the result file's `state_note` field:
 
 - An agent that finishes `blocked` writes it with its question; the return carries it.
-- When the feedback turns are used up, the runner asks the agent once, in its running session, to write the note and change nothing else, then reads `state_note` from the result file. A failed turn, a missing note or one that is not a JSON object leaves the return without a note; the comment still gives the reason.
+- When the feedback turns are used up, the runner asks the agent once, in its running session, to write the note and change nothing else, then reads `state_note` from the result file, which it removes before the request so that only a note written in answer counts. A failed turn, a missing note or one that is not a JSON object leaves the return without a note; the comment still gives the reason.
 
 ### Continuation
 
 The next attempt of a task with recorded kept work is a continuation, whatever the cause of the return:
 
 1. When the task carries `start-fresh`, the runner removes the label and clears `kept_branch` and `kept_base` right after the claim; the attempt starts from `main`.
-2. Otherwise it fetches `kept_branch` from GitHub and creates the task branch at it. When GitHub no longer has the branch, the attempt starts from `main` and the task's log says why; the task is not returned for it. When GitHub cannot be reached, the runner releases the claim and logs it; the task stays ready, its kept work recorded, and is tried again in a later cycle.
+2. Otherwise it fetches `kept_branch` from GitHub and creates the task branch at it. When GitHub no longer has the branch, the attempt starts from `main` and the task's log says why; the task is not returned for it. When GitHub lists the branch but does not give it, for example because it cannot be reached, the task waits in selection like a task whose documents are missing: the runner logs why, does not claim it, takes the next task, and tries again in a later cycle; the kept work stays recorded. If that happens between the selection and the start, the runner releases the claim and logs it.
 3. The agent receives, beside what every attempt receives: the state note of the returned attempt when its return comment has one, the owner's answer, and the last review report when there was one. The owner's answer is every comment of the task added after its latest return comment, and `git diff <kept_base> <fetched main>` limited to the task's linked documents. A malformed data block is logged and the attempt goes on without it.
 4. The first check after the agent's turn replays the branch on the fetched `main`, as every check does. A conflict is a feedback turn whose report names the conflicting files and the commits of `main` since `kept_base` that change them, as during delivery.
 5. The review covers the task's whole change against `main`, the kept commits included.

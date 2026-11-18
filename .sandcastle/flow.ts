@@ -273,7 +273,7 @@ export function missingDocuments(r: Runner, issue: Issue, mainSha: string): stri
  * and the task records it as kept work for the next attempt (oferty-pracy-5yd, CON-R01).
  * The state note and the last review report travel as data at the end of the comment (CON-R10).
  */
-export function returnToPreparation(r: Runner, issue: Issue, reason: string, branch: string | null, data: ReturnData = {}): void {
+export function returnToPreparation(r: Runner, issue: Issue, reason: string, branch: string | null, data: ReturnData = {}, startBase: string | null = null): void {
   r.log(`${issue.id}: returned to preparation: ${firstLine(reason)}`)
   let kept = ''
   if (branch && branchExists(r.repo, branch)) {
@@ -282,8 +282,10 @@ export function returnToPreparation(r: Runner, issue: Issue, reason: string, bra
       ? `\nThe work is on GitHub on branch ${returnBranchName(branch)}.`
       : `\nThe work stayed only in the runner's copy on branch ${branch}: pushing it to GitHub failed: ${firstLine(pushed.out)}`
     if (pushed.ok) {
-      // The commit of main the work sits on: the newest fetched main it shares with the branch.
-      const base = tryGit(r.repo, ['merge-base', `refs/heads/${branch}`, EXCHANGE_REF])
+      // The commit of main the attempt worked on: where it started, or for kept work not yet
+      // replayed, the older commit that work is built on. A replay onto a newer main during
+      // delivery does not move it, so the owner's answer keeps every document change since.
+      const base = tryGit(r.repo, ['merge-base', `refs/heads/${branch}`, startBase ?? EXCHANGE_REF])
       if (base.ok) {
         quietly(r, `bd update ${issue.id}`, () => r.db.update(issue.id, { setMetadata: { [KEPT_BRANCH]: returnBranchName(branch), [KEPT_BASE]: base.out } }))
       } else {
@@ -606,6 +608,8 @@ type Outcome = { ok: true; commit: string; result: AgentResult } | { ok: false; 
 async function askForStateNote(r: Runner, t: TaskRun, reason: string): Promise<StateNote | null> {
   r.log(`${t.issue.id}: asking the agent for a state note before the return (not a feedback turn; feedback turns used: ${t.turns} of ${MAX_FEEDBACK_TURNS})`)
   try {
+    // Only a note written in answer to this request counts, not one left in an earlier result.
+    await t.sandbox.exec(`rm -f ${RESULT_FILE}`)
     if (!(await t.sandbox.resume(notePrompt(reason)))) {
       r.log(`${t.issue.id}: no agent session to ask for a state note; returning without one`)
       return null
@@ -839,7 +843,7 @@ export async function processTask(shared: Runner, issue: Issue, baseSha: string)
     const ctx = epicContext(r, issue)
     const outcome = await runTask(r, issue, branch, baseSha, ctx, start.continuation)
     if (!outcome.ok) {
-      returnToPreparation(r, issue, outcome.report || 'Unknown failure.', branch, outcome.data)
+      returnToPreparation(r, issue, outcome.report || 'Unknown failure.', branch, outcome.data, baseSha)
       shared.log(`${issue.id}: returned to preparation`)
       return
     }
@@ -863,7 +867,7 @@ export async function processTask(shared: Runner, issue: Issue, baseSha: string)
     // A sandbox, agent or task database failure must not stop the runner or the other runs,
     // nor leave the task claimed: hand it back like any other failed attempt.
     const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
-    returnToPreparation(r, issue, `The runner stopped the attempt on an error: ${message}`, branch)
+    returnToPreparation(r, issue, `The runner stopped the attempt on an error: ${message}`, branch, {}, baseSha)
     shared.log(`${issue.id}: returned to preparation after an error`)
   }
 }
@@ -906,6 +910,15 @@ export function pickTask(r: Runner, mainSha: string, apply: boolean): Issue | nu
     const missing = missingDocuments(r, issue, mainSha)
     if (missing.length) {
       const text = `documents not on ${BASE_BRANCH} on GitHub yet: ${missing.join(', ')}`
+      if (apply) r.log(`${issue.id}: waits: ${text}`)
+      else console.log(`- ${issue.id} ${issue.title}\n  waits: ${text}`)
+      continue
+    }
+    const kept = issue.labels?.includes(START_FRESH) ? null : keptWork(issue)
+    const fetchedKept = kept ? fetchKeptWork(r.repo, kept.branch) : null
+    if (fetchedKept && !fetchedKept.ok && !fetchedKept.missing) {
+      // GitHub does not give the kept work now: the task waits without being claimed (ASM-2).
+      const text = `cannot fetch the kept work ${kept!.branch} from GitHub: ${firstLine(fetchedKept.out)}`
       if (apply) r.log(`${issue.id}: waits: ${text}`)
       else console.log(`- ${issue.id} ${issue.title}\n  waits: ${text}`)
       continue

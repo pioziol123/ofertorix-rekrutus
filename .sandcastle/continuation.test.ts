@@ -114,6 +114,46 @@ describe('5yd.2: the return keeps the work and asks for a state note', () => {
     assert.equal(sh(w.exchange, 'show', 'agent/1-task-t-1:more.txt'), 'more')
   })
 
+  it('CON-R09: a note left in an earlier result does not count as the answer to the request', async () => {
+    const stale = { remaining: ['stale'] }
+    w = world((ctx) => {
+      if (ctx.turn === 1) return committingAgent('kept.txt', 'kept\n')(ctx)
+      if (isNoteRequest(ctx.prompt)) return
+      answer({ ...doneResult(), state_note: stale })(ctx)
+    })
+    w.sandboxes.verdict = 'fail'
+    await cycle(w.runner)
+    assert.equal(w.sandboxes.prompts.filter(isNoteRequest).length, 1)
+    assert.equal(lastReturnData().state_note, undefined)
+  })
+
+  it('ASM-3: a task returned after delivery replayed its work records the commit the attempt started from', async () => {
+    let started = ''
+    w = world((ctx) => {
+      if (ctx.turn === 1) {
+        started = exchangeMain(w)
+        committingAgent('kept.txt', 'kept\n')(ctx)
+        pushFiles(w.other, { 'docs/t-1/sd.md': '# SD v2 during delivery\n', 'owner.txt': 'owner\n' }, 'owner: change the design')
+        return
+      }
+      if (!isNoteRequest(ctx.prompt)) answer(doneResult())(ctx)
+    })
+    // The gate fails once the work sits on the owner's change, until the turns run out.
+    w.sandboxes.gate = (_kind, worktree) => (existsSync(join(worktree, 'owner.txt')) ? 1 : 0)
+    await cycle(w.runner)
+    assert.ok(w.db.show('t-1').labels?.includes('needs-info'))
+    assert.equal(sh(w.exchange, 'show', 'agent/1-task-t-1:owner.txt'), 'owner', 'the kept work was replayed onto the newer main')
+    assert.equal(w.db.show('t-1').metadata![KEPT_BASE], started)
+    // The continuation sees the document change the returned attempt never worked on.
+    w.db.handOffAgain('t-1')
+    w.sandboxes.gate = undefined
+    w.sandboxes.agentTurn = committingAgent('second.txt')
+    await cycle(w.runner)
+    const first = w.sandboxes.prompts.find((p) => p.includes('continues an earlier attempt'))!
+    assert.match(first, /\+# SD v2 during delivery/)
+    assert.equal(w.db.show('t-1').status, 'closed')
+  })
+
   it('CON-R10: a blocked agent\'s state note travels in the return comment without a separate request', async () => {
     w = world(blockedAttempt())
     await cycle(w.runner)
@@ -242,6 +282,39 @@ describe('5yd.2: the next attempt continues the kept work', () => {
     assert.match(w.taskLogs.get('t-1')!.join('\n'), /the kept work agent\/1-task-t-1 recorded in the task is no longer on GitHub; starting from main/)
     assert.equal(returnComments().length, returnsBefore)
     assert.equal(w.db.show('t-1').status, 'closed')
+  })
+
+  it('ASM-1: a continuation returned before its own first review carries the report it received', async () => {
+    w = world(exhaustedAttempt(NOTE))
+    w.sandboxes.verdict = 'fail'
+    w.sandboxes.findings = ['F1: kept.txt lacks the header']
+    await cycle(w.runner)
+    w.db.handOffAgain('t-1')
+    w.sandboxes.agentTurn = blockedAttempt('more.txt', 'more\n')
+    await cycle(w.runner)
+    assert.equal(returnComments().length, 2)
+    assert.equal(lastReturnData().last_review, 'Verdict: "fail"\n- F1: kept.txt lacks the header')
+  })
+
+  it('ASM-2: GitHub not giving the kept work: the task waits in selection, unclaimed, and the next task is taken', async () => {
+    w = world(blockedAttempt(), ['t-1', 't-2'])
+    w.db.update('t-2', { remove: ['ready-for-agent'] })
+    await cycle(w.runner)
+    w.db.handOffAgain('t-1')
+    w.db.update('t-2', { add: ['ready-for-agent'] })
+    const kept = w.db.show('t-1').metadata![KEPT_BRANCH] as string
+    // The branch is still listed on GitHub, but its commit cannot be fetched.
+    writeFile(w.exchange, `refs/heads/${kept}`, `${'1'.repeat(40)}\n`)
+    const returnsBefore = returnComments().length
+    const claimsBefore = w.db.claims.length
+    // The planted ref also breaks pushes to the stand-in GitHub, so t-2 is only checked as taken.
+    w.sandboxes.agentTurn = committingAgent('second.txt')
+    assert.equal(await cycle(w.runner), true)
+    assert.deepEqual(w.db.claims.slice(claimsBefore), ['t-2'])
+    assert.match(w.logs.join('\n'), new RegExp(`t-1: waits: cannot fetch the kept work ${kept} from GitHub`))
+    assert.equal(returnComments().length, returnsBefore, 'not returned')
+    assert.equal(w.db.show('t-1').status, 'open')
+    assert.equal(w.db.show('t-1').metadata![KEPT_BRANCH], kept)
   })
 
   it('ASM-2: GitHub unreachable while fetching the kept work: the task waits, claimed by no one, its kept work still recorded', async () => {

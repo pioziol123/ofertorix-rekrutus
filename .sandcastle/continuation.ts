@@ -7,7 +7,7 @@
 import type { Issue } from './followups.ts'
 import type { TaskComment } from './ports.ts'
 
-/** Task metadata: the return branch holding the kept work, and the commit of main it sits on. */
+/** Task metadata: the return branch holding the kept work, and the commit of main the returned attempt worked on. */
 export const KEPT_BRANCH = 'kept_branch'
 export const KEPT_BASE = 'kept_base'
 /** The label with which the owner orders an attempt from main, ignoring the kept work. */
@@ -88,7 +88,7 @@ export function sinceReturn(comments: TaskComment[]): { latest: TaskComment | nu
 export interface Continuation {
   /** The return branch on GitHub. */
   keptBranch: string
-  /** The commit of main the kept work sat on; null when the runner's copy does not have it. */
+  /** The commit of main the returned attempt worked on; null when the runner's copy does not have it. */
   keptBase: string | null
   note: StateNote | null
   lastReview: string | null
@@ -103,7 +103,7 @@ export function continuationBrief(c: Continuation, baseSha: string, mainName: st
   const fence = (lang: string, text: string) => `\`\`\`${lang}\n${text}\n\`\`\``
   const base = c.keptBase ?? 'unknown'
   return [
-    `This task continues an earlier attempt that was returned to preparation. The task branch holds that attempt's kept work (${c.keptBranch} on GitHub), built on commit ${base} of ${mainName}; the current ${mainName} is ${baseSha}. After your turn the runner replays the branch on ${baseSha}, and a conflict comes back to you as a report naming the files and commits; you may rebase it yourself first (git rebase ${baseSha}). The owner's decision overrides the state note.`,
+    `This task continues an earlier attempt that was returned to preparation. The task branch holds that attempt's kept work (${c.keptBranch} on GitHub); that attempt worked on commit ${base} of ${mainName}, and the current ${mainName} is ${baseSha}. After your turn the runner replays the branch on ${baseSha}, and a conflict comes back to you as a report naming the files and commits; you may rebase it yourself first (git rebase ${baseSha}). The owner's decision overrides the state note.`,
     c.note
       ? `State note of the returned attempt:\n${fence('json', JSON.stringify(c.note, null, 2))}`
       : 'The returned attempt left no state note.',
