@@ -13,7 +13,7 @@ try {
   if (args.some((arg) => arg !== '--wait'))
     throw new Error('Usage: source:sync [--wait]')
   await boss.start()
-  const result = await enqueueSync(pool, boss)
+  const result = await enqueueSync(boss)
   console.info(JSON.stringify(result, null, 2))
   if (args.includes('--wait') && result) {
     const deadline = Date.now() + 120_000

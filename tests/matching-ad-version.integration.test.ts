@@ -11,7 +11,7 @@ import {
   it,
   vi,
 } from 'vitest'
-import { closePool, setPool } from '../lib/db.ts'
+import { closePool, setPool, transaction } from '../lib/db.ts'
 import type { Assessment, MatchingInput } from '../lib/matching/model.ts'
 import {
   currentAdVersions,
@@ -264,7 +264,7 @@ integration(
 
     it('saves the AI assessment for the version whose content it assessed', async () => {
       injected.change = changeAd
-      const request = await enqueueMatching(pool, boss, ad)
+      const request = await enqueueMatching(boss, ad)
       const stored = (
         await pool.query('SELECT * FROM matching_requests WHERE id=$1', [
           request.id,
@@ -276,20 +276,14 @@ integration(
 
       const current = (await currentAdVersions([ad])).get(ad)
       expect(current).toBe(changed)
-      const client = await pool.connect()
-      try {
-        await client.query('BEGIN')
-        await publishAiRating(
-          client,
+      await transaction(() =>
+        publishAiRating(
           stored,
           unknownResult(stored.input),
           stored.profile_version_id,
           current,
-        )
-        await client.query('COMMIT')
-      } finally {
-        client.release()
-      }
+        ),
+      )
       const rating = (
         await pool.query(
           'SELECT ad_revision_id,input FROM matching_rating_revisions WHERE request_id=$1',
@@ -306,11 +300,11 @@ integration(
     })
 
     it('publishes an AI result for the version assessed when the ad changes after the run read its current version (ASM-1)', async () => {
-      const request = await enqueueMatching(pool, boss, ad)
+      const request = await enqueueMatching(boss, ad)
       // The run reads the current version before it takes its connection;
       // the ad changes right after that read, before the result is saved.
       injected.afterCurrentVersions = changeAd
-      await executeMatching(pool, boss, request.id, new Provider())
+      await executeMatching(boss, request.id, new Provider())
       expect(injected.afterCurrentVersions).toBeNull()
       expect((await currentAdVersions([ad])).get(ad)).toBe(changed)
       const rating = (
@@ -333,13 +327,13 @@ integration(
 
     it("pairs the owner's assessment form with the version whose content it shows", async () => {
       injected.change = changeAd
-      const context = (await manualContext(pool, ad))!
+      const context = (await manualContext(ad))!
       expect(context.adRevisionId).toBe(assessed)
       expect(context.input.offer).toContain('Assessed PHP')
       // The ad changed after the form was read: saving it is a conflict, not
       // an assessment of the old content filed under the new version.
       await expect(
-        saveManualRating(pool, ad, {
+        saveManualRating(ad, {
           commandId: randomUUID(),
           expectedRevisionId: context.headId,
           profileVersionId: context.profileVersionId,
@@ -358,8 +352,8 @@ integration(
     })
 
     it("saves the owner's assessment with the content of the version the form names", async () => {
-      const context = (await manualContext(pool, ad))!
-      const saved = await saveManualRating(pool, ad, {
+      const context = (await manualContext(ad))!
+      const saved = await saveManualRating(ad, {
         commandId: randomUUID(),
         expectedRevisionId: context.headId,
         profileVersionId: context.profileVersionId,

@@ -11,6 +11,7 @@ import {
   parseJobspy,
   runJobspy,
 } from '../lib/sources/jobspy.ts'
+import { closePool, setPool } from '../lib/db.ts'
 import { enqueueJobspy, jobspyStatus } from '../lib/sources/jobspy-sync.ts'
 import { parseFilters } from '../modules/offers/index.ts'
 import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
@@ -169,11 +170,16 @@ describe('JobSpy contract and projection', () => {
   })
   it('rejects disabled enqueue before connecting to SQL', async () => {
     vi.stubEnv('JOBSPY_ENABLED', 'false')
-    const connect = vi.fn()
-    await expect(
-      enqueueJobspy({ connect } as unknown as Pool, {} as PgBoss),
-    ).rejects.toThrow('disabled')
+    const connect = vi.fn(),
+      query = vi.fn()
+    setPool({ connect, query, end: vi.fn() } as unknown as Pool)
+    try {
+      await expect(enqueueJobspy({} as PgBoss)).rejects.toThrow('disabled')
+    } finally {
+      await closePool()
+    }
     expect(connect).not.toHaveBeenCalled()
+    expect(query).not.toHaveBeenCalled()
     vi.stubEnv('JOBSPY_ENABLED', 'TRUE')
     expect(jobspyEnabled()).toBe(false)
   })

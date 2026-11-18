@@ -32,7 +32,7 @@ try {
       : {}),
   })
   await boss.start()
-  const result = await enqueuePolish(pool, boss, query)
+  const result = await enqueuePolish(boss, query)
   console.info(JSON.stringify(result))
   if (values.wait) {
     const deadline = Date.now() + 240_000

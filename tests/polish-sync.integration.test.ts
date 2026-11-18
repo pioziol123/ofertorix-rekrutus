@@ -86,7 +86,7 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
     records = [record(q.source)],
     overrides: Record<string, unknown> = {},
   ) {
-    const queued = await enqueuePolish(pool, boss, q)
+    const queued = await enqueuePolish(boss, q)
     await deliver(
       queued.id,
       polishWith(async () => result(q, records, overrides), q.source),
@@ -99,11 +99,11 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
   }
   it('deduplicates concurrent requests per source and independently queues the other source', async () => {
     const requests = await Promise.all(
-      Array.from({ length: 4 }, () => enqueuePolish(pool, boss, query())),
+      Array.from({ length: 4 }, () => enqueuePolish(boss, query())),
     )
     expect(new Set(requests.map((r) => r.id)).size).toBe(1)
     expect(requests.filter((r) => !r.reused)).toHaveLength(1)
-    const other = await enqueuePolish(pool, boss, query('theprotocol'))
+    const other = await enqueuePolish(boss, query('theprotocol'))
     expect(other.id).not.toBe(requests[0]!.id)
     const run = (
       await pool.query('SELECT * FROM source_sync_runs WHERE id=$1', [other.id])
@@ -265,7 +265,7 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
   // Since 0mq.5 the shared executor runs a delivered run with its own
   // source's connector; the queue no longer selects the source (A5-R01).
   it('does not expose a run through another source', async () => {
-    const queued = await enqueuePolish(pool, boss, query('theprotocol'))
+    const queued = await enqueuePolish(boss, query('theprotocol'))
     expect((await polishStatus(pool, queued.id, 'bulldogjob')).run).toBeNull()
     expect(
       (await polishStatus(pool, queued.id, 'theprotocol')).run?.status,
@@ -274,8 +274,8 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
   // Since 0mq.5 one recovery serves every source and ends only runs whose
   // queue job has ended (A5-R06).
   it('recovers orphaned running imports only where the queue job has ended', async () => {
-    const first = await enqueuePolish(pool, boss, query()),
-      second = await enqueuePolish(pool, boss, query('theprotocol'))
+    const first = await enqueuePolish(boss, query()),
+      second = await enqueuePolish(boss, query('theprotocol'))
     await pool.query("UPDATE source_sync_runs SET status='running'")
     const { job_id } = (
       await pool.query('SELECT job_id FROM source_sync_runs WHERE id=$1', [
@@ -295,7 +295,7 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
     expect(collect).not.toHaveBeenCalled()
   })
   it('protects an active execution from recovery and duplicate delivery', async () => {
-    const queued = await enqueuePolish(pool, boss, query())
+    const queued = await enqueuePolish(boss, query())
     let release!: () => void, entered!: () => void
     const started = new Promise<void>((resolve) => {
         entered = resolve
@@ -325,7 +325,7 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
     expect((await polishStatus(pool, queued.id)).run?.status).toBe('complete')
   })
   it('redacts arbitrary subprocess failures and permits a later import', async () => {
-    const queued = await enqueuePolish(pool, boss, query())
+    const queued = await enqueuePolish(boss, query())
     await deliver(
       queued.id,
       polishWith(async () => {
@@ -338,6 +338,6 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
       seen: 0,
       error: 'Import interrupted by a storage or processing error',
     })
-    expect((await enqueuePolish(pool, boss, query())).id).not.toBe(queued.id)
+    expect((await enqueuePolish(boss, query())).id).not.toBe(queued.id)
   })
 })

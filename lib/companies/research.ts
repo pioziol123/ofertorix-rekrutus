@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import type { Pool, PoolClient } from 'pg'
+import type { Pool } from 'pg'
 import type { PgBoss } from 'pg-boss'
 import type { AiConfiguration } from '../../modules/ai/index.ts'
 import { reserve } from '../../modules/ai/index.ts'
-import { tx } from '../profile/store.ts'
+import { db, queueDatabase, transaction } from '../db.ts'
 import { requireQueued } from '../queue.ts'
 import { CompanyConflict, CompanyNotFound } from './store.ts'
 import { researchCommand, type ResearchReport } from './research-model.ts'
@@ -17,25 +17,21 @@ import {
 export const companyResearchQueue = 'company-research'
 export class ResearchConfigurationError extends Error {}
 const pending = ['waiting_budget', 'queued', 'running']
-async function deliver(client: PoolClient, boss: PgBoss, id: string) {
+async function deliver(boss: PgBoss, id: string) {
   await requireQueued(
     boss.send(
       companyResearchQueue,
       { operationId: id },
       {
-        db: { executeSql: (sql, values) => client.query(sql, values) },
+        db: queueDatabase,
         retryLimit: 0,
         expireInSeconds: 360,
       },
     ),
   )
 }
-async function fund(
-  client: PoolClient,
-  boss: PgBoss,
-  id: string,
-  configuration: AiConfiguration,
-) {
+async function fund(boss: PgBoss, id: string, configuration: AiConfiguration) {
+  const client = db()
   const budget = await reserve(
     client,
     configuration,
@@ -52,10 +48,9 @@ async function fund(
     "UPDATE company_research SET state='queued',attempt_id=$2 WHERE id=$1",
     [id, attemptId],
   )
-  await deliver(client, boss, id)
+  await deliver(boss, id)
 }
 export async function requestResearch(
-  pool: Pool,
   boss: PgBoss,
   companyId: string,
   value: unknown,
@@ -66,69 +61,65 @@ export async function requestResearch(
   const fingerprint = createHash('sha256')
     .update(JSON.stringify({ companyId, ...command }))
     .digest('hex')
-  const client = await pool.connect()
-  try {
-    return await tx(client, async () => {
-      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-        `research-command-${command.commandId}`,
-      ])
-      const receipt = (
+  return transaction(async () => {
+    const client = db()
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      `research-command-${command.commandId}`,
+    ])
+    const receipt = (
+      await client.query(
+        'SELECT * FROM company_research_commands WHERE id=$1',
+        [command.commandId],
+      )
+    ).rows[0]
+    if (receipt) {
+      if (receipt.fingerprint !== fingerprint) throw new CompanyConflict()
+      return receipt.result as { id: string; reused: boolean }
+    }
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      `company-research-${companyId}`,
+    ])
+    const company = (
+      await client.query(
+        'SELECT name,kind,website,description FROM companies WHERE id=$1',
+        [companyId],
+      )
+    ).rows[0]
+    if (!company) throw new CompanyNotFound()
+    const active = (
+      await client.query(
+        'SELECT id FROM company_research WHERE company_id=$1 AND state=ANY($2::text[])',
+        [companyId, pending],
+      )
+    ).rows[0]
+    const complete =
+      !command.refresh &&
+      (
         await client.query(
-          'SELECT * FROM company_research_commands WHERE id=$1',
-          [command.commandId],
-        )
-      ).rows[0]
-      if (receipt) {
-        if (receipt.fingerprint !== fingerprint) throw new CompanyConflict()
-        return receipt.result as { id: string; reused: boolean }
-      }
-      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-        `company-research-${companyId}`,
-      ])
-      const company = (
-        await client.query(
-          'SELECT name,kind,website,description FROM companies WHERE id=$1',
+          "SELECT id FROM company_research WHERE company_id=$1 AND state='completed' ORDER BY finished_at DESC,id DESC LIMIT 1",
           [companyId],
         )
       ).rows[0]
-      if (!company) throw new CompanyNotFound()
-      const active = (
-        await client.query(
-          'SELECT id FROM company_research WHERE company_id=$1 AND state=ANY($2::text[])',
-          [companyId, pending],
-        )
-      ).rows[0]
-      const complete =
-        !command.refresh &&
-        (
-          await client.query(
-            "SELECT id FROM company_research WHERE company_id=$1 AND state='completed' ORDER BY finished_at DESC,id DESC LIMIT 1",
-            [companyId],
-          )
-        ).rows[0]
-      const previous = active || complete
-      let result: { id: string; reused: boolean }
-      if (previous) result = { id: previous.id, reused: true }
-      else {
-        const configuration = researchConfiguration()
-        if (!configuration) throw new ResearchConfigurationError()
-        const id = randomUUID()
-        await client.query(
-          "INSERT INTO company_research(id,company_id,target,configuration,state) VALUES($1,$2,$3,$4,'waiting_budget')",
-          [id, companyId, company, configuration],
-        )
-        await fund(client, boss, id, configuration)
-        result = { id, reused: false }
-      }
+    const previous = active || complete
+    let result: { id: string; reused: boolean }
+    if (previous) result = { id: previous.id, reused: true }
+    else {
+      const configuration = researchConfiguration()
+      if (!configuration) throw new ResearchConfigurationError()
+      const id = randomUUID()
       await client.query(
-        'INSERT INTO company_research_commands(id,fingerprint,result) VALUES($1,$2,$3)',
-        [command.commandId, fingerprint, result],
+        "INSERT INTO company_research(id,company_id,target,configuration,state) VALUES($1,$2,$3,$4,'waiting_budget')",
+        [id, companyId, company, configuration],
       )
-      return result
-    })
-  } finally {
-    client.release()
-  }
+      await fund(boss, id, configuration)
+      result = { id, reused: false }
+    }
+    await client.query(
+      'INSERT INTO company_research_commands(id,fingerprint,result) VALUES($1,$2,$3)',
+      [command.commandId, fingerprint, result],
+    )
+    return result
+  })
 }
 export async function executeCompanyResearch(
   pool: Pool,
@@ -136,6 +127,10 @@ export async function executeCompanyResearch(
   id: string,
   fetcher: typeof fetch = fetch,
 ) {
+  // ASSUMPTION(oferty-pracy-0mq.18/ASM-1): the session lock stays on its own
+  // connection, so recovery can still tell running research from research
+  // interrupted by a stopped worker; the writes go through the shared
+  // transactional operation on other pooled connections.
   const client = await pool.connect()
   const lockName = `research-operation-${id}`
   try {
@@ -147,15 +142,15 @@ export async function executeCompanyResearch(
     ).rows[0].locked
     if (!lock) return
     try {
-      const row = await tx(client, async () => {
+      const row = await transaction(async () => {
         const r = (
-          await client.query(
+          await db().query(
             "UPDATE company_research SET state='running' WHERE id=$1 AND state='queued' RETURNING *",
             [id],
           )
         ).rows[0]
         if (r)
-          await client.query(
+          await db().query(
             "UPDATE ai_attempts SET state='running' WHERE id=$1",
             [r.attempt_id],
           )
@@ -163,8 +158,8 @@ export async function executeCompanyResearch(
       })
       if (!row) return
       const result = await runResearch(row.target, row.configuration, fetcher)
-      await tx(client, async () => {
-        await client.query(
+      await transaction(async () => {
+        await db().query(
           'UPDATE company_research SET state=$2,result=$3,error=$4,finished_at=now() WHERE id=$1',
           [
             id,
@@ -177,7 +172,7 @@ export async function executeCompanyResearch(
             result.error,
           ],
         )
-        await client.query(
+        await db().query(
           'UPDATE ai_attempts SET state=$2,actual_pln=$3,usage=$4,response_id=$5,error=$6,finished_at=now() WHERE id=$1',
           [
             row.attempt_id,
@@ -204,6 +199,8 @@ export async function recoverCompanyResearch(pool: Pool, boss: PgBoss) {
     )
   ).rows
   for (const row of rows) {
+    // ASSUMPTION(oferty-pracy-0mq.18/ASM-1): running research whose session
+    // lock is free was interrupted; see executeCompanyResearch.
     const client = await pool.connect(),
       lockName = `research-operation-${row.id}`
     try {
@@ -217,9 +214,9 @@ export async function recoverCompanyResearch(pool: Pool, boss: PgBoss) {
       )
         continue
       try {
-        await tx(client, async () => {
+        await transaction(async () => {
           const current = (
-            await client.query(
+            await db().query(
               'SELECT * FROM company_research WHERE id=$1 FOR UPDATE',
               [row.id],
             )
@@ -227,18 +224,17 @@ export async function recoverCompanyResearch(pool: Pool, boss: PgBoss) {
           if (current.state === 'running') {
             const error =
               'Przerwano research. Koszt pozostaje zarezerwowany; ponowienie wymaga nowego żądania.'
-            await client.query(
+            await db().query(
               "UPDATE company_research SET state='unknown',error=$2,finished_at=now() WHERE id=$1",
               [row.id, error],
             )
-            await client.query(
+            await db().query(
               "UPDATE ai_attempts SET state='unknown',error=$2,finished_at=now() WHERE id=$1",
               [current.attempt_id, error],
             )
           } else if (current.state === 'waiting_budget')
-            await fund(client, boss, row.id, current.configuration)
-          else if (current.state === 'queued')
-            await deliver(client, boss, row.id)
+            await fund(boss, row.id, current.configuration)
+          else if (current.state === 'queued') await deliver(boss, row.id)
         })
       } finally {
         await client.query('SELECT pg_advisory_unlock(hashtext($1))', [

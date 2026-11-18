@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto'
 import type { Pool } from 'pg'
+import type { QueryExecutor } from '../db.ts'
 import type { BatchArchive } from './batch.ts'
 
 // Kept outside normal API history/logs: these artifacts contain professional
 // profile data and complete provider output, as requested by the owner.
-export function batchArchive(pool: Pool, operationId: string): BatchArchive {
+export function batchArchive(
+  pool: QueryExecutor,
+  operationId: string,
+): BatchArchive {
   return async (kind, key, content) => {
     const digest = createHash('sha256').update(content).digest('hex')
     await pool.query(

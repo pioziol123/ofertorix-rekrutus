@@ -279,7 +279,7 @@ integration(
       return id
     }
     const enqueue = async (ids: string[], commandId = randomUUID()) =>
-      enqueueMatchingGroup(pool, boss, { commandId, offerIds: ids })
+      enqueueMatchingGroup(boss, { commandId, offerIds: ids })
     it('uses one profile version for the whole group when a version is confirmed meanwhile (A10-AC03)', async () => {
       let active = profileVersion,
         revision = 0
@@ -313,7 +313,7 @@ integration(
       const group = await enqueue([ad, await anotherAd()]),
         provider = new Provider()
       provider.failures.add(group.items[1]!.id)
-      await executeMatchingGroup(pool, boss, group.groupId, provider)
+      await executeMatchingGroup(boss, group.groupId, provider)
       expect(provider.uploads).toBe(1)
       expect(provider.creates).toBe(1)
       expect(provider.uploaded.map((i) => i.custom_id).sort()).toEqual(
@@ -339,7 +339,7 @@ integration(
         cleaned: true,
       })
       expect(provider.removed).toEqual(['file_input', 'file_output'])
-      await executeMatchingGroup(pool, boss, group.groupId, provider)
+      await executeMatchingGroup(boss, group.groupId, provider)
       expect(provider.uploads).toBe(1)
       expect(provider.removed).toHaveLength(2)
     })
@@ -352,7 +352,7 @@ integration(
           }),
       )
       const provider = new BatchClient('never-send-test-key', fetcher)
-      await executeMatchingGroup(pool, boss, group.groupId, provider)
+      await executeMatchingGroup(boss, group.groupId, provider)
       const failure = {
         state: 'failed',
         error:
@@ -372,7 +372,7 @@ integration(
         })
       }
       await recoverMatchingGroups(pool, boss)
-      await executeMatchingGroup(pool, boss, group.groupId, provider)
+      await executeMatchingGroup(boss, group.groupId, provider)
       expect(fetcher).toHaveBeenCalledOnce()
       expect(fetcher.mock.calls[0]![0]).toBe('https://api.openai.com/v1/files')
     })
@@ -383,7 +383,7 @@ integration(
       provider.results = vi.fn(async () => {
         throw new BatchError('archive')
       })
-      await executeMatchingGroup(pool, boss, group.groupId, provider)
+      await executeMatchingGroup(boss, group.groupId, provider)
       expect(await groupRow(group.groupId)).toMatchObject({
         state: 'submitted',
         cleaned: false,
@@ -398,7 +398,7 @@ integration(
       }
       await recoverMatchingGroups(pool, boss)
       provider.results = original
-      await executeMatchingGroup(pool, boss, group.groupId, provider)
+      await executeMatchingGroup(boss, group.groupId, provider)
       expect(await groupRow(group.groupId)).toMatchObject({
         state: 'completed',
         cleaned: true,
@@ -436,7 +436,7 @@ integration(
       ).toBe('1')
     })
     it('does not absorb reused single pending requests into group submission', async () => {
-      const single = await enqueueMatching(pool, boss, ad)
+      const single = await enqueueMatching(boss, ad)
       const group = await enqueue([ad, await anotherAd()]),
         provider = new Provider()
       expect(group.items.find((i) => i.offerId === ad)).toMatchObject({
@@ -444,7 +444,7 @@ integration(
         reused: true,
       })
       expect((await row(single.id)).group_id).toBeNull()
-      await executeMatchingGroup(pool, boss, group.groupId, provider)
+      await executeMatchingGroup(boss, group.groupId, provider)
       expect(provider.uploaded).toHaveLength(1)
       expect(provider.uploaded[0]!.custom_id).not.toBe(single.id)
       expect((await row(single.id)).state).toBe('queued')
@@ -463,7 +463,7 @@ integration(
       for (const member of group.items)
         expect((await row(member.id)).state).toBe('waiting_budget')
       await pool.query('UPDATE ai_budget_months SET limit_pln=1')
-      await executeMatchingGroup(pool, boss, group.groupId, new Provider())
+      await executeMatchingGroup(boss, group.groupId, new Provider())
       expect((await groupRow(group.groupId)).state).toBe('queued')
       expect(
         (await pool.query('SELECT count(*) FROM ai_attempts')).rows[0].count,
@@ -483,7 +483,7 @@ integration(
           'UPDATE matching_requests SET state=$2 WHERE group_id=$1',
           [group.groupId, state],
         )
-        await executeMatchingGroup(pool, boss, group.groupId, provider)
+        await executeMatchingGroup(boss, group.groupId, provider)
         expect(provider.uploads + provider.creates).toBe(0)
         expect((await groupRow(group.groupId)).state).toBe(
           state === 'submitting' ? 'unknown' : 'failed',
@@ -499,7 +499,7 @@ integration(
       const group = await enqueue([ad, await anotherAd()]),
         provider = new Provider()
       provider.status = 'in_progress'
-      await executeMatchingGroup(pool, boss, group.groupId, provider)
+      await executeMatchingGroup(boss, group.groupId, provider)
       const member = group.items[0]!
       await pool.query(
         "UPDATE matching_requests SET state='completed',result='{}' WHERE id=$1",
@@ -510,7 +510,7 @@ integration(
         [member.id],
       )
       provider.status = 'completed'
-      await executeMatchingGroup(pool, boss, group.groupId, provider)
+      await executeMatchingGroup(boss, group.groupId, provider)
       expect(await attempt(member.id)).toMatchObject({ actual_pln: '0.000123' })
       expect((await row(member.id)).result).toEqual({})
       expect(provider.creates).toBe(1)
@@ -522,7 +522,7 @@ integration(
       await recoverExecutions()
       await recoverMatching(pool, boss)
       expect(send).not.toHaveBeenCalled()
-      await executeMatching(pool, boss, group.items[0]!.id, provider)
+      await executeMatching(boss, group.items[0]!.id, provider)
       expect(provider.uploads + provider.creates).toBe(0)
       await recoverMatchingGroups(pool, boss)
       expect(send).toHaveBeenCalledWith(

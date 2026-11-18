@@ -6,9 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { Pool } from 'pg'
-import type { QueryExecutor } from '../db.ts'
+import { db, queueDatabase, transaction, type QueryExecutor } from '../db.ts'
 import type { PgBoss } from 'pg-boss'
-import { tx } from './store.ts'
 export const parseQueue = 'profile-parse'
 export const documentRoot = () => process.env.DOCUMENTS_DIR ?? '/data/documents'
 export const digest = (data: Buffer | string) =>
@@ -51,6 +50,8 @@ export async function extractImport(
   id: string,
   root = documentRoot(),
 ) {
+  // ASSUMPTION(oferty-pracy-0mq.18/ASM-1): the session lock stays, so
+  // recovery does not take up an import that is being read.
   const client = await pool.connect()
   try {
     const lock = await client.query(
@@ -109,6 +110,8 @@ export async function recoverImports(pool: Pool, boss: PgBoss) {
     "SELECT id,status,path_key,sha256 FROM profile_imports WHERE status IN ('receiving','queued','extracting') AND updated_at<now()-interval '3 minutes'",
   )
   for (const row of candidates.rows) {
+    // ASSUMPTION(oferty-pracy-0mq.18/ASM-1): the session lock stays on its
+    // own connection; queueing again goes through the shared transaction.
     const client = await pool.connect()
     try {
       const lock = await client.query(
@@ -126,8 +129,8 @@ export async function recoverImports(pool: Pool, boss: PgBoss) {
           )
           continue
         }
-        await tx(client, async () => {
-          await client.query(
+        await transaction(async () => {
+          await db().query(
             "UPDATE profile_imports SET status='queued',updated_at=now() WHERE id=$1",
             [row.id],
           )
@@ -136,7 +139,7 @@ export async function recoverImports(pool: Pool, boss: PgBoss) {
               parseQueue,
               { importId: row.id },
               {
-                db: { executeSql: (sql, values) => client.query(sql, values) },
+                db: queueDatabase,
                 retryLimit: 0,
                 expireInSeconds: 120,
               },

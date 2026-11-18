@@ -24,7 +24,7 @@ try {
     throw new Error('Usage: jobspy:sync [--source source] [--wait]')
   if (!jobspyEnabled(source)) throw new Error('JobSpy source is disabled')
   await boss.start()
-  const result = await enqueueJobspy(pool, boss, new Date(), source)
+  const result = await enqueueJobspy(boss, new Date(), source)
   console.info(JSON.stringify(result))
   if (args.includes('--wait')) {
     const deadline = Date.now() + 150_000

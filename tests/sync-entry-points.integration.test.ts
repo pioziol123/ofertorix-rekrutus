@@ -122,14 +122,11 @@ integration('sync requests executed by the shared executor', () => {
 
   it.each([
     // The SOLID.Jobs CLI and the schedule enqueue through the same function.
-    ['SOLID.Jobs CLI', () => enqueueSync(pool, boss, 'manual')],
-    ['SOLID.Jobs schedule', () => enqueueSync(pool, boss, 'scheduled')],
-    ['JobSpy CLI', () => enqueueJobspy(pool, boss)],
+    ['SOLID.Jobs CLI', () => enqueueSync(boss, 'manual')],
+    ['SOLID.Jobs schedule', () => enqueueSync(boss, 'scheduled')],
+    ['JobSpy CLI', () => enqueueJobspy(boss)],
     // The Polish portal CLI and the application route.
-    [
-      'Polish portal CLI and application',
-      () => enqueuePolish(pool, boss, query()),
-    ],
+    ['Polish portal CLI and application', () => enqueuePolish(boss, query())],
   ])('%s', async (_, request) => {
     const requested = await request()
     expect(await finished(requested!.id)).toEqual({

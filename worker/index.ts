@@ -74,12 +74,11 @@ await boss.work<{ importId: string }>(parseQueue, async (jobs) => {
 })
 await recoverMatching(pool, boss)
 await boss.work<{ requestId: string }>(matchingQueue, async (jobs) => {
-  for (const job of jobs) await executeMatching(pool, boss, job.data.requestId)
+  for (const job of jobs) await executeMatching(boss, job.data.requestId)
 })
 await recoverMatchingGroups(pool, boss)
 await boss.work<{ groupId: string }>(matchingGroupQueue, async (jobs) => {
-  for (const job of jobs)
-    await executeMatchingGroup(pool, boss, job.data.groupId)
+  for (const job of jobs) await executeMatchingGroup(boss, job.data.groupId)
 })
 await recoverCompanyResearch(pool, boss)
 useAiQueue(boss)
@@ -99,7 +98,7 @@ async function schedule() {
   scheduling = true
   try {
     await recoverSyncQueues(boss)
-    await enqueueSync(pool, boss, 'scheduled')
+    await enqueueSync(boss, 'scheduled')
     await recoverImports(pool, boss)
     await recoverMatching(pool, boss)
     await recoverMatchingGroups(pool, boss)

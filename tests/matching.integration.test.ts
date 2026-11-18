@@ -245,8 +245,8 @@ integration(
       ).rows[0]
     it('deduplicates concurrent enqueue and reserves one attempt with version snapshots', async () => {
       const [a, b] = await Promise.all([
-        enqueueMatching(pool, boss, ad),
-        enqueueMatching(pool, boss, ad),
+        enqueueMatching(boss, ad),
+        enqueueMatching(boss, ad),
       ])
       expect(a.id).toBe(b.id)
       expect([a.reused, b.reused].sort()).toEqual([false, true])
@@ -262,7 +262,7 @@ integration(
       })
     })
     it('uploads the exact snapshotted provider body with prompt and schema versions despite configuration changes', async () => {
-      const request = await enqueueMatching(pool, boss, ad)
+      const request = await enqueueMatching(boss, ad)
       const snapshot = await row(request.id)
       expect(snapshot).toMatchObject({
         prompt_version: 'matching-v1',
@@ -280,7 +280,7 @@ integration(
         'batch',
       )
       const provider = new Provider()
-      await executeMatching(pool, boss, request.id, provider)
+      await executeMatching(boss, request.id, provider)
       expect(provider.uploaded).toEqual([
         {
           custom_id: request.id,
@@ -292,9 +292,9 @@ integration(
       expect((await row(request.id)).configuration).toEqual(pricing)
     })
     it('settles usage, saves completed assessment, cleans files and preserves unknown rating', async () => {
-      const request = await enqueueMatching(pool, boss, ad),
+      const request = await enqueueMatching(boss, ad),
         provider = new Provider()
-      await executeMatching(pool, boss, request.id, provider)
+      await executeMatching(boss, request.id, provider)
       expect(await row(request.id)).toMatchObject({
         state: 'completed',
         calculation: { rating: null, completeness: 0 },
@@ -309,12 +309,59 @@ integration(
         stale: false,
         cleaned: true,
       })
-      await executeMatching(pool, boss, request.id, provider)
+      await executeMatching(boss, request.id, provider)
       expect(provider.uploads).toBe(1)
       expect(provider.creates).toBe(1)
     })
+    it('ASSUMPTION(oferty-pracy-0mq.18/ASM-2): funds, settles and publishes a request once when two runs of it overlap, without a session lock', async () => {
+      const month = budgetMonth()
+      await pool.query(
+        'INSERT INTO ai_budget_months(month,limit_pln) VALUES($1,0)',
+        [month],
+      )
+      const request = await enqueueMatching(boss, ad),
+        provider = new Provider()
+      expect((await row(request.id)).state).toBe('waiting_budget')
+      await pool.query('UPDATE ai_budget_months SET limit_pln=1')
+      await Promise.all([
+        executeMatching(boss, request.id, provider),
+        executeMatching(boss, request.id, provider),
+      ])
+      expect((await row(request.id)).state).toBe('queued')
+      expect(
+        (
+          await pool.query(
+            "SELECT count(*)::int AS n FROM ai_attempts WHERE operation_type='matching'",
+          )
+        ).rows[0].n,
+      ).toBe(1)
+      expect(send).toHaveBeenCalledOnce()
+      provider.status = 'in_progress'
+      await executeMatching(boss, request.id, provider)
+      expect((await row(request.id)).state).toBe('submitted')
+      provider.status = 'completed'
+      await Promise.all([
+        executeMatching(boss, request.id, provider),
+        executeMatching(boss, request.id, provider),
+      ])
+      expect(provider.uploads).toBe(1)
+      expect(provider.creates).toBe(1)
+      expect(await row(request.id)).toMatchObject({ state: 'completed' })
+      expect(await attempt(request.id)).toMatchObject({
+        state: 'settled',
+        actual_pln: '0.000120',
+      })
+      expect(
+        (
+          await pool.query(
+            'SELECT count(*)::int AS n FROM matching_rating_revisions WHERE request_id=$1',
+            [request.id],
+          )
+        ).rows[0].n,
+      ).toBe(1)
+    })
     it('publishes an AI result on the run’s own connection and accepts a profile confirmed during the download', async () => {
-      const request = await enqueueMatching(pool, boss, ad)
+      const request = await enqueueMatching(boss, ad)
       // One connection only: the run holds it, so any read needing a second
       // connection while it is held would time out.
       const single = new Pool({
@@ -339,12 +386,7 @@ integration(
       }
       setPool(single)
       try {
-        await executeMatching(
-          single,
-          boss,
-          request.id,
-          new ConfirmingProvider(),
-        )
+        await executeMatching(boss, request.id, new ConfirmingProvider())
       } finally {
         await single.end()
         setPool(pool)
@@ -359,7 +401,7 @@ integration(
       expect(view.history[0]).toMatchObject({ stale: true })
     })
     it('persists a safe HTTP upload failure without resubmission or analysis cost', async () => {
-      const request = await enqueueMatching(pool, boss, ad)
+      const request = await enqueueMatching(boss, ad)
       const fetcher = vi.fn(
         async (_url: RequestInfo | URL, _init?: RequestInit) =>
           new Response('never-send-test-key private CV provider body', {
@@ -367,7 +409,7 @@ integration(
           }),
       )
       const provider = new BatchClient('never-send-test-key', fetcher)
-      await executeMatching(pool, boss, request.id, provider)
+      await executeMatching(boss, request.id, provider)
       expect(await row(request.id)).toMatchObject({
         state: 'failed',
         error:
@@ -382,18 +424,18 @@ integration(
       })
       send.mockClear()
       await recoverMatching(pool, boss)
-      await executeMatching(pool, boss, request.id, provider)
+      await executeMatching(boss, request.id, provider)
       expect(fetcher).toHaveBeenCalledOnce()
       expect(fetcher.mock.calls[0]![0]).toBe('https://api.openai.com/v1/files')
     })
     it('does not resubmit an interrupted submission and retains unknown cost', async () => {
-      const request = await enqueueMatching(pool, boss, ad),
+      const request = await enqueueMatching(boss, ad),
         provider = new Provider()
       await pool.query(
         "UPDATE matching_requests SET state='submitting' WHERE id=$1",
         [request.id],
       )
-      await executeMatching(pool, boss, request.id, provider)
+      await executeMatching(boss, request.id, provider)
       expect(await row(request.id)).toMatchObject({ state: 'unknown' })
       expect(await attempt(request.id)).toMatchObject({
         state: 'unknown',
@@ -405,23 +447,23 @@ integration(
       expect(send).not.toHaveBeenCalled()
     })
     it('keeps submitted work retryable during polling without a second upload', async () => {
-      const request = await enqueueMatching(pool, boss, ad),
+      const request = await enqueueMatching(boss, ad),
         provider = new Provider()
       provider.status = 'in_progress'
-      await executeMatching(pool, boss, request.id, provider)
+      await executeMatching(boss, request.id, provider)
       expect((await row(request.id)).state).toBe('submitted')
       await recoverMatching(pool, boss)
       provider.status = 'completed'
-      await executeMatching(pool, boss, request.id, provider)
+      await executeMatching(boss, request.id, provider)
       expect((await row(request.id)).state).toBe('completed')
       expect(provider.uploads).toBe(1)
       expect(provider.creates).toBe(1)
     })
     it('settles paid usage on refusal without publishing an assessment', async () => {
-      const request = await enqueueMatching(pool, boss, ad),
+      const request = await enqueueMatching(boss, ad),
         provider = new Provider()
       provider.refusal = true
-      await executeMatching(pool, boss, request.id, provider)
+      await executeMatching(boss, request.id, provider)
       expect(await row(request.id)).toMatchObject({
         state: 'failed',
         result: null,
@@ -452,7 +494,7 @@ integration(
     ])(
       'retains safe %s diagnostic after files are cleaned and settles known usage',
       async (code) => {
-        const request = await enqueueMatching(pool, boss, ad)
+        const request = await enqueueMatching(boss, ad)
         await pool.query('UPDATE matching_requests SET input=$2 WHERE id=$1', [
           request.id,
           {
@@ -527,7 +569,7 @@ integration(
           }
         }
         const provider = new DiagnosticProvider()
-        await executeMatching(pool, boss, request.id, provider)
+        await executeMatching(boss, request.id, provider)
         const saved = await row(request.id)
         expect(saved).toMatchObject(
           code === 'accepted'
@@ -568,10 +610,10 @@ integration(
       },
     )
     it('retains unknown cost if completed batch has no result rather than charging zero', async () => {
-      const request = await enqueueMatching(pool, boss, ad),
+      const request = await enqueueMatching(boss, ad),
         provider = new Provider()
       provider.missing = true
-      await executeMatching(pool, boss, request.id, provider)
+      await executeMatching(boss, request.id, provider)
       expect((await row(request.id)).state).toBe('failed')
       expect(await attempt(request.id)).toMatchObject({
         state: 'unknown',
@@ -579,8 +621,8 @@ integration(
       })
     })
     it('marks history stale after either active profile or source revision changes', async () => {
-      const request = await enqueueMatching(pool, boss, ad)
-      await executeMatching(pool, boss, request.id, new Provider())
+      const request = await enqueueMatching(boss, ad)
+      await executeMatching(boss, request.id, new Provider())
       const next = randomUUID()
       await pool.query(
         "INSERT INTO source_ad_revisions(id,source_ad_id,content_hash,payload) VALUES($1,$2,'changed','{}')",
@@ -601,13 +643,11 @@ integration(
     })
     it('rejects missing active profile or pricing before queueing or reserving', async () => {
       await pool.query('UPDATE profile_head SET active_version_id=NULL')
-      await expect(enqueueMatching(pool, boss, ad)).rejects.toThrow(
+      await expect(enqueueMatching(boss, ad)).rejects.toThrow(
         'zatwierdź profil',
       )
       usePricing('matching', null)
-      await expect(enqueueMatching(pool, boss, ad)).rejects.toThrow(
-        'cennik Batch',
-      )
+      await expect(enqueueMatching(boss, ad)).rejects.toThrow('cennik Batch')
       expect(send).not.toHaveBeenCalled()
       expect(
         (await pool.query('SELECT count(*) FROM ai_attempts')).rows[0].count,
@@ -628,7 +668,7 @@ integration(
         'UPDATE source_ad_revisions SET payload=payload || \'{"isRemote":false,"isHybrid":false}\'::jsonb WHERE id=$1',
         [revision],
       )
-      const request = await enqueueMatching(pool, boss, ad)
+      const request = await enqueueMatching(boss, ad)
       expect((await row(request.id)).state).toBe('excluded')
       expect(
         (await pool.query('SELECT count(*) FROM ai_attempts')).rows[0].count,
@@ -636,9 +676,9 @@ integration(
       expect(send).not.toHaveBeenCalled()
     })
     it('preserves a previous successful result when a later refusal is settled', async () => {
-      const first = await enqueueMatching(pool, boss, ad)
-      await executeMatching(pool, boss, first.id, new Provider())
-      const second = await enqueueMatching(pool, boss, ad),
+      const first = await enqueueMatching(boss, ad)
+      await executeMatching(boss, first.id, new Provider())
+      const second = await enqueueMatching(boss, ad),
         provider = new Provider()
       provider.refusal = true
       // Each real submission receives a distinct provider batch ID.
@@ -653,7 +693,7 @@ integration(
         output_file_id: 'file_output',
         status: 'completed',
       })
-      await executeMatching(pool, boss, second.id, provider)
+      await executeMatching(boss, second.id, provider)
       const history = (await readMatching(pool, ad)).history
       expect(history).toHaveLength(2)
       expect(history.find((r) => r.id === first.id)).toMatchObject({
@@ -666,7 +706,7 @@ integration(
       })
     })
     it('does not let CV recovery claim matching ledger attempts in any pending state', async () => {
-      const request = await enqueueMatching(pool, boss, ad)
+      const request = await enqueueMatching(boss, ad)
       for (const state of ['queued', 'running', 'waiting_budget']) {
         await pool.query(
           'UPDATE ai_attempts SET state=$2 WHERE id=(SELECT attempt_id FROM matching_requests WHERE id=$1)',
@@ -694,14 +734,14 @@ integration(
         "INSERT INTO ai_attempts(id,import_id,text_revision,month,attempt,generation,state,reserved_pln,configuration) VALUES($1,$2,1,$3,1,$4,'running',1,$5)",
         [reservation, imported, month, randomUUID(), pricing],
       )
-      const request = await enqueueMatching(pool, boss, ad)
+      const request = await enqueueMatching(boss, ad)
       expect((await row(request.id)).state).toBe('waiting_budget')
       expect(send).not.toHaveBeenCalled()
       await pool.query(
         "UPDATE ai_attempts SET state='settled',actual_pln=0 WHERE id=$1",
         [reservation],
       )
-      await executeMatching(pool, boss, request.id, new Provider())
+      await executeMatching(boss, request.id, new Provider())
       expect((await row(request.id)).state).toBe('queued')
       expect(send).toHaveBeenCalledOnce()
     })

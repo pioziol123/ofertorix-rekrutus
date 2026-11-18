@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { Pool, PoolClient } from 'pg'
+import type { Pool } from 'pg'
+import { db, transaction, type QueryExecutor } from '../db.ts'
 import { z } from 'zod'
 import {
   createCompanyCommand,
@@ -35,17 +36,15 @@ const profile = (row: Record<string, unknown>): Company => ({
   created_at: iso(row.created_at as Date),
 })
 async function command(
-  pool: Pool,
   id: string,
   input: unknown,
-  run: (client: PoolClient) => Promise<{ id: string }>,
+  run: (client: QueryExecutor) => Promise<{ id: string }>,
 ) {
   const fingerprint = createHash('sha256')
     .update(JSON.stringify(input))
     .digest('hex')
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
+  return transaction(async () => {
+    const client = db()
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
       `company-command-${id}`,
     ])
@@ -54,7 +53,6 @@ async function command(
     ).rows[0]
     if (existing) {
       if (existing.fingerprint !== fingerprint) throw new CompanyConflict()
-      await client.query('COMMIT')
       return existing.result as { id: string }
     }
     const result = await run(client)
@@ -62,19 +60,12 @@ async function command(
       'INSERT INTO company_commands(id,fingerprint,result) VALUES($1,$2,$3)',
       [id, fingerprint, result],
     )
-    await client.query('COMMIT')
     return result
-  } catch (error) {
-    await client.query('ROLLBACK')
-    throw error
-  } finally {
-    client.release()
-  }
+  })
 }
-export async function createCompany(pool: Pool, value: unknown) {
+export async function createCompany(value: unknown) {
   const input = createCompanyCommand.parse(value)
   return command(
-    pool,
     input.commandId,
     { operation: 'create', ...input },
     async (client) => {
@@ -87,11 +78,7 @@ export async function createCompany(pool: Pool, value: unknown) {
     },
   )
 }
-export async function changeCompanyLink(
-  pool: Pool,
-  companyId: string,
-  value: unknown,
-) {
+export async function changeCompanyLink(companyId: string, value: unknown) {
   if (!uuid.safeParse(companyId).success) throw new CompanyNotFound()
   companyId = companyId.toLowerCase()
   const input = companyLinkCommand.parse(value)
@@ -100,7 +87,6 @@ export async function changeCompanyLink(
   // keeps the link on the version read (A6-R05, accepted as for matching).
   const [adVersion] = await readCurrentAdVersions([input.adId])
   return command(
-    pool,
     input.commandId,
     { operation: 'link', companyId, ...input },
     async (client) => {

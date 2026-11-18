@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { Pool, PoolClient } from 'pg'
+import type { Pool } from 'pg'
 import { z } from 'zod'
-import { tx } from '../profile/store.ts'
+import { db, transaction } from '../db.ts'
 import {
   readAdVersionList,
   readAdVersions,
@@ -142,8 +142,8 @@ export const weightCommand = z
   .strict()
 const fingerprint = (v: unknown) =>
   createHash('sha256').update(JSON.stringify(v)).digest('hex')
-async function lock(client: PoolClient) {
-  await client.query(
+async function lock() {
+  await db().query(
     "SELECT pg_advisory_xact_lock(hashtext('matching-rating-global'))",
   )
 }
@@ -153,9 +153,9 @@ type WeightVersion = {
   weights: Weights
   created_at: Date
 }
-async function activeWeights(client: PoolClient) {
+async function activeWeights() {
   const row = (
-    await client.query<WeightVersion>(
+    await db().query<WeightVersion>(
       'SELECT v.id,v.number,v.weights,v.created_at FROM matching_weight_head h JOIN matching_weight_versions v ON v.id=h.version_id WHERE singleton',
     )
   ).rows[0]
@@ -184,7 +184,6 @@ type StoredRating = {
   assessment_author: 'ai' | 'owner'
 }
 async function insertRevision(
-  client: PoolClient,
   value: {
     adId: string
     profileVersionId: string
@@ -205,7 +204,7 @@ async function insertRevision(
 ) {
   const id = randomUUID(),
     calculation = calculate(value.result, value.input, weights.weights)
-  await client.query(
+  await db().query(
     `INSERT INTO matching_rating_revisions(id,ad_id,request_id,profile_version_id,ad_revision_id,input,result,calculation,weights_version_id,author,assessment_author,reason,previous_revision_id,basis_revision_id,command_id,command_hash)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
     [
@@ -228,16 +227,16 @@ async function insertRevision(
     ],
   )
   if (promote)
-    await client.query(
+    await db().query(
       'INSERT INTO matching_rating_heads(ad_id,revision_id) VALUES($1,$2) ON CONFLICT(ad_id) DO UPDATE SET revision_id=excluded.revision_id',
       [value.adId, id],
     )
   return { id, calculation }
 }
-async function head(client: PoolClient, adId: string) {
+async function head(adId: string) {
   return (
     (
-      await client.query<StoredRating>(
+      await db().query<StoredRating>(
         'SELECT r.* FROM matching_rating_heads h JOIN matching_rating_revisions r ON r.id=h.revision_id WHERE h.ad_id=$1',
         [adId],
       )
@@ -250,7 +249,6 @@ async function head(client: PoolClient, adId: string) {
 // (owner's decision in 0mq.13). The ad's current version is undefined when
 // the ad no longer exists.
 export async function publishAiRating(
-  client: PoolClient,
   request: {
     id: string
     ad_id: string
@@ -262,17 +260,17 @@ export async function publishAiRating(
   activeProfileVersionId: string | null,
   currentAdVersionId: string | undefined,
 ) {
-  await lock(client)
+  await lock()
   const existing = (
-    await client.query(
+    await db().query(
       'SELECT id,calculation FROM matching_rating_revisions WHERE request_id=$1',
       [request.id],
     )
   ).rows[0]
   if (existing)
     return existing as { id: string; calculation: ReturnType<typeof calculate> }
-  const weights = await activeWeights(client),
-    previous = await head(client, request.ad_id)
+  const weights = await activeWeights(),
+    previous = await head(request.ad_id)
   if (currentAdVersionId === undefined)
     throw new RatingConflict('Nie znaleziono oferty.')
   const adRevisionId = currentAdVersionId
@@ -283,7 +281,6 @@ export async function publishAiRating(
     !previous ||
     !isFresh(previous.profile_version_id, previous.ad_revision_id)
   return insertRevision(
-    client,
     {
       adId: request.ad_id,
       profileVersionId: request.profile_version_id,
@@ -300,51 +297,42 @@ export async function publishAiRating(
     promote,
   )
 }
-export async function manualContext(pool: Pool, adId: string) {
+export async function manualContext(adId: string) {
   const profile = await activeProfileVersion()
   if (!profile) return null
   const ad = (await adsForAssessment([adId])).get(adId)
   if (!ad) throw new RatingConflict('Nie znaleziono oferty.')
-  const client = await pool.connect()
-  try {
-    const previous = await head(client, adId),
-      input = matchingInput(profile.data, ad)
-    const same =
-      previous?.profile_version_id === profile.id &&
-      previous?.ad_revision_id === ad.versionId
-    const assessment: Assessment =
-      same && previous
-        ? previous.result
-        : {
-            summary: 'Własna ocena dopasowania.',
-            strengths: [],
-            gaps: [],
-            criteria: input.criteria.map((c) => ({
-              id: c.id,
-              state: 'unknown',
-              score: null,
-              profileEvidence: null,
-              offerEvidence: null,
-              reason: 'Brak danych do oceny.',
-            })),
-          }
-    return {
-      headId: previous?.id ?? null,
-      profileVersionId: String(profile.id),
-      adRevisionId: ad.versionId,
-      input,
-      assessment,
-      staleBase: !!previous && !same,
-    }
-  } finally {
-    client.release()
+  const previous = await head(adId),
+    input = matchingInput(profile.data, ad)
+  const same =
+    previous?.profile_version_id === profile.id &&
+    previous?.ad_revision_id === ad.versionId
+  const assessment: Assessment =
+    same && previous
+      ? previous.result
+      : {
+          summary: 'Własna ocena dopasowania.',
+          strengths: [],
+          gaps: [],
+          criteria: input.criteria.map((c) => ({
+            id: c.id,
+            state: 'unknown',
+            score: null,
+            profileEvidence: null,
+            offerEvidence: null,
+            reason: 'Brak danych do oceny.',
+          })),
+        }
+  return {
+    headId: previous?.id ?? null,
+    profileVersionId: String(profile.id),
+    adRevisionId: ad.versionId,
+    input,
+    assessment,
+    staleBase: !!previous && !same,
   }
 }
-export async function saveManualRating(
-  pool: Pool,
-  adId: string,
-  value: unknown,
-) {
+export async function saveManualRating(adId: string, value: unknown) {
   const command = manualRatingCommand.parse(value),
     hash = fingerprint({ adId: adId.toLowerCase(), ...command })
   // Read before the transaction holds a connection; the reads take no lock.
@@ -352,143 +340,130 @@ export async function saveManualRating(
   const profile = await activeProfileVersion()
   const currentAdVersionId = (await currentAdVersions([adId])).get(adId)
   const [assessedAd] = await readAdVersions([command.adRevisionId])
-  const client = await pool.connect()
-  try {
-    return await tx(client, async () => {
-      await lock(client)
-      const duplicate = (
-        await client.query(
-          'SELECT id,command_hash FROM matching_rating_revisions WHERE command_id=$1',
-          [command.commandId],
-        )
-      ).rows[0]
-      if (duplicate) {
-        if (duplicate.command_hash !== hash)
-          throw new RatingConflict('Identyfikator zapisu dotyczy innej treści.')
-        return { id: String(duplicate.id), reused: true }
-      }
-      const previous = await head(client, adId)
-      if (currentAdVersionId === undefined)
-        throw new RatingConflict('Nie znaleziono oferty.')
-      if (
-        (previous?.id ?? null) !== command.expectedRevisionId ||
-        profile?.id !== command.profileVersionId ||
-        currentAdVersionId !== command.adRevisionId ||
-        !assessedAd
+  return transaction(async () => {
+    await lock()
+    const duplicate = (
+      await db().query(
+        'SELECT id,command_hash FROM matching_rating_revisions WHERE command_id=$1',
+        [command.commandId],
       )
-        throw new RatingConflict(
-          'Ocena, profil lub ogłoszenie zmieniły się. Wczytaj aktualne dane przed zapisem; Twój formularz nie został zapisany.',
-        )
-      const context = matchingInput(profile.data, assessedAd)
-      let result: Assessment
-      try {
-        result = validateAssessment(command.assessment, context, 'owner')
-      } catch {
-        throw new z.ZodError([
-          {
-            code: 'custom',
-            path: ['assessment'],
-            message: 'Sprawdź kryteria, oceny i uzasadnienia.',
-          },
-        ])
-      }
-      const revision = await insertRevision(
-        client,
+    ).rows[0]
+    if (duplicate) {
+      if (duplicate.command_hash !== hash)
+        throw new RatingConflict('Identyfikator zapisu dotyczy innej treści.')
+      return { id: String(duplicate.id), reused: true }
+    }
+    const previous = await head(adId)
+    if (currentAdVersionId === undefined)
+      throw new RatingConflict('Nie znaleziono oferty.')
+    if (
+      (previous?.id ?? null) !== command.expectedRevisionId ||
+      profile?.id !== command.profileVersionId ||
+      currentAdVersionId !== command.adRevisionId ||
+      !assessedAd
+    )
+      throw new RatingConflict(
+        'Ocena, profil lub ogłoszenie zmieniły się. Wczytaj aktualne dane przed zapisem; Twój formularz nie został zapisany.',
+      )
+    const context = matchingInput(profile.data, assessedAd)
+    let result: Assessment
+    try {
+      result = validateAssessment(command.assessment, context, 'owner')
+    } catch {
+      throw new z.ZodError([
         {
-          adId,
-          profileVersionId: command.profileVersionId,
-          adRevisionId: command.adRevisionId,
-          input: context,
-          result,
-          author: 'owner',
-          assessmentAuthor: 'owner',
-          reason: command.reason,
-          previousId: previous?.id ?? null,
-          basisId: previous?.id ?? null,
-          commandId: command.commandId,
-          commandHash: hash,
+          code: 'custom',
+          path: ['assessment'],
+          message: 'Sprawdź kryteria, oceny i uzasadnienia.',
         },
-        await activeWeights(client),
-      )
-      return { id: revision.id, reused: false }
-    })
-  } finally {
-    client.release()
-  }
+      ])
+    }
+    const revision = await insertRevision(
+      {
+        adId,
+        profileVersionId: command.profileVersionId,
+        adRevisionId: command.adRevisionId,
+        input: context,
+        result,
+        author: 'owner',
+        assessmentAuthor: 'owner',
+        reason: command.reason,
+        previousId: previous?.id ?? null,
+        basisId: previous?.id ?? null,
+        commandId: command.commandId,
+        commandHash: hash,
+      },
+      await activeWeights(),
+    )
+    return { id: revision.id, reused: false }
+  })
 }
-export async function saveWeights(pool: Pool, value: unknown) {
+export async function saveWeights(value: unknown) {
   const command = weightCommand.parse(value),
     hash = fingerprint(command)
-  const client = await pool.connect()
-  try {
-    return await tx(client, async () => {
-      await lock(client)
-      const duplicate = (
-        await client.query(
-          'SELECT version_id AS id,command_hash FROM matching_weight_commands WHERE command_id=$1',
-          [command.commandId],
-        )
-      ).rows[0]
-      if (duplicate) {
-        if (duplicate.command_hash !== hash)
-          throw new RatingConflict('Identyfikator zapisu dotyczy innych wag.')
-        return { versionId: String(duplicate.id), updated: 0, reused: true }
-      }
-      const previous = await activeWeights(client)
-      if (previous.id !== command.expectedVersionId)
-        throw new RatingConflict(
-          'Wagi zmieniły się. Wczytaj aktualną wersję przed zapisem.',
-        )
-      if (
-        JSON.stringify(previous.weights) === JSON.stringify(command.weights)
-      ) {
-        await client.query(
-          'INSERT INTO matching_weight_commands(command_id,command_hash,version_id) VALUES($1,$2,$3)',
-          [command.commandId, hash, previous.id],
-        )
-        return { versionId: previous.id, updated: 0, reused: false }
-      }
-      const id = randomUUID()
+  return transaction(async () => {
+    const client = db()
+    await lock()
+    const duplicate = (
       await client.query(
-        'INSERT INTO matching_weight_versions(id,weights,previous_id,command_id,command_hash) VALUES($1,$2,$3,$4,$5)',
-        [id, command.weights, previous.id, command.commandId, hash],
+        'SELECT version_id AS id,command_hash FROM matching_weight_commands WHERE command_id=$1',
+        [command.commandId],
       )
-      await client.query(
-        'UPDATE matching_weight_head SET version_id=$1 WHERE singleton',
-        [id],
+    ).rows[0]
+    if (duplicate) {
+      if (duplicate.command_hash !== hash)
+        throw new RatingConflict('Identyfikator zapisu dotyczy innych wag.')
+      return { versionId: String(duplicate.id), updated: 0, reused: true }
+    }
+    const previous = await activeWeights()
+    if (previous.id !== command.expectedVersionId)
+      throw new RatingConflict(
+        'Wagi zmieniły się. Wczytaj aktualną wersję przed zapisem.',
       )
-      const weights = await activeWeights(client)
-      const rows = (
-        await client.query<StoredRating>(
-          'SELECT r.* FROM matching_rating_heads h JOIN matching_rating_revisions r ON r.id=h.revision_id ORDER BY h.ad_id',
-        )
-      ).rows
-      for (const row of rows)
-        await insertRevision(
-          client,
-          {
-            adId: row.ad_id,
-            profileVersionId: row.profile_version_id,
-            adRevisionId: row.ad_revision_id,
-            input: row.input,
-            result: row.result,
-            author: 'system',
-            assessmentAuthor: row.assessment_author,
-            reason: 'Przeliczenie po zmianie wag',
-            previousId: row.id,
-            basisId: row.id,
-          },
-          weights,
-        )
+    if (JSON.stringify(previous.weights) === JSON.stringify(command.weights)) {
       await client.query(
         'INSERT INTO matching_weight_commands(command_id,command_hash,version_id) VALUES($1,$2,$3)',
-        [command.commandId, hash, id],
+        [command.commandId, hash, previous.id],
       )
-      return { versionId: id, updated: rows.length, reused: false }
-    })
-  } finally {
-    client.release()
-  }
+      return { versionId: previous.id, updated: 0, reused: false }
+    }
+    const id = randomUUID()
+    await client.query(
+      'INSERT INTO matching_weight_versions(id,weights,previous_id,command_id,command_hash) VALUES($1,$2,$3,$4,$5)',
+      [id, command.weights, previous.id, command.commandId, hash],
+    )
+    await client.query(
+      'UPDATE matching_weight_head SET version_id=$1 WHERE singleton',
+      [id],
+    )
+    const weights = await activeWeights()
+    const rows = (
+      await client.query<StoredRating>(
+        'SELECT r.* FROM matching_rating_heads h JOIN matching_rating_revisions r ON r.id=h.revision_id ORDER BY h.ad_id',
+      )
+    ).rows
+    for (const row of rows)
+      await insertRevision(
+        {
+          adId: row.ad_id,
+          profileVersionId: row.profile_version_id,
+          adRevisionId: row.ad_revision_id,
+          input: row.input,
+          result: row.result,
+          author: 'system',
+          assessmentAuthor: row.assessment_author,
+          reason: 'Przeliczenie po zmianie wag',
+          previousId: row.id,
+          basisId: row.id,
+        },
+        weights,
+      )
+    await client.query(
+      'INSERT INTO matching_weight_commands(command_id,command_hash,version_id) VALUES($1,$2,$3)',
+      [command.commandId, hash, id],
+    )
+    return { versionId: id, updated: rows.length, reused: false }
+  })
 }
 export type RatingView = {
   id: string

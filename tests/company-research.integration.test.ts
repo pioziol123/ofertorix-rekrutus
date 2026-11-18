@@ -12,6 +12,7 @@ import {
   it,
   vi,
 } from 'vitest'
+import { closePool, setPool } from '../lib/db.ts'
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import { createCompany, CompanyConflict } from '../lib/companies/store.ts'
 import {
@@ -59,6 +60,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
       options: `-c search_path=${schema}`,
       max: 10,
     })
+    setPool(pool)
     const sql: string[] = []
     for (const migration of [
       '1770000000001_sources.cjs',
@@ -80,7 +82,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
       'TRUNCATE company_research_commands,company_research,ai_attempts,ai_budget_months,company_commands,companies CASCADE',
     )
     companyId = (
-      await createCompany(pool, {
+      await createCompany({
         commandId: randomUUID(),
         name: 'Research company',
         kind: 'brand',
@@ -91,7 +93,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
   })
   afterAll(async () => {
     vi.unstubAllEnvs()
-    await pool?.end()
+    await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
       await admin.end()
@@ -100,20 +102,20 @@ integration('company research transactions in isolated PostgreSQL', () => {
   it('deduplicates concurrent commands and rejects changed command payload without another reservation', async () => {
     const value = command()
     const same = await Promise.all([
-      requestResearch(pool, boss, companyId, value),
-      requestResearch(pool, boss, companyId, value),
+      requestResearch(boss, companyId, value),
+      requestResearch(boss, companyId, value),
     ])
     expect(same[0]).toEqual(same[1])
     const concurrent = await Promise.all([
-      requestResearch(pool, boss, companyId, command(true)),
-      requestResearch(pool, boss, companyId, command()),
+      requestResearch(boss, companyId, command(true)),
+      requestResearch(boss, companyId, command()),
     ])
     expect(concurrent).toEqual([
       { id: same[0]!.id, reused: true },
       { id: same[0]!.id, reused: true },
     ])
     await expect(
-      requestResearch(pool, boss, companyId, { ...value, refresh: true }),
+      requestResearch(boss, companyId, { ...value, refresh: true }),
     ).rejects.toBeInstanceOf(CompanyConflict)
     expect(send).toHaveBeenCalledTimes(1)
     expect(
@@ -123,7 +125,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
     expect(send.mock.calls[0]![2]).toMatchObject({ retryLimit: 0 })
   })
   it('executes one paid research only, persists telemetry and reuses completed reports without requiring current configuration', async () => {
-    const op = await requestResearch(pool, boss, companyId, command()),
+    const op = await requestResearch(boss, companyId, command()),
       fetcher = mockedProvider()
     await Promise.all([
       executeCompanyResearch(pool, boss, op.id, fetcher),
@@ -147,7 +149,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
       usage: { input_tokens: 8300, output_tokens: 120, search_calls: 1 },
     })
     usePricing('research', null)
-    expect(await requestResearch(pool, boss, companyId, command())).toEqual({
+    expect(await requestResearch(boss, companyId, command())).toEqual({
       id: op.id,
       reused: true,
     })
@@ -158,13 +160,13 @@ integration('company research transactions in isolated PostgreSQL', () => {
     ).toBe(1)
   })
   it('keeps both completed versions after a successful explicit refresh', async () => {
-    const first = await requestResearch(pool, boss, companyId, command())
+    const first = await requestResearch(boss, companyId, command())
     await executeCompanyResearch(pool, boss, first.id, mockedProvider())
     await pool.query(
       "UPDATE companies SET name='Changed owner name' WHERE id=$1",
       [companyId],
     )
-    const second = await requestResearch(pool, boss, companyId, command(true))
+    const second = await requestResearch(boss, companyId, command(true))
     await executeCompanyResearch(pool, boss, second.id, mockedProvider())
     const operations = (await readCompanyResearch(pool, companyId)).operations
     expect(operations).toHaveLength(2)
@@ -178,7 +180,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
       target: { name: 'Changed owner name' },
       report: { claims: expect.any(Array) },
     })
-    expect(await requestResearch(pool, boss, companyId, command())).toEqual({
+    expect(await requestResearch(boss, companyId, command())).toEqual({
       id: second.id,
       reused: true,
     })
@@ -189,18 +191,13 @@ integration('company research transactions in isolated PostgreSQL', () => {
     ).toBe(2)
   })
   it('preserves the previous completed version and target snapshot when a refresh fails', async () => {
-    const original = await requestResearch(pool, boss, companyId, command())
+    const original = await requestResearch(boss, companyId, command())
     await executeCompanyResearch(pool, boss, original.id, mockedProvider())
     await pool.query(
       "UPDATE companies SET name='Changed owner name' WHERE id=$1",
       [companyId],
     )
-    const refreshed = await requestResearch(
-      pool,
-      boss,
-      companyId,
-      command(true),
-    )
+    const refreshed = await requestResearch(boss, companyId, command(true))
     expect(refreshed.id).not.toBe(original.id)
     const fetcher = vi
       .fn<typeof fetch>()
@@ -218,7 +215,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
       cost: null,
       costState: 'unknown',
     })
-    expect(await requestResearch(pool, boss, companyId, command())).toEqual({
+    expect(await requestResearch(boss, companyId, command())).toEqual({
       id: original.id,
       reused: true,
     })
@@ -226,14 +223,9 @@ integration('company research transactions in isolated PostgreSQL', () => {
   it.each(['uncited search', 'all-unknown synthesis'])(
     'settles a failed %s refresh and preserves the previous report without retrying',
     async (failure) => {
-      const original = await requestResearch(pool, boss, companyId, command())
+      const original = await requestResearch(boss, companyId, command())
       await executeCompanyResearch(pool, boss, original.id, mockedProvider())
-      const refreshed = await requestResearch(
-        pool,
-        boss,
-        companyId,
-        command(true),
-      )
+      const refreshed = await requestResearch(boss, companyId, command(true))
       const searched = searchResponse()
       const synthesized = synthesisResponse()
       if (failure === 'uncited search')
@@ -268,7 +260,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
         state: 'completed',
         report: { claims: expect.any(Array) },
       })
-      expect(await requestResearch(pool, boss, companyId, command())).toEqual({
+      expect(await requestResearch(boss, companyId, command())).toEqual({
         id: original.id,
         reused: true,
       })
@@ -290,7 +282,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
       "INSERT INTO ai_attempts(id,import_id,text_revision,month,attempt,generation,operation_type,state,reserved_pln,configuration) VALUES($1,$2,0,$3,1,$4,'profile','unknown',0.5,$5)",
       [randomUUID(), importId, month, randomUUID(), pricing],
     )
-    const op = await requestResearch(pool, boss, companyId, command())
+    const op = await requestResearch(boss, companyId, command())
     // Tokens alone cost .416, but the .12 search fee makes .536 exceed remaining .5.
     expect(
       (await readCompanyResearch(pool, companyId)).operations[0],
@@ -315,7 +307,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
     expect(send).toHaveBeenCalledTimes(1)
   })
   it('does not reconcile running work while its execution session still holds the operation lock', async () => {
-    const op = await requestResearch(pool, boss, companyId, command())
+    const op = await requestResearch(boss, companyId, command())
     const owner = await pool.connect()
     const lock = `research-operation-${op.id}`
     try {
@@ -342,7 +334,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
     }
   })
   it('marks interrupted running work unknown, keeps its reservation, and never automatically retries it', async () => {
-    const op = await requestResearch(pool, boss, companyId, command())
+    const op = await requestResearch(boss, companyId, command())
     await pool.query(
       "UPDATE company_research SET state='running' WHERE id=$1",
       [op.id],

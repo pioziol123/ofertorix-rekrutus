@@ -10,14 +10,14 @@ import {
 } from './ratings.ts'
 import { batchArchive } from './archive.ts'
 import { randomUUID } from 'node:crypto'
-import type { Pool, PoolClient } from 'pg'
+import type { Pool } from 'pg'
 import type { PgBoss } from 'pg-boss'
 import {
   aiConfiguration,
   type AiConfiguration,
 } from '../../modules/ai/index.ts'
 import { chargeCeiling, reserve } from '../../modules/ai/index.ts'
-import { tx } from '../profile/store.ts'
+import { db, queueDatabase, transaction } from '../db.ts'
 import type { ProfileVersion } from '../../modules/profile/index.ts'
 import type { SourceAd } from '../../modules/sources/index.ts'
 import { requireQueued } from '../queue.ts'
@@ -50,42 +50,65 @@ const pending = [
   'submitting',
   'submitted',
 ]
-async function deliver(client: PoolClient, boss: PgBoss, id: string) {
+async function deliver(boss: PgBoss, id: string) {
   await requireQueued(
     boss.send(
       matchingQueue,
       { requestId: id },
       {
-        db: { executeSql: (sql, values) => client.query(sql, values) },
+        db: queueDatabase,
         retryLimit: 0,
         expireInSeconds: 300,
       },
     ),
   )
 }
+/**
+ * Reserves the budget of one request still waiting for it and marks it
+ * queued. Runs in the caller's transaction; a request another run has
+ * already funded is left as it is.
+ */
 export async function attempt(
-  client: PoolClient,
   boss: PgBoss,
   id: string,
   config: AiConfiguration,
   dispatch = true,
 ) {
-  const budget = await reserve(client, config)
+  if (!(await waitingForBudget(id))) return true
+  const budget = await reserve(db(), config)
   if (!budget.enough) return false
+  await fundAttempt(boss, id, config, budget, dispatch)
+  return true
+}
+/** Takes a request that still waits for budget; false when another run funded it. */
+export async function waitingForBudget(id: string) {
+  return !!(
+    await db().query(
+      "SELECT id FROM matching_requests WHERE id=$1 AND state='waiting_budget' FOR UPDATE",
+      [id],
+    )
+  ).rowCount
+}
+/** Records the attempt of a request taken by waitingForBudget, within its budget. */
+export async function fundAttempt(
+  boss: PgBoss,
+  id: string,
+  config: AiConfiguration,
+  budget: { month: string; cost: string },
+  dispatch = true,
+) {
   const attemptId = randomUUID()
-  await client.query(
+  await db().query(
     `INSERT INTO ai_attempts(id,import_id,text_revision,month,attempt,generation,operation_type,state,reserved_pln,configuration) VALUES($1,NULL,0,$2,1,$3,'matching','queued',$4,$5)`,
     [attemptId, budget.month, id, budget.cost, config],
   )
-  await client.query(
+  await db().query(
     "UPDATE matching_requests SET state='queued',attempt_id=$2,updated_at=now() WHERE id=$1",
     [id, attemptId],
   )
-  if (dispatch) await deliver(client, boss, id)
-  return true
+  if (dispatch) await deliver(boss, id)
 }
 export async function prepareMatching(
-  client: PoolClient,
   boss: PgBoss,
   adId: string,
   config: AiConfiguration,
@@ -97,6 +120,7 @@ export async function prepareMatching(
   ad: SourceAd | undefined,
   dispatch = true,
 ): Promise<{ id: string; state: string; reused: boolean }> {
+  const client = db()
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
     `matching-enqueue-${adId}`,
   ])
@@ -129,7 +153,7 @@ export async function prepareMatching(
   await client.query('INSERT INTO matching_batches(request_id) VALUES($1)', [
     id,
   ])
-  if (!excluded && dispatch) await attempt(client, boss, id, config)
+  if (!excluded && dispatch) await attempt(boss, id, config)
   const row = (
     await client.query('SELECT id,state FROM matching_requests WHERE id=$1', [
       id,
@@ -137,7 +161,7 @@ export async function prepareMatching(
   ).rows[0]
   return { ...row, reused: false }
 }
-export async function enqueueMatching(pool: Pool, boss: PgBoss, adId: string) {
+export async function enqueueMatching(boss: PgBoss, adId: string) {
   const config = matchingConfiguration()
   if (!config)
     throw new MatchingError(
@@ -145,10 +169,9 @@ export async function enqueueMatching(pool: Pool, boss: PgBoss, adId: string) {
     )
   const profile = await activeProfileVersion()
   const ad = (await adsForAssessment([adId])).get(adId)
-  const client = await pool.connect()
   try {
-    return await tx(client, () =>
-      prepareMatching(client, boss, adId, config, profile, ad),
+    return await transaction(() =>
+      prepareMatching(boss, adId, config, profile, ad),
     )
   } catch (e) {
     if (e instanceof BatchError && e.code === 'limit')
@@ -156,37 +179,47 @@ export async function enqueueMatching(pool: Pool, boss: PgBoss, adId: string) {
         'Wejście przekracza skonfigurowany limit tokenów. Zwiększ limit lub skróć profil.',
       )
     throw e
-  } finally {
-    client.release()
   }
 }
 export async function settle(
-  client: PoolClient,
   attemptId: string,
   cost: string | null,
   usage: unknown = null,
   responseId: string | null = null,
 ) {
-  await client.query(
+  await db().query(
     'UPDATE ai_attempts SET state=$2,actual_pln=$3,usage=$4,response_id=$5,finished_at=now() WHERE id=$1',
     [attemptId, cost === null ? 'unknown' : 'settled', cost, usage, responseId],
   )
 }
+/**
+ * Ends a request that is still in the state `from` with a failure and
+ * settles its attempt. A request another run has moved on is left as it is.
+ */
 export async function finishFailure(
-  client: PoolClient,
   id: string,
   attemptId: string | null,
+  from: string,
   state: 'failed' | 'unknown',
   message: string,
   cost: string | null = null,
 ) {
-  await tx(client, async () => {
-    await client.query(
-      'UPDATE matching_requests SET state=$2,error=$3,updated_at=now() WHERE id=$1',
-      [id, state, message],
+  await transaction(async () => {
+    const ended = await db().query(
+      'UPDATE matching_requests SET state=$3,error=$4,updated_at=now() WHERE id=$1 AND state=$2',
+      [id, from, state, message],
     )
-    if (attemptId) await settle(client, attemptId, cost)
+    if (ended.rowCount && attemptId) await settle(attemptId, cost)
   })
+}
+/** Moves a request from one state to the next; false when another run moved it. */
+async function advance(id: string, from: string, to: string) {
+  return !!(
+    await db().query(
+      'UPDATE matching_requests SET state=$3,updated_at=now() WHERE id=$1 AND state=$2',
+      [id, from, to],
+    )
+  ).rowCount
 }
 export type MatchingRecord = {
   id: string
@@ -198,13 +231,12 @@ export type MatchingRecord = {
   ad_revision_id: string
 }
 export async function applyMatchingLine(
-  client: PoolClient,
   row: MatchingRecord,
   line: BatchLine | undefined,
   batch: Batch,
-  // Read by the caller before it took its connection, without a lock: a
-  // version confirmed since then is the accepted race of 0mq.13 and shows as
-  // a stale rating; the owner can enqueue it again.
+  // Read by the caller before it started, without a lock: a version
+  // confirmed since then is the accepted race of 0mq.13 and shows as a
+  // stale rating; the owner can enqueue it again.
   activeProfileVersionId: string | null,
   // The current version of the request's ad, read the same way; an ad
   // changed since then is the same accepted race.
@@ -218,9 +250,9 @@ export async function applyMatchingLine(
         !batch.error_file_id) ||
       line?.error?.code === 'batch_expired'
     await finishFailure(
-      client,
       row.id,
       row.attempt_id,
+      'submitted',
       'failed',
       'Batch nie dostarczył oceny. Poprzednie wyniki pozostały bez zmian.',
       noCharge ? '0' : null,
@@ -260,19 +292,26 @@ export async function applyMatchingLine(
       if (error instanceof AssessmentError) diagnostic = error.code
       /* Keep usage settlement even if content failed validation. */
     }
-    await tx(client, async () => {
-      await settle(client, row.attempt_id, cost, usage, responseId)
+    await transaction(async () => {
+      // Only the run that takes the submitted request settles and publishes it.
+      const taken = (
+        await db().query(
+          "SELECT id FROM matching_requests WHERE id=$1 AND state='submitted' FOR UPDATE",
+          [row.id],
+        )
+      ).rowCount
+      if (!taken) return
+      await settle(row.attempt_id, cost, usage, responseId)
       if (result)
         calculation = (
           await publishAiRating(
-            client,
             row,
             result,
             activeProfileVersionId,
             currentAdVersionId,
           )
         ).calculation
-      await client.query(
+      await db().query(
         'UPDATE matching_requests SET state=$2,result=$3,calculation=$4,error=$5,updated_at=now() WHERE id=$1',
         [
           row.id,
@@ -287,265 +326,240 @@ export async function applyMatchingLine(
     })
   }
 }
+/**
+ * Carries a single request one step further: funds it, sends it, polls its
+ * batch, applies the result and cleans up the files. It holds no
+ * connection between steps. Each step changes the request's state only
+ * from the state it read, so a second run of the same request does not
+ * send it twice or settle it twice.
+ */
 export async function executeMatching(
-  pool: Pool,
   boss: PgBoss,
   id: string,
   provider?: BatchClient,
 ) {
-  // Read before this run holds its connection, so publishing a result never
-  // waits for a second one; the reads take no lock (see applyMatchingLine).
+  // Read before the run starts; the reads take no lock (see applyMatchingLine).
   const activeProfileVersionId = (await activeProfileVersion())?.id ?? null
   const adVersions = await currentAdVersions(
     (
-      await pool.query<{ ad_id: string }>(
+      await db().query<{ ad_id: string }>(
         'SELECT ad_id FROM matching_requests WHERE id=$1',
         [id],
       )
     ).rows.map((request) => request.ad_id),
   )
-  const client = await pool.connect()
-  try {
-    const locked = (
-      await client.query(
-        'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
-        [`matching-${id}`],
+  let row = (
+    await db().query(
+      'SELECT * FROM matching_requests WHERE id=$1 AND group_id IS NULL',
+      [id],
+    )
+  ).rows[0]
+  if (!row) return
+  if (row.state === 'waiting_budget') {
+    await transaction(() => attempt(boss, id, row.configuration))
+    return
+  }
+  // ASSUMPTION(oferty-pracy-0mq.18/ASM-2): a request left in sending was
+  // interrupted, as under the former session lock: the worker runs the jobs
+  // of a queue one after another. A live run whose request another run has
+  // ended stops at its next conditional state change.
+  if (row.state === 'uploading' || row.state === 'submitting') {
+    await finishFailure(
+      id,
+      row.attempt_id,
+      row.state,
+      row.state === 'submitting' ? 'unknown' : 'failed',
+      'Przerwano wysyłanie. Nie ponowiono automatycznie; sprawdź partię i koszt.',
+      row.state === 'uploading' ? '0' : null,
+    )
+    return
+  }
+  const api =
+    provider ??
+    new BatchClient(
+      process.env.OPENAI_API_KEY ?? '',
+      fetch,
+      batchArchive(db(), id),
+    )
+  if (row.state === 'queued') {
+    const request = {
+      custom_id: id,
+      method: 'POST',
+      url: '/v1/responses',
+      body: row.request_payload,
+    } as ReturnType<typeof batchRequest>
+    if (!request.body) {
+      await finishFailure(
+        id,
+        row.attempt_id,
+        'queued',
+        'failed',
+        'Brak zapisanej wersji żądania. Nie zlecono analizy.',
+        '0',
       )
-    ).rows[0].locked
-    if (!locked) return
+      return
+    }
+    if (!(await advance(id, 'queued', 'uploading'))) return
+    await db().query("UPDATE ai_attempts SET state='running' WHERE id=$1", [
+      row.attempt_id,
+    ])
+    let file: string
     try {
-      let row = (
-        await client.query(
-          'SELECT * FROM matching_requests WHERE id=$1 AND group_id IS NULL',
-          [id],
+      file = await api.upload([request])
+    } catch (e) {
+      await finishFailure(
+        id,
+        row.attempt_id,
+        'uploading',
+        'failed',
+        batchFailure(
+          'Nie udało się przesłać pliku Batch. Nie zlecono analizy.',
+          e,
+        ),
+        '0',
+      )
+      return
+    }
+    await db().query(
+      'UPDATE matching_batches SET input_file_id=$2 WHERE request_id=$1',
+      [id, file],
+    )
+    if (!(await advance(id, 'uploading', 'submitting'))) return
+    try {
+      const batch = await api.create(file, id)
+      if (batch.input_file_id !== file) throw new BatchError('format')
+      const submitted = await transaction(async () => {
+        if (!(await advance(id, 'submitting', 'submitted'))) return false
+        await db().query(
+          'UPDATE matching_batches SET batch_id=$2,status=$3,polled_at=now() WHERE request_id=$1',
+          [id, batch.id, batch.status],
         )
-      ).rows[0]
-      if (!row) return
-      if (row.state === 'waiting_budget') {
-        await tx(client, () => attempt(client, boss, id, row.configuration))
-        return
-      }
-      // A second worker cannot enter while a live submission holds this lock.
-      if (row.state === 'uploading' || row.state === 'submitting') {
+        return true
+      })
+      if (!submitted) return
+    } catch (e) {
+      const rejected =
+        e instanceof BatchError &&
+        e.code === 'http' &&
+        e.status !== null &&
+        e.status >= 400 &&
+        e.status < 500 &&
+        e.status !== 408
+      await finishFailure(
+        id,
+        row.attempt_id,
+        'submitting',
+        rejected ? 'failed' : 'unknown',
+        batchFailure(
+          'Nie udało się potwierdzić utworzenia partii. Nie ponowiono automatycznie.',
+          e,
+        ),
+        rejected ? '0' : null,
+      )
+      return
+    }
+    row = { ...row, state: 'submitted' }
+  }
+  const batchRow = (
+    await db().query('SELECT * FROM matching_batches WHERE request_id=$1', [id])
+  ).rows[0]
+  if (row.state === 'submitted') {
+    await db().query(
+      'UPDATE matching_batches SET polled_at=now() WHERE request_id=$1',
+      [id],
+    )
+    let batch
+    try {
+      batch = await api.retrieve(batchRow.batch_id)
+      if (batch.input_file_id !== batchRow.input_file_id)
+        throw new BatchError('format')
+    } catch (e) {
+      await db().query(
+        'UPDATE matching_requests SET error=$2,updated_at=now() WHERE id=$1',
+        [
+          id,
+          batchFailure(
+            'Nie udało się sprawdzić partii. Odczyt zostanie wznowiony.',
+            e,
+          ),
+        ],
+      )
+      return
+    }
+    await db().query(
+      'UPDATE matching_batches SET status=$2,output_file_id=$3,error_file_id=$4 WHERE request_id=$1',
+      [
+        id,
+        batch.status,
+        batch.output_file_id ?? null,
+        batch.error_file_id ?? null,
+      ],
+    )
+    if (!terminal(batch)) return
+    let results
+    try {
+      results = await api.results(batch, [id])
+    } catch (error) {
+      if (
+        error instanceof BatchError &&
+        (error.code === 'format' ||
+          error.code === 'limit' ||
+          error.status === 404)
+      ) {
         await finishFailure(
-          client,
           id,
           row.attempt_id,
-          row.state === 'submitting' ? 'unknown' : 'failed',
-          'Przerwano wysyłanie. Nie ponowiono automatycznie; sprawdź partię i koszt.',
-          row.state === 'uploading' ? '0' : null,
+          'submitted',
+          'failed',
+          batchFailure(
+            'Nieprawidłowy lub niedostępny plik wyników Batch. Koszt wymaga sprawdzenia.',
+            error,
+          ),
         )
         return
       }
-      const api =
-        provider ??
-        new BatchClient(
-          process.env.OPENAI_API_KEY ?? '',
-          fetch,
-          batchArchive(pool, id),
-        )
-      if (row.state === 'queued') {
-        const request = {
-          custom_id: id,
-          method: 'POST',
-          url: '/v1/responses',
-          body: row.request_payload,
-        } as ReturnType<typeof batchRequest>
-        if (!request.body) {
-          await finishFailure(
-            client,
-            id,
-            row.attempt_id,
-            'failed',
-            'Brak zapisanej wersji żądania. Nie zlecono analizy.',
-            '0',
-          )
-          return
-        }
-        await client.query(
-          "UPDATE matching_requests SET state='uploading',updated_at=now() WHERE id=$1",
-          [id],
-        )
-        await client.query(
-          "UPDATE ai_attempts SET state='running' WHERE id=$1",
-          [row.attempt_id],
-        )
-        let file: string
-        try {
-          file = await api.upload([request])
-        } catch (e) {
-          await finishFailure(
-            client,
-            id,
-            row.attempt_id,
-            'failed',
-            batchFailure(
-              'Nie udało się przesłać pliku Batch. Nie zlecono analizy.',
-              e,
-            ),
-            '0',
-          )
-          return
-        }
-        await client.query(
-          'UPDATE matching_batches SET input_file_id=$2 WHERE request_id=$1',
-          [id, file],
-        )
-        await client.query(
-          "UPDATE matching_requests SET state='submitting',updated_at=now() WHERE id=$1",
-          [id],
-        )
-        try {
-          const batch = await api.create(file, id)
-          if (batch.input_file_id !== file) throw new BatchError('format')
-          await tx(client, async () => {
-            await client.query(
-              'UPDATE matching_batches SET batch_id=$2,status=$3,polled_at=now() WHERE request_id=$1',
-              [id, batch.id, batch.status],
-            )
-            await client.query(
-              "UPDATE matching_requests SET state='submitted',updated_at=now() WHERE id=$1",
-              [id],
-            )
-          })
-        } catch (e) {
-          const rejected =
-            e instanceof BatchError &&
-            e.code === 'http' &&
-            e.status !== null &&
-            e.status >= 400 &&
-            e.status < 500 &&
-            e.status !== 408
-          await finishFailure(
-            client,
-            id,
-            row.attempt_id,
-            rejected ? 'failed' : 'unknown',
-            batchFailure(
-              'Nie udało się potwierdzić utworzenia partii. Nie ponowiono automatycznie.',
-              e,
-            ),
-            rejected ? '0' : null,
-          )
-          return
-        }
-        row = { ...row, state: 'submitted' }
-      }
-      const batchRow = (
-        await client.query(
-          'SELECT * FROM matching_batches WHERE request_id=$1',
-          [id],
-        )
-      ).rows[0]
-      if (row.state === 'submitted') {
-        await client.query(
-          'UPDATE matching_batches SET polled_at=now() WHERE request_id=$1',
-          [id],
-        )
-        let batch
-        try {
-          batch = await api.retrieve(batchRow.batch_id)
-          if (batch.input_file_id !== batchRow.input_file_id)
-            throw new BatchError('format')
-        } catch (e) {
-          await client.query(
-            'UPDATE matching_requests SET error=$2,updated_at=now() WHERE id=$1',
-            [
-              id,
-              batchFailure(
-                'Nie udało się sprawdzić partii. Odczyt zostanie wznowiony.',
-                e,
-              ),
-            ],
-          )
-          return
-        }
-        await client.query(
-          'UPDATE matching_batches SET status=$2,output_file_id=$3,error_file_id=$4 WHERE request_id=$1',
-          [
-            id,
-            batch.status,
-            batch.output_file_id ?? null,
-            batch.error_file_id ?? null,
-          ],
-        )
-        if (!terminal(batch)) return
-        let results
-        try {
-          results = await api.results(batch, [id])
-        } catch (error) {
-          if (
-            error instanceof BatchError &&
-            (error.code === 'format' ||
-              error.code === 'limit' ||
-              error.status === 404)
-          ) {
-            await finishFailure(
-              client,
-              id,
-              row.attempt_id,
-              'failed',
-              batchFailure(
-                'Nieprawidłowy lub niedostępny plik wyników Batch. Koszt wymaga sprawdzenia.',
-                error,
-              ),
-            )
-            return
-          }
-          // A transient download failure remains retryable, including terminal batches.
-          await client.query(
-            'UPDATE matching_requests SET error=$2 WHERE id=$1',
-            [
-              id,
-              batchFailure(
-                'Odbiór wyników nie powiódł się; odczyt zostanie wznowiony.',
-                error,
-              ),
-            ],
-          )
-          return
-        }
-        await applyMatchingLine(
-          client,
-          row,
-          results.get(id),
-          batch,
-          activeProfileVersionId,
-          adVersions.get(row.ad_id),
-        )
-      }
-      // Cleanup is independent of result validity and never resubmits a request.
-      const cleanup = (
-        await client.query(
-          'SELECT b.*,r.state FROM matching_batches b JOIN matching_requests r ON r.id=b.request_id WHERE request_id=$1',
-          [id],
-        )
-      ).rows[0]
-      if (!cleanup.cleaned && ['completed', 'failed'].includes(cleanup.state)) {
-        try {
-          for (const file of new Set(
-            [
-              cleanup.input_file_id,
-              cleanup.output_file_id,
-              cleanup.error_file_id,
-            ].filter(Boolean),
-          ))
-            await api.remove(file)
-          await client.query(
-            'UPDATE matching_batches SET cleaned=true WHERE request_id=$1',
-            [id],
-          )
-        } catch {
-          /* Recovery retries file cleanup, not evaluation. */
-        }
-      }
-    } finally {
-      await client.query('SELECT pg_advisory_unlock(hashtext($1))', [
-        `matching-${id}`,
+      // A transient download failure remains retryable, including terminal batches.
+      await db().query('UPDATE matching_requests SET error=$2 WHERE id=$1', [
+        id,
+        batchFailure(
+          'Odbiór wyników nie powiódł się; odczyt zostanie wznowiony.',
+          error,
+        ),
       ])
+      return
     }
-  } finally {
-    client.release()
+    await applyMatchingLine(
+      row,
+      results.get(id),
+      batch,
+      activeProfileVersionId,
+      adVersions.get(row.ad_id),
+    )
+  }
+  // Cleanup is independent of result validity and never resubmits a request.
+  const cleanup = (
+    await db().query(
+      'SELECT b.*,r.state FROM matching_batches b JOIN matching_requests r ON r.id=b.request_id WHERE request_id=$1',
+      [id],
+    )
+  ).rows[0]
+  if (!cleanup.cleaned && ['completed', 'failed'].includes(cleanup.state)) {
+    try {
+      for (const file of new Set(
+        [
+          cleanup.input_file_id,
+          cleanup.output_file_id,
+          cleanup.error_file_id,
+        ].filter(Boolean),
+      ))
+        await api.remove(file)
+      await db().query(
+        'UPDATE matching_batches SET cleaned=true WHERE request_id=$1',
+        [id],
+      )
+    } catch {
+      /* Recovery retries file cleanup, not evaluation. */
+    }
   }
 }
 export async function recoverMatching(pool: Pool, boss: PgBoss) {

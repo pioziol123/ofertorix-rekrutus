@@ -51,7 +51,7 @@ integration('company profiles in isolated PostgreSQL', () => {
   let admin: Pool, pool: Pool
   let adId: string, revisionId: string
   const create = (name = 'Same name', kind = 'organization') =>
-    createCompany(pool, {
+    createCompany({
       commandId: randomUUID(),
       name,
       kind,
@@ -174,12 +174,12 @@ integration('company profiles in isolated PostgreSQL', () => {
       description: '',
     }
     const results = await Promise.all([
-      createCompany(pool, command),
-      createCompany(pool, command),
+      createCompany(command),
+      createCompany(command),
     ])
     expect(results[0]).toEqual(results[1])
     await expect(
-      createCompany(pool, { ...command, name: 'Different' }),
+      createCompany({ ...command, name: 'Different' }),
     ).rejects.toBeInstanceOf(CompanyConflict)
     expect((await listCompanies(pool)).total).toBe(1)
     expect(
@@ -190,7 +190,7 @@ integration('company profiles in isolated PostgreSQL', () => {
   it('preserves all roles and required/optional/unknown technologies per offer without leaking raw payloads', async () => {
     const company = await create()
     for (const role of companyRoles)
-      await changeCompanyLink(pool, company.id, link(role))
+      await changeCompanyLink(company.id, link(role))
     const detail = await readCompany(pool, company.id)
     expect(detail!.offers).toHaveLength(1)
     expect(detail!.offers[0]!.roles.sort()).toEqual([...companyRoles].sort())
@@ -217,8 +217,8 @@ integration('company profiles in isolated PostgreSQL', () => {
     const a = await create('A'),
       b = await create('B')
     const results = await Promise.allSettled([
-      changeCompanyLink(pool, a.id, link()),
-      changeCompanyLink(pool, b.id, link()),
+      changeCompanyLink(a.id, link()),
+      changeCompanyLink(b.id, link()),
     ])
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
     const rejection = results.find(
@@ -228,10 +228,10 @@ integration('company profiles in isolated PostgreSQL', () => {
     const current = (await offerCompanies(pool, adId))!.links[0]!.id
     const other = current === a.id ? b.id : a.id
     await expect(
-      changeCompanyLink(pool, other, link('employer', current, 'unlink')),
+      changeCompanyLink(other, link('employer', current, 'unlink')),
     ).rejects.toBeInstanceOf(CompanyConflict)
     await expect(
-      changeCompanyLink(pool, current, link('employer', null, 'unlink')),
+      changeCompanyLink(current, link('employer', null, 'unlink')),
     ).rejects.toBeInstanceOf(CompanyConflict)
     expect((await offerCompanies(pool, adId))!.links[0]!.id).toBe(current)
     expect(
@@ -263,8 +263,8 @@ integration('company profiles in isolated PostgreSQL', () => {
       'UPDATE source_ads SET current_revision_id=$2 WHERE id=$1',
       [secondAd, secondRevision],
     )
-    await changeCompanyLink(pool, company.id, link('publisher'))
-    await changeCompanyLink(pool, company.id, {
+    await changeCompanyLink(company.id, link('publisher'))
+    await changeCompanyLink(company.id, {
       ...link('client'),
       adId: secondAd,
     })
@@ -291,10 +291,10 @@ integration('company profiles in isolated PostgreSQL', () => {
   it('keeps historical revision evidence across content updates, unlink and receipt replay', async () => {
     const company = await create(),
       command = link()
-    await changeCompanyLink(pool, company.id, command)
-    expect(await changeCompanyLink(pool, company.id, command)).toEqual(company)
+    await changeCompanyLink(company.id, command)
+    expect(await changeCompanyLink(company.id, command)).toEqual(company)
     await expect(
-      changeCompanyLink(pool, company.id, {
+      changeCompanyLink(company.id, {
         ...command,
         evidence: 'Changed evidence',
       }),
@@ -326,10 +326,10 @@ integration('company profiles in isolated PostgreSQL', () => {
       action: 'link',
     })
     const unlink = link('employer', company.id, 'unlink')
-    await changeCompanyLink(pool, company.id, unlink)
-    await changeCompanyLink(pool, company.id, unlink)
+    await changeCompanyLink(company.id, unlink)
+    await changeCompanyLink(company.id, unlink)
     await expect(
-      changeCompanyLink(pool, company.id, {
+      changeCompanyLink(company.id, {
         ...unlink,
         evidence: 'Changed unlink evidence',
       }),
@@ -363,7 +363,7 @@ integration('company profiles in isolated PostgreSQL', () => {
         [adId, next],
       )
     }
-    await changeCompanyLink(pool, company.id, link())
+    await changeCompanyLink(company.id, link())
     expect(injected.afterCurrentVersions).toBeNull()
     expect(
       (
@@ -391,13 +391,13 @@ integration('company profiles in isolated PostgreSQL', () => {
   it('rejects nonexistent targets and invalid commands without receipts or history', async () => {
     const company = await create()
     await expect(
-      changeCompanyLink(pool, randomUUID(), link()),
+      changeCompanyLink(randomUUID(), link()),
     ).rejects.toBeInstanceOf(CompanyNotFound)
     await expect(
-      changeCompanyLink(pool, company.id, { ...link(), adId: randomUUID() }),
+      changeCompanyLink(company.id, { ...link(), adId: randomUUID() }),
     ).rejects.toBeInstanceOf(CompanyNotFound)
     await expect(
-      changeCompanyLink(pool, company.id, { ...link(), role: 'invented' }),
+      changeCompanyLink(company.id, { ...link(), role: 'invented' }),
     ).rejects.toThrow()
     expect(await readCompany(pool, "' OR 1=1 --")).toBeNull()
     expect(await offerCompanies(pool, randomUUID())).toBeNull()
@@ -463,7 +463,7 @@ integration('company profiles in isolated PostgreSQL', () => {
       async (_case, title) => {
         await changeAd(title, 'Same name')
         const company = await create()
-        await changeCompanyLink(pool, company.id, link())
+        await changeCompanyLink(company.id, link())
         const detail = await readCompany(pool, company.id)
         expect(detail!.history[0]!.title).toBe('Oferta')
       },
@@ -471,7 +471,7 @@ integration('company profiles in isolated PostgreSQL', () => {
     it('ignores spaces at the ends of a title in the link history', async () => {
       await changeAd('  PHP role  ', 'Same name')
       const company = await create()
-      await changeCompanyLink(pool, company.id, link())
+      await changeCompanyLink(company.id, link())
       expect((await readCompany(pool, company.id))!.history[0]!.title).toBe(
         'PHP role',
       )

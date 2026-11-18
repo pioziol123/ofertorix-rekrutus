@@ -19,7 +19,12 @@ import {
   emptyProfile,
   emptySkill,
 } from '../lib/profile/model.ts'
-import { digest, extractImport, parseQueue } from '../lib/profile/imports.ts'
+import {
+  digest,
+  extractImport,
+  parseQueue,
+  recoverImports,
+} from '../lib/profile/imports.ts'
 import { closePool, setPool } from '../lib/db.ts'
 import {
   aiExecutionJobOptions,
@@ -301,6 +306,36 @@ integration(
       const row = (await pool.query('SELECT * FROM profile_imports')).rows[0]
       expect(row.status).toBe('failed')
       expect((await readOriginalFile(row.id, root))?.bytes).toEqual(bytes)
+    })
+    it('ASSUMPTION(oferty-pracy-0mq.18/ASM-1): recovery queues a stale import again, but not one whose reading session still holds its lock', async () => {
+      vi.stubEnv('DOCUMENTS_DIR', root)
+      const bytes = await fixture('text.pdf'),
+        free = await importCvDocument('free.pdf', bytes, boss, root),
+        held = await importCvDocument('held.pdf', bytes, boss, root)
+      await pool.query(
+        "UPDATE profile_imports SET status='extracting',updated_at=now()-interval '10 minutes'",
+      )
+      const reader = await pool.connect(),
+        lock = `profile-parse-${held}`,
+        send = vi.spyOn(boss, 'send')
+      try {
+        await reader.query('SELECT pg_advisory_lock(hashtext($1))', [lock])
+        await recoverImports(pool, boss)
+        expect(send).toHaveBeenCalledOnce()
+        expect(send.mock.calls[0]![1]).toEqual({ importId: free })
+      } finally {
+        await reader.query('SELECT pg_advisory_unlock(hashtext($1))', [lock])
+        reader.release()
+        send.mockRestore()
+      }
+      const status = async (id: string) =>
+        (
+          await pool.query('SELECT status FROM profile_imports WHERE id=$1', [
+            id,
+          ])
+        ).rows[0].status
+      expect(await status(free)).toBe('queued')
+      expect(await status(held)).toBe('extracting')
     })
     it.each(['text.pdf', 'text.docx'])(
       'extracts synthetic %s locally and retains original',

@@ -1,6 +1,5 @@
 import { polishEnabled, polishQuery } from '../../../lib/sources/polish'
 import { enqueuePolish } from '../../../lib/sources/polish-sync'
-import { database } from '../../utils/database'
 import { limitedBytes, queueClient } from '../../utils/http'
 
 export default defineEventHandler(async (event) => {
@@ -26,7 +25,7 @@ export default defineEventHandler(async (event) => {
   if (!polishEnabled(query.source))
     throw createError({ statusCode: 409, statusMessage: 'Source disabled' })
   try {
-    return await enqueuePolish(database, await queueClient(), query)
+    return await enqueuePolish(await queueClient(), query)
   } catch {
     throw createError({
       statusCode: 503,

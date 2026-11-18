@@ -86,7 +86,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     (await pool.query('SELECT * FROM source_sync_runs WHERE id=$1', [id]))
       .rows[0]
   async function run(overrides: Record<string, unknown> = {}) {
-    const queued = await enqueueJobspy(pool, boss)
+    const queued = await enqueueJobspy(boss)
     await deliver(
       queued.id,
       jobspyWith(async () => result(overrides), 'indeed'),
@@ -106,7 +106,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
         throw new Error('synthetic dispatch failure')
       })
     try {
-      await expect(enqueueJobspy(pool, boss)).rejects.toThrow(
+      await expect(enqueueJobspy(boss)).rejects.toThrow(
         'synthetic dispatch failure',
       )
     } finally {
@@ -123,7 +123,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
   })
   it('deduplicates concurrent requests into one real queue delivery', async () => {
     const queued = await Promise.all(
-      Array.from({ length: 5 }, () => enqueueJobspy(pool, boss)),
+      Array.from({ length: 5 }, () => enqueueJobspy(boss)),
     )
     expect(new Set(queued.map((q) => q.id)).size).toBe(1)
     expect(queued.filter((q) => !q.reused)).toHaveLength(1)
@@ -244,7 +244,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     })
   })
   it('keeps a running import intact during recovery and concurrent delivery, ignoring late delivery', async () => {
-    const queued = await enqueueJobspy(pool, boss)
+    const queued = await enqueueJobspy(boss)
     let entered!: () => void, release!: () => void
     const started = new Promise<void>((resolve) => {
       entered = resolve
@@ -279,8 +279,8 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
   // Since 0mq.5 one recovery serves every source and ends only runs whose
   // queue job has ended (A5-R06).
   it('recovers a run only when its own queue job has ended and permits a fresh JobSpy run', async () => {
-    const indeed = await enqueueJobspy(pool, boss)
-    const solid = (await enqueueSync(pool, boss))!
+    const indeed = await enqueueJobspy(boss)
+    const solid = (await enqueueSync(boss))!
     await pool.query("UPDATE source_sync_runs SET status='running'")
     await boss.cancel(importQueue, (await stored(solid.id)).job_id)
     await recover(boss)
@@ -289,7 +289,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     await boss.cancel(jobspyQueue, (await stored(indeed.id)).job_id)
     await recover(boss)
     expect((await stored(indeed.id)).status).toBe('failed')
-    expect((await enqueueJobspy(pool, boss)).id).not.toBe(indeed.id)
+    expect((await enqueueJobspy(boss)).id).not.toBe(indeed.id)
     const late = vi.fn()
     await deliver(indeed.id, jobspyWith(late, 'indeed'))
     expect(late).not.toHaveBeenCalled()
@@ -297,7 +297,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
   // Since 0mq.5 the shared executor runs the delivered run with its own
   // source's connector; the queue no longer selects the source (A5-R01).
   it('never merges an identical external ID across sources', async () => {
-    const solid = (await enqueueSync(pool, boss))!
+    const solid = (await enqueueSync(boss))!
     await deliver(
       solid.id,
       solidJobsWith(async () => ({
@@ -320,7 +320,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     ])
   })
   it('redacts arbitrary collector exceptions and rejects disabled execution without invoking collection', async () => {
-    const queued = await enqueueJobspy(pool, boss)
+    const queued = await enqueueJobspy(boss)
     await deliver(
       queued.id,
       jobspyWith(async () => {
@@ -332,7 +332,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       status: 'failed',
       error: 'Import interrupted by a storage or processing error',
     })
-    const next = await enqueueJobspy(pool, boss)
+    const next = await enqueueJobspy(boss)
     vi.stubEnv('JOBSPY_ENABLED', 'false')
     const collector = vi.fn()
     await deliver(next.id, jobspyWith(collector, 'indeed'))
@@ -343,20 +343,20 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     })
   })
   it('recovers queued imports whose actual queue delivery has ended', async () => {
-    const queued = await enqueueJobspy(pool, boss)
+    const queued = await enqueueJobspy(boss)
     const row = await stored(queued.id)
     await boss.cancel(jobspyQueue, row.job_id)
     await recover(boss)
     expect((await stored(queued.id)).status).toBe('failed')
   })
   it('deduplicates across parameter scopes and rejects a stale scope before collection', async () => {
-    const queued = await enqueueJobspy(pool, boss)
+    const queued = await enqueueJobspy(boss)
     const row = await stored(queued.id)
     await pool.query(
       "UPDATE source_scopes SET fingerprint='old-parameters',parameters='{}'::jsonb WHERE id=$1",
       [row.scope_id],
     )
-    expect(await enqueueJobspy(pool, boss)).toEqual({
+    expect(await enqueueJobspy(boss)).toEqual({
       id: queued.id,
       reused: true,
     })
@@ -381,8 +381,8 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     vi.stubEnv('JOBSPY_SOURCES', 'linkedin,bayt')
     vi.stubEnv('JOBSPY_LINKEDIN_ACCESS_CONFIRMED', 'true')
     const [linkedin, bayt] = await Promise.all([
-      enqueueJobspy(pool, boss, new Date(), 'linkedin'),
-      enqueueJobspy(pool, boss, new Date(), 'bayt'),
+      enqueueJobspy(boss, new Date(), 'linkedin'),
+      enqueueJobspy(boss, new Date(), 'bayt'),
     ])
     expect(linkedin.id).not.toBe(bayt.id)
     const linkedinRow = await stored(linkedin.id)
@@ -446,7 +446,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     expect(catalog.sources.find((s) => s.source === 'bayt')).toMatchObject({
       run: { id: bayt.id, seen: 1 },
     })
-    const next = await enqueueJobspy(pool, boss, new Date(), 'bayt')
+    const next = await enqueueJobspy(boss, new Date(), 'bayt')
     await pool.query(
       "UPDATE source_sync_runs SET status='running' WHERE id=ANY($1::uuid[])",
       [[linkedin.id, next.id]],

@@ -293,7 +293,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
     )
   })
   it('uses the same owner head as details before and after reweighting without an AI request', async () => {
-    const context = (await manualContext(pool, ad))!
+    const context = (await manualContext(ad))!
     const assessment = structuredClone(context.assessment)
     assessment.criteria[0] = {
       ...assessment.criteria[0]!,
@@ -301,7 +301,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
       score: 70,
       reason: 'Własna wiedza',
     }
-    await saveManualRating(pool, ad, {
+    await saveManualRating(ad, {
       commandId: randomUUID(),
       expectedRevisionId: context.headId,
       profileVersionId: context.profileVersionId,
@@ -324,7 +324,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
       })
     }
     await assertSame()
-    await saveWeights(pool, {
+    await saveWeights({
       commandId: randomUUID(),
       expectedVersionId: (await readWeights(pool)).current.id,
       weights: {

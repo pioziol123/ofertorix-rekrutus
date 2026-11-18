@@ -1,6 +1,7 @@
 import type { Pool } from 'pg'
 import type { PgBoss } from 'pg-boss'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { closePool, setPool } from '../lib/db.ts'
 import {
   configuredSources,
   jobspyCatalog,
@@ -266,16 +267,18 @@ describe('explicit source activation', () => {
     async (source) => {
       vi.stubEnv('JOBSPY_SOURCES', 'bayt')
       vi.stubEnv('JOBSPY_LINKEDIN_ACCESS_CONFIRMED', 'false')
-      const connect = vi.fn()
-      await expect(
-        enqueueJobspy(
-          { connect } as unknown as Pool,
-          {} as PgBoss,
-          new Date(),
-          source,
-        ),
-      ).rejects.toThrow('JobSpy source is disabled')
+      const connect = vi.fn(),
+        query = vi.fn()
+      setPool({ connect, query, end: vi.fn() } as unknown as Pool)
+      try {
+        await expect(
+          enqueueJobspy({} as PgBoss, new Date(), source),
+        ).rejects.toThrow('JobSpy source is disabled')
+      } finally {
+        await closePool()
+      }
       expect(connect).not.toHaveBeenCalled()
+      expect(query).not.toHaveBeenCalled()
     },
   )
   it('lists every adapter, disabled reasons and source-specific latest results without scheduling', async () => {

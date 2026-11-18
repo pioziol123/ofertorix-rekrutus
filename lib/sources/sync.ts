@@ -4,7 +4,7 @@ import type { PgBoss } from 'pg-boss'
 import { fingerprint, hash, importQueue, scheduleDay, source } from './solid.ts'
 import { syncJobOptions } from '../../modules/sources/index.ts'
 import { sourceConnectors } from '../../modules/sources/infrastructure/adapters/source-connectors.ts'
-import { transaction } from './store.ts'
+import { db, queueDatabase, transaction } from '../db.ts'
 
 const dispatchLock = 'solid-jobs-dispatch'
 export type Run = {
@@ -17,62 +17,57 @@ export type Run = {
   job_id: string | null
   error: string | null
 }
-// The queue INSERT uses this very client, so run + job commit or roll back together.
+// The job is sent in the same transaction, so run and job commit or roll back together.
 export async function enqueueSync(
-  pool: Pool,
   boss: PgBoss,
   trigger: 'manual' | 'scheduled' = 'manual',
   now = new Date(),
 ): Promise<{ id: string; reused: boolean } | null> {
   const day = scheduleDay(now)
   const parameters = sourceConnectors.get(source).scopeParameters()
-  const client = await pool.connect()
-  try {
-    return await transaction(client, async () => {
-      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-        dispatchLock,
-      ])
-      const scope = await client.query<{ id: string }>(
-        `INSERT INTO source_scopes(id,source,fingerprint,parameters)
+  return transaction(async () => {
+    const client = db()
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      dispatchLock,
+    ])
+    const scope = await client.query<{ id: string }>(
+      `INSERT INTO source_scopes(id,source,fingerprint,parameters)
         VALUES ($1,$2,$3,$4) ON CONFLICT(fingerprint) DO UPDATE SET fingerprint=EXCLUDED.fingerprint RETURNING id`,
-        [randomUUID(), source, hash(parameters), parameters],
+      [randomUUID(), source, hash(parameters), parameters],
+    )
+    const scopeId = scope.rows[0]!.id
+    const active = await client.query<{ id: string }>(
+      `SELECT id FROM source_sync_runs WHERE scope_id=$1 AND status IN ('queued','running')`,
+      [scopeId],
+    )
+    if (active.rows[0]) return { id: active.rows[0].id, reused: true }
+    if (trigger === 'scheduled') {
+      const previous = await client.query(
+        `SELECT 1 FROM source_sync_runs WHERE scope_id=$1 AND schedule_day >= $2::date LIMIT 1`,
+        [scopeId, day],
       )
-      const scopeId = scope.rows[0]!.id
-      const active = await client.query<{ id: string }>(
-        `SELECT id FROM source_sync_runs WHERE scope_id=$1 AND status IN ('queued','running')`,
-        [scopeId],
-      )
-      if (active.rows[0]) return { id: active.rows[0].id, reused: true }
-      if (trigger === 'scheduled') {
-        const previous = await client.query(
-          `SELECT 1 FROM source_sync_runs WHERE scope_id=$1 AND schedule_day >= $2::date LIMIT 1`,
-          [scopeId, day],
-        )
-        if (previous.rowCount) return null
-      }
-      const id = randomUUID()
-      await client.query(
-        `INSERT INTO source_sync_runs(id,scope_id,trigger,schedule_day) VALUES ($1,$2,$3,$4)`,
-        [id, scopeId, trigger, day],
-      )
-      const jobId = await boss.send(
-        importQueue,
-        { runId: id },
-        {
-          db: { executeSql: (text, values) => client.query(text, values) },
-          ...syncJobOptions,
-        },
-      )
-      if (!jobId) throw new Error('Import job was not queued')
-      await client.query('UPDATE source_sync_runs SET job_id=$2 WHERE id=$1', [
-        id,
-        jobId,
-      ])
-      return { id, reused: false }
-    })
-  } finally {
-    client.release()
-  }
+      if (previous.rowCount) return null
+    }
+    const id = randomUUID()
+    await client.query(
+      `INSERT INTO source_sync_runs(id,scope_id,trigger,schedule_day) VALUES ($1,$2,$3,$4)`,
+      [id, scopeId, trigger, day],
+    )
+    const jobId = await boss.send(
+      importQueue,
+      { runId: id },
+      {
+        db: queueDatabase,
+        ...syncJobOptions,
+      },
+    )
+    if (!jobId) throw new Error('Import job was not queued')
+    await client.query('UPDATE source_sync_runs SET job_id=$2 WHERE id=$1', [
+      id,
+      jobId,
+    ])
+    return { id, reused: false }
+  })
 }
 
 export async function syncStatus(pool: Pool, id?: string) {

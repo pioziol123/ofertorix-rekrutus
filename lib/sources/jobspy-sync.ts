@@ -4,7 +4,7 @@ import type { PgBoss } from 'pg-boss'
 import { hash, scheduleDay } from './solid.ts'
 import { syncJobOptions } from '../../modules/sources/index.ts'
 import { sourceConnectors } from '../../modules/sources/infrastructure/adapters/source-connectors.ts'
-import { transaction } from './store.ts'
+import { db, queueDatabase, transaction } from '../db.ts'
 import { jobspyEnabled, queueFor } from './jobspy.ts'
 import {
   jobspyCatalog,
@@ -15,53 +15,48 @@ import {
 const sourceCondition =
   'scope_id IN (SELECT id FROM source_scopes WHERE source=$1)'
 export async function enqueueJobspy(
-  pool: Pool,
   boss: PgBoss,
   now = new Date(),
   source: JobspySource = 'indeed',
 ) {
   if (!jobspyEnabled(source)) throw new Error('JobSpy source is disabled')
   const parameters = sourceConnectors.get(source).scopeParameters()
-  const client = await pool.connect()
-  try {
-    return await transaction(client, async () => {
-      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-        `${source}-jobspy-dispatch`,
-      ])
-      const active = await client.query<{ id: string }>(
-        `SELECT id FROM source_sync_runs
+  return transaction(async () => {
+    const client = db()
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      `${source}-jobspy-dispatch`,
+    ])
+    const active = await client.query<{ id: string }>(
+      `SELECT id FROM source_sync_runs
         WHERE status IN ('queued','running') AND ${sourceCondition}`,
-        [source],
-      )
-      if (active.rows[0]) return { id: active.rows[0].id, reused: true }
-      const scope = await client.query<{ id: string }>(
-        `INSERT INTO source_scopes(id,source,fingerprint,parameters)
+      [source],
+    )
+    if (active.rows[0]) return { id: active.rows[0].id, reused: true }
+    const scope = await client.query<{ id: string }>(
+      `INSERT INTO source_scopes(id,source,fingerprint,parameters)
         VALUES ($1,$2,$3,$4) ON CONFLICT(fingerprint) DO UPDATE SET fingerprint=EXCLUDED.fingerprint RETURNING id`,
-        [randomUUID(), source, hash(parameters), parameters],
-      )
-      const id = randomUUID()
-      await client.query(
-        `INSERT INTO source_sync_runs(id,scope_id,trigger,schedule_day) VALUES ($1,$2,'manual',$3)`,
-        [id, scope.rows[0]!.id, scheduleDay(now)],
-      )
-      const jobId = await boss.send(
-        queueFor(source),
-        { runId: id },
-        {
-          db: { executeSql: (text, values) => client.query(text, values) },
-          ...syncJobOptions,
-        },
-      )
-      if (!jobId) throw new Error('JobSpy job was not queued')
-      await client.query('UPDATE source_sync_runs SET job_id=$2 WHERE id=$1', [
-        id,
-        jobId,
-      ])
-      return { id, reused: false }
-    })
-  } finally {
-    client.release()
-  }
+      [randomUUID(), source, hash(parameters), parameters],
+    )
+    const id = randomUUID()
+    await client.query(
+      `INSERT INTO source_sync_runs(id,scope_id,trigger,schedule_day) VALUES ($1,$2,'manual',$3)`,
+      [id, scope.rows[0]!.id, scheduleDay(now)],
+    )
+    const jobId = await boss.send(
+      queueFor(source),
+      { runId: id },
+      {
+        db: queueDatabase,
+        ...syncJobOptions,
+      },
+    )
+    if (!jobId) throw new Error('JobSpy job was not queued')
+    await client.query('UPDATE source_sync_runs SET job_id=$2 WHERE id=$1', [
+      id,
+      jobId,
+    ])
+    return { id, reused: false }
+  })
 }
 
 export async function jobspyStatus(

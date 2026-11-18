@@ -1,5 +1,4 @@
 import { enqueueMatching, MatchingError } from '../../../../lib/matching/store'
-import { database } from '../../../utils/database'
 import {
   apiHandler,
   jsonBody,
@@ -13,7 +12,7 @@ export default apiHandler(async (event) => {
     .strict()
     .parse(await jsonBody(event))
   try {
-    return await enqueueMatching(database, await queueClient(), id)
+    return await enqueueMatching(await queueClient(), id)
   } catch (error) {
     if (error instanceof MatchingError)
       throw createError({
