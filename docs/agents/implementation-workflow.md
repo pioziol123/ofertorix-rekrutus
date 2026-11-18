@@ -168,7 +168,8 @@ git config pull.rebase true && git config rebase.autoStash true
 
 Inside the sandbox, run project commands directly from the worktree root:
 
-- `scripts/gate.sh` is the gate: `pnpm install --offline --frozen-lockfile`, `pnpm lint`, `pnpm typecheck` and `scripts/test-integration.sh`.
+- `scripts/gate.sh` is the gate: `pnpm install --offline --frozen-lockfile`, the formatting check `scripts/check-format.ts`, `pnpm lint`, `pnpm typecheck` and `scripts/test-integration.sh`. The gate runs the same way in the agent's sandbox, in the runner's fresh sandbox and when the owner runs it by hand.
+- `scripts/check-format.ts` runs Prettier's check on the files the task changed: those that differ between the merge base with `main` and the working tree, uncommitted and untracked files included. It skips deleted files and files Prettier ignores or has no parser for; it names every file that is not formatted. When the copy knows both the local `main` and the fetched `origin/main`, the nearer merge base counts. Without any merge base it checks the files of the last commit. Files the task did not change are not checked, because several files on `main` already fail the check; `pnpm format:check` checks the whole repository.
 - `scripts/test-integration.sh` starts PostgreSQL, applies pending migrations, builds the app, runs the web server and the worker in the background, runs every test including integration, and stops what it started.
 - `scripts/check-spec-altitude.ts` checks specification documents for detail below their level: code file names, paths into code directories, function or class code and code blocks other than diagrams are errors; inline code that reads as an identifier, a member access or a call is a warning to review.
 - `scripts/check-spec-sync.ts <id>` runs in the owner's copy at hand-off, not in the sandbox: it fetches `main` from `origin` and checks that the documents a task or epic links match the files on disk.
