@@ -221,15 +221,24 @@ export function recordingQueue() {
       send.mockClear()
       done = 0
     },
-    /** Runs every AI execution job sent and not run yet, until none is left. */
+    /**
+     * Runs every AI execution job sent and not run yet, until none is left,
+     * as the queue would: a job that fails does not stop the others. The
+     * first failure is raised once every job ran.
+     */
     async work() {
+      const failures: unknown[] = []
       for (;;) {
         const jobs = executionJobs()
-        if (done >= jobs.length) return
+        if (done >= jobs.length) break
         const next = jobs.slice(done)
         done = jobs.length
-        for (const executionId of next) await runExecution(executionId)
+        for (const executionId of next)
+          await runExecution(executionId).catch((error: unknown) => {
+            failures.push(error)
+          })
       }
+      if (failures.length) throw failures[0]
     },
   }
 }

@@ -256,7 +256,7 @@ integration(
       expect(openAi.batch.creates).toBe(1)
     })
 
-    it('ends every item without cost when the upload fails, and does not send again (AM-AC01)', async () => {
+    it('ends every item without cost when the upload fails, with the message of its cause, and does not send again (AM-AC01, 0mq.21 ASM-3)', async () => {
       const group = await enqueue([ad, await anotherAd()])
       openAi.batch.upload = async () => {
         throw new BatchError('http', 403)
@@ -354,17 +354,8 @@ integration(
         'UPDATE source_ads SET current_revision_id=NULL WHERE id=$1',
         [other],
       )
-      const jobs = async () => {
-        for (;;) {
-          try {
-            await queue.work()
-            return
-          } catch {
-            // The blocked item's delivery fails; the queue retries it.
-          }
-        }
-      }
-      await jobs()
+      // The blocked item's delivery fails; the queue would retry its job.
+      await expect(queue.work()).rejects.toThrow('Nie znaleziono oferty.')
       expect(await latest(free.id)).toMatchObject({ state: 'completed' })
       expect(await latest(blocked.id)).toMatchObject({
         state: 'delivering',
@@ -397,6 +388,33 @@ integration(
       expect(await count('ai_executions')).toBe(2)
       await expect(enqueue([ad], commandId)).rejects.toThrow('innych ofert')
       expect(await count('ai_executions')).toBe(2)
+    })
+
+    it('recognises a repeated command by its AI group; a command that requested no AI work is not recognised (0mq.21 ASM-2)', async () => {
+      const data = emptyProfile()
+      data.expectations.workMode = {
+        state: 'specified',
+        value: 'remote',
+        importance: 'required',
+      }
+      await pool.query('UPDATE profile_versions SET data=$2 WHERE id=$1', [
+        profileVersion,
+        data,
+      ])
+      await pool.query(
+        'UPDATE source_ad_revisions SET payload=payload || \'{"isRemote":false,"isHybrid":false}\'::jsonb WHERE id=$1',
+        [revision],
+      )
+      const commandId = randomUUID()
+      const first = await enqueue([ad], commandId)
+      expect(first.items).toMatchObject([{ state: 'excluded', reused: false }])
+      // Nothing was requested from AI, so the repeat is a new command: the
+      // exclusion is recorded again, still without AI work or cost.
+      const again = await enqueue([ad], commandId)
+      expect(again).toMatchObject({ groupId: commandId, reused: false })
+      expect(await count('matching_requests')).toBe(2)
+      expect(await count('ai_executions')).toBe(0)
+      expect(queue.send).not.toHaveBeenCalled()
     })
 
     it('canonicalizes UUID casing for idempotent commands and duplicate selection checks', async () => {

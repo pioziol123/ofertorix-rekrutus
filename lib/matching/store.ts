@@ -104,7 +104,9 @@ export async function prepareMatching(
     )
   const id = randomUUID()
   const excluded = input.checks.some((c) => c.state === 'conflict')
-  // The AI work keeps the settings and prices; the request keeps none.
+  // ASSUMPTION(oferty-pracy-0mq.21/ASM-1): a request keeps only Matching's
+  // state; the AI work keeps the settings and prices, so the request
+  // stores none and no provider payload.
   await client.query(
     `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state) VALUES($1,$2,$3,$4,$5,'{}',$6)`,
     [

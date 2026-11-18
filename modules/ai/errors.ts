@@ -7,7 +7,7 @@
  *   that the provider can take the work now;
  * - `unsupported_mode`: no adapter of the chosen provider offers the mode;
  * - `operation_busy`: the operation already has an execution in progress;
- * - `input_too_large`: the provider's batch cannot take the input (too large
+ * - `input_too_large` (ASSUMPTION(oferty-pracy-0mq.21/ASM-4)): the provider's batch cannot take the input (too large
  *   for the price list's input cap, or too many items or bytes for one batch);
  * - `invalid_request`: the request is incomplete, or its check belongs to
  *   other settings.

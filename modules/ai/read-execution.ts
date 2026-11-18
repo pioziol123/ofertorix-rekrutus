@@ -105,6 +105,8 @@ export async function readLatestExecution(
   return row ? toPublic(row) : null
 }
 
+// ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reads below serve Matching's
+// views and its group command.
 /**
  * The latest execution of each given operation that has one, in one read,
  * for a client that shows the state of many of its operations at once.

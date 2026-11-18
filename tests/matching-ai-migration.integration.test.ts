@@ -287,7 +287,7 @@ integration('migration of the assessment history to AI executions', () => {
     expect(history.get(ids.rejected)!.error).toContain('missing_criterion')
   })
 
-  it('maps each old state to the stage and cause of its execution', async () => {
+  it("maps each old state to the stage and cause of its execution, or to Matching's own state (0mq.21 ASM-1)", async () => {
     const execution = async (key: keyof typeof ids) =>
       (await readExecutionHistory(ids[key])).at(-1)
     expect(await execution('completed')).toMatchObject({

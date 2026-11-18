@@ -13,6 +13,8 @@
 //   Requests were sent as provider batches, a single one as a batch of its
 //   own, so the execution's group is the request's group or the request
 //   itself, the key under which the batch archive was saved.
+// ASSUMPTION(oferty-pracy-0mq.21/ASM-1): the mapping of every old request
+// state to Matching's own state or to the stage of the AI work, below.
 // - Stage and cause come from the old request state: a published
 //   assessment is completed; a failure the model caused keeps its cause
 //   (from the saved diagnostic); a result Matching could not confirm is

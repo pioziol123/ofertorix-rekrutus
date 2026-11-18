@@ -10,6 +10,7 @@ import type {
  * `excluded` (a required condition conflicts, nothing was requested) or
  * `requested` (the stage of the AI work is read from its execution). The
  * request is the operation of its AI executions.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-1): the two values of the state.
  */
 
 export type AssessmentRequest = {

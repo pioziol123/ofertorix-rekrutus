@@ -223,7 +223,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
     ['uncertain', 'unknown'],
     ['excluded', 'excluded'],
   ])(
-    'retains the latest successful score beside a newer request whose AI work is %s',
+    'retains the latest successful score beside a newer request whose AI work is %s (0mq.21 ASM-3)',
     async (state, shown) => {
       const older = await request('completed', '2026-01-01', {
         ...calculation,
@@ -343,7 +343,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
     })
     await assertSame()
   })
-  it('reports configuration, profile readiness, pending count and reservation ceiling without any provider call', async () => {
+  it('reports configuration, profile readiness, pending count and reservation ceiling through AI reads without any provider call (0mq.21 ASM-4)', async () => {
     await request('running', '2026-01-01')
     await request('completed', '2026-01-02', calculation)
     expect(await matchingListStatus()).toEqual({

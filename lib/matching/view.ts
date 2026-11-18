@@ -2,6 +2,8 @@
  * The states of an assessment request the owner sees: the stage of its AI
  * work, or `excluded` when a required condition conflicts and nothing
  * was requested.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-3): one in-progress state replaces the
+ * steps of the former batch path.
  */
 export const matchingStates = [
   'waiting_budget',

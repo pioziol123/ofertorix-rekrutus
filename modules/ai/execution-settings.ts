@@ -61,6 +61,7 @@ export function isConfigured(settingsKey: string): boolean {
   }
 }
 
+// ASSUMPTION(oferty-pracy-0mq.21/ASM-4): a public read for Matching's views.
 /**
  * What one execution under a client's key reserves in a mode, in PLN as a
  * decimal string: the cost of the price list's token caps, or zero for a

@@ -137,7 +137,7 @@ flowchart TB
     Import["Ad import<br/>[TypeScript / Python]<br/>SOLID.Jobs, Polish sources and JobSpy"]
     Parse["CV extraction<br/>[pdfjs-dist / mammoth]<br/>Reads text from PDF or DOCX"]
     Profile["Profile proposal<br/>[TypeScript]<br/>Prepares and validates professional data"]
-    Matching["Match assessments<br/>[TypeScript]<br/>Single and group batches, publishing assessments"]
+    Matching["Match assessments<br/>[TypeScript]<br/>Requests single and group assessments from AI, publishes assessments"]
     Research["Basic research<br/>[TypeScript]<br/>Collects sources and synthesises the report"]
   end
 
@@ -145,18 +145,18 @@ flowchart TB
   Runtime -->|"Starts an import run"| Import
   Runtime -->|"Passes the CV import ID"| Parse
   Runtime -->|"Passes the AI attempt ID"| Profile
-  Runtime -->|"Passes the request or group ID"| Matching
+  Runtime -->|"Delivers the AI outcome of an assessment"| Matching
   Runtime -->|"Passes the research operation ID"| Research
   Import -->|"Fetches ads over HTTP(S)"| Boards
   Import -->|"Saves ads, revisions and statuses"| DB
   Parse -->|"Reads the CV original"| Files
   Parse -->|"Saves the text and the extraction status"| DB
   Profile -->|"Saves the proposal and the attempt state"| DB
-  Matching -->|"Saves assessments, history and batch artefacts"| DB
+  Matching -->|"Saves assessments and history"| DB
   Research -->|"Saves the report version and the attempt state"| DB
   Profile -.->|"Generates a proposal through the Responses API"| OpenAI
   Profile -.->|"Generates a proposal through the Ollama API"| Ollama
-  Matching -.->|"Sends batches and receives results through the Files / Batch API"| OpenAI
+  Matching -.->|"Through the AI module: single calls, and batches through the Files / Batch API"| OpenAI
   Research -.->|"Searches for sources and synthesises the report through the Responses API"| OpenAI
 
   classDef internal fill:#dbeafe,stroke:#2563eb,color:#172554
@@ -170,9 +170,9 @@ flowchart TB
 | Queue handling and schedule | [Worker entry point](../../worker/index.ts). At start and every minute it checks for overdue work. The schedule requests the SOLID.Jobs import through the [Sources module](../../modules/sources/README.md#requesting-a-sync), whose single `source-sync` queue the worker serves for every source. |
 | Ad import | [Sync request](../../modules/sources/request-sync.ts), [sync queue handler](../../modules/sources/infrastructure/worker/sync-queue.ts), [shared run executor](../../modules/sources/execute-sync-run.ts), [ad and revision storage](../../modules/sources/infrastructure/persistence/source-ads.ts). |
 | CV extraction | [`extractImport`](../../lib/profile/imports.ts) handles `profile-parse`. |
-| Match assessments | The [single request](../../lib/matching/store.ts) and the [group](../../lib/matching/groups.ts) use the [Batch client](../../lib/matching/batch.ts) and the [batch archive](../../lib/matching/archive.ts). |
+| Match assessments | The [single request](../../lib/matching/store.ts) and the [group](../../lib/matching/groups.ts) request AI work through [Matching's AI integration](../../modules/matching/infrastructure/adapters/assessment-ai.ts); its [receiver](../../modules/matching/receive-assessment.ts) publishes or rejects each result. Groups run as provider batches in the AI module's [OpenAI Batch adapter](../../modules/ai/infrastructure/adapters/openai-batch.ts), which keeps the batch archive. |
 | Basic research | [`executeCompanyResearch`](../../lib/companies/research.ts) runs `company-research` and uses the [OpenAI provider](../../lib/companies/research-provider.ts). |
-| General AI executions | [`runExecution`](../../modules/ai/run-execution.ts) handles `ai-execution` for clients of the [AI module](../../modules/ai/README.md) contract, today the Profile's proposal preparation on the paid and the local path. [`recoverExecutions`](../../modules/ai/recover-executions.ts) runs at start and in the schedule cycle. |
+| General AI executions | [`runExecution`](../../modules/ai/run-execution.ts) handles `ai-execution` for clients of the [AI module](../../modules/ai/README.md) contract, today the Profile's proposal preparation on the paid and the local path and Matching's assessments. [`recoverExecutions`](../../modules/ai/recover-executions.ts) runs at start and in the schedule cycle. |
 
 <a id="c4-kod-przygotowanie-propozycji-profilu"></a>
 
@@ -228,7 +228,7 @@ flowchart TB
 | --- | --- |
 | Professional profile | Proposal preparation runs on the local model when the Profile's settings in the AI module name it. The profile settings in the AI module choose the local model; [Compose](../../compose.yaml) passes `AI_ENDPOINTS_JSON` to web and the worker. A configuration example is in the [environment file](../../.env.example). Model availability and connectivity from the containers need separate verification. |
 | Local queue and recovery | The [local AI migration](../../migrations/1770000000013_local_ai.cjs) adds operation, queue and slot data. The [AI coordination](../../modules/ai/run-execution.ts) wakes pending jobs after the slot is released, and [recovery](../../modules/ai/recover-executions.ts) ends a local execution whose lease lapsed as uncertain, keeping the slot. |
-| Offer matching | The connected worker uses OpenAI Batch. The local assessment path is described in the [solution design](../specs/lokalne-ai/solution-design.md). |
+| Offer matching | Assessments run through the AI module: a single assessment as one OpenAI call, a group as an OpenAI batch. The local assessment path is described in the [solution design](../specs/lokalne-ai/solution-design.md). |
 | Employer research | The connected basic research uses OpenAI Responses and web search. OpenCode and the browser for local research are described in the [solution design](../specs/lokalne-ai/solution-design.md). |
 
 After changing an entry point, a data store or an external integration, update the relevant view together with the links to the code.

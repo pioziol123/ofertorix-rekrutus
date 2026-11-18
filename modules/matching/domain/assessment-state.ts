@@ -5,6 +5,7 @@ import type { MatchingState } from '../../../lib/matching/view.ts'
  * The state of an assessment request the owner sees. A request Matching
  * excluded never reached AI; for any other one the stage of the AI work
  * comes from its latest execution, read by its public state alone.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-3): the states the owner sees.
  */
 export function assessmentState(
   requestState: string,
@@ -51,6 +52,8 @@ const responseDiagnostic: Partial<Record<ExecutionCause, string>> = {
 /**
  * The message of an assessment that ended without a result, chosen from
  * the public state and cause alone.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-3): the messages of causes the old
+ * paths had no message for.
  */
 export function endMessage(end: {
   state: 'failed' | 'uncertain'
