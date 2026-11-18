@@ -32,13 +32,13 @@ import { closePool, setPool } from '../lib/db.ts'
 import {
   aiExecutionJobOptions,
   aiExecutionQueue,
-  budgetMonth,
   readLatestExecution,
   recoverExecutions,
   registerResultReceiver,
   runExecution,
   useAiQueue,
 } from '../modules/ai/index.ts'
+import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import { openAiProvider } from '../modules/ai/infrastructure/adapters/openai.ts'
 import { registerProviderAdapter } from '../modules/ai/provider-registry.ts'
 import {

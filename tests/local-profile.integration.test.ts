@@ -15,13 +15,13 @@ import {
 import { closePool, setPool } from '../lib/db.ts'
 import { createTextImport } from '../lib/profile/imports.ts'
 import {
-  budgetMonth,
   readLatestExecution,
   recoverExecutions,
   registerResultReceiver,
   runExecution,
   useAiQueue,
 } from '../modules/ai/index.ts'
+import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import { ollamaProvider } from '../modules/ai/infrastructure/adapters/ollama.ts'
 import { registerProviderAdapter } from '../modules/ai/provider-registry.ts'
 import {

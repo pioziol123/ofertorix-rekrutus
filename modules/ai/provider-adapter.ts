@@ -87,7 +87,7 @@ export type ProviderSettings = {
  * slot released.
  */
 export type ProviderObservation =
-  | { kind: 'outcome'; outcome: 'refused' | 'incomplete' }
+  | { kind: 'outcome'; outcome: 'refused' | 'incomplete' | 'no_content' }
   | { kind: 'error'; error: unknown }
   | { kind: 'lost_lease'; processEnded: boolean }
 

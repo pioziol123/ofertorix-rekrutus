@@ -14,11 +14,8 @@ import {
 } from 'vitest'
 import { emptyProfile } from '../lib/profile/model.ts'
 import { confirmProfile, saveDraft } from '../lib/profile/store.ts'
-import {
-  budgetMonth,
-  recoverExecutions,
-  useAiQueue,
-} from '../modules/ai/index.ts'
+import { recoverExecutions, useAiQueue } from '../modules/ai/index.ts'
+import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import {
   BatchClient,
   BatchError,

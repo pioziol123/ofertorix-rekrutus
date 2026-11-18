@@ -17,7 +17,6 @@ import {
   AiRequestError,
   aiExecutionJobOptions,
   aiExecutionQueue,
-  budgetMonth,
   executionCauses,
   readBudget,
   readExecution,
@@ -33,6 +32,7 @@ import {
   type ExecutionResultDelivery,
   type ReceiverDecision,
 } from './index.ts'
+import { budgetMonth } from './domain/cost.ts'
 import { admitExecutions } from './admit-executions.ts'
 import { executionSettings } from './execution-settings.ts'
 import {

@@ -40,6 +40,8 @@ integration('migration of the profile AI rows', () => {
     paidRunning: randomUUID(),
     paidDone: randomUUID(),
     paidRetried: randomUUID(),
+    paidRejected: randomUUID(),
+    paidRefused: randomUUID(),
     localDone: randomUUID(),
     localLost: randomUUID(),
     localRejected: randomUUID(),
@@ -64,11 +66,16 @@ integration('migration of the profile AI rows', () => {
     id: string,
     importId: string,
     state: string,
-    extra: { proposal?: unknown; generation?: string; attempt?: number } = {},
+    extra: {
+      proposal?: unknown
+      generation?: string
+      attempt?: number
+      error?: string
+    } = {},
   ) {
     await pool.query(
-      `INSERT INTO ai_attempts(id,import_id,text_revision,month,attempt,generation,state,reserved_pln,configuration,proposal)
-       VALUES($1,$2,1,'2026-11',$3,$4,$5,'0.5','{"model":"m"}',$6)`,
+      `INSERT INTO ai_attempts(id,import_id,text_revision,month,attempt,generation,state,reserved_pln,configuration,proposal,error)
+       VALUES($1,$2,1,'2026-11',$3,$4,$5,'0.5','{"model":"m"}',$6,$7)`,
       [
         id,
         importId,
@@ -76,6 +83,7 @@ integration('migration of the profile AI rows', () => {
         extra.generation ?? randomUUID(),
         state,
         extra.proposal ?? null,
+        extra.error ?? null,
       ],
     )
   }
@@ -159,6 +167,14 @@ integration('migration of the profile AI rows', () => {
       generation,
       attempt: 2,
     })
+    await paidAttempt(ids.paidRejected, imports.paidRejected, 'settled', {
+      error:
+        'Nie udało się potwierdzić cytatów AI w tekście CV. Profil pozostaje bez zmian.',
+    })
+    await paidAttempt(ids.paidRefused, imports.paidRefused, 'settled', {
+      error:
+        'AI odmówiło przygotowania propozycji. Sprawdź tekst zawodowy. Profil pozostaje bez zmian.',
+    })
     await localExecution(
       ids.localDone,
       imports.localDone,
@@ -229,6 +245,18 @@ integration('migration of the profile AI rows', () => {
     })
     const history = await readExecutionHistory(imports.paidRetried)
     expect(history.map((e) => e.state)).toEqual(['retried', 'uncertain'])
+  })
+  it("tells the Profile's rejection of a paid result apart from the model's own failure", async () => {
+    expect(await latest('paidRejected')).toMatchObject({
+      state: 'rejected',
+      cause: null,
+      rejectionReason: 'unconfirmed_quote',
+    })
+    expect(await latest('paidRefused')).toMatchObject({
+      state: 'failed',
+      cause: 'refused',
+      rejectionReason: null,
+    })
   })
   it('ends work the old paths can no longer continue and releases what was not spent', async () => {
     expect(await latest('paidQueued')).toMatchObject({

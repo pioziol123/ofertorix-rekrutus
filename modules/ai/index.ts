@@ -49,5 +49,5 @@ export { recoverExecutions } from './recover-executions.ts'
 // oferty-pracy-0mq.17 moves them to the contract above and removes these
 // exports.
 export { aiConfiguration, type AiConfiguration } from './configuration.ts'
-export { budgetMonth, chargeCeiling } from './domain/cost.ts'
+export { chargeCeiling } from './domain/cost.ts'
 export { reserve } from './infrastructure/persistence/budget.ts'

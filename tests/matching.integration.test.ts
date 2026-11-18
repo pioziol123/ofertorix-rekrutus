@@ -13,11 +13,8 @@ import {
   vi,
 } from 'vitest'
 import { emptyProfile } from '../lib/profile/model.ts'
-import {
-  budgetMonth,
-  recoverExecutions,
-  useAiQueue,
-} from '../modules/ai/index.ts'
+import { recoverExecutions, useAiQueue } from '../modules/ai/index.ts'
+import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import {
   BatchClient,
   type batchRequest,

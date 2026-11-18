@@ -15,7 +15,9 @@
 //   process.
 // - Attempts of the existing paid Profile path get an execution each, with
 //   the operation (the import), the input version (the text revision) and
-//   the result (the proposal).
+//   the result (the proposal). Their stage and cause come from the saved
+//   message, as for the local rows: a quote the Profile could not confirm
+//   is a rejection, the model's own failures keep their cause.
 // - Work in progress of the old paths cannot continue in their queue, which
 //   has no worker any more. Work not yet started (queued, or waiting for
 //   budget) ends as `retried` with the cause `interrupted` and releases
@@ -83,25 +85,43 @@ UPDATE ai_attempts a SET state='settled',actual_pln=0,finished_at=coalesce(a.fin
 UPDATE ai_local_queue q SET state='finished'
  FROM ai_executions e WHERE e.id=q.execution_id AND q.state<>'finished' AND e.state<>'queued';
 
-INSERT INTO ai_executions(id,settings_key,operation_id,configuration,publication_token,mode,input_version,result,state,cause,created_at,finished_at)
-SELECT a.id,'profile',a.import_id,a.configuration,gen_random_uuid(),'single',a.text_revision::text,a.proposal,
+INSERT INTO ai_executions(id,settings_key,operation_id,configuration,publication_token,mode,input_version,result,state,cause,rejection_reason,created_at,finished_at)
+SELECT p.id,'profile',p.import_id,p.configuration,gen_random_uuid(),'single',p.text_revision::text,p.proposal,
+ p.new_state,
  CASE
-  WHEN EXISTS(SELECT 1 FROM ai_attempts n WHERE n.generation=a.generation AND n.attempt>a.attempt) THEN 'retried'
-  WHEN a.state IN ('queued','waiting_budget') THEN 'retried'
-  WHEN a.state='running' THEN 'uncertain'
-  WHEN a.proposal IS NOT NULL THEN 'completed'
-  WHEN a.state='unknown' THEN 'uncertain'
-  ELSE 'failed'
+  WHEN p.new_state IN ('completed','rejected') OR p.superseded THEN NULL
+  WHEN p.state IN ('queued','waiting_budget','running') THEN 'interrupted'
+  ELSE p.failure
  END,
- CASE
-  WHEN EXISTS(SELECT 1 FROM ai_attempts n WHERE n.generation=a.generation AND n.attempt>a.attempt) THEN NULL
-  WHEN a.state IN ('queued','waiting_budget','running') THEN 'interrupted'
-  WHEN a.proposal IS NOT NULL THEN NULL
-  ELSE 'unknown'
- END,
- a.created_at,coalesce(a.finished_at,now())
-FROM ai_attempts a
-WHERE a.execution_id IS NULL AND a.operation_type='profile';
+ CASE WHEN p.new_state='rejected' THEN 'unconfirmed_quote' END,
+ p.created_at,coalesce(p.finished_at,now())
+FROM (
+ SELECT a.*, s.superseded, f.failure,
+  CASE
+   WHEN s.superseded THEN 'retried'
+   WHEN a.state IN ('queued','waiting_budget') THEN 'retried'
+   WHEN a.state='running' THEN 'uncertain'
+   WHEN a.proposal IS NOT NULL THEN 'completed'
+   WHEN f.failure='unconfirmed_quote' THEN 'rejected'
+   WHEN a.state='unknown' THEN 'uncertain'
+   ELSE 'failed'
+  END AS new_state
+ FROM ai_attempts a
+ CROSS JOIN LATERAL (SELECT EXISTS(SELECT 1 FROM ai_attempts n WHERE n.generation=a.generation AND n.attempt>a.attempt) AS superseded) s
+ -- The former paid path saved the same messages as the local one; they
+ -- tell the model's own failures apart from the Profile's rejection, as
+ -- for the local rows above.
+ CROSS JOIN LATERAL (SELECT CASE
+   WHEN a.error LIKE '%cytatów%' THEN 'unconfirmed_quote'
+   WHEN a.error LIKE '%odmówiło%' THEN 'refused'
+   WHEN a.error LIKE '%nie ukończyło%' THEN 'incomplete'
+   WHEN a.error LIKE '%jednej kompletnej%' THEN 'no_content'
+   WHEN a.error LIKE '%format danych%' THEN 'format'
+   WHEN a.error LIKE 'Worker interrupted%' THEN 'interrupted'
+   ELSE 'unknown'
+  END AS failure) f
+ WHERE a.execution_id IS NULL AND a.operation_type='profile'
+) p;
 
 UPDATE ai_attempts SET state='settled',actual_pln=0,finished_at=now()
  WHERE execution_id IS NULL AND operation_type='profile' AND state IN ('queued','waiting_budget');

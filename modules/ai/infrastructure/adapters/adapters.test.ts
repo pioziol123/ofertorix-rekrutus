@@ -296,6 +296,12 @@ describe('A14-AC12: each adapter decides the public end of what it observed', ()
       'incomplete',
     ],
     [
+      'a completed response without content',
+      { kind: 'outcome', outcome: 'no_content' },
+      'failed',
+      'no_content',
+    ],
+    [
       'no single content in a response',
       {
         kind: 'error',

@@ -123,11 +123,14 @@ async function callProvider(
         ...outcome,
         end: adapter.endOf({ kind: 'outcome', outcome: response.outcome }),
       }
+    // A completed response without content: the adapter says what it means.
+    if (response.text === null)
+      return {
+        ...outcome,
+        end: adapter.endOf({ kind: 'outcome', outcome: 'no_content' }),
+      }
     // Only a result that matches the response schema reaches the receiver.
-    const result =
-      response.text === null
-        ? undefined
-        : parseResult(response.text, responseSchema.schema)
+    const result = parseResult(response.text, responseSchema.schema)
     return result === undefined
       ? { ...outcome, end: { state: 'failed', cause: 'format' } }
       : { ...outcome, result }
