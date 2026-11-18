@@ -733,8 +733,10 @@ Existing profile route tests, including HTTP tests on the running application. S
 
 Requirements: [A17](requirements.md#a17). Stages 3 and 4: [stage 3](../lokalne-ai/etapy/03-oceny-batch/solution-design.md), [stage 4](../lokalne-ai/etapy/04-research-wykonawca/solution-design.md).
 
+Delivered as tasks 0mq.21 ([requirements](requirements.md#a17m)) and 0mq.22 ([requirements](requirements.md#a17c)); see the decisions and the migration below.
+
 - **Single assessments:**
-  - The Matching integrating layer builds the assessment instruction and schema as today and requests an execution of the "matching" type in single mode.
+  - The Matching integrating layer builds the assessment instruction and schema as today and requests an execution of the "matching" type in single mode (decision 2).
   - The result receiver validates the assessment (criteria, evidence against the profile version and the ad version) and publishes or rejects it.
   - The existing assessment queue and its handling move to AI.
 - **Assessment groups:**
@@ -751,6 +753,33 @@ Requirements: [A17](requirements.md#a17). Stages 3 and 4: [stage 3](../lokalne-a
 - **Recovery:** a restart with an unknown outcome of paid work does not start a new search or batch; the execution goes into the uncertain state as today.
 - **Data and exports:** Matching and Companies keep the link of their records to the execution by identifier (the foreign key is a schema dependency). The transitional AI exports from 0mq.14 are removed.
 
+### Decisions (owner, 2026-11-18)
+
+1. **Split by owning module.** Task 0mq.21 carries the assessments of Matching and the batch adapter; task 0mq.22 carries company research and the agent adapter, and removes the transitional AI exports. Task 0mq.22 depends on 0mq.21 for the adapter state below.
+
+   Options discarded: splitting by time into new work first and removal of the old queues later (it only served work in progress, which decision 3 drops).
+2. **Single assessments run in single mode at the single price.** A single or manual assessment is a single-mode execution, not a one-item batch. The owner accepts the higher price (the price list holds a lower output price for batch than for single).
+
+   Options discarded: a one-item batch (keeps the batch price, but a single assessment waits for the batch cycle).
+3. **Work in progress at deploy is not carried over.** The system does not yet run in production. The migration does not translate batches, assessments or research that are in progress; whatever is in progress at deploy is ended as interrupted, with its reservation released.
+
+   Options discarded: converting submitted batches into running executions (only needed for paid work in production); waiting before deploy until no work is in progress (an operational step with nothing to protect).
+4. **Adapter state lives in AI.** The AI executions table gets an adapter-state column (structured data, readable only by the adapter that wrote it). The batch adapter keeps there the provider batch, its files, the provider status and whether it was cleaned up; the research adapter keeps the step log. Coordination stores the column and does not read it. This follows the architecture rule that interchangeable executors keep their state in the AI module.
+
+   Options discarded: keeping the batch state in Matching's tables written by the AI adapter (AI would write Matching's data, against A17-R03); reusing the attempt identifier columns for executions (changes the meaning of stored data and still loses the history).
+
+<a id="a17-migration"></a>
+
+### Migration of Matching and research data
+
+Task 0mq.21 carries the steps for Matching and the adapter-state column; task 0mq.22 the steps for research. Each follows the pattern of the 0mq.9 migration.
+
+- **Link to the execution.** Assessment requests and research records get an execution identifier referencing the AI executions table. Matching and Companies keep their records and link them by this identifier.
+- **History back-fill.** For each existing Matching or research attempt without an execution, the migration creates an execution with the client operation, the result, the usage and the cost of the attempt, and sets `state` and `cause` mapped from the old record's state. The cost stays as settled or reserved on the attempt. After the migration the history views read state and cost through the public AI execution read.
+- **Work in progress (decision 3).** Records waiting for budget, queued, being sent, submitted or running end as `retried` with the cause of an interrupted attempt, and their reservations are released. No adapter state is filled in for them.
+- **Matching's own state.** The state column of assessment requests keeps only the Matching meaning that the execution state does not express (for example an excluded request); the stage of the AI work is read from the execution. The design of task 0mq.21 maps each existing value to one of the two.
+- **Old tables.** Matching's batch and group tables, and the attempt identifier columns, stay as read-only history and are not used by new code. Removing them belongs to the epic `oferty-pracy-sq2`.
+
 ### Verification
 
 | Criterion | Check |
@@ -758,6 +787,8 @@ Requirements: [A17](requirements.md#a17). Stages 3 and 4: [stage 3](../lokalne-a
 | A17-AC01 | Existing matching, group, archive, company and research tests. |
 | A17-AC02, AC03 | Tests from the SDs of stages 3 and 4. |
 | A17-AC04 | Search of the Matching and Companies code for AI tables and imports of AI internals. |
+| AM-AC01–AC04 | As A17-AC01, AC02 and AC04 for Matching, plus a migration test that seeds pre-migration assessments and batches and reads the history after the migration. |
+| AC-AC01–AC04 | As A17-AC01, AC03 and AC04 for Companies, plus a migration test that seeds pre-migration research and reads the history after the migration. |
 
 <a id="a18"></a>
 

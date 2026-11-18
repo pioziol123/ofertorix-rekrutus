@@ -475,6 +475,34 @@ Matching and Companies request AI work and settle it through the AI contract. It
 | A17-AC03 | Criteria E04-AC01–04 are met. | Tests named in the stage 4 SD |
 | A17-AC04 | Matching and Companies do not use the AI module's data and internals outside its contract. | Code review |
 
+**Split (owner's decision, 2026-11-18).** Task 0mq.17 is delivered as two tasks, by the module that owns the data. Each task meets A17-R01–R04 for its own module. Existing history is migrated to AI executions. Work in progress at deploy is not carried over, because the system does not yet run in production.
+
+<a id="a17m"></a>
+
+### Task 0mq.21 — Assessments of Matching
+
+Covers A17-R01, and A17-R03 and A17-R04 for Matching.
+
+| Criterion | Acceptance condition | Check |
+| --- | --- | --- |
+| AM-AC01 | A single assessment, an assessment group and a manual assessment with a simulated provider end with the assessment published or rejected and its cost settled. | Matching, group and archive tests |
+| AM-AC02 | Criteria E03-AC01–05 are met. | Tests named in the stage 3 SD |
+| AM-AC03 | After the migration, the assessment history shows each assessment made before the migration with its state and cost read from AI executions. | Migration test on a database with pre-migration data |
+| AM-AC04 | Matching code reads no AI tables and imports no AI internals; the old assessment queues and Matching's batch tables are not used. | Code search |
+
+<a id="a17c"></a>
+
+### Task 0mq.22 — Company research
+
+Covers A17-R02, and A17-R03 and A17-R04 for Companies. Depends on task 0mq.21, which adds the adapter state of executions.
+
+| Criterion | Acceptance condition | Check |
+| --- | --- | --- |
+| AC-AC01 | Company research with a simulated provider ends with the report published or rejected and the cost of each step settled; reusing a report and an explicit refresh work. | Company and research tests |
+| AC-AC02 | Criteria E04-AC01–04 are met. | Tests named in the stage 4 SD |
+| AC-AC03 | After the migration, the research history shows each research made before the migration with its state and cost read from AI executions. | Migration test on a database with pre-migration data |
+| AC-AC04 | Companies code reads no AI tables and imports no AI internals; the old research queue is gone and the AI public entry point has no transitional exports. | Code search |
+
 <a id="a18"></a>
 
 ## Task 0mq.18 — Neutral owners of shared mechanisms
