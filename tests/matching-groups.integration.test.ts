@@ -470,9 +470,8 @@ integration(
       ).toBe('2')
       expect(send).toHaveBeenCalledOnce()
     })
-    // ASSUMPTION(oferty-pracy-0mq.18/ASM-2): a group found in sending ends as interrupted.
     it.each(['uploading', 'submitting'])(
-      'does not recreate a paid batch after interrupted %s',
+      'leaves a group found in %s alone without recreating a paid batch, until oferty-pracy-0mq.15',
       async (state) => {
         const group = await enqueue([ad, await anotherAd()]),
           provider = new Provider()
@@ -486,14 +485,14 @@ integration(
         )
         await executeMatchingGroup(boss, group.groupId, provider)
         expect(provider.uploads + provider.creates).toBe(0)
-        expect((await groupRow(group.groupId)).state).toBe(
-          state === 'submitting' ? 'unknown' : 'failed',
-        )
-        for (const member of group.items)
+        expect((await groupRow(group.groupId)).state).toBe(state)
+        for (const member of group.items) {
+          expect((await row(member.id)).state).toBe(state)
           expect(await attempt(member.id)).toMatchObject({
-            state: state === 'submitting' ? 'unknown' : 'settled',
-            actual_pln: state === 'submitting' ? null : '0.000000',
+            state: 'queued',
+            actual_pln: null,
           })
+        }
       },
     )
     it('does not settle an already completed member again after partial recovery', async () => {

@@ -359,21 +359,10 @@ export async function executeMatching(
     await transaction(() => attempt(boss, id, row.configuration))
     return
   }
-  // ASSUMPTION(oferty-pracy-0mq.18/ASM-2): a request left in sending was
-  // interrupted, as under the former session lock: the worker runs the jobs
-  // of a queue one after another. A live run whose request another run has
-  // ended stops at its next conditional state change.
-  if (row.state === 'uploading' || row.state === 'submitting') {
-    await finishFailure(
-      id,
-      row.attempt_id,
-      row.state,
-      row.state === 'submitting' ? 'unknown' : 'failed',
-      'Przerwano wysyłanie. Nie ponowiono automatycznie; sprawdź partię i koszt.',
-      row.state === 'uploading' ? '0' : null,
-    )
-    return
-  }
+  // A request in sending belongs to the run sending it: another run leaves
+  // it alone. Detecting interrupted sending belongs to task
+  // oferty-pracy-0mq.15 (owner's decision in A13).
+  if (row.state === 'uploading' || row.state === 'submitting') return
   const api =
     provider ??
     new BatchClient(

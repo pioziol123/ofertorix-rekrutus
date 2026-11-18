@@ -313,7 +313,7 @@ integration(
       expect(provider.uploads).toBe(1)
       expect(provider.creates).toBe(1)
     })
-    it('ASSUMPTION(oferty-pracy-0mq.18/ASM-2): funds, settles and publishes a request once when two runs of it overlap, without a session lock', async () => {
+    it('funds, settles and publishes a request once when two runs of it overlap, without a session lock (0mq.18)', async () => {
       const month = budgetMonth()
       await pool.query(
         'INSERT INTO ai_budget_months(month,limit_pln) VALUES($1,0)',
@@ -430,25 +430,24 @@ integration(
       expect(fetcher).toHaveBeenCalledOnce()
       expect(fetcher.mock.calls[0]![0]).toBe('https://api.openai.com/v1/files')
     })
-    // ASSUMPTION(oferty-pracy-0mq.18/ASM-2): a request found in sending ends as interrupted.
-    it('does not resubmit an interrupted submission and retains unknown cost', async () => {
-      const request = await enqueueMatching(boss, ad),
-        provider = new Provider()
-      await pool.query(
-        "UPDATE matching_requests SET state='submitting' WHERE id=$1",
-        [request.id],
-      )
-      await executeMatching(boss, request.id, provider)
-      expect(await row(request.id)).toMatchObject({ state: 'unknown' })
-      expect(await attempt(request.id)).toMatchObject({
-        state: 'unknown',
-        actual_pln: null,
-      })
-      expect(provider.uploads + provider.creates).toBe(0)
-      send.mockClear()
-      await recoverMatching(pool, boss)
-      expect(send).not.toHaveBeenCalled()
-    })
+    it.each(['uploading', 'submitting'])(
+      'leaves a request found in %s alone, without resubmitting it or settling its reservation, until oferty-pracy-0mq.15',
+      async (state) => {
+        const request = await enqueueMatching(boss, ad),
+          provider = new Provider()
+        await pool.query('UPDATE matching_requests SET state=$2 WHERE id=$1', [
+          request.id,
+          state,
+        ])
+        const reserved = await attempt(request.id)
+        await recoverMatching(pool, boss)
+        await executeMatching(boss, request.id, provider)
+        await executeMatching(boss, request.id, provider)
+        expect(provider.uploads + provider.creates).toBe(0)
+        expect(await row(request.id)).toMatchObject({ state, error: null })
+        expect(await attempt(request.id)).toEqual(reserved)
+      },
+    )
     it('keeps submitted work retryable during polling without a second upload', async () => {
       const request = await enqueueMatching(boss, ad),
         provider = new Provider()

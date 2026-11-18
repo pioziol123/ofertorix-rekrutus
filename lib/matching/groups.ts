@@ -307,18 +307,9 @@ export async function executeMatchingGroup(
     await transaction(() => fundGroup(boss, id))
     return
   }
-  // ASSUMPTION(oferty-pracy-0mq.18/ASM-2): a group left in sending was
-  // interrupted, as for a single request (see executeMatching).
-  if (group.state === 'uploading' || group.state === 'submitting') {
-    await failGroup(
-      id,
-      group.state,
-      group.state === 'submitting' ? 'unknown' : 'failed',
-      'Przerwano wysyłanie partii. Nie ponowiono automatycznie.',
-      group.state === 'uploading' ? '0' : null,
-    )
-    return
-  }
+  // A group in sending belongs to the run sending it: another run leaves it
+  // alone until oferty-pracy-0mq.15 (see executeMatching).
+  if (group.state === 'uploading' || group.state === 'submitting') return
   if (group.state === 'unknown' || group.cleaned) return
   const api =
     provider ??
