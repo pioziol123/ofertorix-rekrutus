@@ -58,13 +58,21 @@ describe('what the owner sees of research, from the state and cause of its AI wo
       }),
     ).toBeNull()
     expect(
-      researchCostState({ state: 'running', cost: cost(null), finishedAt: null }),
+      researchCostState({
+        state: 'running',
+        cost: cost(null),
+        finishedAt: null,
+      }),
     ).toBe('reserved')
     expect(
       researchCostState({ state: 'failed', cost: cost('0.1'), finishedAt: at }),
     ).toBe('settled')
     expect(
-      researchCostState({ state: 'uncertain', cost: cost(null), finishedAt: at }),
+      researchCostState({
+        state: 'uncertain',
+        cost: cost(null),
+        finishedAt: at,
+      }),
     ).toBe('unknown')
   })
 })

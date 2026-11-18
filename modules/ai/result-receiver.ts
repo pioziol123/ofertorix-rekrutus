@@ -16,6 +16,7 @@ export type ExecutionResultDelivery = {
   /**
    * Agent work only: the materials the agent gathered with its tools,
    * which the result refers to by id.
+   * ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
    */
   materials?: AgentMaterial[]
   cost: ExecutionCost

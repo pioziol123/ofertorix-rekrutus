@@ -20,7 +20,8 @@ import { companyResearchRows } from './infrastructure/persistence/research-recor
  * The research of a company, newest first, for its page: each research
  * with its target, report or message, and the state and cost of its AI
  * work read from AI; whether research can be requested now and the most
- * one reserves.
+ * one reserves. ASSUMPTION(oferty-pracy-0mq.22/ASM-2): the states, costs
+ * and messages the owner sees.
  */
 export async function readCompanyResearch(companyId: string) {
   if (
@@ -51,7 +52,8 @@ export async function readCompanyResearch(companyId: string) {
         finishedAt: r.finished_at
           ? new Date(r.finished_at).toISOString()
           : null,
-        reserved: costState === null ? null : (execution?.cost.reserved ?? null),
+        reserved:
+          costState === null ? null : (execution?.cost.reserved ?? null),
         cost: execution?.cost.actual ?? null,
         costState,
       }

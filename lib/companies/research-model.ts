@@ -74,6 +74,7 @@ export type ResearchTarget = {
   website: string | null
   description: string
 }
+// ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the evidence is the agent's materials.
 /** A source of a finding, as the AI agent found it. */
 export type ResearchSource = AgentSource
 /** A unit of evidence the AI agent gathered; the draft cites it by id. */

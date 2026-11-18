@@ -26,6 +26,8 @@ export type { RequestedExecution } from './admit-executions.ts'
  * writes the result gets the JSON object `{"target": <the input>,
  * "evidence": <the materials>}`, so `resultInstruction` can name both;
  * the materials reach the client with the result.
+ * ASSUMPTION(oferty-pracy-0mq.22/ASM-3): resultInstruction and the input
+ * of the step that writes the result.
  */
 export type ExecutionModeRequest =
   | { kind: 'single' }

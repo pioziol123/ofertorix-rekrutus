@@ -58,6 +58,7 @@ export async function requestResearch(companyId: string, value: unknown) {
     }
     // One research in progress per company: requests of a company are
     // decided one at a time, from the stage of its research in AI.
+    // ASSUMPTION(oferty-pracy-0mq.22/ASM-1)
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
       `company-research-${companyId}`,
     ])

@@ -28,6 +28,7 @@ export {
 // ASSUMPTION(oferty-pracy-0mq.21/ASM-8): the saved bodies a client gives the
 // archive read.
 export type { SavedBatchBody } from './provider-adapter.ts'
+// ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the materials of agent work.
 export type { AgentMaterial, AgentSource } from './provider-adapter.ts'
 export {
   executionCauses,

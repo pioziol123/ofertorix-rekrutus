@@ -1,11 +1,7 @@
 import { z } from 'zod'
 import { clientSettings } from './client-settings.ts'
 import { resolveSettings, type ClientSettings } from './domain/settings.ts'
-import {
-  aiCatalog,
-  type AiConfiguration,
-  type CatalogModel,
-} from './model-catalog.ts'
+import { aiCatalog, type CatalogModel } from './model-catalog.ts'
 import { ModelError } from './provider-adapter.ts'
 
 export type { AiConfiguration } from './model-catalog.ts'

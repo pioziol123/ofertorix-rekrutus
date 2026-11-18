@@ -15,9 +15,7 @@ export async function lockResearch(researchId: string) {
       [researchId],
     )
   ).rows[0]
-  return row
-    ? { id: row.id as string, published: row.result !== null }
-    : null
+  return row ? { id: row.id as string, published: row.result !== null } : null
 }
 
 /** Saves the report Companies published, or the owner's message. */
@@ -31,7 +29,10 @@ export async function saveResearchOutcome(
   )
 }
 
-/** Saves a requested research with its target, linked to its AI work. */
+/**
+ * Saves a requested research with its target; its state keeps only
+ * Companies' meaning. ASSUMPTION(oferty-pracy-0mq.22/ASM-1)
+ */
 export async function insertResearch(research: {
   id: string
   companyId: string

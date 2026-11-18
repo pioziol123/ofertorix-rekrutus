@@ -25,6 +25,7 @@ export function chargeCeiling(
 /**
  * The PLN price of the given calls of the price list's paid tool, rounded
  * up once; zero when the price list covers no paid tool.
+ * ASSUMPTION(oferty-pracy-0mq.22/ASM-4)
  */
 export function toolCallFee(config: AiConfiguration, calls: number): string {
   if (!Number.isSafeInteger(calls) || calls < 0)

@@ -16,7 +16,7 @@ export type AiConfiguration = {
   /**
    * The price of one call of the paid tool of the agent mode (web search),
    * in USD, and the most calls a reservation covers. Absent when the price
-   * list covers no paid tool.
+   * list covers no paid tool. ASSUMPTION(oferty-pracy-0mq.22/ASM-4)
    */
   toolCallUsd?: string
   maxToolCalls?: number
@@ -78,8 +78,9 @@ export const aiCatalog: AiCatalog = {
           maxInputTokens: 200000,
           maxOutputTokens: 6000,
         },
-        // Agent work (company research): the standard rates of its steps
+        // Agent work with web search: the standard rates of its steps
         // and the web search price per call, at most three calls.
+        // ASSUMPTION(oferty-pracy-0mq.22/ASM-4)
         agent: {
           model: 'gpt-6-luna',
           version: 'openai-2026-11-04-standard',

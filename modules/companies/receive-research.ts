@@ -55,6 +55,7 @@ export async function recordResearchResult(
 /**
  * Records that the AI work of a research ended without a report, with the
  * owner's message chosen from the state and cause alone.
+ * ASSUMPTION(oferty-pracy-0mq.22/ASM-2)
  */
 export async function recordResearchEnd(
   researchId: string,

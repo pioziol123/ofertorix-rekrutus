@@ -40,12 +40,7 @@ export const interruptedMessage =
 
 /** The states of research the owner sees. */
 export type ResearchViewState =
-  | 'waiting_budget'
-  | 'queued'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'unknown'
+  'waiting_budget' | 'queued' | 'running' | 'completed' | 'failed' | 'unknown'
 
 /**
  * The state of research from its AI work: waiting for budget, queued, in

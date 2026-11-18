@@ -30,7 +30,22 @@ const request: AgentRequest = {
   tools: ['web_search'],
 }
 
-const searchResponse = () => ({
+type SearchResponse = {
+  id: string
+  status: string
+  usage: { input_tokens: number; output_tokens: number }
+  output: {
+    type: string
+    status?: string
+    action?: { type: string; url?: string }
+    content?: {
+      type: string
+      text: string
+      annotations: Record<string, unknown>[]
+    }[]
+  }[]
+}
+const searchResponse = (): SearchResponse => ({
   id: 'search-id',
   status: 'completed',
   usage: { input_tokens: 100, output_tokens: 50 },
@@ -39,7 +54,7 @@ const searchResponse = () => ({
       type: 'web_search_call',
       status: 'completed',
       action: { type: 'search' },
-    } as Record<string, unknown>,
+    },
     {
       type: 'message',
       content: [
@@ -54,7 +69,7 @@ const searchResponse = () => ({
               start_index: 0,
               end_index: 17,
             },
-          ] as Record<string, unknown>[],
+          ],
         },
       ],
     },
@@ -159,15 +174,10 @@ describe('the OpenAI agent: search, then synthesis from cited materials', () => 
   })
 
   it('saves each step as sent before sending it', async () => {
-    const states: string[][] = []
-    const fetcher = vi.fn<typeof fetch>(async () => {
-      states.push([])
-      return Response.json(
-        fetcher.mock.calls.length === 1
-          ? searchResponse()
-          : synthesisResponse(),
-      )
-    })
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(searchResponse()))
+      .mockResolvedValueOnce(Response.json(synthesisResponse()))
     const { saved } = await run(fetcher)
     const statuses = saved.map((s) =>
       (s as { steps: { status: string }[] }).steps.map((step) => step.status),

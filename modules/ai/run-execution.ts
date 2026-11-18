@@ -131,7 +131,7 @@ export function responseOutcome(
  * Runs agent work through its adapter once. The adapter saves its own
  * state as it goes, and decides the end of work that gave no response;
  * an error it throws is translated like that of a single call, and the
- * cost then stays unknown.
+ * cost then stays unknown. ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
  */
 async function callAgent(
   execution: ExecutionRow,
@@ -287,6 +287,7 @@ export function settlementOf(
   const pricing = execution.snapshot.settings.pricing
   const { inputTokens, outputTokens } = outcome.usage
   // Calls of a paid tool count only under a price list that has one.
+  // ASSUMPTION(oferty-pracy-0mq.22/ASM-4)
   const toolCalls = pricing?.toolCallUsd
     ? outcome.usage.toolCalls === undefined
       ? 0
@@ -348,7 +349,10 @@ async function retry(
   })
 }
 
-/** The materials agent work gathered, read by the adapter that saved them. */
+/**
+ * The materials agent work gathered, read by the adapter that saved them.
+ * ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
+ */
 function materialsOf(execution: ExecutionRow): AgentMaterial[] {
   const settings = execution.snapshot.settings
   const agent = adapterOfExecution(settings.provider)?.modes.agent

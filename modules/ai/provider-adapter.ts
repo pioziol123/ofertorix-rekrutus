@@ -9,7 +9,10 @@ export type ModelRequest = {
 export type ModelUsage = {
   inputTokens: number | null
   outputTokens: number | null
-  /** Calls of a paid tool (agent mode); absent when none was used. */
+  /**
+   * Calls of a paid tool (agent mode); absent when none was used.
+   * ASSUMPTION(oferty-pracy-0mq.22/ASM-4)
+   */
   toolCalls?: number | null
 }
 export type ModelResult = {
@@ -129,6 +132,8 @@ export type RequestContext = {
   ) => Promise<void>
 }
 
+// ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the agent mode below: its request,
+// its materials and its runner, which keeps them in its own state.
 /** A source an agent's tool opened or found, cited by a material. */
 export type AgentSource = {
   url: string

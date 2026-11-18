@@ -47,7 +47,8 @@ export function executionSettings(
     runtime: model.local ?? null,
     pricing,
   }
-  // An agent runs its steps only under settings that fit them.
+  // An agent runs its steps only under settings that fit them, with the
+  // tool calls of the price list. ASSUMPTION(oferty-pracy-0mq.22/ASM-4)
   if (
     mode === 'agent' &&
     !providerAdapter(settings.provider)?.modes.agent?.(resolvedSettings).fits()

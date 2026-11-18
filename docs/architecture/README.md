@@ -31,7 +31,7 @@ flowchart LR
   class Owner,Boards,OpenAI,Ollama external
 ```
 
-The shared portal boundary covers SOLID.Jobs, Bulldogjob, theprotocol.it, Just Join IT, No Fluff Jobs, the portals handled by JobSpy and the separate Himalayas pilot. The import scope depends on the adapter; every source is requested through one operation to one queue. Basic research uses web search through OpenAI. The result goes to the company profile with its sources. [JobSpy catalogue](../../lib/sources/jobspy-catalog.ts) · [Polish sources catalogue](../../lib/sources/polish-catalog.ts) · [Himalayas pilot](../../scripts/himalayas-sync.ts) · [Research provider](../../lib/companies/research-provider.ts)
+The shared portal boundary covers SOLID.Jobs, Bulldogjob, theprotocol.it, Just Join IT, No Fluff Jobs, the portals handled by JobSpy and the separate Himalayas pilot. The import scope depends on the adapter; every source is requested through one operation to one queue. Basic research uses web search through OpenAI. The result goes to the company profile with its sources. [JobSpy catalogue](../../lib/sources/jobspy-catalog.ts) · [Polish sources catalogue](../../lib/sources/polish-catalog.ts) · [Himalayas pilot](../../scripts/himalayas-sync.ts) · [Research agent](../../modules/ai/infrastructure/adapters/openai-agent.ts)
 
 <a id="c2-kontenery"></a>
 
@@ -138,7 +138,7 @@ flowchart TB
     Parse["CV extraction<br/>[pdfjs-dist / mammoth]<br/>Reads text from PDF or DOCX"]
     Profile["Profile proposal<br/>[TypeScript]<br/>Prepares and validates professional data"]
     Matching["Match assessments<br/>[TypeScript]<br/>Requests single and group assessments from AI, publishes assessments"]
-    Research["Basic research<br/>[TypeScript]<br/>Collects sources and synthesises the report"]
+    Research["Basic research<br/>[TypeScript]<br/>Requests research from AI as agent work, validates and publishes the report"]
   end
 
   Runtime -->|"Receives jobs and saves the heartbeat"| DB
@@ -146,18 +146,18 @@ flowchart TB
   Runtime -->|"Passes the CV import ID"| Parse
   Runtime -->|"Passes the AI attempt ID"| Profile
   Runtime -->|"Delivers the AI outcome of an assessment"| Matching
-  Runtime -->|"Passes the research operation ID"| Research
+  Runtime -->|"Delivers the AI outcome of a research"| Research
   Import -->|"Fetches ads over HTTP(S)"| Boards
   Import -->|"Saves ads, revisions and statuses"| DB
   Parse -->|"Reads the CV original"| Files
   Parse -->|"Saves the text and the extraction status"| DB
   Profile -->|"Saves the proposal and the attempt state"| DB
   Matching -->|"Saves assessments and history"| DB
-  Research -->|"Saves the report version and the attempt state"| DB
+  Research -->|"Saves the report version or its message"| DB
   Profile -.->|"Generates a proposal through the Responses API"| OpenAI
   Profile -.->|"Generates a proposal through the Ollama API"| Ollama
   Matching -.->|"Through the AI module: single calls, and batches through the Files / Batch API"| OpenAI
-  Research -.->|"Searches for sources and synthesises the report through the Responses API"| OpenAI
+  Research -.->|"Through the AI module: web search and synthesis through the Responses API"| OpenAI
 
   classDef internal fill:#dbeafe,stroke:#2563eb,color:#172554
   classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
@@ -171,8 +171,8 @@ flowchart TB
 | Ad import | [Sync request](../../modules/sources/request-sync.ts), [sync queue handler](../../modules/sources/infrastructure/worker/sync-queue.ts), [shared run executor](../../modules/sources/execute-sync-run.ts), [ad and revision storage](../../modules/sources/infrastructure/persistence/source-ads.ts). |
 | CV extraction | [`extractImport`](../../lib/profile/imports.ts) handles `profile-parse`. |
 | Match assessments | The [single request](../../lib/matching/store.ts) and the [group](../../lib/matching/groups.ts) request AI work through [Matching's AI integration](../../modules/matching/infrastructure/adapters/assessment-ai.ts); its [receiver](../../modules/matching/receive-assessment.ts) publishes or rejects each result. Groups run as provider batches in the AI module's [OpenAI Batch adapter](../../modules/ai/infrastructure/adapters/openai-batch.ts), which keeps the batch archive. |
-| Basic research | [`executeCompanyResearch`](../../lib/companies/research.ts) runs `company-research` and uses the [OpenAI provider](../../lib/companies/research-provider.ts). |
-| General AI executions | [`runExecution`](../../modules/ai/run-execution.ts) handles `ai-execution` for clients of the [AI module](../../modules/ai/README.md) contract, today the Profile's proposal preparation on the paid and the local path and Matching's assessments. [`recoverExecutions`](../../modules/ai/recover-executions.ts) runs at start and in the schedule cycle. |
+| Basic research | The [research request](../../modules/companies/request-research.ts) requests agent work through [Companies' AI integration](../../modules/companies/infrastructure/adapters/research-ai.ts); its [receiver](../../modules/companies/receive-research.ts) validates and publishes or rejects each report. The search and synthesis run in the AI module's [OpenAI agent adapter](../../modules/ai/infrastructure/adapters/openai-agent.ts). |
+| General AI executions | [`runExecution`](../../modules/ai/run-execution.ts) handles `ai-execution` for clients of the [AI module](../../modules/ai/README.md) contract, today the Profile's proposal preparation on the paid and the local path, Matching's assessments and Companies' research. [`recoverExecutions`](../../modules/ai/recover-executions.ts) runs at start and in the schedule cycle. |
 
 <a id="c4-kod-przygotowanie-propozycji-profilu"></a>
 

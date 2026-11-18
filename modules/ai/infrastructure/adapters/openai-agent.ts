@@ -18,6 +18,10 @@ import type { ExecutionEnd } from '../../domain/execution-state.ts'
  * cites a safe URL. The second writes the result in the response schema
  * from those materials. Each call is sent once and never again; the step
  * log is saved before a call is sent and after its response.
+ * ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the materials kept in the
+ * adapter's state, and the input of the synthesis.
+ * ASSUMPTION(oferty-pracy-0mq.22/ASM-4): the usage with its search calls,
+ * and the settings the agent fits.
  */
 
 const responseSchema = z
