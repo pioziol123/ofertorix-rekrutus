@@ -746,6 +746,7 @@ Delivered as tasks 0mq.21 ([requirements](requirements.md#a17m)) and 0mq.22 ([re
   - Results per item reach the receiver independently; a result out of order reaches the right item.
   - An uncertain state after a batch is sent blocks the automatic creation of the next paid batch.
   - The batch diagnostic archive is saved by the adapter. The existing archive table passes to AI ownership without a schema change, and the archive view reads it through a public AI read.
+  - A single or manual assessment keeps a diagnostic archive too (decision 5): the single adapter saves the exact request body and the raw provider response as input and output artefacts under the execution's archive identifier, in the same archive table. The client asks for the archive per request; only Matching's assessments ask for it, so Profile executions are not archived.
 - **Company research:**
   - The existing research provider (web search and synthesis in OpenAI) moves to AI as an agent-mode adapter. It reports the usage and cost of each step separately, so a synthesis error does not reset the search cost to zero.
   - Companies prepare the research goal and are the result receiver: they validate the sources, quotes and coverage, and publish or reject the report. Reusing an existing report and an explicit refresh stay in Companies.
@@ -767,6 +768,10 @@ Delivered as tasks 0mq.21 ([requirements](requirements.md#a17m)) and 0mq.22 ([re
 4. **Adapter state lives in AI.** The AI executions table gets an adapter-state column (structured data, readable only by the adapter that wrote it). The batch adapter keeps there the provider batch, its files, the provider status and whether it was cleaned up; the research adapter keeps the step log. Coordination stores the column and does not read it. This follows the architecture rule that interchangeable executors keep their state in the AI module.
 
    Options discarded: keeping the batch state in Matching's tables written by the AI adapter (AI would write Matching's data, against A17-R03); reusing the attempt identifier columns for executions (changes the meaning of stored data and still loses the history).
+
+5. **Single assessments keep their diagnostic archive.** Before the change every assessment was archived as a batch, and the owner opens its exact input and provider output from the history link. A single-mode execution of Matching keeps that archive (requirements F4: working safeguards are not removed). Archiving is requested per request, so clients that do not ask, such as the Profile, are not archived.
+
+   Options discarded: no archive for single assessments with the history link hidden (owner, 2026-11-18: it removes a safeguard the owner uses).
 
 <a id="a17-migration"></a>
 
