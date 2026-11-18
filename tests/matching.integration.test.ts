@@ -323,11 +323,14 @@ integration(
         provider = new Provider()
       expect((await row(request.id)).state).toBe('waiting_budget')
       await pool.query('UPDATE ai_budget_months SET limit_pln=1')
+      provider.status = 'in_progress'
+      // A run that reads the request after the other funded it may go on to
+      // send it; either way it is funded and sent once.
       await Promise.all([
         executeMatching(boss, request.id, provider),
         executeMatching(boss, request.id, provider),
       ])
-      expect((await row(request.id)).state).toBe('queued')
+      expect(['queued', 'submitted']).toContain((await row(request.id)).state)
       expect(
         (
           await pool.query(
@@ -336,7 +339,6 @@ integration(
         ).rows[0].n,
       ).toBe(1)
       expect(send).toHaveBeenCalledOnce()
-      provider.status = 'in_progress'
       await executeMatching(boss, request.id, provider)
       expect((await row(request.id)).state).toBe('submitted')
       provider.status = 'completed'
