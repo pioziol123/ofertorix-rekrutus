@@ -435,7 +435,7 @@ The Profile requests preparing a proposal from a CV through the AI contract and 
 | A9-AC05 | Criteria E02-AC01–04 are met. | Tests named in the stage 2 SD |
 | A9-AC06 | The Profile does not use the AI module's data and internals outside its contract. | Code review |
 | A9-AC07 | The AI module description meets A9-R06. | Documentation review |
-| A9-AC08 | The message for each public state and cause is the same on the paid and the local path, and an uncertain end shows the message of A9-R07; the Profile code reads no `runtimeState`, unconfirmed-cost flag or path of the execution. | Automated test and code review |
+| A9-AC08 | The message for each public state and cause is the same on the paid and the local path, and an uncertain end shows the message of A9-R07; the Profile code reads no `runtimeState`, unconfirmed-cost flag or path of the execution. | Automated test and code review | <!-- altitude-ok: names the internal execution field the Profile must not read -->
 
 <a id="a11"></a>
 
