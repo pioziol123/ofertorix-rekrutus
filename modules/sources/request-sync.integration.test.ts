@@ -442,6 +442,38 @@ integration('shared sync requesting and queue (0mq.16)', () => {
     )
   }, 30_000)
 
+  it('keeps a pending run queued, using no attempt, while a run of its scope still runs after its job failed, then executes it (F2-07, 0mq.16 ASM-3)', async () => {
+    const connectors = registry(simulated('sim-a'))
+    const a = await requestSync({ source: 'sim-a' }, { connectors })
+    const aJob = (await readRun(a.id))!.jobId!
+    await startRun(a.id, { jobId: aJob, attempt: 0 })
+    // A's job used up its attempts; recovery has not ended A yet.
+    await admin.query(
+      `UPDATE ${queueSchema}.job SET state='failed' WHERE id=$1`,
+      [aJob],
+    )
+    const b = await requestSync({ source: 'sim-a' }, { connectors })
+    expect(b.existing).toBe(false)
+    const bJob = (await readRun(b.id))!.jobId!
+    await startWorker(connectors)
+
+    await new Promise((resolve) => setTimeout(resolve, 4000))
+    expect((await readRun(b.id))!.status).toBe('queued')
+    const { rows } = await admin.query(
+      `SELECT state, retry_count FROM ${queueSchema}.job WHERE id=$1`,
+      [bJob],
+    )
+    expect(rows[0]).toEqual({ state: 'active', retry_count: 0 })
+
+    await recoverSyncRuns()
+    expect((await readRun(a.id))!.status).toBe('failed')
+    expect(await waitForSyncRun(b.id, { intervalMs: 100 })).toMatchObject({
+      status: 'complete',
+      jobId: bJob,
+      attempt: 0,
+    })
+  }, 30_000)
+
   it('ends a run pending in a per-source queue of before 0mq.16 with a message about the interruption (A16-AC09)', async () => {
     const legacyQueue = 'source-solid-jobs'
     await boss.createQueue(legacyQueue)

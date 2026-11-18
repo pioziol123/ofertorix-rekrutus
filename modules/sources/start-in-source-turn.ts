@@ -22,7 +22,9 @@ import { readRun, startRun, type SyncRun } from './sync-run-state.ts'
  * aborted signal ends the wait with an error. A run ahead whose job is not
  * active (waiting for a retry, ended) does not hold the turn: the queue
  * keeps its job out until this one ends, and recovery ends a run without
- * work.
+ * work. Only a running run of the same scope, which the database lets run
+ * once per scope, makes the attempt wait whatever its job's state, until
+ * recovery ends it.
  *
  * ASSUMPTION(oferty-pracy-0mq.16/ASM-3): this second guard next to the
  * queue's group limit exists because that limit is not strict for
@@ -44,6 +46,13 @@ export async function startInSourceTurn(
         if (job?.state === 'active') return 'wait'
       }
       return { run: await startRun(work.runId, work) }
+    }).catch((error: unknown) => {
+      // ASSUMPTION(oferty-pracy-0mq.16/ASM-3): another run of the same
+      // scope is still running, though its job no longer is (its attempts
+      // are used up and recovery has not ended it yet). The run stays
+      // queued: "not yet", not a failed attempt (0mq.3, Start).
+      if ((error as { code?: unknown }).code === '23505') return 'wait' as const
+      throw error
     })
     if (turn !== 'wait') return turn.run
     await delay(pauseMs, undefined, { signal: work.signal })
