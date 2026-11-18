@@ -36,11 +36,23 @@ ALTER TABLE ai_executions ADD COLUMN end_state text
 
 WITH legacy AS (
  SELECT e.id, a.text_revision, a.proposal, e.error_code, e.result_status,
+  -- The former local path recorded every result the Profile could not use
+  -- as invalid_proposal; its message, saved once with the attempt, tells
+  -- the model's own failures apart from the Profile's rejection.
+  CASE
+   WHEN e.error_code<>'invalid_proposal' THEN NULL
+   WHEN a.error LIKE '%cytatów%' THEN 'unconfirmed_quote'
+   WHEN a.error LIKE '%odmówiło%' THEN 'refused'
+   WHEN a.error LIKE '%nie ukończyło%' THEN 'incomplete'
+   WHEN a.error LIKE '%jednej kompletnej%' THEN 'no_content'
+   WHEN a.error LIKE '%format danych%' THEN 'format'
+   ELSE 'unknown'
+  END AS proposal_failure,
   e.disposition='superseded' AS superseded,
   CASE
    WHEN e.disposition='superseded' THEN 'retried'
    WHEN e.result_status='completed' THEN 'completed'
-   WHEN e.result_status='failed' AND e.error_code='invalid_proposal' THEN 'rejected'
+   WHEN e.result_status='failed' AND e.error_code='invalid_proposal' AND a.error LIKE '%cytatów%' THEN 'rejected'
    WHEN e.runtime_state IN ('running','unknown') THEN 'uncertain'
    WHEN e.result_status IS NULL THEN 'retried'
    ELSE 'failed'
@@ -56,9 +68,11 @@ UPDATE ai_executions e SET
  cause=CASE
   WHEN l.new_state IN ('completed','rejected') OR l.superseded THEN NULL
   WHEN l.result_status IS NULL THEN 'interrupted'
+  WHEN l.proposal_failure IS NOT NULL THEN l.proposal_failure
   WHEN l.error_code IN ('configuration','network','http','format','aborted','model_unavailable','context_overflow') THEN l.error_code
   ELSE 'unknown'
  END,
+ rejection_reason=CASE WHEN l.new_state='rejected' THEN l.proposal_failure END,
  finished_at=coalesce(e.finished_at,now())
 FROM legacy l WHERE l.id=e.id;
 

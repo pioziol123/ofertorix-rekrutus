@@ -270,7 +270,7 @@ integration('local profile executions in PostgreSQL', () => {
       error: uncertain,
     })
   })
-  it('A9-AC03: ends a run whose lease lapsed as uncertain, keeps the slot and does not publish its late result', async () => {
+  it('A9-AC03: ends a run whose lease lapsed as uncertain, keeps the slot while the process runs and does not publish its late result', async () => {
     const task = await enqueue()
     const entered = Promise.withResolvers<undefined>()
     const reply = Promise.withResolvers<Response>()
@@ -313,9 +313,13 @@ integration('local profile executions in PostgreSQL', () => {
         )
       ).rows[0]?.count,
     ).toBe(1)
-    expect((await execution(task.executionId)).state).toBe('uncertain')
-    // The uncertain end keeps the slot even after the late response.
-    expect(await slotHolder()).toBe(task.executionId)
+    // The execution stays uncertain; the process confirmed its end, so the
+    // slot is free again, as before.
+    expect(await execution(task.executionId)).toMatchObject({
+      state: 'uncertain',
+      runtime_state: 'finished',
+    })
+    expect(await slotHolder()).toBeNull()
   })
   it('A9-AC03: ends a run whose process ended after its lease lapsed as interrupted, releases the slot and does not publish the result', async () => {
     const task = await enqueue()
@@ -336,7 +340,8 @@ integration('local profile executions in PostgreSQL', () => {
     expect(await imported(task.importId)).toMatchObject({
       status: 'needs_attention',
       proposal: null,
-      error: expect.stringContaining('Przerwano przygotowanie propozycji'),
+      error:
+        'Worker utracił prawo do publikacji. Odpowiedź pozostała w historii.',
     })
   })
 })

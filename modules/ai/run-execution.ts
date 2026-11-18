@@ -148,10 +148,11 @@ async function callProvider(
 /**
  * Runs the call while holding the shared local slot: the lease is renewed
  * during the call, and afterwards the slot is released unless the adapter
- * judged the end uncertain or recovery already ended the execution as
- * uncertain. An outcome reached after the lease lapsed is not used: the
- * adapter decides what the lost lease means, knowing whether the process
- * ended and released the slot.
+ * judged the end uncertain. An outcome reached after the lease lapsed is
+ * not used: the adapter decides what the lost lease means, knowing whether
+ * the process ended and released the slot. An execution recovery already
+ * ended as uncertain keeps that state; its slot is released once its
+ * process confirms its end.
  */
 async function callOnSlot(
   execution: ExecutionRow,

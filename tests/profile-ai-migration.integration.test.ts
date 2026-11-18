@@ -43,6 +43,7 @@ integration('migration of the profile AI rows', () => {
     localDone: randomUUID(),
     localLost: randomUUID(),
     localRejected: randomUUID(),
+    localRefused: randomUUID(),
     localQueued: randomUUID(),
   }
   const imports = Object.fromEntries(
@@ -86,6 +87,7 @@ integration('migration of the profile AI rows', () => {
       error_code: string | null
       runtime_state: string
       attempt: string
+      error?: string
     },
     proposalValue: unknown = null,
   ) {
@@ -102,8 +104,8 @@ integration('migration of the profile AI rows', () => {
       ],
     )
     await pool.query(
-      `INSERT INTO ai_attempts(id,import_id,text_revision,month,attempt,generation,state,reserved_pln,actual_pln,configuration,execution_id,proposal)
-       VALUES($1,$2,1,NULL,1,$3,$4,0,0,'{}',$5,$6)`,
+      `INSERT INTO ai_attempts(id,import_id,text_revision,month,attempt,generation,state,reserved_pln,actual_pln,configuration,execution_id,proposal,error)
+       VALUES($1,$2,1,NULL,1,$3,$4,0,0,'{}',$5,$6,$7)`,
       [
         randomUUID(),
         importId,
@@ -111,6 +113,7 @@ integration('migration of the profile AI rows', () => {
         columns.attempt,
         id,
         proposalValue,
+        columns.error ?? null,
       ],
     )
     await pool.query(
@@ -178,6 +181,16 @@ integration('migration of the profile AI rows', () => {
       error_code: 'invalid_proposal',
       runtime_state: 'finished',
       attempt: 'settled',
+      error:
+        'Nie udało się potwierdzić cytatów AI w tekście CV. Profil pozostaje bez zmian.',
+    })
+    await localExecution(ids.localRefused, imports.localRefused, {
+      result_status: 'failed',
+      error_code: 'invalid_proposal',
+      runtime_state: 'finished',
+      attempt: 'settled',
+      error:
+        'AI odmówiło przygotowania propozycji. Sprawdź tekst zawodowy. Profil pozostaje bez zmian.',
     })
     await localExecution(ids.localQueued, imports.localQueued, {
       result_status: null,
@@ -257,9 +270,17 @@ integration('migration of the profile AI rows', () => {
       state: 'uncertain',
       cause: 'network',
     })
+    // Only the Profile's own rejection is a rejected result; a model's
+    // failure that the former path recorded the same way is a failure.
     expect(await latest('localRejected')).toMatchObject({
       state: 'rejected',
       cause: null,
+      rejectionReason: 'unconfirmed_quote',
+    })
+    expect(await latest('localRefused')).toMatchObject({
+      state: 'failed',
+      cause: 'refused',
+      rejectionReason: null,
     })
     expect(
       (

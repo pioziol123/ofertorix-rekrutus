@@ -24,8 +24,9 @@ const failureMessages: Record<ExecutionCause, string> = {
     'AI nie zwróciło jednej kompletnej propozycji. Profil pozostaje bez zmian.',
   format:
     'Odpowiedź AI ma nieprawidłowy format danych. Profil pozostaje bez zmian.',
+  // The existing message of a run that ended after it lost its lease.
   interrupted:
-    'Przerwano przygotowanie propozycji. Profil pozostaje bez zmian. Przygotuj propozycję ponownie.',
+    'Worker utracił prawo do publikacji. Odpowiedź pozostała w historii.',
   configuration: unavailable,
   network: unavailable,
   http: unavailable,

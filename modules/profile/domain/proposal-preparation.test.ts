@@ -22,10 +22,11 @@ describe('A9-AC08: the message follows the public state and cause only', () => {
     for (const cause of executionCauses)
       expect(preparationMessage({ state: 'uncertain', cause })).toBe(a9r07)
   })
-  it('gives every failure cause a message that names no path and leaves the profile unchanged', () => {
+  it('gives every failure cause a message that names no path', () => {
     for (const cause of executionCauses) {
       const message = preparationMessage({ state: 'failed', cause })
-      expect(message).toContain('Profil pozostaje bez zmian')
+      if (cause !== 'interrupted')
+        expect(message).toContain('Profil pozostaje bez zmian')
       expect(message).not.toMatch(/lokaln|płatn|koszt|OpenAI|Ollam/i)
       expect(message).not.toBe(a9r07)
     }
@@ -35,6 +36,7 @@ describe('A9-AC08: the message follows the public state and cause only', () => {
     ['incomplete', 'nie ukończyło'],
     ['no_content', 'jednej kompletnej'],
     ['format', 'format danych'],
+    ['interrupted', 'Worker utracił prawo do publikacji'],
   ] as const)('keeps the existing message for %s', (cause, message) => {
     expect(preparationMessage({ state: 'failed', cause })).toContain(message)
   })
