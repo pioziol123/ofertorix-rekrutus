@@ -3,10 +3,12 @@
  * Contract: docs/agents/implementation-workflow.md (section "Spec conflicts during implementation").
  */
 
-export const MAX_DEVIATIONS_PER_TASK = 2
-export const MAX_OPEN_FOLLOWUPS_PER_EPIC = 3
+// Limits of AUT-R07 (solution design of oferty-pracy-5yd, D8). Nothing limits the number of
+// files a deviation changes; every place of interim code carries its marker instead.
+export const MAX_DEVIATIONS_PER_TASK = 3
+export const MAX_OPEN_FOLLOWUPS_PER_EPIC = 6
 /** Other open tasks of the epic a deviation may reach; they become blocked by its follow-up. */
-export const MAX_DEPENDANTS = 2
+export const MAX_DEPENDANTS = 4
 
 export interface Issue {
   id: string
@@ -27,6 +29,10 @@ export interface Assumption {
   requirements: string[]
   gap: string
   decision: string
+  /** What the decision rests on: documents, architecture rules, glossary, ADRs, confirmed assumptions, code (AUT-R01). */
+  sources: string[]
+  /** The part of the epic's PRD the assumption serves (AUT-R02). */
+  prd: string
   rule: string
   if_reversed: string
 }
@@ -77,6 +83,9 @@ export function resultShapeProblems(result: AgentResult): string[] {
   }
   for (const a of Array.isArray(result.assumptions) ? result.assumptions : []) {
     if (typeof a?.id !== 'string' || !strings(a.requirements)) problems.push('each assumption needs an id and a requirements list')
+    else if (!strings(a.sources) || !a.sources.length || typeof a.prd !== 'string' || !a.prd.trim()) {
+      problems.push(`assumption ${a.id} needs a sources list naming what it rests on and a prd naming the part of the PRD it serves`)
+    }
   }
   for (const d of Array.isArray(result.deviations) ? result.deviations : []) {
     if (typeof d?.id !== 'string' || !strings(d.requirements) || !strings(d.deferred_acs)) {
@@ -88,6 +97,16 @@ export function resultShapeProblems(result: AgentResult): string[] {
 
 export function marker(taskId: string, deviationId: string): string {
   return `FOLLOW-UP(${taskId}/${deviationId})`
+}
+
+/** The comment at each place of the code that relies on an assumption (AUT-R08, D7). */
+export function assumptionMarker(taskId: string, assumptionId: string): string {
+  return `ASSUMPTION(${taskId}/${assumptionId})`
+}
+
+/** An issue the runner filed for one assumption of a delivered task (D6). Open means unconfirmed. */
+export function isAssumption(issue: Issue): boolean {
+  return issue.metadata?.type === 'assumption'
 }
 
 export function isFollowUp(issue: Issue): boolean {
@@ -181,7 +200,7 @@ export interface DeviationContext {
   hasMarker: (text: string) => boolean
 }
 
-/** Deterministic checks of a done result's deviations and evidence. Returns the problems found. */
+/** Deterministic checks of a done result's deviations, assumption markers and evidence. Returns the problems found. */
 export function deviationProblems(result: AgentResult, ctx: DeviationContext): string[] {
   const problems: string[] = []
   const deviations = result.deviations ?? []
@@ -218,6 +237,17 @@ export function deviationProblems(result: AgentResult, ctx: DeviationContext): s
     const reach = dependants(d, ctx.taskId, ctx.siblings, sharedCriteria(ctx.epic))
     if (reach.length > MAX_DEPENDANTS) {
       problems.push(`Deviation ${name}: ${reach.length} other open tasks mention its IDs (${reach.join(', ')}); at most ${MAX_DEPENDANTS} may wait for it. Finish as blocked.`)
+    }
+  }
+
+  const assumptionIds = new Set<string>()
+  for (const a of result.assumptions ?? []) {
+    const name = a.id || '(no id)'
+    if (!a.id || assumptionIds.has(a.id)) problems.push(`Assumption ${name}: needs a unique id.`)
+    assumptionIds.add(a.id)
+    const tag = assumptionMarker(ctx.taskId, a.id)
+    if (!ctx.hasMarker(tag)) {
+      problems.push(`Assumption ${name}: marker ${tag} is not added by the task's own change; put it in a comment at each place of the code that relies on the assumption.`)
     }
   }
 

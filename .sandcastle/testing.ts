@@ -43,6 +43,8 @@ export class FakeDb implements TaskDb {
   comments: Comment[] = []
   closed: { id: string; reason: string }[] = []
   claims: string[] = []
+  /** discovered-from links of created issues: the new issue's id to the issue it came from. */
+  discoveredFrom = new Map<string, string>()
   /** Tasks another run claims first: they still look ready, but the conditional claim fails. */
   lostClaims = new Set<string>()
   private next = 1
@@ -71,7 +73,9 @@ export class FakeDb implements TaskDb {
   show = (id: string) => structuredClone(this.get(id))
   epics = () => [...this.issues.values()].filter((i) => i.issue_type === 'epic')
   listUnder = (epicId: string) => [...this.issues.values()].filter((i) => i.parent === epicId)
-  assumptionTasks = () => []
+  openAssumptions = (scope: string) => [...this.issues.values()]
+    .filter((i) => i.metadata?.type === 'assumption' && i.metadata.epic === scope && i.status !== 'closed')
+    .map((i) => structuredClone(i))
   claim = (id: string) => {
     if (this.lostClaims.has(id) || this.get(id).assignee) return false
     this.claims.push(id)
@@ -94,7 +98,11 @@ export class FakeDb implements TaskDb {
   }
   create = (issue: NewIssue) => {
     const id = `new-${this.next++}`
-    this.add({ id, title: issue.title, labels: issue.labels })
+    this.add({
+      id, title: issue.title, description: issue.description, labels: issue.labels,
+      ...(issue.metadata ? { metadata: issue.metadata } : {}), parent: issue.parent ?? null,
+    })
+    this.discoveredFrom.set(id, issue.discoveredFrom)
     return id
   }
   addDependency = () => {}
@@ -133,7 +141,7 @@ export class FakeSandboxes implements Sandboxes {
   gateExits: number[] = [0]
   /** Overrides gateExits: the gate's exit code from the kind of sandbox and its worktree. */
   gate?: (kind: 'warm' | 'fresh', worktree: string) => number
-  verdict: 'pass' | 'fail' = 'pass'
+  verdict: 'pass' | 'pass-with-deferral' | 'fail' = 'pass'
   /** Findings the stand-in reviewer reports with its verdict. */
   findings: unknown[] = []
   gateCalls = 0

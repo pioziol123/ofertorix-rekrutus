@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   type AgentResult,
+  type Assumption,
   type Deviation,
   type Issue,
   bearingAssumptions,
@@ -30,6 +31,10 @@ function deviation(overrides: Partial<Deviation> = {}): Deviation {
     description: 'Full description',
     ...overrides,
   }
+}
+
+function assumption(id: string): Assumption {
+  return { id, requirements: ['T1-AC01'], gap: 'g', decision: 'd', sources: ['requirements T1-R01'], prd: 'Goal', rule: 'existing behaviour', if_reversed: 'r' }
 }
 
 function result(deviations: Deviation[], evidence = ['T1-AC01', 'W-AC01']): AgentResult {
@@ -74,18 +79,28 @@ describe('deviationProblems', () => {
     assert.match(check(result([], ['T1-AC01']))[0]!, /T1-AC05, W-AC01/)
   })
 
-  it('rejects more than two deviations per task', () => {
-    const three = ['DEV-1', 'DEV-2', 'DEV-3'].map((id) => deviation({ id, deferred_acs: [] }))
-    assert.ok(check(result(three, ['T1-AC01', 'T1-AC05', 'W-AC01'])).some((p) => p.includes('at most 2')))
+  it('AUT-AC03: accepts three deviations per task and rejects a fourth', () => {
+    const devs = (n: number) => ['DEV-1', 'DEV-2', 'DEV-3', 'DEV-4'].slice(0, n).map((id) => deviation({ id, deferred_acs: [] }))
+    const evidence = ['T1-AC01', 'T1-AC05', 'W-AC01']
+    assert.deepEqual(check(result(devs(3), evidence)), [])
+    assert.ok(check(result(devs(4), evidence)).some((p) => p.includes('4 deviations; a task may defer at most 3')))
   })
 
-  it('rejects a deviation past the epic limit of open follow-ups', () => {
-    const open = ['a', 'b', 'c'].map((id) => task(id, { metadata: { type: 'follow-up' }, labels: ['needs-info'] }))
-    assert.ok(check(result([deviation()]), open).some((p) => p.includes('limit of 3')))
+  it('AUT-AC03: the epic limit is six open follow-ups', () => {
+    const open = (n: number) => Array.from({ length: n }, (_, i) => task(`f${i}`, { metadata: { type: 'follow-up' }, labels: ['needs-info'] }))
+    assert.deepEqual(check(result([deviation()]), open(5)), [])
+    assert.ok(check(result([deviation()]), open(6)).some((p) => p.includes('limit of 6')))
+  })
+
+  it('AUT-AC04: does not count the files of the interim code; a marker at every place passes', () => {
+    // The stand-in diff adds the marker in five files; nothing limits how many files a deviation spans.
+    const diff = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts'].map((f) => `+++ b/${f}\n+// FOLLOW-UP(${TASK}/DEV-1) interim`).join('\n')
+    const hasMarker = (text: string) => diff.split('\n').some((line) => line.startsWith('+') && line.includes(text))
+    assert.deepEqual(check(result([deviation()]), [], { hasMarker }), [])
   })
 
   it('ignores closed follow-ups in the epic limit', () => {
-    const closed = ['a', 'b', 'c'].map((id) => task(id, { metadata: { type: 'follow-up' }, status: 'closed' }))
+    const closed = Array.from({ length: 6 }, (_, i) => task(`f${i}`, { metadata: { type: 'follow-up' }, status: 'closed' }))
     assert.deepEqual(check(result([deviation()]), closed), [])
   })
 
@@ -113,15 +128,34 @@ describe('deviationProblems', () => {
     assert.ok(problems.some((p) => p.includes(`FOLLOW-UP(${TASK}/DEV-1)`)))
   })
 
-  it('rejects a deviation more than two other open tasks depend on', () => {
-    const siblings = ['x', 'y', 'z'].map((id) => task(id, { acceptance_criteria: `${id}-AC01: uses R2-01 status` }))
-    assert.ok(check(result([deviation()]), siblings).some((p) => p.includes('at most 2 may wait')))
+  it('rejects a deviation more than four other open tasks depend on', () => {
+    const siblings = (ids: string[]) => ids.map((id) => task(id, { acceptance_criteria: `${id}-AC01: uses R2-01 status` }))
+    assert.deepEqual(check(result([deviation()]), siblings(['v', 'w', 'x', 'y'])), [])
+    assert.ok(check(result([deviation()]), siblings(['v', 'w', 'x', 'y', 'z'])).some((p) => p.includes('at most 4 may wait')))
+  })
+
+  it('AUT-AC01: requires each assumption\'s marker in the task\'s own change', () => {
+    const withAssumption = { ...result([]), assumptions: [assumption('ASM-1'), assumption('ASM-2')] }
+    const evidence = { ...withAssumption, evidence: ['T1-AC01', 'T1-AC05', 'W-AC01'].map((ac) => ({ ac, check: 'test', result: 'passed' })) }
+    const only = (tag: string) => (text: string) => text === tag
+    const problems = check(evidence, [], { hasMarker: only(`ASSUMPTION(${TASK}/ASM-1)`) })
+    assert.deepEqual(problems.length, 1)
+    assert.match(problems[0]!, /Assumption ASM-2: marker ASSUMPTION\(oferty-pracy-abc\.1\/ASM-2\) is not added/)
+    assert.deepEqual(check(evidence), [])
   })
 })
 
 describe('resultShapeProblems', () => {
   it('accepts a complete result', () => {
     assert.deepEqual(resultShapeProblems(result([deviation()])), [])
+  })
+
+  it('requires an assumption\'s sources and the part of the PRD it serves', () => {
+    const { sources: _s, ...noSources } = assumption('ASM-1')
+    const problems = resultShapeProblems({ ...result([]), assumptions: [noSources as Assumption, { ...assumption('ASM-2'), prd: '' }] })
+    assert.equal(problems.length, 2)
+    assert.match(problems[0]!, /ASM-1 needs a sources list/)
+    assert.deepEqual(resultShapeProblems({ ...result([]), assumptions: [assumption('ASM-1')] }), [])
   })
 
   it('reports missing evidence and malformed deviations', () => {
@@ -175,7 +209,7 @@ describe('ranges in dependants and load_bearing', () => {
 describe('bearingAssumptions', () => {
   it('lists assumptions touching load-bearing IDs', () => {
     const bearing = { ...epic, metadata: { load_bearing: 'A1-AC05' } }
-    const a = (id: string, requirements: string[]) => ({ id, requirements, gap: '', decision: '', rule: '', if_reversed: '' })
+    const a = (id: string, requirements: string[]) => ({ ...assumption(id), requirements })
     assert.deepEqual(bearingAssumptions([a('ASM-1', ['F2-05']), a('ASM-2', ['F2-02', 'A1-AC05'])], bearing), [
       { id: 'ASM-2', touched: ['A1-AC05'] },
     ])

@@ -30,6 +30,8 @@ import {
   dependants,
   deviationProblems,
   epicLabelPlan,
+  assumptionMarker,
+  isAssumption,
   isFollowUp,
   isOpen,
   loadBearing,
@@ -104,10 +106,12 @@ function findingLine(finding: Finding): string {
   return `Owner finding: ${finding.text}${question}`
 }
 
-/** The epic a task belongs to and its children, read once when the task starts. */
+/** The epic a task belongs to, its children and its open assumptions, read once when the task starts. */
 export interface EpicContext {
   epic: Issue | null
   children: Issue[]
+  /** The epic's unconfirmed assumptions: its open assumption issues, which live outside the epic (D6). */
+  assumptions: Issue[]
 }
 
 export interface Runner {
@@ -243,7 +247,8 @@ export function epicBlocker(r: Runner, issue: Issue): string | null {
 
 function epicContext(r: Runner, issue: Issue): EpicContext {
   const epic = epicOf(r, issue)
-  return { epic, children: epic ? epicChildren(r, epic) : [] }
+  if (!epic) return { epic, children: [], assumptions: [] }
+  return { epic, children: epicChildren(r, epic), assumptions: r.db.openAssumptions(epic.id).filter((a) => isAssumption(a) && isOpen(a)) }
 }
 
 /**
@@ -337,17 +342,23 @@ export function returnToPreparation(r: Runner, issue: Issue, reason: string, bra
 
 // ---------- prompts ----------
 
-/** What the agents need to know about the epic's follow-ups and load-bearing requirements. */
+/** What the agents need to know about the epic's follow-ups, assumptions and load-bearing requirements. */
 function epicBrief(ctx: EpicContext): string {
-  if (!ctx.epic) return 'The task belongs to no epic: no load-bearing requirements and no open follow-ups.'
+  if (!ctx.epic) return 'The task belongs to no epic: no load-bearing requirements, no open follow-ups and no unconfirmed assumptions.'
   const followUps = ctx.children
     .filter((c) => isFollowUp(c) && isOpen(c))
     .map((c) => ({ id: c.id, title: c.title, marker: c.metadata?.marker }))
+  // AUT-R09: the issue's description holds the decision and what changes if it is reversed.
+  const assumptions = ctx.assumptions.map((a) => ({ id: a.id, marker: a.metadata?.marker, title: a.title, description: a.description }))
   return [
     `Epic: ${ctx.epic.id}. Load-bearing requirements: ${[...loadBearing(ctx.epic)].join(', ') || 'none marked'}.`,
     followUps.length
       ? `Open follow-ups of the epic; their marked code is interim, build nothing new on it:\n${JSON.stringify(followUps, null, 2)}`
       : 'The epic has no open follow-ups.',
+    // AUT-R10: later tasks follow an unconfirmed assumption or isolate what they build on it.
+    assumptions.length
+      ? `Unconfirmed assumptions of the epic; the owner may still reverse each one. Code that only uses an assumption's code follows the assumption. New behaviour built on it uses it only through the places carrying its marker, does not copy the assumed reading to new places, and marks every new place that depends on it with the same marker:\n${JSON.stringify(assumptions, null, 2)}`
+      : 'The epic has no unconfirmed assumptions.',
   ].join('\n')
 }
 
@@ -428,6 +439,15 @@ function reviewPrompt(issue: Issue, result: AgentResult, ctx: EpicContext, baseS
     'Also read the architecture rules that AGENTS.md names and check the diff against them. A design cost from their list that the diff introduces is a finding unless the solution design records it or the implementing agent recorded it as an assumption; such an assumption names the architecture rule in place of a precedence rule.',
     epicBrief(ctx),
     `The implementing agent recorded these assumptions:\n${JSON.stringify(assumptions, null, 2)}\nFor each, check that every acceptance criterion is really met, that the choice follows the precedence order, and that a test covers the edge case. An assumption that leaves a criterion unmet is a finding.`,
+    // AUT-AC06: what the reviewer checks of each assumption beyond the criteria and precedence.
+    [
+      'Also check for each assumption:',
+      '- its sources: it cites where the answer was found (the documents, the architecture rules, the glossary, the ADRs, confirmed assumptions, the code), and they say what it claims. Code is evidence of existing patterns and behaviour, not of what new behaviour is meant to be.',
+      "- its fit with the PRD: it fits the epic's goal and scope and names the part of the PRD it serves.",
+      '- a new public module contract it introduces follows an existing similar contract or contract pattern, which the assumption names; otherwise the contract needed a stop.',
+      `- its marker ${assumptionMarker(issue.id, '<assumption id>')} is in a comment at every place of the diff that relies on it, not only at one of them.`,
+      "- the diff follows the epic's unconfirmed assumptions listed above, or isolates what it builds on them: it reaches them only through the places carrying their markers, copies no assumed reading to a new place, and marks every new place that depends on one with that assumption's marker.",
+    ].join('\n'),
     bearingNote(assumptions, ctx),
     `And these deviations, each deferring part of the task to a follow-up:\n${JSON.stringify(deviations, null, 2)}\nFor each, check against the classification and qualification rules in that section: that it does not belong to an earlier step (assumption or blocked), that the interim code follows precedence and carries its marker, and that the follow-up description lets a developer with no context understand the business and technical problem, the decision needed and how to verify the target. Check that each deviation's requirement IDs cover every requirement its interim code affects, including shared rules of the epic rather than only a narrower task criterion. Also check that the diff builds nothing new on the interim code of the epic's open follow-ups.`,
     // REV-R01, REV-R02, REV-R05: the two kinds of finding. A blocked result returns before any
@@ -547,7 +567,7 @@ async function warmCheck(r: Runner, t: TaskRun): Promise<Step> {
     hasMarker: (text) => diff.split('\n').some((line) => line.startsWith('+') && line.includes(text)),
   })
   if (problems.length) {
-    return { ok: false, report: `The result's evidence and deviations fail the runner's checks (process contract, "What the runner checks"):\n- ${problems.join('\n- ')}` }
+    return { ok: false, report: `The result's evidence, deviations and assumptions fail the runner's checks (process contract, "What the runner checks"):\n- ${problems.join('\n- ')}` }
   }
 
   r.log(`${t.issue.id}: running the gate in the warm sandbox`)
@@ -876,9 +896,7 @@ function recordOutcome(r: Runner, issue: Issue, result: AgentResult, ctx: EpicCo
   const assumptions = result.assumptions ?? []
   const evidence = result.evidence.map((e) => `- ${e.ac}: ${e.check} → ${e.result}`).join('\n')
   const sections = [result.summary, `Evidence:\n${evidence}`]
-  if (assumptions.length) {
-    sections.push(`Assumptions:\n${assumptions.map((a) => `- ${a.id} (${a.requirements.join(', ')}): ${a.decision} Rule: ${a.rule}`).join('\n')}`)
-  }
+  if (assumptions.length) sections.push(`Assumptions, each filed to confirm:\n${recordAssumptions(r, issue, assumptions, ctx).join('\n')}`)
   const review = deviations.length ? 'spec review passed with deferral' : 'spec review passed'
   sections.push(`Gate passed in a fresh sandbox; ${review}.`)
 
@@ -908,7 +926,6 @@ function recordOutcome(r: Runner, issue: Issue, result: AgentResult, ctx: EpicCo
   if (filed.length) sections.push(`Known deviations in ${BASE_BRANCH}, each with a follow-up:\n${filed.join('\n')}`)
   quietly(r, `bd comment ${issue.id}`, () => r.db.comment(issue.id, sections.join('\n\n')))
 
-  if (assumptions.length) recordAssumptions(r, issue, assumptions, ctx)
   for (const scope of result.new_scope ?? result.followups ?? []) {
     quietly(r, `bd create (new scope of ${issue.id})`, () => r.db.create({
       title: scope.title, description: scope.description, labels: ['needs-triage'], discoveredFrom: issue.id,
@@ -916,30 +933,44 @@ function recordOutcome(r: Runner, issue: Issue, result: AgentResult, ctx: EpicCo
   }
 }
 
-/** Adds assumptions to the epic's open assumptions task, creating it outside the epic when missing. */
-function recordAssumptions(r: Runner, issue: Issue, assumptions: NonNullable<AgentResult['assumptions']>, ctx: EpicContext): void {
+/**
+ * Files each assumption of a delivered task as its own issue outside the epic (D6), and returns
+ * one line per assumption for the task's comment. Open means unconfirmed: the owner's agent
+ * closes it on confirmation or once the change task of a rejection is filed (AUT-R11).
+ */
+function recordAssumptions(r: Runner, issue: Issue, assumptions: NonNullable<AgentResult['assumptions']>, ctx: EpicContext): string[] {
   const scope = ctx.epic?.id ?? issue.id
   const bearing = new Map(bearingAssumptions(assumptions, ctx.epic).map((b) => [b.id, b.touched]))
-  const flag = (id: string) => (bearing.has(id) ? `\n**Load-bearing (${bearing.get(id)!.join(', ')}): the rest of the epic builds on this reading; confirm it first.**` : '')
-  const text = assumptions
-    .map((a) => `### ${issue.id} / ${a.id} (${a.requirements.join(', ')})${flag(a.id)}\nGap: ${a.gap}\nDecision: ${a.decision}\nRule: ${a.rule}\nIf decided otherwise: ${a.if_reversed}`)
-    .join('\n\n')
-  let existing: Issue[] = []
-  try {
-    existing = r.db.assumptionTasks(scope)
-  } catch (error) {
-    r.log(`${issue.id}: looking up the assumptions task failed: ${firstLine((error as Error).message)}`)
-  }
-  const open = existing.find(isOpen)
-  if (open) {
-    quietly(r, `bd comment ${open.id}`, () => r.db.comment(open.id, text))
-    return
-  }
-  const description = `Implementing agents settled these gaps in the specification of ${scope} by the precedence rule of the process contract. Confirm each one in the solution design, or turn it into a change.\n\n${text}`
-  quietly(r, `bd create (assumptions of ${scope})`, () => r.db.create({
-    title: `Potwierdzić założenia agentów dla ${scope}`, description, labels: ['needs-triage'],
-    metadata: { type: 'assumptions', epic: scope }, discoveredFrom: issue.id,
-  }))
+  return assumptions.map((a) => {
+    const tag = assumptionMarker(issue.id, a.id)
+    const touched = bearing.get(a.id)
+    const description = [
+      `An implementing agent of ${issue.id} settled a gap in the specification of ${scope} itself. Confirm it in the solution design, or reject it: then a change task covers every place of the code carrying the marker ${tag}, those of later tasks included.`,
+      touched ? `**Load-bearing (${touched.join(', ')}): the rest of the epic builds on this reading; confirm it first.**` : '',
+      `Requirements: ${a.requirements.join(', ')}`,
+      `Gap: ${a.gap}`,
+      `Decision: ${a.decision}`,
+      `Sources: ${(a.sources ?? []).join('; ')}`,
+      `PRD: ${a.prd}`,
+      `Rule: ${a.rule}`,
+      `If reversed: ${a.if_reversed}`,
+      `Marker: ${tag}`,
+    ].filter(Boolean).join('\n\n')
+    try {
+      const id = r.db.create({
+        title: `Potwierdzić założenie ${issue.id}/${a.id}`,
+        description,
+        // ASSUMPTION(oferty-pracy-5yd.5/ASM-1)
+        labels: touched ? ['needs-triage', 'load-bearing'] : ['needs-triage'],
+        metadata: { type: 'assumption', epic: scope, marker: tag },
+        discoveredFrom: issue.id,
+      })
+      return `- ${a.id} → ${id} (${a.requirements.join(', ')}): ${a.decision} Rule: ${a.rule} Marker: ${tag}`
+    } catch (error) {
+      r.log(`${issue.id}: filing assumption ${a.id} failed: ${firstLine((error as Error).message)}`)
+      return `- ${a.id}: NOT FILED (${a.requirements.join(', ')}): ${a.decision} Rule: ${a.rule} Marker: ${tag}`
+    }
+  })
 }
 
 type Start = { from: string; continuation: Continuation | null } | { wait: string }

@@ -78,8 +78,8 @@ export interface TaskDb {
   epics(): Issue[]
   /** bd list --parent <epic> --all */
   listUnder(epicId: string): Issue[]
-  /** Open and closed assumption tasks of a scope (metadata type=assumptions, epic=<scope>). */
-  assumptionTasks(scope: string): Issue[]
+  /** Open assumption issues of a scope, one per assumption (metadata type=assumption, epic=<scope>). */
+  openAssumptions(scope: string): Issue[]
   /**
    * Claims the task only when it has no assignee (a conditional write). False when
    * another run claimed it first; other failures throw.

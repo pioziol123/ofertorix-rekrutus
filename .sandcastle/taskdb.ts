@@ -28,7 +28,8 @@ export function bdTaskDb({ repo, beadsDir, assignee }: { repo: string; beadsDir:
     },
     epics: () => json<Issue[]>(['list', '--type', 'epic', '--limit', '0']),
     listUnder: (epicId) => json<Issue[]>(['list', '--parent', epicId, '--all', '--limit', '0']),
-    assumptionTasks: (scope) => json<Issue[]>(['list', '--metadata-field', 'type=assumptions', '--metadata-field', `epic=${scope}`, '--limit', '0']),
+    // Without --all, bd list leaves closed issues out: a closed assumption is confirmed or rejected.
+    openAssumptions: (scope) => json<Issue[]>(['list', '--metadata-field', 'type=assumption', '--metadata-field', `epic=${scope}`, '--limit', '0']),
     // A plain --claim succeeds again for the same assignee, so it cannot tell two runs apart.
     claim: (id) => {
       try {
