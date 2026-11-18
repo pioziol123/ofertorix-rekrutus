@@ -79,6 +79,9 @@ export async function upsertScope(
  * of the scope's run that was already running when the statement began (its
  * snapshot): that run cannot have blocked the insert, since the blocker was
  * queued.
+ *
+ * ASSUMPTION(oferty-pracy-0mq.19/ASM-1): `runningBefore` exists only so the
+ * admission never returns that run in place of the blocking one.
  */
 export async function insertQueuedRun(run: {
   scopeId: string
@@ -110,6 +113,8 @@ export async function findBlockingRunId(
   scopeId: string,
   runningBefore: string | null,
 ): Promise<string | null> {
+  // ASSUMPTION(oferty-pracy-0mq.19/ASM-1): the running run already running
+  // before the insert is excluded; without it any running run would do.
   const result = await db().query<{ id: string }>(
     `SELECT id FROM source_sync_runs WHERE scope_id=$1
       AND (status='queued' OR (status='running' AND id IS DISTINCT FROM $2::uuid))
