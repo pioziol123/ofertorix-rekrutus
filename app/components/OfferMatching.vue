@@ -24,6 +24,8 @@ const pending = computed(() =>
 const money = (value: string) =>
   Number(value).toLocaleString('pl-PL', { maximumFractionDigits: 6 })
 const current = computed(() => data.value?.current)
+// ASSUMPTION(oferty-pracy-0mq.21/ASM-3): one in-progress state replaces the
+// steps of the former batch path.
 const labels: Record<string, string> = {
   waiting_budget: 'Czeka na budżet',
   queued: 'W kolejce',
