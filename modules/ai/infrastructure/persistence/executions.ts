@@ -307,6 +307,11 @@ export async function recordFailedDelivery(executionId: string, error: string) {
   )
 }
 
+/**
+ * Ends an execution. The end an adapter decided is kept in `end_state`
+ * only while the outcome waits for delivery; once the execution ends,
+ * `state` and `cause` are its only record, so the pending end is cleared.
+ */
 export async function finishExecution(
   executionId: string,
   outcome: {
@@ -315,7 +320,7 @@ export async function finishExecution(
   },
 ) {
   await db().query(
-    'UPDATE ai_executions SET state=$2,cause=$3,finished_at=now(),revision=revision+1 WHERE id=$1',
+    'UPDATE ai_executions SET state=$2,cause=$3,end_state=NULL,finished_at=now(),revision=revision+1 WHERE id=$1',
     [executionId, outcome.state, outcome.cause],
   )
 }

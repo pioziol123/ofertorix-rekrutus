@@ -1,8 +1,9 @@
 // The Profile's proposal preparation moves to the AI coordination
 // (task oferty-pracy-0mq.9).
-// - Executions get the public state `uncertain`, and `end_state` keeps the
-//   end an adapter decided for an outcome without a result while it waits
-//   for delivery.
+// - Executions get the public state `uncertain`. `end_state` keeps the end
+//   an adapter decided for an outcome without a result only while it waits
+//   for delivery (state `delivering`); once the execution ends, `state` and
+//   `cause` are its only record.
 // - Rows of the existing local Profile path get the general fields and
 //   their stage and cause in `state` and `cause`, from result_status,
 //   error_code, disposition and runtime_state. After this migration no code
@@ -23,7 +24,8 @@ exports.up = (pgm) =>
 ALTER TABLE ai_executions DROP CONSTRAINT ai_executions_state_check;
 ALTER TABLE ai_executions ADD CONSTRAINT ai_executions_state_check
  CHECK(state IN ('waiting_budget','queued','running','delivering','uncertain','completed','rejected','failed','retried'));
-ALTER TABLE ai_executions ADD COLUMN end_state text CHECK(end_state IN ('failed','uncertain'));
+ALTER TABLE ai_executions ADD COLUMN end_state text
+ CONSTRAINT ai_executions_end_state_check CHECK(end_state IS NULL OR (end_state IN ('failed','uncertain') AND state='delivering'));
 
 WITH legacy AS (
  SELECT e.id, a.text_revision, a.proposal, e.error_code, e.result_status,

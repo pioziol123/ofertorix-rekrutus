@@ -874,6 +874,45 @@ integration('AI execution coordination with a real database and queue', () => {
     ).toBe('queued')
   })
 
+  it('A14-AC11: keeps the end an adapter decided only while it waits for delivery', async () => {
+    let deliveries = 0
+    receiveFailure = async () => {
+      deliveries++
+      if (deliveries === 1) throw new Error('client bug')
+    }
+    const admitted = await requestExecution(request())
+    answers.push(async () => {
+      throw new ModelError('network', {
+        requestSent: true,
+        runtimeEnded: false,
+      })
+    })
+    const columns = async () =>
+      (
+        await pool.query(
+          'SELECT state, cause, end_state FROM ai_executions WHERE id=$1',
+          [admitted.executionId],
+        )
+      ).rows[0]
+    await expect(work()).rejects.toThrow('client bug')
+    expect(await columns()).toEqual({
+      state: 'delivering',
+      cause: 'network',
+      end_state: 'uncertain',
+    })
+    await runExecution(admitted.executionId)
+    expect(await columns()).toEqual({
+      state: 'uncertain',
+      cause: 'network',
+      end_state: null,
+    })
+    await expect(
+      pool.query("UPDATE ai_executions SET end_state='failed' WHERE id=$1", [
+        admitted.executionId,
+      ]),
+    ).rejects.toThrow('ai_executions_end_state_check')
+  })
+
   it('A14-AC11: keeps the stage only in the execution; the attempt holds the settlement status', async () => {
     decide = async () => {
       throw new Error('client bug')
