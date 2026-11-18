@@ -153,7 +153,7 @@ The Profile's proposal preparation is the example: [proposal-ai.ts](../profile/i
 An adapter implements the shared adapter contract in [provider-adapter.ts](provider-adapter.ts) and is registered in [provider-registry.ts](provider-registry.ts). It provides:
 
 - **The modes it runs.** Single mode: a function that, given the fixed settings and the request context, returns a model with one call that gives a result and usage or throws a `ModelError`. Batch mode: a function that, given the fixed settings, returns the provider's batch cycle (`BatchRunner`): refusing at request time what one batch cannot take, carrying a group one step further with its own saved state, and cleaning up. Agent mode: a function that, given the fixed settings, returns the agent (`AgentRunner`): whether the settings fit its work, the work carried out once with its state saved step by step, and the materials read from that state. A mode the adapter does not provide is refused at request time.
-- **Its translation to public states (`endOf`).** This is the only place where the provider's facts become a public state and cause. Coordination passes the adapter what it observed and saves what the adapter returns: a response the model refused or did not complete, an error the adapter threw, or a lost lease of a running local process. The adapter returns `failed` when it knows how the work ended and `uncertain` when it does not. An `uncertain` end keeps the reservation and the slot.
+- **Its translation to public states (`endOf`).** Together with the ends an agent or batch runner returns for its own steps or items, this is the only place where the provider's facts become a public state and cause; all of it is adapter code. Coordination passes the adapter what it observed and saves what the adapter returns: a response the model refused or did not complete, an error the adapter threw, or a lost lease of a running local process. The adapter returns `failed` when it knows how the work ended and `uncertain` when it does not. An `uncertain` end keeps the reservation and the slot.
 - **Optional parts.** `check` fixes values before a request, which reach the adapter again as the request context. `ready` says whether its runtime is configured without calling it. `sharedSlot` places its executions on the shared local slot.
 
 The two existing adapters show the mapping:
@@ -167,6 +167,20 @@ The two existing adapters show the mapping:
 | Any other error after sending; it carries no usage       | `uncertain`, the error's cause   | `uncertain`, the error's cause   |
 | A lost lease of a running process on the shared slot     | —                                | `uncertain`, `interrupted`       |
 | A process that ended after its lease lapsed              | —                                | `failed`, `interrupted`          |
+
+The OpenAI agent decides the end of its own steps and returns it (`AgentOutcome` of kind `end`); only an error thrown out of it goes through `endOf`. ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
+
+| What the OpenAI agent observed                                    | End                                     | Cost                  |
+| ----------------------------------------------------------------- | --------------------------------------- | --------------------- |
+| No provider secret, or a request without web search; nothing sent | `failed`, `configuration`               | zero                  |
+| A broken connection, or the 120-second limit, on a sent step      | `uncertain`, `network`/`aborted`        | unknown, reserved     |
+| An HTTP error on a sent step                                      | `uncertain`, `http`                     | unknown, reserved     |
+| A response that could not be read                                 | `uncertain`, `format`                   | unknown, reserved     |
+| A search call still in progress in the response                   | `uncertain`, `incomplete`               | unknown, reserved     |
+| A response the model did not complete                             | `failed`, `incomplete`                  | settled               |
+| A search without any paragraph citing a safe URL                  | `failed`, `no_content`                  | settled; no synthesis |
+| A synthesis without exactly one text                              | `failed`, `format`                      | settled               |
+| A failed save of its state, or another error it throws            | through `endOf`: `uncertain`, `unknown` | unknown, reserved     |
 
 A result is not translated: coordination checks it against the response schema and delivers it, whatever the usage says. When usage is missing, the cost stays unknown and reserved. Unit tests of each adapter's mapping are in [adapters.test.ts](infrastructure/adapters/adapters.test.ts); a new adapter adds its own cases there.
 

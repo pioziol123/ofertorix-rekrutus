@@ -309,9 +309,13 @@ export type BatchRunner = {
  *   as `ModelError`. Batch: the provider's batch cycle (`BatchRunner`).
  *   Agent: gathering materials with tools and writing the result from
  *   them (`AgentRunner`).
- * - `endOf`: the one place where the adapter decides which public state
- *   and cause what it observed means. Coordination saves what it returns
- *   and does not branch on provider facts.
+ * - `endOf`: where the adapter decides which public state and cause what
+ *   it observed in single and batch mode means, and an error an agent
+ *   runner throws. Coordination saves what it returns and does not branch
+ *   on provider facts. An agent runner decides the end of its own steps
+ *   inside the adapter and returns it as an `AgentOutcome` of kind `end`
+ *   (ASSUMPTION(oferty-pracy-0mq.22/ASM-3)); a batch runner does the same
+ *   for its items.
  * - `sharedSlot`: the provider runs on the installation's one shared local
  *   slot, so its executions take the slot in request order.
  * - `check`: fixes, before a request and outside any transaction, what the

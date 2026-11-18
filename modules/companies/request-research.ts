@@ -22,8 +22,6 @@ import {
 /** Research cannot be requested now: its AI settings are not configured. */
 export class ResearchConfigurationError extends Error {}
 
-const inProgress = ['waiting_budget', 'queued', 'running', 'delivering']
-
 /**
  * Requests basic research of a company. The same command gives the same
  * answer and creates nothing more; a changed command under the same
@@ -58,9 +56,12 @@ export async function requestResearch(companyId: string, value: unknown) {
     const executions = await readResearchExecutions(
       researches.map((r) => String(r.id)),
     )
-    const active = researches.find((r) =>
-      inProgress.includes(executions.get(String(r.id))?.state ?? ''),
-    )
+    // In progress: AI work not finished yet, read from the public execution
+    // read as the research history reads it (researchCostState).
+    const active = researches.find((r) => {
+      const execution = executions.get(String(r.id))
+      return execution !== undefined && execution.finishedAt === null
+    })
     const complete = command.refresh
       ? undefined
       : researches

@@ -34,7 +34,9 @@ export async function saveResearchOutcome(
 
 /**
  * Saves a requested research with its target; its state keeps only
- * Companies' meaning. ASSUMPTION(oferty-pracy-0mq.22/ASM-1)
+ * Companies' meaning, and its configuration, a read-only history of the
+ * price list research had before AI kept its settings, is empty.
+ * ASSUMPTION(oferty-pracy-0mq.22/ASM-1)
  */
 export async function insertResearch(research: {
   id: string
