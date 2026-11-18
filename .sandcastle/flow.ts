@@ -430,7 +430,9 @@ function reviewPrompt(issue: Issue, result: AgentResult, ctx: EpicContext, baseS
     `The implementing agent recorded these assumptions:\n${JSON.stringify(assumptions, null, 2)}\nFor each, check that every acceptance criterion is really met, that the choice follows the precedence order, and that a test covers the edge case. An assumption that leaves a criterion unmet is a finding.`,
     bearingNote(assumptions, ctx),
     `And these deviations, each deferring part of the task to a follow-up:\n${JSON.stringify(deviations, null, 2)}\nFor each, check against the classification and qualification rules in that section: that it does not belong to an earlier step (assumption or blocked), that the interim code follows precedence and carries its marker, and that the follow-up description lets a developer with no context understand the business and technical problem, the decision needed and how to verify the target. Check that each deviation's requirement IDs cover every requirement its interim code affects, including shared rules of the epic rather than only a narrower task criterion. Also check that the diff builds nothing new on the interim code of the epic's open follow-ups.`,
-    // REV-R01, REV-R02, REV-R05: the two kinds of finding.
+    // REV-R01, REV-R02, REV-R05: the two kinds of finding. A blocked result returns before any
+    // review, so the rule on an unneeded stop applies to the conflicts the reviewer sees.
+    // ASSUMPTION(oferty-pracy-5yd.4/ASM-2)
     [
       'Mark every finding with its kind:',
       '- "fix": the implementing agent can remove it from the documents and the code alone. It goes back to the agent as a correction.',

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import { parseReturnData } from './continuation.ts'
 import { cycle, findingsOf, RESULT_FILE } from './flow.ts'
-import { type AgentTurn, type World, committingAgent, doneResult, world, writeFile } from './testing.ts'
+import { type AgentTurn, type World, committingAgent, doneResult, pushFiles, world, writeFile } from './testing.ts'
 
 let w: World
 afterEach(() => w?.cleanup())
@@ -97,6 +97,45 @@ describe('5yd.4: owner findings end the attempt, fix findings go back to the age
     await cycle(w.runner)
     assert.equal(w.sandboxes.prompts.filter(isFeedback).length, 1)
     assert.equal(w.db.show('t-1').status, 'closed')
+  })
+
+  it('REV-R03: an owner finding in the review repeated during delivery returns the task without a feedback turn', async () => {
+    w = world(agent)
+    // The owner changes a task document during the first review, so delivery reviews again.
+    let reviews = 0
+    const original = w.sandboxes.fresh.bind(w.sandboxes)
+    w.sandboxes.fresh = async (branch) => {
+      const sandbox = await original(branch)
+      return {
+        ...sandbox,
+        review: async (prompt) => {
+          reviews++
+          if (reviews === 1) pushFiles(w.other, { 'docs/t-1/sd.md': '# SD v2\n' }, 'owner: change the design')
+          else {
+            w.sandboxes.verdict = 'fail'
+            w.sandboxes.findings = [OWNER]
+          }
+          await sandbox.review(prompt)
+        },
+      }
+    }
+    await cycle(w.runner)
+    assert.equal(reviews, 2, 'delivery reviewed the change again')
+    assert.equal(w.sandboxes.prompts.filter(isFeedback).length, 0)
+    assert.equal(w.sandboxes.prompts.filter(isNoteRequest).length, 1)
+    assert.match(returnComment()!, /Owner finding: F1:/)
+    assert.notEqual(w.db.show('t-1').status, 'closed')
+  })
+
+  it('ASM-2: a blocked result returns at once and is never reviewed', async () => {
+    w = world((ctx) => {
+      committingAgent()(ctx)
+      writeFile(ctx.worktree, RESULT_FILE, JSON.stringify({ ...doneResult(), status: 'blocked', question: 'Which reading?', state_note: NOTE }))
+    })
+    await cycle(w.runner)
+    assert.equal(w.sandboxes.reviews, 0)
+    assert.equal(w.sandboxes.prompts.length, 1, 'no feedback turn and no note request')
+    assert.match(returnComment()!, /Blocked: Which reading\?/)
   })
 
   it('ASM-1: an owner finding without a question still ends the attempt', async () => {
