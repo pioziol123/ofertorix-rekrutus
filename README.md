@@ -4,15 +4,15 @@ A private, local tool for fetching and browsing job offers, assessing them again
 
 ## Technologies
 
-| Area | Technologies and their use |
-| --- | --- |
-| Application | Nuxt and TypeScript for the interface and the API. Views use Vue and Nuxt UI. We validate input data with Zod. |
-| Data | PostgreSQL. We query with `pg` and parameterised SQL, and change the database schema with `node-pg-migrate`. |
-| Background jobs | A separate TypeScript worker runs jobs from a pg-boss queue that runs on PostgreSQL. |
-| Source integrations | Some ad collectors use Python. |
-| AI integrations | We call external models through the OpenAI Responses API, directly or asynchronously through the Batch API. Local execution uses Ollama. Paid calls use a shared budget. |
-| Local environment | Docker Compose runs the database, migrations, the application and the worker. We install JavaScript dependencies with pnpm according to `pnpm-lock.yaml`. |
-| Code checks | ESLint checks the code, Prettier formats it and Vitest runs the tests. The `pnpm check` command combines lint, type checking and tests. |
+| Area                | Technologies and their use                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Application         | Nuxt and TypeScript for the interface and the API. Views use Vue and Nuxt UI. We validate input data with Zod.                                                           |
+| Data                | PostgreSQL. We query with `pg` and parameterised SQL, and change the database schema with `node-pg-migrate`.                                                             |
+| Background jobs     | A separate TypeScript worker runs jobs from a pg-boss queue that runs on PostgreSQL.                                                                                     |
+| Source integrations | Some ad collectors use Python.                                                                                                                                           |
+| AI integrations     | We call external models through the OpenAI Responses API, directly or asynchronously through the Batch API. Local execution uses Ollama. Paid calls use a shared budget. |
+| Local environment   | Docker Compose runs the database, migrations, the application and the worker. We install JavaScript dependencies with pnpm according to `pnpm-lock.yaml`.                |
+| Code checks         | ESLint checks the code, Prettier formats it and Vitest runs the tests. The `pnpm check` command combines lint, type checking and tests.                                  |
 
 Versions and environment configuration are set by [package.json](package.json), [Dockerfile](Dockerfile) and [compose.yaml](compose.yaml). See also [dependencies and migrations](#dependencies-and-migrations).
 
@@ -50,13 +50,13 @@ docker compose run --rm tools pnpm source:status
 docker compose run --rm tools pnpm source:status <run-uuid>
 ```
 
-Without `--wait` the command returns the run ID at once. Concurrent requests return the same active run. `--wait` exits with code 1 on an error or a partial result, and with 2 when the wait time runs out; the job may still be running. The status contains the number of pages, unique entries and new revisions, and a safe error cause.
+Without `--wait` the command returns the run ID at once. Concurrent requests return the same pending run; with a run in progress, the first request queues one pending run and later ones point at it. `--wait` waits for that run without a time limit and exits with code 1 on an error or a partial result; stopping the command does not stop the run. Every source, from the CLI, the application or the schedule, is requested to one queue: a source runs one import at a time, in the order requested, and different sources run in parallel ([module rules](modules/sources/README.md#requesting-a-sync)). The status contains the number of pages, unique entries and new revisions, and a safe error cause.
 
-The default import runs every day at **08:00 Europe/Warsaw**. The variable `SOURCE_SYNC_TIME=HH:mm` in `.env` changes the time; apply it with `docker compose up -d --force-recreate worker`. The worker checks for an overdue import at start and every minute. After a break of several days it creates one import. A manual import also covers the current scheduled slot. A failed run does not create a loop of automatic requests on the same day; you can retry it manually. A single API request has one retry on a network error/429/5xx, a limited timeout and spacing between requests.
+The default import runs every day at **08:00 Europe/Warsaw**. The variable `SOURCE_SYNC_TIME=HH:mm` in `.env` changes the time; apply it with `docker compose up -d --force-recreate worker`. The worker checks for an overdue import at start and every minute. After a break of several days it creates one import. A manual import does not replace the scheduled one of the same day. A failed run does not create a loop of automatic requests on the same day; you can retry it manually. A single API request has one retry on a network error/429/5xx, a limited timeout and spacing between requests.
 
 The database stores source ads (`source_ads`), successive changed payloads (`source_ad_revisions`), scope versions and the run history. An identical import creates no new revisions. After an error we keep the pages that were saved correctly. Only a complete import of the same scope can mark a missing offer as unavailable; a partial one does not change the availability of entries it did not see. The source's `valid_to` stays separate information from availability. None of these states means the recruitment process has ended.
 
-The importer detects changes in counters and duplicates between pages, but the API does not guarantee an atomic snapshot of many pages. Interrupting the worker leaves the saved data in place; after the lock is released, the next worker marks the abandoned run as partial/failed. Once the delivery of the queue job has also ended, a new import can be requested. The list and the details panel use the local API; we do not display earlier content for now.
+The importer detects changes in counters and duplicates between pages, but the API does not guarantee an atomic snapshot of many pages. Interrupting the worker leaves the saved data in place; the queue retries the job and the next attempt continues the same run. Once the delivery of the queue job has ended, recovery marks the abandoned run as partial/failed and a new import can be requested. The list and the details panel use the local API; we do not display earlier content for now.
 
 ## Browsing offers
 
@@ -124,7 +124,7 @@ The profile HTTP tests require a fresh `pnpm build`; they start their own server
 
 ## JobSpy integration (disabled by default)
 
-The worker contains a pinned package of the fork, Python dependencies and a separate queue of manual Indeed imports. There is no automatic JobSpy schedule. `JOBSPY_ENABLED=false` blocks requesting and running a fetch; enabling it requires `JOBSPY_ENABLED=true` in `.env` and recreating the web and worker services.
+The worker contains a pinned package of the fork and Python dependencies; manual imports go to the shared source queue. There is no automatic JobSpy schedule. `JOBSPY_ENABLED=false` blocks requesting and running a fetch; enabling it requires `JOBSPY_ENABLED=true` in `.env` and recreating the web and worker services.
 
 Status: `docker compose exec worker pnpm jobspy:status` or GET `/api/sources/jobspy`. After activation, `docker compose exec worker pnpm jobspy:sync --wait` starts a manual import. Indeed uses GraphQL and a limit shared with LinkedIn. Limiting the number of results means an incomplete run; the CLI then returns code 1 even though valid offers were saved. The JobSpy state is separate from the SOLID.Jobs import. Offers keep the origin of the pay; estimates do not confirm that the financial minimum is met, and an ad missing from a limited query does not change its availability.
 
@@ -136,7 +136,7 @@ Code and exact version: [package manifest](integrations/jobspy/manifest.json). [
 docker compose exec -T worker pnpm himalayas:sync
 ```
 
-A direct TypeScript API, with no key and without JobSpy/Python. The command waits for completion and prints the ID, status, counters and diagnostics of the saved run. Exit code 1 means an error or an incomplete import. The import covers the PHP/Senior/PL query, at most 5 pages of 20 candidates. This pilot has no schedule, no queue and no automatic retries; you start another run manually. A parallel import is rejected before the portal is read. An interrupted run is settled at the next manual start.
+A direct TypeScript API, with no key and without JobSpy/Python. The command requests the import to the shared source queue, the worker runs it, and the command waits for completion without a time limit and prints the ID, status, counters and diagnostics of the saved run. Exit code 1 means an error or an incomplete import. The import covers the PHP/Senior/PL query, at most 5 pages of 20 candidates. This pilot has no schedule; you start another run manually. A request during a run queues one pending run. Stopping the command does not stop the run.
 
 Ads are visible in the shared list with the source **Himalayas**, the unchanged source link and a warning that the PHP/senior qualification is unconfirmed. The search also covers incidental mentions in descriptions. We do not treat its results as a profile match. The source's update date does not pretend to be the publication date, and pay does not get a guessed contract or basis. Disappearing from the search does not close a saved offer. The pilot does not run AI.
 
@@ -149,7 +149,7 @@ The four sources are available in `/offers` in the section "Polskie serwisy — 
 The connectors use the Python/curl_cffi already in the worker image, a Chrome profile and HTTP/2. They do not need the user's cookies or a login. Bulldogjob and theprotocol use HTML and the embedded `__NEXT_DATA__`. Just Join IT uses a JSON API with a cursor, and No Fluff Jobs a search POST and a details JSON. In NFJ we turned off salary-match and respect the declared pages instead of assuming that the page size is 20. They are independent of the JobSpy fork contract. Pay, contracts, descriptions, technologies and the raw list/detail records go into the shared model and the revision history. Bulldogjob does not mark tags as mandatory; theprotocol keeps the required/optional split.
 
 ```sh
-# After updating a running environment: create the new queues and restart
+# After updating a running environment: create the source queue and restart
 # With a clean docker compose up --build the migrate service already does this.
 docker compose exec worker pnpm exec tsx scripts/init-queue.ts
 docker compose up -d --no-deps worker web

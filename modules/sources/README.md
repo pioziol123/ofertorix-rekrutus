@@ -74,6 +74,24 @@ The module provides the ad content together with its history and information abo
 
 Unavailability at the source, expiry of an ad and the end of a recruitment are separate pieces of information. The removal or expiry of one publication does not settle the state of the other ads of the same offer or the end of the user's application. An ad's history stays available even when the publication itself is no longer active.
 
+## Requesting a sync
+
+The CLI, the application and the schedule request a sync through one operation and share one queue of runs. Its rules ([F2-06–F2-10](../../docs/specs/0mq-architektura-modulow/requirements.md#f2)) hold for every source:
+
+- A source executes one run at a time, whatever the scope; its runs wait in the order they were requested. Different sources run in parallel. A request never interrupts a run in progress.
+- A scope has at most one pending run. A request that meets it creates nothing and points at it; with a run in progress and none pending, the request creates the pending one.
+- The run's settings are fixed when it is requested. Equivalent parameters, in any order and from any entry point, are the same scope.
+- The schedule requests each scheduled source (today SOLID.Jobs) once per schedule day. A manual request does not hold it back, and fetching again on the same day is allowed.
+
+| Operation                                                  | Contract                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Request (`requestSync`)                                    | Takes the source name, the source-specific scope input and the reason. Returns the run identifier at once and whether an existing pending run was pointed at. An unknown source (`UnknownConnectorError`), a disabled source (`SourceDisabledError`) and an invalid scope input end with an error and create nothing. |
+| Schedule (`requestScheduledSyncs`)                         | Requests every enabled scheduled source whose schedule day has no scheduled run yet. Safe to call from several workers at once.                                                                                                                                                                                       |
+| Wait (`waitForSyncRun`)                                    | Reads the run every second, with no time limit, until it finishes, and returns it. Stopping the wait does not change the run.                                                                                                                                                                                         |
+| Run state (`readSyncState`)                                | The state of a source: whether it is enabled and scheduled, a run by its identifier or the latest one, and the latest complete run; for the whole source or, given a scope input, for that scope.                                                                                                                     |
+| Catalogue state (`readSourceCatalog`)                      | Every JobSpy and Polish portal with its catalogue data and its latest run.                                                                                                                                                                                                                                            |
+| Queue (`useSyncQueue`, `workSyncQueue`, `recoverSyncRuns`) | Connect the process's queue client, have a worker execute runs, and end runs that no work will execute any more.                                                                                                                                                                                                      |
+
 ## Public read of ads
 
 Other modules read ads only through these operations, exported from the module's `index.ts`. They do not query the module's tables and do not interpret the content saved from a source.

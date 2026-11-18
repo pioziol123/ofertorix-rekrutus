@@ -31,7 +31,7 @@ flowchart LR
   class Owner,Boards,OpenAI,Ollama external
 ```
 
-The shared portal boundary covers SOLID.Jobs, Bulldogjob, theprotocol.it, Just Join IT, No Fluff Jobs, the portals handled by JobSpy and the separate Himalayas pilot. The import scope and how it is started depend on the adapter. Basic research uses web search through OpenAI. The result goes to the company profile with its sources. [JobSpy catalogue](../../lib/sources/jobspy-catalog.ts) · [Polish sources catalogue](../../lib/sources/polish-catalog.ts) · [Himalayas pilot](../../scripts/himalayas-sync.ts) · [Research provider](../../lib/companies/research-provider.ts)
+The shared portal boundary covers SOLID.Jobs, Bulldogjob, theprotocol.it, Just Join IT, No Fluff Jobs, the portals handled by JobSpy and the separate Himalayas pilot. The import scope depends on the adapter; every source is requested through one operation to one queue. Basic research uses web search through OpenAI. The result goes to the company profile with its sources. [JobSpy catalogue](../../lib/sources/jobspy-catalog.ts) · [Polish sources catalogue](../../lib/sources/polish-catalog.ts) · [Himalayas pilot](../../scripts/himalayas-sync.ts) · [Research provider](../../lib/companies/research-provider.ts)
 
 <a id="c2-kontenery"></a>
 
@@ -56,11 +56,10 @@ flowchart LR
   Owner -->|"Runs pnpm commands through Compose"| CLI
   Web -->|"Reads and writes data, requests jobs through pg-boss"| DB
   Worker -->|"Receives jobs through pg-boss and saves results"| DB
-  CLI -->|"Requests imports, reads statuses, saves pilot results"| DB
+  CLI -->|"Requests imports and reads statuses"| DB
   Web -->|"Saves and serves CV originals"| Files
   Worker -->|"Reads files for text extraction"| Files
   Worker -->|"Fetches ads over HTTP(S)"| Boards
-  CLI -->|"Fetches Himalayas offers over HTTPS"| Boards
   Worker -.->|"Calls the Responses, Files and Batch APIs over HTTPS"| OpenAI
   Web -.->|"Checks the model over HTTP(S)"| Ollama
   Worker -.->|"Generates a profile proposal over HTTP(S)"| Ollama
@@ -73,7 +72,7 @@ flowchart LR
 
 Nuxt delivers the Vue code that runs in the browser and handles the Nitro routes in the same web application. Compose publishes its port on `127.0.0.1`. PostgreSQL runs in the Compose network. The `pg` and `pg-boss` libraries use PostgreSQL, and pg-boss jobs have the default schema `pgboss`. A separate `migrate` service prepares the application and queue schema at start, before web and the worker start. [Compose](../../compose.yaml) · [Nuxt configuration](../../nuxt.config.ts) · [Database access](../../lib/db.ts) ([rules](moduly-i-zasady-kodu.md#database-access)) · [Queue](../../lib/queue.ts) · [Queue initialisation](../../scripts/init-queue.ts)
 
-The `documents` volume is shared by web and the worker under `/data/documents`. The database stores import metadata, extracted text, profile versions and operation results. Python subprocesses serve as adapters started by the worker. The Himalayas script runs the import directly from the CLI. [CV import](../../lib/profile/imports.ts) · [Worker image](../../Dockerfile) · [Commands](../../package.json)
+The `documents` volume is shared by web and the worker under `/data/documents`. The database stores import metadata, extracted text, profile versions and operation results. Python subprocesses serve as adapters started by the worker. [CV import](../../lib/profile/imports.ts) · [Worker image](../../Dockerfile) · [Commands](../../package.json)
 
 <a id="c3-komponenty"></a>
 
@@ -168,7 +167,7 @@ flowchart TB
 
 | Component | Entry points and implementation |
 | --- | --- |
-| Queue handling and schedule | [Worker entry point](../../worker/index.ts). At start and every minute it checks for overdue work. The schedule requests the SOLID.Jobs import. |
+| Queue handling and schedule | [Worker entry point](../../worker/index.ts). At start and every minute it checks for overdue work. The schedule requests the SOLID.Jobs import through the [Sources module](../../modules/sources/README.md#requesting-a-sync), whose single `source-sync` queue the worker serves for every source. |
 | Ad import | [SOLID.Jobs](../../lib/sources/sync.ts), [Polish sources](../../lib/sources/polish-sync.ts), [JobSpy](../../lib/sources/jobspy-sync.ts), [ad and revision storage](../../modules/sources/infrastructure/persistence/source-ads.ts). |
 | CV extraction | [`extractImport`](../../lib/profile/imports.ts) handles `profile-parse`. |
 | Match assessments | The [single request](../../lib/matching/store.ts) and the [group](../../lib/matching/groups.ts) use the [Batch client](../../lib/matching/batch.ts) and the [batch archive](../../lib/matching/archive.ts). |
