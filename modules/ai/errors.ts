@@ -12,9 +12,10 @@
  *   then, or a batch item (ASSUMPTION(oferty-pracy-0mq.21/ASM-5));
  * - `batch_too_large`: the provider's batch cannot take the group: too
  *   many items or bytes for one batch (ASSUMPTION(oferty-pracy-0mq.21/ASM-4));
+ * - `group_requested`: a group request names a group already requested
+ *   (ASSUMPTION(oferty-pracy-0mq.21/ASM-7));
  * - `invalid_request`: the request is incomplete, or its check belongs to
- *   other settings, or a group request names a group already requested
- *   (ASSUMPTION(oferty-pracy-0mq.21/ASM-7)).
+ *   other settings.
  */
 export type AiRequestErrorCode =
   | 'not_configured'
@@ -23,6 +24,7 @@ export type AiRequestErrorCode =
   | 'operation_busy'
   | 'input_too_large'
   | 'batch_too_large'
+  | 'group_requested'
   | 'invalid_request'
 
 export class AiRequestError extends Error {

@@ -13,7 +13,8 @@ export {
 export { checkExecution, type ExecutionCheck } from './check-execution.ts'
 // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): readReservation, and below
 // countActiveExecutions, readExecutionArchive, readLatestExecutions and
-// the refusal code batch_too_large.
+// the refusal code batch_too_large. ASSUMPTION(oferty-pracy-0mq.21/ASM-7):
+// the refusal code group_requested.
 export { isConfigured, readReservation } from './execution-settings.ts'
 export {
   countActiveExecutions,

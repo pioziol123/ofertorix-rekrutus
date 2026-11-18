@@ -159,7 +159,7 @@ async function admit(requests: ExecutionRequest[]) {
       first.mode.kind === 'batch' &&
       (await groupRequested(first.mode.groupId))
     )
-      throw new AiRequestError('invalid_request')
+      throw new AiRequestError('group_requested')
     for (const request of requests)
       if (await hasActiveExecution(request.operationId))
         throw new AiRequestError('operation_busy')

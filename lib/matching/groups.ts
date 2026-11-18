@@ -112,6 +112,8 @@ async function itemOutsideGroup(
  * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): Matching does not record a
  * command, so its group stands in for that record.
  */
+// ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the latest AI work of many
+// requests in one read, with its group.
 async function commandGroup(commandId: string, offerIds: string[]) {
   const ofOffers = await requestedOfAds(offerIds)
   const anchor = (await readLatestExecutions(ofOffers.map((r) => r.id))).find(
@@ -236,7 +238,7 @@ export async function enqueueMatchingGroup(value: unknown) {
     // requested is not recognised above; AI refuses a second request of
     // the group. ASSUMPTION(oferty-pracy-0mq.21/ASM-7)
     // FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the interim message of it.
-    if (error instanceof AiRequestError && error.code === 'invalid_request')
+    if (error instanceof AiRequestError && error.code === 'group_requested')
       throw new MatchingError(otherOffers)
     if (error instanceof AiRequestError)
       throw new MatchingError(refusalMessage(error.code, 'group'))
