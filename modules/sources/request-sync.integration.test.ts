@@ -367,7 +367,7 @@ integration('shared sync requesting and queue (0mq.16)', () => {
     })
   })
 
-  it('executes runs of one source one at a time in request order, also in different scopes, and different sources in parallel, with two workers (A16-AC03)', async () => {
+  it('executes runs of one source one at a time in request order, also in different scopes, and different sources in parallel, with two workers (A16-AC03, 0mq.16 ASM-3)', async () => {
     const spans: {
       source: string
       keyword: unknown

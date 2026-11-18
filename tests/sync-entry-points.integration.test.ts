@@ -235,7 +235,7 @@ integration('sync entry points on the shared sync queue', () => {
     ])
   }, 90_000)
 
-  it('Himalayas CLI requests to the queue, a worker executes the run and the CLI prints its result (A16-AC07)', async () => {
+  it('Himalayas CLI requests to the queue, a worker executes the run and the CLI prints its result without --wait (A16-AC07, 0mq.16 ASM-2)', async () => {
     const result = await cli('himalayas-sync')
     expect(result.code).toBe(0)
     expect(JSON.parse(result.stdout)).toMatchObject({

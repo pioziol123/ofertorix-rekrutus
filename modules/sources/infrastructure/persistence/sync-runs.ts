@@ -321,6 +321,9 @@ export async function findLatestCompleteRun(filter: {
 /**
  * Inside a transaction: waits for, then holds until the transaction ends,
  * the lock on starting runs of the source.
+ *
+ * ASSUMPTION(oferty-pracy-0mq.16/ASM-3): exists only for the start in the
+ * source's turn.
  */
 export async function lockSourceTurn(source: string): Promise<void> {
   await db().query('SELECT pg_advisory_xact_lock(hashtext($1))', [
@@ -331,6 +334,9 @@ export async function lockSourceTurn(source: string): Promise<void> {
 /**
  * The other runs of the run's source that may hold its turn: those running
  * and those queued before it, with their queue jobs.
+ *
+ * ASSUMPTION(oferty-pracy-0mq.16/ASM-3): exists only for the start in the
+ * source's turn.
  */
 export async function findRunsAhead(
   runId: string,
