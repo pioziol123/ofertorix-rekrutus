@@ -29,6 +29,12 @@
 //   `requested` (the stage of the AI work is read from the execution).
 // - The batch and group tables and the attempt identifier column stay as
 //   read-only history; no code writes them any more.
+// ASSUMPTION(oferty-pracy-0mq.21/ASM-9): the moved executions get no adapter
+// state, so AI recovery does not remove the provider files the former batches
+// left: those of a batch or group that ended while its cleanup had failed
+// (cleaned = false), and those of a batch submitted at the deploy, which ends
+// as `retried` above. The system does not yet run in production (decision 3
+// of 0mq.17); a person can remove such files in the provider's panel.
 exports.up = (pgm) =>
   pgm.sql(`
 ALTER TABLE ai_executions ADD COLUMN adapter_state jsonb;

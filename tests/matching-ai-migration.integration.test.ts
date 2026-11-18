@@ -10,6 +10,7 @@ import {
   useAiQueue,
 } from '../modules/ai/index.ts'
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
+import { endedBatchGroups } from '../modules/ai/infrastructure/persistence/executions.ts'
 import {
   assessmentReceiver,
   assessmentSettingsKey,
@@ -176,8 +177,9 @@ integration('migration of the assessment history to AI executions', () => {
       'INSERT INTO ai_budget_months(month,limit_pln) VALUES($1,1)',
       [month],
     )
+    // The group ended, but removing its files at the provider failed.
     await pool.query(
-      "INSERT INTO matching_groups(id,command_id,ad_ids,state,configuration,batch_id,cleaned) VALUES($1,$2,$3,'completed',$4,'batch_old',true)",
+      "INSERT INTO matching_groups(id,command_id,ad_ids,state,configuration,input_file_id,batch_id,output_file_id,status,cleaned) VALUES($1,$2,$3,'completed',$4,'file_in_group','batch_old','file_out_group','completed',false)",
       [group, randomUUID(), [ad], pricing],
     )
     await legacy('completed', 'completed', {
@@ -224,6 +226,14 @@ integration('migration of the assessment history to AI executions', () => {
       group,
       at: '2026-11-09T10:00:00Z',
     })
+    // Single batches whose files were not removed at the provider: one that
+    // ended and whose cleanup failed, and one submitted at the deploy.
+    await pool.query(
+      `INSERT INTO matching_batches(request_id,input_file_id,batch_id,output_file_id,status,cleaned)
+       VALUES($1,'file_in_single','batch_single','file_out_single','completed',false),
+             ($2,'file_in_submitted','batch_submitted',NULL,'in_progress',false)`,
+      [ids.completed, ids.submitted],
+    )
     await migrate(pool, ['1770000000018_matching_ai_executions'])
   })
   afterAll(async () => {
@@ -343,6 +353,19 @@ integration('migration of the assessment history to AI executions', () => {
         key === 'excluded',
       ]),
     )
+  })
+
+  it('does not carry the provider file cleanup of batches from before the migration into AI (0mq.21 ASM-9)', async () => {
+    const moved = (
+      await pool.query(
+        'SELECT e.id,e.adapter_state FROM ai_executions e JOIN matching_requests r ON r.execution_id=e.id WHERE r.id = ANY($1)',
+        [[ids.completed, ids.submitted, ids.groupMember]],
+      )
+    ).rows
+    expect(moved).toHaveLength(3)
+    expect(moved.map((row) => row.adapter_state)).toEqual([null, null, null])
+    const cleaned = (await endedBatchGroups()).map((g) => g.executionId)
+    for (const row of moved) expect(cleaned).not.toContain(row.id)
   })
 
   it('keeps reserved only the cost of the uncertain outcome', async () => {
