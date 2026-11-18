@@ -8,7 +8,7 @@ import {
   lockScheduleOccurrence,
 } from './infrastructure/persistence/sync-runs.ts'
 import { requestSync } from './request-sync.ts'
-import type { AdmittedRun } from './sync-run-state.ts'
+import { AdmittedRunFinishedError, type AdmittedRun } from './sync-run-state.ts'
 
 /**
  * Requests the sync of every enabled scheduled source once per schedule
@@ -20,7 +20,8 @@ import type { AdmittedRun } from './sync-run-state.ts'
  * schedule back. Runs do not expire and fetching again on the same day is
  * allowed (F2-09).
  *
- * Returns the request of each source that was requested now.
+ * Returns the request of each source that was requested now. A request
+ * that met a run finishing at that moment is left to the next check.
  */
 export async function requestScheduledSyncs(
   options: {
@@ -35,7 +36,7 @@ export async function requestScheduledSyncs(
   for (const name of connectors.names()) {
     const connector = connectors.get(name)
     if (!connector.scheduled || !connector.enabled()) continue
-    const run = await transaction(async () => {
+    const run = await transaction(async (): Promise<AdmittedRun | null> => {
       await lockScheduleOccurrence(name, day)
       const fingerprint = hash(connector.scopeParameters())
       if (await hasScheduledRun(fingerprint, day)) return null
@@ -47,6 +48,11 @@ export async function requestScheduledSyncs(
         { source: name, trigger: 'scheduled' },
         { connectors, now: options.now },
       )
+    }).catch((error: unknown) => {
+      // The run the request met finished meanwhile and nothing was created;
+      // the next cycle checks the occurrence again.
+      if (error instanceof AdmittedRunFinishedError) return null
+      throw error
     })
     if (run) requested.push(run)
   }
