@@ -456,7 +456,7 @@ Lessons from the run changed the process:
 - **A follow-up is not a bug.** Open follow-ups are a known and intended list of differences on `main`.
 - **The runner does not hand an epic over.** The automation widens the scope of work only after a human decision.
 - **A pause is always possible:** removing `ready-for-agent` from an epic stops it in any phase.
-- **The runner does not push or run a Dolt sync.** `.beads/issues.jsonl` is only an export; the real bd state is in the local Dolt database.
+- **The runner does not push or run a Dolt sync.** The bd state lives only in the local Dolt database; there is no JSONL export.
 - **The review verdict is strict.** `pass` on a result with deviations is a failure, just like `pass-with-deferral` without deviations.
 
 ---

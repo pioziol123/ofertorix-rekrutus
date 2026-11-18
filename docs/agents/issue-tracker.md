@@ -29,7 +29,10 @@ Git commits, pushes and remote Dolt synchronization require explicit
 user authorization. The Git remote `origin` is the project's
 repository on GitHub. The unattended runner is the exception: it
 pushes delivered work to `main` and returned work to `agent/`
-branches there itself (see the process contract). Dolt has no remote.
+branches there itself (see the process contract). The Dolt remote is
+the same GitHub repository: bd keeps issues in the hidden ref
+`refs/dolt/data`, sent with `bd dolt push` and fetched with
+`bd dolt pull`. Issues are not exported to `.beads/issues.jsonl`.
 
 ## Wayfinding operations
 

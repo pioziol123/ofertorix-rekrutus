@@ -4,7 +4,7 @@ Implementation package after the approved grill-me, 2026-11-05. We make the whol
 
 ## Entering the project
 
-1. Read `AGENTS.md`, `docs/agents/domain.md` and the documents named there. Then `docs/agents/issue-tracker.md`; run `bd prime` and `bd context --json`. Do not import `.beads/issues.jsonl` and do not sync Dolt remotely.
+1. Read `AGENTS.md`, `docs/agents/domain.md` and the documents named there. Then `docs/agents/issue-tracker.md`; run `bd prime` and `bd context --json`. Do not sync Dolt remotely.
 2. Check the current `git status` and the existing changes. When this package was prepared, there were uncommitted `lib/ai/` files and changes to `lib/profile/ai.ts` coming from other work. Do not remove them, and do not assume that stage 1/2 must be written from scratch. Check the implementation against the criteria, add the missing parts, and only then confirm completion.
 3. Read `bd show oferty-pracy-334` and its children. Choose the earliest unfinished stage whose dependencies and review are met; read its requirements/SD pair and the dependent contracts it names. The first task is `oferty-pracy-334.2`; do not start planning the epic again. Claim the task in Beads. The absence of order blockers does not replace a review of the specification and the code.
 4. For behaviour changes, use the project workflow `implement-with-tester`. Do not do all nine stages in one change. After a stage, record in Beads the result of the checks, the remaining gaps and the actual status.
