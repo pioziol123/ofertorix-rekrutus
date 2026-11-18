@@ -1,5 +1,5 @@
 import { AiRequestError } from './errors.ts'
-import { executionSettings } from './execution-settings.ts'
+import { executionSettings, type ExecutionMode } from './execution-settings.ts'
 import { providerAdapter } from './provider-registry.ts'
 
 declare const opaque: unique symbol
@@ -22,15 +22,17 @@ const contents = new WeakMap<ExecutionCheck, CheckContent>()
 
 /**
  * Checks, before a request and outside any transaction, that the work
- * under the client's settings key can be sent now, and fixes what the
+ * under the client's settings key can be sent now in the mode (single
+ * when not given), and fixes what the
  * provider needs carried to the execution (e.g. the version of a local
  * model). Refuses with `AiRequestError`: `not_configured`,
  * `unsupported_mode` or `provider_unavailable`.
  */
 export async function checkExecution(
   settingsKey: string,
+  mode: ExecutionMode = 'single',
 ): Promise<ExecutionCheck> {
-  const settings = executionSettings(settingsKey, 'single')
+  const settings = executionSettings(settingsKey, mode)
   const adapter = providerAdapter(settings.provider)
   const fixed = adapter?.check ? await adapter.check(settings) : {}
   const check = Object.freeze({}) as ExecutionCheck

@@ -35,15 +35,25 @@ export function executionSettings(
   const pricing = model.prices[mode] ?? null
   if ((!pricing && !model.local) || !hasCredentials(settings.provider))
     throw new AiRequestError('not_configured')
-  return {
+  const resolvedSettings: ExecutionSettings = {
     provider: settings.provider,
     model: settings.model,
     reasoningEffort: settings.reasoningEffort,
     maxOutputTokens: pricing?.maxOutputTokens ?? 0,
     maxInputTokens: pricing?.maxInputTokens ?? 0,
+    ...(pricing?.maxToolCalls !== undefined
+      ? { maxToolCalls: pricing.maxToolCalls }
+      : {}),
     runtime: model.local ?? null,
     pricing,
   }
+  // An agent runs its steps only under settings that fit them.
+  if (
+    mode === 'agent' &&
+    !providerAdapter(settings.provider)?.modes.agent?.(resolvedSettings).fits()
+  )
+    throw new AiRequestError('not_configured')
+  return resolvedSettings
 }
 
 /**

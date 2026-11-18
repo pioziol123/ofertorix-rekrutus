@@ -9,6 +9,8 @@ export type ModelRequest = {
 export type ModelUsage = {
   inputTokens: number | null
   outputTokens: number | null
+  /** Calls of a paid tool (agent mode); absent when none was used. */
+  toolCalls?: number | null
 }
 export type ModelResult = {
   outcome: 'completed' | 'refused' | 'incomplete'
@@ -80,6 +82,11 @@ export type ProviderSettings = {
    * price list. Absent in settings fixed before it was recorded.
    */
   maxInputTokens?: number
+  /**
+   * The most calls of a paid tool the reservation covers (agent mode);
+   * absent when the price list covers no paid tool.
+   */
+  maxToolCalls?: number
   /** The local runtime from the AI configuration; null for a remote model. */
   runtime: LocalRuntime | null
 }
@@ -120,6 +127,85 @@ export type RequestContext = {
     key: string,
     content: string,
   ) => Promise<void>
+}
+
+/** A source an agent's tool opened or found, cited by a material. */
+export type AgentSource = {
+  url: string
+  title: string
+  /** An opened page, or a result of a search seen only as a snippet. */
+  kind: 'page' | 'search_snippet'
+  accessedAt: string
+}
+
+/**
+ * A unit of material an agent gathered with its tools: a text and the
+ * sources it cites. The agent's result refers to a material by its id.
+ */
+export type AgentMaterial = {
+  id: number
+  text: string
+  sources: AgentSource[]
+}
+
+/**
+ * The work of an agent: it gathers materials with the allowed tools
+ * following `instructions`, then writes the result from them following
+ * `resultInstructions`, in the response schema.
+ */
+export type AgentRequest = ModelRequest & {
+  resultInstructions: string
+  tools: string[]
+}
+
+/** One step of agent work as the adapter observed it. */
+export type AgentStep = {
+  step: string
+  status: 'sent' | 'completed' | 'failed' | 'unknown'
+  responseId: string | null
+  usage: ModelUsage
+}
+
+/**
+ * What agent work delivered: the response of its last step, read like
+ * that of a single call, or an end the adapter decided before it. `usage`
+ * sums the measured steps; `unmeasured` says a step was sent whose usage
+ * is not known, so the cost of the work stays unknown and reserved
+ * although the usage of the other steps is kept.
+ */
+export type AgentOutcome = (
+  | { kind: 'response'; response: ModelResult }
+  | { kind: 'end'; end: ExecutionEnd }
+) & {
+  usage: ModelUsage
+  unmeasured: boolean
+  responseIds: string[]
+}
+
+/** What the coordination gives an agent adapter for one execution. */
+export type AgentContext = {
+  /**
+   * Saves the adapter's own state of the execution (its step log, the
+   * materials) while the execution runs; it throws when the execution no
+   * longer runs, and the adapter sends nothing more.
+   */
+  save: (state: unknown) => Promise<void>
+}
+
+/**
+ * The agent mode of an adapter.
+ * - `fits`: whether the settings let the agent run its steps (the model,
+ *   the token caps and the tool calls the reservation covers); a request
+ *   under settings that do not fit is refused with `not_configured`.
+ * - `run`: carries the work out once, saving its state before each step
+ *   is sent and after its response, and never sends a step again.
+ * - `materials`: the materials of the work, read from the state the
+ *   adapter saved; they reach the client with the result.
+ */
+export type AgentRunner = {
+  fits: () => boolean
+  run: (request: AgentRequest, context: AgentContext) => Promise<AgentOutcome>
+  materials: (state: unknown) => AgentMaterial[]
 }
 
 /** One item of a provider batch: its identifier and its request. */
@@ -210,7 +296,8 @@ export type BatchRunner = {
  * - `modes`: the execution modes the adapter supports, by providing them.
  *   Single mode: one request, its result and usage, with errors classified
  *   as `ModelError`. Batch: the provider's batch cycle (`BatchRunner`).
- *   The agent mode comes with its adapter.
+ *   Agent: gathering materials with tools and writing the result from
+ *   them (`AgentRunner`).
  * - `endOf`: the one place where the adapter decides which public state
  *   and cause what it observed means. Coordination saves what it returns
  *   and does not branch on provider facts.
@@ -241,6 +328,7 @@ export type ProviderAdapter = {
       context: RequestContext,
     ) => StructuredModel
     batch?: (settings: ProviderSettings) => BatchRunner
+    agent?: (settings: ProviderSettings) => AgentRunner
   }
   endOf: (observation: ProviderObservation) => ExecutionEnd
   sharedSlot?: boolean

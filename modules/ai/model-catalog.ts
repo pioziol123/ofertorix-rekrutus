@@ -13,6 +13,13 @@ export type AiConfiguration = {
   fxVersion: string
   maxInputTokens: number
   maxOutputTokens: number
+  /**
+   * The price of one call of the paid tool of the agent mode (web search),
+   * in USD, and the most calls a reservation covers. Absent when the price
+   * list covers no paid tool.
+   */
+  toolCallUsd?: string
+  maxToolCalls?: number
 }
 
 export type CatalogModel = {
@@ -70,6 +77,20 @@ export const aiCatalog: AiCatalog = {
           fxVersion: 'ceiling-5',
           maxInputTokens: 200000,
           maxOutputTokens: 6000,
+        },
+        // Agent work (company research): the standard rates of its steps
+        // and the web search price per call, at most three calls.
+        agent: {
+          model: 'gpt-6-luna',
+          version: 'openai-2026-11-04-standard',
+          inputUsdPerMillion: '0.10',
+          outputUsdPerMillion: '0.50',
+          usdPln: '5',
+          fxVersion: 'ceiling-5',
+          maxInputTokens: 500000,
+          maxOutputTokens: 6000,
+          toolCallUsd: '0.01',
+          maxToolCalls: 3,
         },
       },
     },

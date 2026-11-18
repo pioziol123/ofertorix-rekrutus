@@ -18,11 +18,19 @@ import {
 
 export type { RequestedExecution } from './admit-executions.ts'
 
-/** How the work runs: one call, an item of a provider batch, or agent work. */
+/**
+ * How the work runs: one call, an item of a provider batch, or agent work.
+ * An agent gathers materials with the allowed tools following the
+ * request's instruction, then writes the result in the response schema
+ * from what it gathered, following `resultInstruction`. The step that
+ * writes the result gets the JSON object `{"target": <the input>,
+ * "evidence": <the materials>}`, so `resultInstruction` can name both;
+ * the materials reach the client with the result.
+ */
 export type ExecutionModeRequest =
   | { kind: 'single' }
   | { kind: 'batch'; groupId: string }
-  | { kind: 'agent'; tools: string[] }
+  | { kind: 'agent'; tools: string[]; resultInstruction: string }
 
 export type ExecutionRequest = {
   /**
@@ -77,7 +85,10 @@ function validate(request: ExecutionRequest) {
     !schemaValidator(request.responseSchema.schema) ||
     (mode.kind === 'batch' && !uuid.test(mode.groupId)) ||
     (mode.kind === 'agent' &&
-      (!Array.isArray(mode.tools) || mode.tools.some((t) => !t.trim())))
+      (!Array.isArray(mode.tools) ||
+        mode.tools.some((t) => typeof t !== 'string' || !t.trim()) ||
+        typeof mode.resultInstruction !== 'string' ||
+        !mode.resultInstruction.trim()))
   )
     throw new AiRequestError('invalid_request')
 }
@@ -98,6 +109,9 @@ function snapshot(
     responseSchema: request.responseSchema,
     input: request.input,
     tools: request.mode.kind === 'agent' ? request.mode.tools : [],
+    ...(request.mode.kind === 'agent'
+      ? { resultInstruction: request.mode.resultInstruction }
+      : {}),
     ...(request.keepArchive && request.mode.kind === 'single'
       ? { keepArchive: true }
       : {}),

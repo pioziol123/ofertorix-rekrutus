@@ -1,5 +1,4 @@
-import type { AiConfiguration } from '../modules/ai/index.ts'
-import type { AiCatalog } from '../modules/ai/model-catalog.ts'
+import type { AiCatalog, AiConfiguration } from '../modules/ai/model-catalog.ts'
 
 /**
  * Test replacements for the settings and the price lists AI keeps in code.
@@ -34,7 +33,8 @@ export const aiCatalog: AiCatalog = {
 export function usePricing(
   key: string,
   pricing: AiConfiguration | null,
-  mode: 'single' | 'batch' | ('single' | 'batch')[] = 'single',
+  mode:
+    'single' | 'batch' | 'agent' | ('single' | 'batch' | 'agent')[] = 'single',
 ) {
   Reflect.deleteProperty(clientSettings, key)
   if (!pricing) return

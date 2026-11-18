@@ -1,4 +1,4 @@
-import { ResearchConfigurationError } from '../../lib/companies/research'
+import { ResearchConfigurationError } from '../../modules/companies/index'
 import { createError } from 'h3'
 import type { H3Event } from 'h3'
 import { CompanyConflict, CompanyNotFound } from '../../lib/companies/store'

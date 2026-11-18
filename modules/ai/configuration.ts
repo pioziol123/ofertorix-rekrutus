@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { clientSettings } from './client-settings.ts'
-import type { ExecutionMode } from './domain/execution-mode.ts'
 import { resolveSettings, type ClientSettings } from './domain/settings.ts'
 import {
   aiCatalog,
@@ -28,19 +27,6 @@ export function settingsFor(
 export function hasCredentials(provider: string): boolean {
   const variable = aiCatalog.providers[provider]?.credentialEnv
   return variable === null || (!!variable && !!process.env[variable])
-}
-
-/**
- * The price list of a settings key's model in a mode, when its settings are
- * valid and the provider's secret is present; otherwise null.
- */
-export function aiConfiguration(
-  key: string,
-  mode: ExecutionMode = 'single',
-): AiConfiguration | null {
-  const resolved = settingsFor(key)
-  if (!resolved || !hasCredentials(resolved.settings.provider)) return null
-  return resolved.model.prices[mode] ?? null
 }
 
 const name = z.string().trim().min(1)

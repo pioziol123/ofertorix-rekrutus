@@ -22,6 +22,8 @@ export type ExecutionSnapshot = {
   responseSchema: { name: string; schema: Record<string, unknown> }
   input: string
   tools: string[]
+  /** How an agent writes its result from its materials (agent mode). */
+  resultInstruction?: string
   /**
    * What the adapter fixed with its check before the request; only the
    * adapter reads it. Absent in snapshots saved before the check existed.
@@ -77,6 +79,7 @@ function toExecution(row: Record<string, unknown>): ExecutionRow {
   const usage = row.usage as {
     input_tokens: number | null
     output_tokens: number | null
+    tool_calls?: number | null
   } | null
   return {
     id: row.id as string,
@@ -108,7 +111,13 @@ function toExecution(row: Record<string, unknown>): ExecutionRow {
       reserved: row.reserved_pln as string,
       actual: row.actual_pln as string | null,
       usage: usage
-        ? { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens }
+        ? {
+            inputTokens: usage.input_tokens,
+            outputTokens: usage.output_tokens,
+            ...(usage.tool_calls !== undefined
+              ? { toolCalls: usage.tool_calls }
+              : {}),
+          }
         : null,
     },
   }
@@ -245,6 +254,9 @@ function attemptValues(executionId: string, settlement: Settlement) {
     {
       input_tokens: settlement.usage.inputTokens,
       output_tokens: settlement.usage.outputTokens,
+      ...(settlement.usage.toolCalls !== undefined
+        ? { tool_calls: settlement.usage.toolCalls }
+        : {}),
     },
     settlement.responseId,
   ]
@@ -287,6 +299,18 @@ export async function saveOutcome(
     attemptValues(executionId, settlement),
   )
   return true
+}
+
+/**
+ * Saves the adapter's own state of a running execution; false when the
+ * execution no longer runs. The value is stored as it is, never read here.
+ */
+export async function saveAdapterState(executionId: string, state: unknown) {
+  const saved = await db().query(
+    "UPDATE ai_executions SET adapter_state=$2::jsonb,revision=revision+1 WHERE id=$1 AND state='running'",
+    [executionId, JSON.stringify(state)],
+  )
+  return (saved.rowCount ?? 0) > 0
 }
 
 /**

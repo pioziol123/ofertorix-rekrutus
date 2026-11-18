@@ -629,7 +629,10 @@ integration('AI execution coordination with a real database and queue', () => {
 
   it.each<[string, ExecutionRequest['mode']]>([
     ['batch', { kind: 'batch', groupId: randomUUID() }],
-    ['agent', { kind: 'agent', tools: ['web_search'] }],
+    [
+      'agent',
+      { kind: 'agent', tools: ['web_search'], resultInstruction: 'Write it.' },
+    ],
   ])(
     'A14-AC10: refuses %s work no adapter declares, with nothing reserved or queued',
     async (_, mode) => {

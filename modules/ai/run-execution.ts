@@ -2,7 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { transaction } from '../../lib/db.ts'
 import { admitExecutions } from './admit-executions.ts'
 import { archiveArtifact } from './infrastructure/persistence/batch-archive.ts'
-import { chargeCeiling } from './domain/cost.ts'
+import { chargeCost } from './domain/cost.ts'
 import type { ExecutionEnd } from './domain/execution-state.ts'
 import { parseResult } from './domain/response-schema.ts'
 import { resendExecutionJob } from './execution-queue.ts'
@@ -12,6 +12,7 @@ import {
   finishExecution,
   readExecutionRow,
   recordFailedDelivery,
+  saveAdapterState,
   saveOutcome,
   settleAttempt,
   settleSavedAttempt,
@@ -30,11 +31,12 @@ import {
 import {
   emptyUsage,
   ModelError,
+  type AgentMaterial,
   type ModelResult,
   type ModelUsage,
   type ProviderAdapter,
 } from './provider-adapter.ts'
-import { providerAdapter } from './provider-registry.ts'
+import { adapterOfExecution, providerAdapter } from './provider-registry.ts'
 import { resultReceiver } from './result-receiver.ts'
 import { runBatch } from './run-batch.ts'
 
@@ -52,6 +54,11 @@ export type Outcome = {
   responseId: string | null
   /** Nothing reached the provider, so nothing was spent. */
   notSent: boolean
+  /**
+   * A request was sent whose usage is not known: the cost stays unknown
+   * and reserved, although the usage measured for other steps is kept.
+   */
+  unmeasured: boolean
   retry: boolean
   retryAfterMs: number
 }
@@ -62,6 +69,7 @@ export const noOutcome = (): Outcome => ({
   usage: emptyUsage(),
   responseId: null,
   notSent: false,
+  unmeasured: false,
   retry: false,
   retryAfterMs: 1000,
 })
@@ -119,6 +127,55 @@ export function responseOutcome(
     : { ...outcome, result }
 }
 
+/**
+ * Runs agent work through its adapter once. The adapter saves its own
+ * state as it goes, and decides the end of work that gave no response;
+ * an error it throws is translated like that of a single call, and the
+ * cost then stays unknown.
+ */
+async function callAgent(
+  execution: ExecutionRow,
+  adapter: ProviderAdapter,
+): Promise<Outcome> {
+  const { settings, instruction, input, responseSchema } = execution.snapshot
+  const agent = adapter.modes.agent!(settings)
+  try {
+    const work = await agent.run(
+      {
+        model: settings.model,
+        instructions: instruction,
+        resultInstructions: execution.snapshot.resultInstruction ?? '',
+        input,
+        output: responseSchema,
+        tools: execution.snapshot.tools,
+      },
+      {
+        save: async (state) => {
+          if (!(await transaction(() => saveAdapterState(execution.id, state))))
+            throw new Error('The execution no longer runs')
+        },
+      },
+    )
+    const measured = {
+      usage: work.usage,
+      responseId: work.responseIds.join(',') || null,
+      unmeasured: work.unmeasured,
+    }
+    if (work.kind === 'end')
+      return { ...noOutcome(), ...measured, end: work.end }
+    return {
+      ...responseOutcome(work.response, adapter, responseSchema.schema),
+      ...measured,
+    }
+  } catch (error) {
+    return {
+      ...noOutcome(),
+      end: adapter.endOf({ kind: 'error', error }),
+      unmeasured: true,
+    }
+  }
+}
+
 /** Calls the provider through its adapter and classifies what happened. */
 async function callProvider(
   execution: ExecutionRow,
@@ -132,6 +189,8 @@ async function callProvider(
   // that no longer declares it when the job runs is a failure on the AI
   // side with its own cause; nothing reached a provider.
   const single = execution.mode === 'single' ? adapter?.modes.single : undefined
+  const agent = execution.mode === 'agent' ? adapter?.modes.agent : undefined
+  if (adapter && agent) return callAgent(execution, adapter)
   if (!adapter || !single)
     return {
       ...outcome,
@@ -227,18 +286,31 @@ export function settlementOf(
 ): Settlement {
   const pricing = execution.snapshot.settings.pricing
   const { inputTokens, outputTokens } = outcome.usage
+  // Calls of a paid tool count only under a price list that has one.
+  const toolCalls = pricing?.toolCallUsd
+    ? outcome.usage.toolCalls === undefined
+      ? 0
+      : outcome.usage.toolCalls
+    : 0
   const known =
     pricing !== null &&
+    !outcome.unmeasured &&
     inputTokens !== null &&
     outputTokens !== null &&
+    toolCalls !== null &&
     inputTokens <= pricing.maxInputTokens &&
-    outputTokens <= pricing.maxOutputTokens
+    outputTokens <= pricing.maxOutputTokens &&
+    toolCalls <= (pricing.maxToolCalls ?? 0)
   return {
     actual:
       outcome.notSent || pricing === null
         ? '0.000000'
         : known
-          ? chargeCeiling(pricing, inputTokens, outputTokens)
+          ? chargeCost(pricing, {
+              input: inputTokens,
+              output: outputTokens,
+              toolCalls,
+            })
           : null,
     usage: outcome.usage,
     responseId: outcome.responseId,
@@ -274,6 +346,14 @@ async function retry(
       execution.snapshot.settings,
     )
   })
+}
+
+/** The materials agent work gathered, read by the adapter that saved them. */
+function materialsOf(execution: ExecutionRow): AgentMaterial[] {
+  const settings = execution.snapshot.settings
+  const agent = adapterOfExecution(settings.provider)?.modes.agent
+  if (!agent) throw new Error('No agent adapter for the execution')
+  return agent(settings).materials(execution.adapterState)
 }
 
 /** Why a delivery did not reach the client's decision, for diagnostics. */
@@ -321,6 +401,9 @@ async function deliver(executionId: string) {
       const decision = await receiver.receiveResult({
         ...delivery,
         result: execution.result,
+        ...(execution.mode === 'agent'
+          ? { materials: materialsOf(execution) }
+          : {}),
       })
       await finishExecution(
         execution.id,

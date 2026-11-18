@@ -1,7 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { aiConfiguration } from './configuration.ts'
 import { decimal } from './domain/money.ts'
 import { resolveSettings } from './domain/settings.ts'
 import { executionSettings } from './execution-settings.ts'
@@ -167,13 +166,25 @@ describe('A14-AC10: modes no adapter declares', () => {
       pricing: aiCatalog.models[0]!.prices.batch,
     })
   })
-  it.each(['agent'] as const)('refuses %s as unsupported_mode', (mode) => {
+  it('accepts agent work on OpenAI once its agent adapter declares it, with the tool calls of its price list (0mq.22)', () => {
     ai.settings['client-x'] = {
       provider: 'openai',
       model: 'gpt-6-luna',
       reasoningEffort: 'low',
     }
-    expect(() => executionSettings('client-x', mode)).toThrow(
+    expect(executionSettings('client-x', 'agent')).toMatchObject({
+      provider: 'openai',
+      maxToolCalls: 3,
+      pricing: aiCatalog.models[0]!.prices.agent,
+    })
+  })
+  it('refuses agent work as unsupported_mode on a provider without an agent adapter', () => {
+    ai.settings['client-x'] = {
+      provider: 'ollama',
+      model: 'gpt-oss:20b',
+      reasoningEffort: null,
+    }
+    expect(() => executionSettings('client-x', 'agent')).toThrow(
       new AiRequestError('unsupported_mode'),
     )
   })
@@ -214,20 +225,6 @@ describe('AI configuration', () => {
   it('names in every client setting a provider and model it knows', () => {
     for (const key of realKeys)
       expect(resolveSettings(ai.settings[key], aiCatalog)).not.toBeNull()
-  })
-  it('gives the transitional consumers the price list of their key and mode', () => {
-    ai.settings['client-x'] = {
-      provider: 'openai',
-      model: 'gpt-6-luna',
-      reasoningEffort: 'low',
-    }
-    const luna = aiCatalog.models[0]!
-    expect(aiConfiguration('client-x')).toEqual(luna.prices.single)
-    expect(aiConfiguration('client-x', 'batch')).toEqual(luna.prices.batch)
-    expect(aiConfiguration('client-x', 'agent')).toBeNull()
-    expect(aiConfiguration('unknown-client')).toBeNull()
-    vi.stubEnv('OPENAI_API_KEY', '')
-    expect(aiConfiguration('client-x')).toBeNull()
   })
 })
 

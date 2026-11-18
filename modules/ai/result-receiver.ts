@@ -1,4 +1,5 @@
 import type { ExecutionEnd } from './domain/execution-state.ts'
+import type { AgentMaterial } from './provider-adapter.ts'
 
 /** The cost of an execution's attempt at the moment of delivery. */
 export type ExecutionCost = {
@@ -12,6 +13,11 @@ export type ExecutionResultDelivery = {
   operationId: string
   inputVersion: string | null
   result: unknown
+  /**
+   * Agent work only: the materials the agent gathered with its tools,
+   * which the result refers to by id.
+   */
+  materials?: AgentMaterial[]
   cost: ExecutionCost
 }
 

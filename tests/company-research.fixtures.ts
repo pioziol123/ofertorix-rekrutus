@@ -1,4 +1,5 @@
-import type { AiConfiguration } from '../modules/ai/index.ts'
+import { matchingMigrations } from './matching-ai.fixtures.ts'
+import type { AiConfiguration } from '../modules/ai/model-catalog.ts'
 import {
   researchTopics,
   type ResearchDraft,
@@ -12,6 +13,9 @@ export const pricing: AiConfiguration = {
   fxVersion: 'test',
   maxInputTokens: 100000,
   maxOutputTokens: 4000,
+  // The web search price per call, at most three calls, as research had.
+  toolCallUsd: '0.01',
+  maxToolCalls: 3,
 }
 export const draft = (): ResearchDraft => ({
   identity: 'Tożsamość wymaga dalszego potwierdzenia.',
@@ -64,3 +68,10 @@ export const synthesisResponse = () => ({
     },
   ],
 })
+
+/** The schema of research before its move to AI executions (0mq.22). */
+export const researchMigrations = [
+  ...matchingMigrations,
+  '1770000000010_companies',
+  '1770000000011_company_research',
+].sort()

@@ -22,6 +22,36 @@ export function chargeCeiling(
   return money(ceil(usd * decimal(config.usdPln), million))
 }
 
+/**
+ * The PLN price of the given calls of the price list's paid tool, rounded
+ * up once; zero when the price list covers no paid tool.
+ */
+export function toolCallFee(config: AiConfiguration, calls: number): string {
+  if (!Number.isSafeInteger(calls) || calls < 0)
+    throw new Error('Invalid tool calls')
+  if (!config.toolCallUsd) return money(0n)
+  return money(
+    ceil(
+      BigInt(calls) * decimal(config.toolCallUsd) * decimal(config.usdPln),
+      million,
+    ),
+  )
+}
+
+/**
+ * The PLN cost of a usage: its tokens and its calls of the paid tool, each
+ * rounded up on its own and then added, as research was settled before.
+ */
+export function chargeCost(
+  config: AiConfiguration,
+  usage: { input: number; output: number; toolCalls: number },
+): string {
+  return money(
+    decimal(chargeCeiling(config, usage.input, usage.output)) +
+      decimal(toolCallFee(config, usage.toolCalls)),
+  )
+}
+
 /** The budget period of a moment: its month in Europe/Warsaw. */
 export function budgetMonth(now = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -32,7 +62,14 @@ export function budgetMonth(now = new Date()): string {
   return `${parts.find((v) => v.type === 'year')!.value}-${parts.find((v) => v.type === 'month')!.value}`
 }
 
-/** The reservation of one attempt: the cost of its recorded token caps. */
+/**
+ * The reservation of one attempt: the cost of its recorded token caps and
+ * of the most calls of its paid tool.
+ */
 export function attemptCeiling(config: AiConfiguration): string {
-  return chargeCeiling(config, config.maxInputTokens, config.maxOutputTokens)
+  return chargeCost(config, {
+    input: config.maxInputTokens,
+    output: config.maxOutputTokens,
+    toolCalls: config.maxToolCalls ?? 0,
+  })
 }

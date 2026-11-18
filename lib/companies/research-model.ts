@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { AgentMaterial, AgentSource } from '../../modules/ai/index.ts'
 export const researchCommand = z
   .object({
     commandId: z.uuid().transform((v) => v.toLowerCase()),
@@ -66,17 +67,17 @@ export const researchDraft = z
   })
   .strict()
 export type ResearchDraft = z.infer<typeof researchDraft>
-export type ResearchSource = {
-  url: string
-  title: string
-  kind: 'page' | 'search_snippet'
-  accessedAt: string
+/** The company or brand a research is about, fixed when it is requested. */
+export type ResearchTarget = {
+  name: string
+  kind: string
+  website: string | null
+  description: string
 }
-export type ResearchEvidence = {
-  id: number
-  text: string
-  sources: ResearchSource[]
-}
+/** A source of a finding, as the AI agent found it. */
+export type ResearchSource = AgentSource
+/** A unit of evidence the AI agent gathered; the draft cites it by id. */
+export type ResearchEvidence = AgentMaterial
 export type ResearchReport = {
   identity: string
   claims: (Omit<ResearchDraft['claims'][number], 'evidence'> & {
@@ -102,7 +103,7 @@ export const safeResearchUrl = (value: string) => {
     return false
   }
 }
-// Provider metadata supplies URLs; the synthesis is only allowed to reference those evidence units.
+// The agent supplies the evidence units with their URLs; the draft may only reference those units.
 export function validateResearch(
   value: unknown,
   evidence: ResearchEvidence[],

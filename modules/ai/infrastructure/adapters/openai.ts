@@ -4,6 +4,7 @@ import {
   openAiBatch,
   reconstructBatchInput,
 } from './openai-batch.ts'
+import { openAiAgent } from './openai-agent.ts'
 import { record, tokenCount, validateRequest } from './response.ts'
 import type {
   ModelRequest,
@@ -236,8 +237,8 @@ export function openAiEnd(observation: ProviderObservation): ExecutionEnd {
 }
 
 /**
- * The OpenAI provider for the AI coordination, in single mode and as a
- * provider batch, on the default endpoints with the key from the
+ * The OpenAI provider for the AI coordination, in single mode, as a
+ * provider batch and as an agent with web search, on the default endpoints with the key from the
  * provider's secret.
  */
 export function openAiProvider(
@@ -257,6 +258,7 @@ export function openAiProvider(
           settings,
           () => new BatchClient(process.env.OPENAI_API_KEY ?? '', fetcher),
         ),
+      agent: (settings) => openAiAgent(settings, fetcher),
     },
     // ASSUMPTION(oferty-pracy-0mq.21/ASM-5): the exact body single mode
     // sends, as the batch mode measures its exact batch line.
