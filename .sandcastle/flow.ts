@@ -418,7 +418,7 @@ function feedbackPrompt(report: string): string {
   return [
     'The runner checked your work and the task is not done yet:',
     report,
-    `Fix it within the task, run ${GATE} until it exits 0, commit, and rewrite ${RESULT_FILE}. If the report shows a spec conflict rather than a defect in your code, classify it as the process contract's section "Spec conflicts during implementation" says: an assumption or a qualifying deviation goes into the result, anything else means finishing as blocked with the question.`,
+    `Fix it within the task, run ${GATE} until it exits 0, commit, and write ${RESULT_FILE} anew: the runner removed the previous one, so it holds the whole result again. If the report shows a spec conflict rather than a defect in your code, classify it as the process contract's section "Spec conflicts during implementation" says: an assumption or a qualifying deviation goes into the result, anything else means finishing as blocked with the question.`,
   ].join('\n\n')
 }
 
@@ -533,7 +533,7 @@ function replay(worktree: string, from: string, onto: string): Step {
     `Replaying the task branch on ${BASE_BRANCH} at ${onto} conflicted.`,
     files.length ? `Conflicting files:\n${files.map((f) => `- ${f}`).join('\n')}` : `git said:\n${tail(rebase.out, 20)}`,
     commits ? `Commits of ${BASE_BRANCH} since ${from.slice(0, 7)} that change them:\n${commits.split('\n').map((c) => `- ${c}`).join('\n')}` : '',
-    `Rebase the task branch on commit ${onto} yourself (git rebase ${onto}), resolve the conflict, run ${GATE} until it exits 0, commit, and rewrite ${RESULT_FILE}.`,
+    `Rebase the task branch on commit ${onto} yourself (git rebase ${onto}), resolve the conflict, run ${GATE} until it exits 0, commit, and write ${RESULT_FILE} anew.`,
   ].filter(Boolean).join('\n\n')
   return { ok: false, report }
 }
