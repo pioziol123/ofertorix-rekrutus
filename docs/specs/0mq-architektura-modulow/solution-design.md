@@ -269,7 +269,7 @@ The operations are internal to the Sources module. A run as an object contains:
 1. Upsert of the scope by the parameter fingerprint.
 2. Insert of a pending run, skipping a conflict on the pending index.
 3. Without an insert: read the identifier of the existing pending run, without sending a job.
-4. After an insert: send the job and save its identifier. A send error rolls back everything. Acceptance without a job-sending function (only Himalayas until task 0mq.16, see [0mq.5](#a5)) skips this step.
+4. After an insert: send the job and save its identifier. A send error rolls back everything. Acceptance without a job-sending function (only Himalayas until task 0mq.16, see [0mq.5](#a5)) skips this step. <!-- altitude-ok: names the legacy job-sending function whose absence the acceptance rule describes -->
 
 The other operations:
 
@@ -635,7 +635,7 @@ Requirements: [A14](requirements.md#a14). F4 scope: [F4](requirements.md#f4). St
 | A14-AC08 | Unit tests of the settings validation: a missing key, an unknown provider or model, a reasoning effort the model does not accept. A search of the AI module finds the key literals only in the settings file. |
 | A14-AC06 | Review of the module description. |
 | A14-AC07 | Review of the dependencies of the AI coordination, adapters and public entry point. |
-| A14-AC12 | Review of the public entry point and the execution read: state and cause typed by the exported lists, no `runtimeState` or unconfirmed-cost flag; a search outside `modules/ai/infrastructure/adapters/` finds no translation of provider observations; unit tests of each adapter's translation, including `uncertain` for a lost local lease and for a paid request that failed after it was sent (an HTTP or network error, an unreadable response). |
+| A14-AC12 | Review of the public entry point and the execution read: state and cause typed by the exported lists, no `runtimeState` or unconfirmed-cost flag; a search outside `modules/ai/infrastructure/adapters/` finds no translation of provider observations; unit tests of each adapter's translation, including `uncertain` for a lost local lease and for a paid request that failed after it was sent (an HTTP or network error, an unreadable response). | <!-- altitude-ok: names the adapters directory that the search criterion covers -->
 | A14-AC13 | Review of the public type of the check and a search of the requesting modules for reads of its content. |
 
 <a id="a9"></a>
