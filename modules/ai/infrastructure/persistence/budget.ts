@@ -52,3 +52,25 @@ export async function readBudgetMonth(executor: QueryExecutor, month: string) {
     reserved: row.reserved as string,
   }
 }
+
+/**
+ * Every month with a budget, newest first: its limit and the settled and
+ * reserved amounts of its attempts, as the database sums them.
+ */
+// ASSUMPTION(oferty-pracy-0mq.11/ASM-2): the query the profile route ran.
+export async function readBudgetMonths(executor: QueryExecutor) {
+  const rows = (
+    await executor.query(
+      `SELECT b.month,b.limit_pln,
+        coalesce(sum(CASE WHEN a.state='settled' THEN a.actual_pln ELSE 0 END),0) AS settled,
+        coalesce(sum(CASE WHEN a.state!='settled' THEN a.reserved_pln ELSE 0 END),0) AS reserved
+       FROM ai_budget_months b LEFT JOIN ai_attempts a ON a.month=b.month GROUP BY b.month ORDER BY b.month DESC`,
+    )
+  ).rows
+  return rows.map((row) => ({
+    month: row.month as string,
+    limit: row.limit_pln as string,
+    settled: row.settled as string,
+    reserved: row.reserved as string,
+  }))
+}

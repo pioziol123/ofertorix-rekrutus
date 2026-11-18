@@ -19,15 +19,7 @@ import {
   emptyProfile,
   emptySkill,
 } from '../lib/profile/model.ts'
-import { confirmProfile, readProfile, saveDraft } from '../lib/profile/store.ts'
-import {
-  createFileImport,
-  createTextImport,
-  digest,
-  extractImport,
-  originalFile,
-  parseQueue,
-} from '../lib/profile/imports.ts'
+import { digest, extractImport, parseQueue } from '../lib/profile/imports.ts'
 import { closePool, setPool } from '../lib/db.ts'
 import {
   aiExecutionJobOptions,
@@ -42,10 +34,16 @@ import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import { openAiProvider } from '../modules/ai/infrastructure/adapters/openai.ts'
 import { registerProviderAdapter } from '../modules/ai/provider-registry.ts'
 import {
+  confirmProfile,
+  importCvDocument,
+  importCvText,
   prepareProposal,
   proposalReceiver,
   proposalSettingsKey,
   readImport,
+  readOriginalFile,
+  readProfile,
+  saveDraft,
 } from '../modules/profile/index.ts'
 import { usePricing } from './ai-test-configuration.ts'
 
@@ -147,7 +145,7 @@ integration(
       await runExecution(executionId)
     }
     async function readyAttempt(text = 'PHP professional') {
-      const id = await createTextImport(pool, text)
+      const id = await importCvText(text)
       const result = await prepareProposal(id, text, 0)
       if (!('executionId' in result)) throw new Error('Expected a request')
       return { id, executionId: result.executionId }
@@ -184,43 +182,43 @@ integration(
         { status: 200 },
       )
     it('separates draft from active version, detects stale saves and confirms idempotently', async () => {
-      expect((await readProfile(pool)).active).toBeNull()
+      expect((await readProfile()).active).toBeNull()
       const data = emptyProfile()
       data.summary = 'First'
-      const draft = await saveDraft(pool, data, 0)
-      expect((await readProfile(pool)).active).toBeNull()
-      await expect(saveDraft(pool, data, 0)).rejects.toThrow('Draft changed')
+      const draft = await saveDraft(data, 0)
+      expect((await readProfile()).active).toBeNull()
+      await expect(saveDraft(data, 0)).rejects.toThrow('Draft changed')
       const command = randomUUID(),
-        version = await confirmProfile(pool, draft.revision, null, command)
-      expect(
-        (await confirmProfile(pool, draft.revision, null, command)).id,
-      ).toBe(version.id)
-      expect((await readProfile(pool)).versions).toHaveLength(1)
+        version = await confirmProfile(draft.revision, null, command)
+      expect((await confirmProfile(draft.revision, null, command)).id).toBe(
+        version.id,
+      )
+      expect((await readProfile()).versions).toHaveLength(1)
       await expect(
-        confirmProfile(pool, draft.revision, null, randomUUID()),
+        confirmProfile(draft.revision, null, randomUUID()),
       ).rejects.toThrow('Profile changed')
-      const state = await readProfile(pool)
+      const state = await readProfile()
       data.summary = 'Second draft'
-      await saveDraft(pool, data, state.draft.revision)
-      expect((await readProfile(pool)).active.data.summary).toBe('First')
+      await saveDraft(data, state.draft.revision)
+      expect((await readProfile()).active.data.summary).toBe('First')
     })
     it('allows only one concurrent draft writer and validates import references', async () => {
       const results = await Promise.allSettled([
-        saveDraft(pool, emptyProfile(), 0),
-        saveDraft(pool, emptyProfile(), 0),
+        saveDraft(emptyProfile(), 0),
+        saveDraft(emptyProfile(), 0),
       ])
       expect(results.filter((v) => v.status === 'fulfilled')).toHaveLength(1)
       const data = emptyProfile()
       data.sources = [randomUUID()]
-      await expect(saveDraft(pool, data, 1)).rejects.toThrow(
+      await expect(saveDraft(data, 1)).rejects.toThrow(
         'Invalid import references',
       )
-      const id = await createTextImport(pool, 'PHP')
+      const id = await importCvText('PHP')
       data.sources = [id]
-      expect((await saveDraft(pool, data, 1)).data.sources).toEqual([id])
+      expect((await saveDraft(data, 1)).data.sources).toEqual([id])
     })
     it('validates every provenance against immutable reviewed text and listed imports', async () => {
-      const id = await createTextImport(pool, 'PHP experience')
+      const id = await importCvText('PHP experience')
       await pool.query(
         'INSERT INTO profile_import_texts(import_id,revision,text) VALUES($1,1,$2)',
         [id, 'PHP experience'],
@@ -233,41 +231,35 @@ integration(
           source: { importId: id, textRevision: 1, evidence: 'PHP' },
         },
       ]
-      await expect(saveDraft(pool, data, 0)).rejects.toThrow(
-        'Missing provenance',
-      )
+      await expect(saveDraft(data, 0)).rejects.toThrow('Missing provenance')
       data.sources = [id]
       data.skills[0]!.source!.textRevision = 2
-      await expect(saveDraft(pool, data, 0)).rejects.toThrow(
-        'Invalid provenance',
-      )
+      await expect(saveDraft(data, 0)).rejects.toThrow('Invalid provenance')
       data.skills[0]!.source!.textRevision = 1
       data.skills[0]!.source!.evidence = 'Vue'
-      await expect(saveDraft(pool, data, 0)).rejects.toThrow(
-        'Invalid provenance',
-      )
+      await expect(saveDraft(data, 0)).rejects.toThrow('Invalid provenance')
       data.skills[0]!.source!.evidence = 'PHP'
-      expect((await saveDraft(pool, data, 0)).data.skills[0].source).toEqual(
+      expect((await saveDraft(data, 0)).data.skills[0].source).toEqual(
         data.skills[0]!.source,
       )
     })
     it('rejects command reuse with different confirmation arguments', async () => {
-      const draft = await saveDraft(pool, emptyProfile(), 0),
+      const draft = await saveDraft(emptyProfile(), 0),
         command = randomUUID()
-      const version = await confirmProfile(pool, draft.revision, null, command)
+      const version = await confirmProfile(draft.revision, null, command)
       await expect(
-        confirmProfile(pool, draft.revision + 1, null, command),
+        confirmProfile(draft.revision + 1, null, command),
       ).rejects.toThrow('Command already used')
       await expect(
-        confirmProfile(pool, draft.revision, version.id, command),
+        confirmProfile(draft.revision, version.id, command),
       ).rejects.toThrow('Command already used')
     })
     it('stores repeated originals independently, checks hashes, and rolls back failed enqueue', async () => {
       const bytes = await fixture('text.pdf'),
-        first = await createFileImport(pool, boss, '../CV.pdf', bytes, root),
-        second = await createFileImport(pool, boss, '../CV.pdf', bytes, root)
+        first = await importCvDocument('../CV.pdf', bytes, boss, root),
+        second = await importCvDocument('../CV.pdf', bytes, boss, root)
       expect(first).not.toBe(second)
-      expect((await originalFile(pool, first, root))?.bytes).toEqual(bytes)
+      expect((await readOriginalFile(first, root))?.bytes).toEqual(bytes)
       const rows = (
         await pool.query('SELECT * FROM profile_imports ORDER BY created_at')
       ).rows
@@ -275,7 +267,7 @@ integration(
       expect(rows[0].path_key).not.toBe(rows[1].path_key)
       expect(rows[0].original_name).not.toContain('/')
       await writeFile(join(root, rows[0].path_key), 'changed')
-      await expect(originalFile(pool, first, root)).rejects.toThrow(
+      await expect(readOriginalFile(first, root)).rejects.toThrow(
         'hash mismatch',
       )
       const fail = vi
@@ -283,7 +275,7 @@ integration(
         .mockRejectedValueOnce(new Error('queue failed'))
       try {
         await expect(
-          createFileImport(pool, boss, 'another.pdf', bytes, root),
+          importCvDocument('another.pdf', bytes, boss, root),
         ).rejects.toThrow('storage failed')
       } finally {
         fail.mockRestore()
@@ -301,27 +293,27 @@ integration(
         fail = vi.spyOn(boss, 'send').mockResolvedValueOnce(null)
       try {
         await expect(
-          createFileImport(pool, boss, 'cv.pdf', bytes, root),
+          importCvDocument('cv.pdf', bytes, boss, root),
         ).rejects.toThrow('storage failed')
       } finally {
         fail.mockRestore()
       }
       const row = (await pool.query('SELECT * FROM profile_imports')).rows[0]
       expect(row.status).toBe('failed')
-      expect((await originalFile(pool, row.id, root))?.bytes).toEqual(bytes)
+      expect((await readOriginalFile(row.id, root))?.bytes).toEqual(bytes)
     })
     it.each(['text.pdf', 'text.docx'])(
       'extracts synthetic %s locally and retains original',
       async (name) => {
         const bytes = await fixture(name),
-          id = await createFileImport(pool, boss, name, bytes, root)
+          id = await importCvDocument(name, bytes, boss, root)
         await extractImport(pool, id, root)
         const row = (
           await pool.query('SELECT * FROM profile_imports WHERE id=$1', [id])
         ).rows[0]
         expect(row.status).toBe('ready')
         expect(row.source_text).toMatch(/PHP/i)
-        expect((await originalFile(pool, id, root))?.bytes).toEqual(bytes)
+        expect((await readOriginalFile(id, root))?.bytes).toEqual(bytes)
       },
       30000,
     )
@@ -332,7 +324,7 @@ integration(
             name === 'scan.pdf'
               ? await fixture(name)
               : Buffer.from([80, 75, 3, 4, 1, 2, 3]),
-          id = await createFileImport(pool, boss, name, bytes, root)
+          id = await importCvDocument(name, bytes, boss, root)
         await extractImport(pool, id, root)
         expect(
           (
@@ -341,13 +333,13 @@ integration(
             ])
           ).rows[0].status,
         ).toBe('needs_text')
-        expect((await originalFile(pool, id, root))?.bytes).toEqual(bytes)
+        expect((await readOriginalFile(id, root))?.bytes).toEqual(bytes)
       },
       30000,
     )
     it('does not enqueue paid requests without configuration and keeps reviewed text revisions', async () => {
       vi.stubEnv('OPENAI_API_KEY', '')
-      const id = await createTextImport(pool, 'PHP mail@example.com')
+      const id = await importCvText('PHP mail@example.com')
       expect(await prepareProposal(id, 'PHP mail@example.com', 0)).toEqual({
         state: 'needs_configuration',
       })
@@ -369,10 +361,7 @@ integration(
         maxInputTokens: 1000,
         maxOutputTokens: 1,
       })
-      const ids = await Promise.all([
-        createTextImport(pool, 'PHP'),
-        createTextImport(pool, 'PHP'),
-      ])
+      const ids = await Promise.all([importCvText('PHP'), importCvText('PHP')])
       const result = await Promise.all(
         ids.map((id) => prepareProposal(id, 'PHP', 0)),
       )
@@ -436,7 +425,7 @@ integration(
         state: 'completed',
         inputVersion: '1',
       })
-      expect((await readProfile(pool)).active).toBeNull()
+      expect((await readProfile()).active).toBeNull()
       // E02-AC04: a job delivered again has no further effect.
       await executeAi(executionId, fetcher)
       expect(fetcher).toHaveBeenCalledTimes(1)
@@ -506,12 +495,12 @@ integration(
           id,
           imported.text_revision,
         ),
-        saved = await saveDraft(pool, selected, 0)
+        saved = await saveDraft(selected, 0)
       expect(saved.data.skills[0]!.source!.evidence).toBe('PHP\n\tbackend')
       expect(saved.data.experience[0]!.source!.evidence).toBe(
         'Senior Developer   Acme',
       )
-      expect((await readProfile(pool)).active).toBeNull()
+      expect((await readProfile()).active).toBeNull()
     })
     it.each([
       [{ status: 'incomplete', output: [] }, 'nie ukończyło'],
@@ -639,7 +628,7 @@ integration(
       }
     })
     it('rolls back paid reservation and reviewed text when queue submission fails', async () => {
-      const id = await createTextImport(pool, 'PHP')
+      const id = await importCvText('PHP')
       const fail = vi
         .spyOn(boss, 'send')
         .mockRejectedValueOnce(new Error('queue failure'))
@@ -667,7 +656,7 @@ integration(
       ).toEqual({ text_revision: 0, status: 'ready' })
     })
     it('does not reserve or accept a paid operation if queue submission returns null', async () => {
-      const id = await createTextImport(pool, 'PHP'),
+      const id = await importCvText('PHP'),
         fail = vi.spyOn(boss, 'send').mockResolvedValueOnce(null)
       try {
         await expect(prepareProposal(id, 'PHP', 0)).rejects.toThrow()
@@ -718,7 +707,7 @@ integration(
       await pool.query('INSERT INTO ai_budget_months VALUES ($1,0)', [
         budgetMonth(),
       ])
-      const id = await createTextImport(pool, 'PHP')
+      const id = await importCvText('PHP')
       const prepared = await prepareProposal(id, 'PHP', 0)
       expect(prepared.state).toBe('waiting_budget')
       expect((await readImport(id))!.status).toBe('waiting_budget')

@@ -4,8 +4,9 @@ import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { closePool, setPool, transaction } from '../../lib/db.ts'
 import { emptyProfile } from '../../lib/profile/model.ts'
-import { confirmProfile, saveDraft } from '../../lib/profile/store.ts'
 import {
+  confirmProfile,
+  saveDraft,
   readActiveProfileVersion,
   readProfileVersionMetadata,
   readProfileVersions,
@@ -56,8 +57,8 @@ integration('reading confirmed profile versions in isolated PostgreSQL', () => {
     )
     const data = emptyProfile()
     data.summary = summary
-    const draft = await saveDraft(pool, data, current.rows[0]?.revision ?? 0)
-    return confirmProfile(pool, draft.revision, activeId, randomUUID())
+    const draft = await saveDraft(data, current.rows[0]?.revision ?? 0)
+    return confirmProfile(draft.revision, activeId, randomUUID())
   }
 
   it('reports explicitly that no version is active before the first confirmation', async () => {

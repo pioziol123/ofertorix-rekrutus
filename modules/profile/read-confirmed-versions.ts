@@ -2,9 +2,11 @@ import { profileSchema, type ProfileData } from '../../lib/profile/model.ts'
 import {
   findActiveVersion,
   findVersionMetadata,
+  findVersionRecord,
   findVersions,
   type VersionRow,
 } from './infrastructure/persistence/profile-versions.ts'
+import type { VersionRecord } from './infrastructure/persistence/profile.ts'
 
 /** Identity of a confirmed profile version. */
 export type ProfileVersionMetadata = {
@@ -63,4 +65,17 @@ function toVersion(row: VersionRow): ProfileVersion {
 
 function unique(ids: readonly string[]): string[] {
   return [...new Set(ids)]
+}
+
+/**
+ * One confirmed version as it was saved, for the profile history: its data,
+ * number, confirmation time, the command and draft revision that created it
+ * and the version it replaced. Null for an unknown id.
+ */
+// ASSUMPTION(oferty-pracy-0mq.11/ASM-3): the stored row, so the version route
+// keeps its response; the reads above are shaped for Matching.
+export async function readVersionRecord(
+  id: string,
+): Promise<VersionRecord | null> {
+  return findVersionRecord(id)
 }

@@ -1,6 +1,5 @@
 import { z } from 'zod'
-import { saveDraft } from '../../../lib/profile/store'
-import { database } from '../../utils/database'
+import { saveDraft } from '../../../modules/profile/index'
 import { profileBody, profileHandler } from '../../utils/profile'
 export default profileHandler(async (event) => {
   const body = z
@@ -10,5 +9,5 @@ export default profileHandler(async (event) => {
     })
     .strict()
     .parse(await profileBody(event))
-  return saveDraft(database, body.data, body.expectedRevision)
+  return saveDraft(body.data, body.expectedRevision)
 })

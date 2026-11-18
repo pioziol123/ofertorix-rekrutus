@@ -1,4 +1,5 @@
 import { db } from '../../../../lib/db.ts'
+import type { VersionRecord } from './profile.ts'
 
 /**
  * Confirmed profile versions and the head that points at the active one.
@@ -38,4 +39,14 @@ export async function findVersionMetadata(
     [ids],
   )
   return result.rows
+}
+
+/** One version with every stored column, or null. */
+export async function findVersionRecord(
+  id: string,
+): Promise<VersionRecord | null> {
+  return (
+    (await db().query('SELECT * FROM profile_versions WHERE id=$1', [id]))
+      .rows[0] ?? null
+  )
 }

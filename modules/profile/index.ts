@@ -6,12 +6,21 @@ export {
   readActiveProfileVersion,
   readProfileVersionMetadata,
   readProfileVersions,
+  readVersionRecord,
   type ActiveProfileVersion,
   type ProfileVersion,
   type ProfileVersionMetadata,
 } from './read-confirmed-versions.ts'
 export type { ProfileData } from '../../lib/profile/model.ts'
+export { confirmProfile, readProfile, saveDraft } from './edit-profile.ts'
+export { ProfileConflict, ProposalNotFound } from './errors.ts'
+export {
+  importCvDocument,
+  importCvText,
+  readOriginalFile,
+} from './import-cv.ts'
 export { prepareProposal, type PreparationRequest } from './prepare-proposal.ts'
+export { applyProposal, type ProposalApplication } from './apply-proposal.ts'
 export {
   listImports,
   proposalAiConfigured,

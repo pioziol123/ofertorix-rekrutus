@@ -148,3 +148,67 @@ export async function lockWaitingPreparation(
   ).rows[0]
   return (row?.text as string | undefined) ?? null
 }
+
+/** The import's saved proposal, the text it quotes and that text's revision. */
+export type SavedProposal = {
+  proposal: unknown
+  text: string
+  textRevision: number
+}
+
+/**
+ * The proposal of an import whose preparation ended with one, or null. One
+ * row read, so the proposal, the text and the revision belong together.
+ */
+export async function findSavedProposal(
+  importId: string,
+): Promise<SavedProposal | null> {
+  const row = (
+    await db().query(
+      "SELECT proposal,professional_text,text_revision FROM profile_imports WHERE id=$1 AND status='proposal'",
+      [importId],
+    )
+  ).rows[0]
+  return row
+    ? {
+        proposal: row.proposal,
+        text: row.professional_text as string,
+        textRevision: row.text_revision as number,
+      }
+    : null
+}
+
+/** Saves a pasted CV text as an import ready for review. */
+export async function insertTextImport(
+  id: string,
+  text: string,
+  sha256: string,
+) {
+  await db().query(
+    `INSERT INTO profile_imports(id,kind,status,source_text,sha256) VALUES($1,'text','ready',$2,$3)`,
+    [id, text, sha256],
+  )
+}
+
+/** Records an uploaded document whose original is being stored. */
+export async function insertFileImport(file: {
+  id: string
+  kind: string
+  name: string
+  size: number
+  sha256: string
+  pathKey: string
+}) {
+  await db().query(
+    `INSERT INTO profile_imports(id,kind,original_name,byte_size,sha256,path_key,status) VALUES($1,$2,$3,$4,$5,$6,'receiving')`,
+    [file.id, file.kind, file.name, file.size, file.sha256, file.pathKey],
+  )
+}
+
+/** Ends an import that could not be accepted, with the owner's message. */
+export async function markImportFailed(importId: string, message: string) {
+  await db().query(
+    "UPDATE profile_imports SET status='failed',error=$2 WHERE id=$1",
+    [importId, message],
+  )
+}

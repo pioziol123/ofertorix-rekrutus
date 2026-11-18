@@ -12,7 +12,7 @@ import {
   vi,
 } from 'vitest'
 import { emptyProfile } from '../lib/profile/model.ts'
-import { confirmProfile, saveDraft } from '../lib/profile/store.ts'
+import { confirmProfile, saveDraft } from '../modules/profile/index.ts'
 import {
   activeProfileVersion,
   currentAdVersions,
@@ -407,10 +407,10 @@ integration(
           current,
         )
         // The publication's transaction is still open while the owner confirms.
-        const draft = await saveDraft(pool, emptyProfile(), 0)
+        const draft = await saveDraft(emptyProfile(), 0)
         const [confirmed] = await Promise.all([
           Promise.race([
-            confirmProfile(pool, draft.revision, profileVersion, randomUUID()),
+            confirmProfile(draft.revision, profileVersion, randomUUID()),
             new Promise<never>((_, reject) =>
               setTimeout(
                 () => reject(new Error('Confirmation waited for publication')),

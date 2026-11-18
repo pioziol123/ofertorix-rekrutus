@@ -1,12 +1,8 @@
 import { uuid } from '../../../../../lib/profile/model'
-import { originalFile } from '../../../../../lib/profile/imports'
-import { database } from '../../../../utils/database'
+import { readOriginalFile } from '../../../../../modules/profile/index'
 import { profileHandler } from '../../../../utils/profile'
 export default profileHandler(async (event) => {
-  const file = await originalFile(
-    database,
-    uuid.parse(getRouterParam(event, 'id')),
-  )
+  const file = await readOriginalFile(uuid.parse(getRouterParam(event, 'id')))
   if (!file)
     throw createError({ statusCode: 404, statusMessage: 'No source file' })
   setHeader(

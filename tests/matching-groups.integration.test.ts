@@ -13,7 +13,7 @@ import {
   vi,
 } from 'vitest'
 import { emptyProfile } from '../lib/profile/model.ts'
-import { confirmProfile, saveDraft } from '../lib/profile/store.ts'
+import { confirmProfile, saveDraft } from '../modules/profile/index.ts'
 import { recoverExecutions, useAiQueue } from '../modules/ai/index.ts'
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import {
@@ -292,10 +292,10 @@ integration(
         ]
         const data = emptyProfile()
         data.summary = `Round ${round}`
-        const draft = await saveDraft(pool, data, revision)
+        const draft = await saveDraft(data, revision)
         const [group, confirmed] = await Promise.all([
           enqueue(offers),
-          confirmProfile(pool, draft.revision, active, randomUUID()),
+          confirmProfile(draft.revision, active, randomUUID()),
         ])
         active = confirmed.id
         revision = draft.revision + 1

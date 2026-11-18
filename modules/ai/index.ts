@@ -24,7 +24,12 @@ export {
   type ExecutionCause,
   type ExecutionState,
 } from './domain/execution-state.ts'
-export { readBudget, type AiBudget } from './read-budget.ts'
+export {
+  readBudget,
+  readBudgetHistory,
+  type AiBudget,
+  type AiBudgetPeriod,
+} from './read-budget.ts'
 export { AiRequestError, type AiRequestErrorCode } from './errors.ts'
 export type { ExecutionMode } from './execution-settings.ts'
 export {

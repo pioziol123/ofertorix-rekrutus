@@ -13,7 +13,13 @@ import {
   vi,
 } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
-import { createTextImport } from '../lib/profile/imports.ts'
+import {
+  importCvText,
+  prepareProposal,
+  proposalReceiver,
+  proposalSettingsKey,
+  readImport,
+} from '../modules/profile/index.ts'
 import {
   readLatestExecution,
   recoverExecutions,
@@ -24,12 +30,6 @@ import {
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import { ollamaProvider } from '../modules/ai/infrastructure/adapters/ollama.ts'
 import { registerProviderAdapter } from '../modules/ai/provider-registry.ts'
-import {
-  prepareProposal,
-  proposalReceiver,
-  proposalSettingsKey,
-  readImport,
-} from '../modules/profile/index.ts'
 import { useLocalModel, usePricing } from './ai-test-configuration.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
@@ -76,7 +76,7 @@ integration('local profile executions in PostgreSQL', () => {
   /** The local runtime, simulated by the fetcher each step sets. */
   let runtime: typeof fetch = fetcher()
   async function enqueue(input = 'PHP experience') {
-    const importId = await createTextImport(pool, input)
+    const importId = await importCvText(input)
     runtime = fetcher()
     const prepared = await prepareProposal(importId, input, 0)
     if (!('executionId' in prepared)) throw new Error('Expected a request')

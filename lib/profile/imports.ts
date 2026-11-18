@@ -1,11 +1,12 @@
 import { requireQueued } from '../queue.ts'
-import { randomUUID, createHash } from 'node:crypto'
-import { mkdir, writeFile, rename, readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { Pool } from 'pg'
+import type { QueryExecutor } from '../db.ts'
 import type { PgBoss } from 'pg-boss'
 import { tx } from './store.ts'
 export const parseQueue = 'profile-parse'
@@ -52,74 +53,8 @@ export function validateDocument(name: string, bytes: Buffer): 'pdf' | 'docx' {
     return 'docx'
   throw new Error('Only PDF and DOCX are supported')
 }
-export async function createTextImport(pool: Pool, text: string) {
-  if (!text.trim() || text.length > 120000)
-    throw new Error('Text must contain 1–120000 characters')
-  const id = randomUUID()
-  await pool.query(
-    `INSERT INTO profile_imports(id,kind,status,source_text,sha256) VALUES($1,'text','ready',$2,$3)`,
-    [id, text, digest(text)],
-  )
-  return id
-}
-export async function createFileImport(
-  pool: Pool,
-  boss: PgBoss,
-  name: string,
-  bytes: Buffer,
-  root = documentRoot(),
-) {
-  const kind = validateDocument(name, bytes),
-    id = randomUUID(),
-    key = `${id}.${kind}`,
-    hash = digest(bytes)
-  // Strip control characters and separators from the download filename.
-  // eslint-disable-next-line no-control-regex
-  const safeName = name.replace(/[\r\n\x00-\x1f/\\]/g, '_').slice(0, 200)
-  await pool.query(
-    `INSERT INTO profile_imports(id,kind,original_name,byte_size,sha256,path_key,status) VALUES($1,$2,$3,$4,$5,$6,'receiving')`,
-    [id, kind, safeName, bytes.length, hash, key],
-  )
-  try {
-    await mkdir(root, { recursive: true, mode: 0o700 })
-    await writeFile(join(root, `${key}.tmp`), bytes, {
-      flag: 'wx',
-      mode: 0o600,
-    })
-    await rename(join(root, `${key}.tmp`), join(root, key))
-    const client = await pool.connect()
-    try {
-      await tx(client, async () => {
-        await client.query(
-          "UPDATE profile_imports SET status='queued',updated_at=now() WHERE id=$1",
-          [id],
-        )
-        await requireQueued(
-          boss.send(
-            parseQueue,
-            { importId: id },
-            {
-              db: { executeSql: (sql, values) => client.query(sql, values) },
-              retryLimit: 0,
-              expireInSeconds: 120,
-            },
-          ),
-        )
-      })
-    } finally {
-      client.release()
-    }
-  } catch {
-    await pool.query(
-      "UPDATE profile_imports SET status='failed',error='Nie udało się przyjąć pliku. Sprawdź lokalny zapis dokumentów.' WHERE id=$1",
-      [id],
-    )
-    throw new Error('Document storage failed')
-  }
-  return id
-}
 export async function originalFile(
-  pool: Pool,
+  pool: QueryExecutor,
   id: string,
   root = documentRoot(),
 ) {

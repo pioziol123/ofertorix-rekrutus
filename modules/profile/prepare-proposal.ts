@@ -1,6 +1,6 @@
 import { transaction } from '../../lib/db.ts'
 import { scrubContacts } from '../../lib/profile/imports.ts'
-import { ProfileConflict } from '../../lib/profile/store.ts'
+import { ProfileConflict } from './errors.ts'
 import { AiRequestError } from '../ai/index.ts'
 import {
   checkProposalExecution,

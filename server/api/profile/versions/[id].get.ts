@@ -1,13 +1,11 @@
 import { uuid } from '../../../../lib/profile/model'
-import { database } from '../../../utils/database'
+import { readVersionRecord } from '../../../../modules/profile/index'
 import { profileHandler } from '../../../utils/profile'
 export default profileHandler(async (event) => {
-  const row = (
-    await database.query('SELECT * FROM profile_versions WHERE id=$1', [
-      uuid.parse(getRouterParam(event, 'id')),
-    ])
-  ).rows[0]
-  if (!row)
+  const version = await readVersionRecord(
+    uuid.parse(getRouterParam(event, 'id')),
+  )
+  if (!version)
     throw createError({ statusCode: 404, statusMessage: 'Version not found' })
-  return row
+  return version
 })

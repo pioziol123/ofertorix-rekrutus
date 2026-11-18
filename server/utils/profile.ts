@@ -8,7 +8,7 @@ import {
 import type { H3Event } from 'h3'
 import { ZodError } from 'zod'
 import { createBoss } from '../../lib/queue'
-import { ProfileConflict } from '../../lib/profile/store'
+import { ProfileConflict } from '../../modules/profile/index'
 import { AiRequestError, useAiQueue } from '../../modules/ai/index'
 let bossPromise: Promise<ReturnType<typeof createBoss>> | undefined
 export function profileBoss() {

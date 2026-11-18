@@ -266,4 +266,77 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
       ).status,
     ).toBe(415)
   }, 30000)
+  it('A11-AC01: applies a proposal through the route with the existing responses and conflicts', async () => {
+    const id = randomUUID(),
+      text = 'Go services and Kubernetes'
+    await pool.query(
+      `INSERT INTO profile_imports(id,kind,status,source_text,professional_text,text_revision,proposal)
+       VALUES($1,'text','proposal',$2,$2,1,$3)`,
+      [
+        id,
+        text,
+        {
+          summary: null,
+          skills: [{ name: 'Go', description: '', evidence: 'Go services' }],
+          experience: [],
+        },
+      ],
+    )
+    await pool.query(
+      'INSERT INTO profile_import_texts(import_id,revision,text) VALUES($1,1,$2)',
+      [id, text],
+    )
+    const current = (await (await fetch(`${base}/api/profile`)).json()).draft
+      .revision as number
+    const choice = (expectedRevision: number) =>
+      json('POST', {
+        expectedRevision,
+        skills: [0],
+        experience: [],
+        summary: false,
+      })
+    const stale = await fetch(
+      `${base}/api/profile/imports/${id}/apply`,
+      choice(current + 1),
+    )
+    expect(stale.status).toBe(409)
+    const missing = await fetch(
+      `${base}/api/profile/imports/${randomUUID()}/apply`,
+      choice(current),
+    )
+    expect(missing.status).toBe(404)
+    const applied = await fetch(
+      `${base}/api/profile/imports/${id}/apply`,
+      choice(current),
+    )
+    expect(applied.status).toBe(200)
+    const draft = await applied.json()
+    expect(draft.revision).toBe(current + 1)
+    expect(draft.data.sources).toContain(id)
+    expect(
+      draft.data.skills.find((s: { name: string }) => s.name === 'Go').source,
+    ).toEqual({ importId: id, textRevision: 1, evidence: 'Go services' })
+    const invalid = await fetch(
+      `${base}/api/profile/imports/${id}/apply`,
+      json('POST', {
+        expectedRevision: current + 1,
+        skills: [5],
+        experience: [],
+        summary: false,
+      }),
+    )
+    expect(invalid.status).toBe(422)
+  })
+  it('A11-AC01: shows every budget month with its limit, settled and reserved amounts', async () => {
+    await pool.query(
+      "INSERT INTO ai_budget_months(month,limit_pln) VALUES('2026-10','100') ON CONFLICT DO NOTHING",
+    )
+    const state = await (await fetch(`${base}/api/profile`)).json()
+    expect(state.budget).toContainEqual({
+      month: '2026-10',
+      limit_pln: '100.000000',
+      spent: '0',
+      reserved: '0',
+    })
+  })
 })

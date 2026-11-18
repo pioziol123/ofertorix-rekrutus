@@ -1,9 +1,8 @@
 import { z } from 'zod'
 import {
-  createFileImport,
-  createTextImport,
-} from '../../../../lib/profile/imports'
-import { database } from '../../../utils/database'
+  importCvDocument,
+  importCvText,
+} from '../../../../modules/profile/index'
 import {
   profileBody,
   profileBoss,
@@ -17,16 +16,15 @@ export default profileHandler(async (event) => {
       .object({ text: z.string().trim().min(1).max(120000) })
       .strict()
       .parse(await profileBody(event))
-    id = await createTextImport(database, body.text)
+    id = await importCvText(body.text)
   } else {
     const name = z.string().min(1).max(200).parse(getQuery(event).name)
     if (!/\.(pdf|docx)$/i.test(name))
       throw createError({ statusCode: 415, statusMessage: 'Only PDF and DOCX' })
-    id = await createFileImport(
-      database,
-      await profileBoss(),
+    id = await importCvDocument(
       name,
       await limitedBytes(event, 10 * 1024 * 1024),
+      await profileBoss(),
     )
   }
   setResponseStatus(event, 202)
