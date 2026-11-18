@@ -20,7 +20,7 @@ const IMAGE_LABEL = 'oferty-pracy.sandbox-inputs'
  */
 const AGENT_IDLE_TIMEOUT_SECONDS = 1800
 /** Skills the agent uses inside the sandbox, mounted read-only from the host. */
-const SKILLS = ['implement-task', 'tdd', 'write-documents']
+const SKILLS = ['implement-task', 'tdd', 'write-documents', 'task-state-note']
 
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
