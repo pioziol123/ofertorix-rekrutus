@@ -307,25 +307,25 @@ integration(
       expect(row.status).toBe('failed')
       expect((await readOriginalFile(row.id, root))?.bytes).toEqual(bytes)
     })
-    it('ASSUMPTION(oferty-pracy-0mq.18/ASM-1): recovery queues a stale import again, but not one whose reading session still holds its lock', async () => {
+    it('recovery queues a stale import again once, through a conditional state change, and leaves a recent one alone (0mq.18)', async () => {
       vi.stubEnv('DOCUMENTS_DIR', root)
       const bytes = await fixture('text.pdf'),
-        free = await importCvDocument('free.pdf', bytes, boss, root),
-        held = await importCvDocument('held.pdf', bytes, boss, root)
+        stale = await importCvDocument('stale.pdf', bytes, boss, root),
+        recent = await importCvDocument('recent.pdf', bytes, boss, root)
       await pool.query(
-        "UPDATE profile_imports SET status='extracting',updated_at=now()-interval '10 minutes'",
+        "UPDATE profile_imports SET status='extracting',updated_at=now()-interval '10 minutes' WHERE id=$1",
+        [stale],
       )
-      const reader = await pool.connect(),
-        lock = `profile-parse-${held}`,
-        send = vi.spyOn(boss, 'send')
+      await pool.query(
+        "UPDATE profile_imports SET status='extracting',updated_at=now() WHERE id=$1",
+        [recent],
+      )
+      const send = vi.spyOn(boss, 'send')
       try {
-        await reader.query('SELECT pg_advisory_lock(hashtext($1))', [lock])
-        await recoverImports(pool, boss)
+        await Promise.all([recoverImports(boss), recoverImports(boss)])
         expect(send).toHaveBeenCalledOnce()
-        expect(send.mock.calls[0]![1]).toEqual({ importId: free })
+        expect(send.mock.calls[0]![1]).toEqual({ importId: stale })
       } finally {
-        await reader.query('SELECT pg_advisory_unlock(hashtext($1))', [lock])
-        reader.release()
         send.mockRestore()
       }
       const status = async (id: string) =>
@@ -334,15 +334,15 @@ integration(
             id,
           ])
         ).rows[0].status
-      expect(await status(free)).toBe('queued')
-      expect(await status(held)).toBe('extracting')
+      expect(await status(stale)).toBe('queued')
+      expect(await status(recent)).toBe('extracting')
     })
     it.each(['text.pdf', 'text.docx'])(
       'extracts synthetic %s locally and retains original',
       async (name) => {
         const bytes = await fixture(name),
           id = await importCvDocument(name, bytes, boss, root)
-        await extractImport(pool, id, root)
+        await extractImport(id, root)
         const row = (
           await pool.query('SELECT * FROM profile_imports WHERE id=$1', [id])
         ).rows[0]
@@ -360,7 +360,7 @@ integration(
               ? await fixture(name)
               : Buffer.from([80, 75, 3, 4, 1, 2, 3]),
           id = await importCvDocument(name, bytes, boss, root)
-        await extractImport(pool, id, root)
+        await extractImport(id, root)
         expect(
           (
             await pool.query('SELECT status FROM profile_imports WHERE id=$1', [

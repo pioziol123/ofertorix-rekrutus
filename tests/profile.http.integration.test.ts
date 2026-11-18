@@ -10,6 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { Pool } from 'pg'
 import { PgBoss } from 'pg-boss'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { closePool, setPool } from '../lib/db.ts'
 import { emptyProfile } from '../lib/profile/model.ts'
 import { digest, extractImport, parseQueue } from '../lib/profile/imports.ts'
 
@@ -32,6 +33,7 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
     const connection = new URL(process.env.DATABASE_URL!)
     connection.searchParams.set('options', `-c search_path=${schema}`)
     pool = new Pool({ connectionString: connection.toString() })
+    setPool(pool)
     const sql: string[] = []
     createRequire(import.meta.url)(
       '../migrations/1770000000004_profiles.cjs',
@@ -89,7 +91,7 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
       }
     }
     await boss?.stop()
-    await pool?.end()
+    await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
       await admin.query(`DROP SCHEMA IF EXISTS ${queueSchema} CASCADE`)
@@ -247,7 +249,7 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
     expect(file.headers.get('content-type')).toContain('application/pdf')
     expect(file.headers.get('content-disposition')).toContain('attachment')
     expect(digest(Buffer.from(await file.arrayBuffer()))).toBe(digest(bytes))
-    await extractImport(pool, id, root)
+    await extractImport(id, root)
     const detail = await fetch(`${base}/api/profile/imports/${id}`)
     expect(detail.status).toBe(200)
     const record = await detail.json()

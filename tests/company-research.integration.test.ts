@@ -128,10 +128,10 @@ integration('company research transactions in isolated PostgreSQL', () => {
     const op = await requestResearch(boss, companyId, command()),
       fetcher = mockedProvider()
     await Promise.all([
-      executeCompanyResearch(pool, boss, op.id, fetcher),
-      executeCompanyResearch(pool, boss, op.id, fetcher),
+      executeCompanyResearch(op.id, fetcher),
+      executeCompanyResearch(op.id, fetcher),
     ])
-    await executeCompanyResearch(pool, boss, op.id, fetcher)
+    await executeCompanyResearch(op.id, fetcher)
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(
       (await readCompanyResearch(pool, companyId)).operations[0],
@@ -161,13 +161,13 @@ integration('company research transactions in isolated PostgreSQL', () => {
   })
   it('keeps both completed versions after a successful explicit refresh', async () => {
     const first = await requestResearch(boss, companyId, command())
-    await executeCompanyResearch(pool, boss, first.id, mockedProvider())
+    await executeCompanyResearch(first.id, mockedProvider())
     await pool.query(
       "UPDATE companies SET name='Changed owner name' WHERE id=$1",
       [companyId],
     )
     const second = await requestResearch(boss, companyId, command(true))
-    await executeCompanyResearch(pool, boss, second.id, mockedProvider())
+    await executeCompanyResearch(second.id, mockedProvider())
     const operations = (await readCompanyResearch(pool, companyId)).operations
     expect(operations).toHaveLength(2)
     expect(operations.find((o) => o.id === first.id)).toMatchObject({
@@ -192,7 +192,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
   })
   it('preserves the previous completed version and target snapshot when a refresh fails', async () => {
     const original = await requestResearch(boss, companyId, command())
-    await executeCompanyResearch(pool, boss, original.id, mockedProvider())
+    await executeCompanyResearch(original.id, mockedProvider())
     await pool.query(
       "UPDATE companies SET name='Changed owner name' WHERE id=$1",
       [companyId],
@@ -202,7 +202,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockRejectedValue(new Error('Ambiguous transport failure'))
-    await executeCompanyResearch(pool, boss, refreshed.id, fetcher)
+    await executeCompanyResearch(refreshed.id, fetcher)
     const operations = (await readCompanyResearch(pool, companyId)).operations
     expect(operations.find((o) => o.id === original.id)).toMatchObject({
       state: 'completed',
@@ -224,7 +224,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
     'settles a failed %s refresh and preserves the previous report without retrying',
     async (failure) => {
       const original = await requestResearch(boss, companyId, command())
-      await executeCompanyResearch(pool, boss, original.id, mockedProvider())
+      await executeCompanyResearch(original.id, mockedProvider())
       const refreshed = await requestResearch(boss, companyId, command(true))
       const searched = searchResponse()
       const synthesized = synthesisResponse()
@@ -243,8 +243,8 @@ integration('company research transactions in isolated PostgreSQL', () => {
         .fn<typeof fetch>()
         .mockResolvedValueOnce(Response.json(searched))
         .mockResolvedValueOnce(Response.json(synthesized))
-      await executeCompanyResearch(pool, boss, refreshed.id, fetcher)
-      await executeCompanyResearch(pool, boss, refreshed.id, fetcher)
+      await executeCompanyResearch(refreshed.id, fetcher)
+      await executeCompanyResearch(refreshed.id, fetcher)
       const calls = failure === 'uncited search' ? 1 : 2
       const cost = failure === 'uncited search' ? '0.072600' : '0.073680'
       expect(fetcher).toHaveBeenCalledTimes(calls)
@@ -288,12 +288,12 @@ integration('company research transactions in isolated PostgreSQL', () => {
       (await readCompanyResearch(pool, companyId)).operations[0],
     ).toMatchObject({ state: 'waiting_budget', reserved: null })
     expect(send).not.toHaveBeenCalled()
-    await recoverCompanyResearch(pool, boss)
+    await recoverCompanyResearch(boss)
     expect(send).not.toHaveBeenCalled()
     await pool.query('UPDATE ai_budget_months SET limit_pln=2 WHERE month=$1', [
       month,
     ])
-    await recoverCompanyResearch(pool, boss)
+    await recoverCompanyResearch(boss)
     expect(
       (await readCompanyResearch(pool, companyId)).operations[0],
     ).toMatchObject({ id: op.id, state: 'queued', reserved: '0.536000' })
@@ -306,34 +306,7 @@ integration('company research transactions in isolated PostgreSQL', () => {
     ).toBe(1)
     expect(send).toHaveBeenCalledTimes(1)
   })
-  it('does not reconcile running work while its execution session still holds the operation lock', async () => {
-    const op = await requestResearch(boss, companyId, command())
-    const owner = await pool.connect()
-    const lock = `research-operation-${op.id}`
-    try {
-      await owner.query('SELECT pg_advisory_lock(hashtext($1))', [lock])
-      await owner.query(
-        "UPDATE company_research SET state='running' WHERE id=$1",
-        [op.id],
-      )
-      await owner.query("UPDATE ai_attempts SET state='running'")
-      send.mockClear()
-      await recoverCompanyResearch(pool, boss)
-      expect(
-        (await readCompanyResearch(pool, companyId)).operations[0],
-      ).toMatchObject({
-        state: 'running',
-        costState: 'running',
-        error: null,
-        reserved: '0.536000',
-      })
-      expect(send).not.toHaveBeenCalled()
-    } finally {
-      await owner.query('SELECT pg_advisory_unlock(hashtext($1))', [lock])
-      owner.release()
-    }
-  })
-  it('marks interrupted running work unknown, keeps its reservation, and never automatically retries it', async () => {
+  it('leaves running research alone with its reservation and never retries it automatically, until oferty-pracy-0mq.15', async () => {
     const op = await requestResearch(boss, companyId, command())
     await pool.query(
       "UPDATE company_research SET state='running' WHERE id=$1",
@@ -341,24 +314,45 @@ integration('company research transactions in isolated PostgreSQL', () => {
     )
     await pool.query("UPDATE ai_attempts SET state='running'")
     send.mockClear()
-    await recoverCompanyResearch(pool, boss)
-    await recoverCompanyResearch(pool, boss)
+    await recoverCompanyResearch(boss)
+    await recoverCompanyResearch(boss)
     const fetcher = mockedProvider()
-    await executeCompanyResearch(pool, boss, op.id, fetcher)
+    await executeCompanyResearch(op.id, fetcher)
     expect(fetcher).not.toHaveBeenCalled()
     expect(send).not.toHaveBeenCalled()
     expect(
       (await readCompanyResearch(pool, companyId)).operations[0],
     ).toMatchObject({
-      state: 'unknown',
+      state: 'running',
+      costState: 'running',
+      error: null,
       reserved: '0.536000',
-      cost: null,
-      costState: 'unknown',
     })
     expect(
       (await pool.query('SELECT count(*)::int AS n FROM ai_attempts')).rows[0]
         .n,
     ).toBe(1)
+  })
+  it('does not overwrite research that another run ended while this one was searching (0mq.18)', async () => {
+    const op = await requestResearch(boss, companyId, command())
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(async () => {
+        // Another run ended the research meanwhile.
+        await pool.query(
+          "UPDATE company_research SET state='failed',error='ended elsewhere',finished_at=now() WHERE id=$1",
+          [op.id],
+        )
+        return Response.json(searchResponse())
+      })
+      .mockResolvedValueOnce(Response.json(synthesisResponse()))
+    await executeCompanyResearch(op.id, fetcher)
+    expect(
+      (await readCompanyResearch(pool, companyId)).operations[0],
+    ).toMatchObject({ state: 'failed', error: 'ended elsewhere' })
+    expect(
+      (await pool.query('SELECT state FROM ai_attempts')).rows[0].state,
+    ).toBe('running')
   })
 })
 

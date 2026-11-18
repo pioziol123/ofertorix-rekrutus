@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { Pool } from 'pg'
 import { db, queueDatabase, transaction, type QueryExecutor } from '../db.ts'
 import type { PgBoss } from 'pg-boss'
 export const parseQueue = 'profile-parse'
@@ -45,114 +44,80 @@ export async function originalFile(
     throw new Error('Source document hash mismatch')
   return { bytes, name: String(row.original_name), kind: String(row.kind) }
 }
-export async function extractImport(
-  pool: Pool,
-  id: string,
-  root = documentRoot(),
-) {
-  // ASSUMPTION(oferty-pracy-0mq.18/ASM-1): the session lock stays, so
-  // recovery does not take up an import that is being read.
-  const client = await pool.connect()
-  try {
-    const lock = await client.query(
-      'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
-      [`profile-parse-${id}`],
+/**
+ * Reads the text of a queued file import. Only the run that moves the
+ * import from queued to extracting reads it, and its result is saved only
+ * while the import is still being extracted.
+ */
+export async function extractImport(id: string, root = documentRoot()) {
+  const row = (
+    await db().query(
+      "UPDATE profile_imports SET status='extracting',updated_at=now() WHERE id=$1 AND status='queued' RETURNING *",
+      [id],
     )
-    if (!lock.rows[0].locked) return
-    try {
-      const row = (
-        await client.query(
-          "UPDATE profile_imports SET status='extracting',updated_at=now() WHERE id=$1 AND status='queued' RETURNING *",
-          [id],
-        )
-      ).rows[0]
-      if (!row) return
-      try {
-        await originalFile(pool, id, root)
-        const { stdout } = await promisify(execFile)(
-          process.execPath,
-          [
-            '--max-old-space-size=256',
-            '--import',
-            'tsx',
-            fileURLToPath(
-              new URL('../../scripts/extract-cv.ts', import.meta.url),
-            ),
-            row.kind,
-            join(root, row.path_key),
-          ],
-          { timeout: 30000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 },
-        )
-        const { text } = JSON.parse(stdout) as { text: string }
-        if (!text.trim()) throw new Error('No text')
-        if (text.length > 120000) throw new Error('Too long')
-        await client.query(
-          "UPDATE profile_imports SET status='ready',source_text=$2,error=NULL,updated_at=now() WHERE id=$1",
-          [id, text],
-        )
-      } catch {
-        await client.query(
-          "UPDATE profile_imports SET status='needs_text',error='Nie udało się odczytać tekstu (plik bez tekstu, uszkodzony, zablokowany lub przekroczony limit). Wklej tekst CV; oryginał jest zachowany.',updated_at=now() WHERE id=$1",
-          [id],
-        )
-      }
-    } finally {
-      await client.query('SELECT pg_advisory_unlock(hashtext($1))', [
-        `profile-parse-${id}`,
-      ])
-    }
-  } finally {
-    client.release()
+  ).rows[0]
+  if (!row) return
+  try {
+    await originalFile(db(), id, root)
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      [
+        '--max-old-space-size=256',
+        '--import',
+        'tsx',
+        fileURLToPath(new URL('../../scripts/extract-cv.ts', import.meta.url)),
+        row.kind,
+        join(root, row.path_key),
+      ],
+      { timeout: 30000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 },
+    )
+    const { text } = JSON.parse(stdout) as { text: string }
+    if (!text.trim()) throw new Error('No text')
+    if (text.length > 120000) throw new Error('Too long')
+    await db().query(
+      "UPDATE profile_imports SET status='ready',source_text=$2,error=NULL,updated_at=now() WHERE id=$1 AND status='extracting'",
+      [id, text],
+    )
+  } catch {
+    await db().query(
+      "UPDATE profile_imports SET status='needs_text',error='Nie udało się odczytać tekstu (plik bez tekstu, uszkodzony, zablokowany lub przekroczony limit). Wklej tekst CV; oryginał jest zachowany.',updated_at=now() WHERE id=$1 AND status='extracting'",
+      [id],
+    )
   }
 }
-export async function recoverImports(pool: Pool, boss: PgBoss) {
-  const candidates = await pool.query(
-    "SELECT id,status,path_key,sha256 FROM profile_imports WHERE status IN ('receiving','queued','extracting') AND updated_at<now()-interval '3 minutes'",
+/**
+ * Queues again the file imports that have not moved for 3 minutes. Each
+ * one changes only from the state and moment recovery read, so two
+ * recoveries queue it once.
+ */
+export async function recoverImports(boss: PgBoss) {
+  const candidates = await db().query(
+    "SELECT id,status,updated_at::text AS seen FROM profile_imports WHERE status IN ('receiving','queued','extracting') AND updated_at<now()-interval '3 minutes'",
   )
   for (const row of candidates.rows) {
-    // ASSUMPTION(oferty-pracy-0mq.18/ASM-1): the session lock stays on its
-    // own connection; queueing again goes through the shared transaction.
-    const client = await pool.connect()
+    const unchanged = 'id=$1 AND status=$2 AND updated_at=$3::timestamptz'
     try {
-      const lock = await client.query(
-        'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
-        [`profile-parse-${row.id}`],
+      await originalFile(db(), row.id)
+    } catch {
+      await db().query(
+        `UPDATE profile_imports SET status='source_missing',error='Brak poprawnego pliku źródłowego',updated_at=now() WHERE ${unchanged}`,
+        [row.id, row.status, row.seen],
       )
-      if (!lock.rows[0].locked) continue
-      try {
-        try {
-          await originalFile(pool, row.id)
-        } catch {
-          await client.query(
-            "UPDATE profile_imports SET status='source_missing',error='Brak poprawnego pliku źródłowego',updated_at=now() WHERE id=$1",
-            [row.id],
-          )
-          continue
-        }
-        await transaction(async () => {
-          await db().query(
-            "UPDATE profile_imports SET status='queued',updated_at=now() WHERE id=$1",
-            [row.id],
-          )
-          await requireQueued(
-            boss.send(
-              parseQueue,
-              { importId: row.id },
-              {
-                db: queueDatabase,
-                retryLimit: 0,
-                expireInSeconds: 120,
-              },
-            ),
-          )
-        })
-      } finally {
-        await client.query('SELECT pg_advisory_unlock(hashtext($1))', [
-          `profile-parse-${row.id}`,
-        ])
-      }
-    } finally {
-      client.release()
+      continue
     }
+    await transaction(async () => {
+      const taken = await db().query(
+        `UPDATE profile_imports SET status='queued',updated_at=now() WHERE ${unchanged}`,
+        [row.id, row.status, row.seen],
+      )
+      if (!taken.rowCount) return
+      await requireQueued(
+        boss.send(
+          parseQueue,
+          { importId: row.id },
+          { db: queueDatabase, retryLimit: 0, expireInSeconds: 120 },
+        ),
+      )
+    })
   }
 }

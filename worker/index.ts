@@ -68,9 +68,9 @@ await boss.work<{ checkId: string }>(smokeQueue, async (jobs) => {
 scheduleDay()
 await recoverSyncQueues(boss)
 await workSyncQueues(boss)
-await recoverImports(pool, boss)
+await recoverImports(boss)
 await boss.work<{ importId: string }>(parseQueue, async (jobs) => {
-  for (const job of jobs) await extractImport(pool, job.data.importId)
+  for (const job of jobs) await extractImport(job.data.importId)
 })
 await recoverMatching(pool, boss)
 await boss.work<{ requestId: string }>(matchingQueue, async (jobs) => {
@@ -80,7 +80,7 @@ await recoverMatchingGroups(pool, boss)
 await boss.work<{ groupId: string }>(matchingGroupQueue, async (jobs) => {
   for (const job of jobs) await executeMatchingGroup(boss, job.data.groupId)
 })
-await recoverCompanyResearch(pool, boss)
+await recoverCompanyResearch(boss)
 useAiQueue(boss)
 registerResultReceiver(proposalSettingsKey, proposalReceiver)
 await resumeProposalPreparations()
@@ -89,8 +89,7 @@ await boss.work<{ executionId: string }>(aiExecutionQueue, async (jobs) => {
   for (const job of jobs) await runExecution(job.data.executionId)
 })
 await boss.work<{ operationId: string }>(companyResearchQueue, async (jobs) => {
-  for (const job of jobs)
-    await executeCompanyResearch(pool, boss, job.data.operationId)
+  for (const job of jobs) await executeCompanyResearch(job.data.operationId)
 })
 let scheduling = false
 async function schedule() {
@@ -99,10 +98,10 @@ async function schedule() {
   try {
     await recoverSyncQueues(boss)
     await enqueueSync(boss, 'scheduled')
-    await recoverImports(pool, boss)
+    await recoverImports(boss)
     await recoverMatching(pool, boss)
     await recoverMatchingGroups(pool, boss)
-    await recoverCompanyResearch(pool, boss)
+    await recoverCompanyResearch(boss)
     await resumeProposalPreparations()
     await recoverExecutions()
   } finally {

@@ -121,130 +121,81 @@ export async function requestResearch(
     return result
   })
 }
+/**
+ * Runs one queued research. Only the run that moves it from queued to
+ * running calls the provider, and its outcome is saved only while the
+ * research is still running.
+ */
 export async function executeCompanyResearch(
-  pool: Pool,
-  _boss: PgBoss,
   id: string,
   fetcher: typeof fetch = fetch,
 ) {
-  // ASSUMPTION(oferty-pracy-0mq.18/ASM-1): the session lock stays on its own
-  // connection, so recovery can still tell running research from research
-  // interrupted by a stopped worker; the writes go through the shared
-  // transactional operation on other pooled connections.
-  const client = await pool.connect()
-  const lockName = `research-operation-${id}`
-  try {
-    const lock = (
-      await client.query(
-        'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
-        [lockName],
+  const row = await transaction(async () => {
+    const r = (
+      await db().query(
+        "UPDATE company_research SET state='running' WHERE id=$1 AND state='queued' RETURNING *",
+        [id],
       )
-    ).rows[0].locked
-    if (!lock) return
-    try {
-      const row = await transaction(async () => {
-        const r = (
-          await db().query(
-            "UPDATE company_research SET state='running' WHERE id=$1 AND state='queued' RETURNING *",
-            [id],
-          )
-        ).rows[0]
-        if (r)
-          await db().query(
-            "UPDATE ai_attempts SET state='running' WHERE id=$1",
-            [r.attempt_id],
-          )
-        return r
-      })
-      if (!row) return
-      const result = await runResearch(row.target, row.configuration, fetcher)
-      await transaction(async () => {
-        await db().query(
-          'UPDATE company_research SET state=$2,result=$3,error=$4,finished_at=now() WHERE id=$1',
-          [
-            id,
-            result.report
-              ? 'completed'
-              : result.cost === null
-                ? 'unknown'
-                : 'failed',
-            result.report,
-            result.error,
-          ],
-        )
-        await db().query(
-          'UPDATE ai_attempts SET state=$2,actual_pln=$3,usage=$4,response_id=$5,error=$6,finished_at=now() WHERE id=$1',
-          [
-            row.attempt_id,
-            result.cost === null ? 'unknown' : 'settled',
-            result.cost,
-            result.usage,
-            result.responseIds.join(','),
-            result.error,
-          ],
-        )
-      })
-    } finally {
-      await client.query('SELECT pg_advisory_unlock(hashtext($1))', [lockName])
-    }
-  } finally {
-    client.release()
-  }
+    ).rows[0]
+    if (r)
+      await db().query("UPDATE ai_attempts SET state='running' WHERE id=$1", [
+        r.attempt_id,
+      ])
+    return r
+  })
+  if (!row) return
+  const result = await runResearch(row.target, row.configuration, fetcher)
+  await transaction(async () => {
+    const ended = await db().query(
+      "UPDATE company_research SET state=$2,result=$3,error=$4,finished_at=now() WHERE id=$1 AND state='running'",
+      [
+        id,
+        result.report
+          ? 'completed'
+          : result.cost === null
+            ? 'unknown'
+            : 'failed',
+        result.report,
+        result.error,
+      ],
+    )
+    if (!ended.rowCount) return
+    await db().query(
+      'UPDATE ai_attempts SET state=$2,actual_pln=$3,usage=$4,response_id=$5,error=$6,finished_at=now() WHERE id=$1',
+      [
+        row.attempt_id,
+        result.cost === null ? 'unknown' : 'settled',
+        result.cost,
+        result.usage,
+        result.responseIds.join(','),
+        result.error,
+      ],
+    )
+  })
 }
-export async function recoverCompanyResearch(pool: Pool, boss: PgBoss) {
+/**
+ * Funds research waiting for budget and sends again the jobs of queued
+ * research. Running research is left alone: detecting interrupted work
+ * belongs to task oferty-pracy-0mq.15.
+ */
+export async function recoverCompanyResearch(boss: PgBoss) {
   const rows = (
-    await pool.query(
-      'SELECT id FROM company_research WHERE state=ANY($1::text[]) ORDER BY created_at',
-      [pending],
+    await db().query(
+      "SELECT id FROM company_research WHERE state IN ('waiting_budget','queued') ORDER BY created_at",
     )
   ).rows
-  for (const row of rows) {
-    // ASSUMPTION(oferty-pracy-0mq.18/ASM-1): running research whose session
-    // lock is free was interrupted; see executeCompanyResearch.
-    const client = await pool.connect(),
-      lockName = `research-operation-${row.id}`
-    try {
-      if (
-        !(
-          await client.query(
-            'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
-            [lockName],
-          )
-        ).rows[0].locked
-      )
-        continue
-      try {
-        await transaction(async () => {
-          const current = (
-            await db().query(
-              'SELECT * FROM company_research WHERE id=$1 FOR UPDATE',
-              [row.id],
-            )
-          ).rows[0]
-          if (current.state === 'running') {
-            const error =
-              'Przerwano research. Koszt pozostaje zarezerwowany; ponowienie wymaga nowego żądania.'
-            await db().query(
-              "UPDATE company_research SET state='unknown',error=$2,finished_at=now() WHERE id=$1",
-              [row.id, error],
-            )
-            await db().query(
-              "UPDATE ai_attempts SET state='unknown',error=$2,finished_at=now() WHERE id=$1",
-              [current.attempt_id, error],
-            )
-          } else if (current.state === 'waiting_budget')
-            await fund(boss, row.id, current.configuration)
-          else if (current.state === 'queued') await deliver(boss, row.id)
-        })
-      } finally {
-        await client.query('SELECT pg_advisory_unlock(hashtext($1))', [
-          lockName,
-        ])
-      }
-    } finally {
-      client.release()
-    }
-  }
+  for (const row of rows)
+    await transaction(async () => {
+      const current = (
+        await db().query(
+          'SELECT * FROM company_research WHERE id=$1 FOR UPDATE',
+          [row.id],
+        )
+      ).rows[0]
+      if (current.state === 'waiting_budget')
+        await fund(boss, row.id, current.configuration)
+      else if (current.state === 'queued') await deliver(boss, row.id)
+    })
 }
 export async function readCompanyResearch(pool: Pool, id: string) {
   if (
