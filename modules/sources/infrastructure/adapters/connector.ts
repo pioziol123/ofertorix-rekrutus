@@ -37,11 +37,15 @@ export interface SourceConnector {
    * Whether an ad missing from a complete run may be taken as unavailable.
    */
   readonly infersUnavailabilityFromAbsence: boolean
-  /** Whether the schedule requests the source's sync every day. */
+  /**
+   * Whether the schedule requests the source's sync every day.
+   * ASSUMPTION(oferty-pracy-0mq.16/ASM-4): the connector declares it, like inference from absence.
+   */
   readonly scheduled: boolean
   /**
    * Whether configuration allows requesting the source. A disabled source
    * stays registered, so its earlier runs stay readable.
+   * ASSUMPTION(oferty-pracy-0mq.16/ASM-4): the connector answers it from the source's configuration.
    */
   enabled(): boolean
   /**

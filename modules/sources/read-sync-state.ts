@@ -60,6 +60,7 @@ export async function readSyncState(
     findLatestCompleteRun(filter),
   ])
   return {
+    // ASSUMPTION(oferty-pracy-0mq.16/ASM-4): both come from the source's connector.
     enabled: connector.enabled(),
     scheduled: connector.scheduled,
     run,

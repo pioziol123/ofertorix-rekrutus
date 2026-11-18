@@ -13,7 +13,8 @@ import {
 } from 'vitest'
 import { closePool, queueDatabase, setPool } from '../../lib/db.ts'
 import { requireQueued } from '../../lib/queue.ts'
-import { executeSyncRun, recoverSyncRuns, SyncRunLostError } from './index.ts'
+import { executeSyncRun } from './execute-sync-run.ts'
+import { recoverSyncRuns, SyncRunLostError } from './index.ts'
 import {
   ConnectorError,
   toConnectorAd,

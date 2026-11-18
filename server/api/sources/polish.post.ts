@@ -1,4 +1,4 @@
-import { polishQuery } from '../../../lib/sources/polish'
+import { polishEnabled, polishQuery } from '../../../lib/sources/polish'
 import { requestSync, SourceDisabledError } from '../../../modules/sources'
 import { limitedBytes, queueClient } from '../../utils/http'
 
@@ -22,6 +22,10 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Invalid import criteria',
     })
   }
+  // Checked before the queue connects, so a disabled source answers 409 also
+  // while the queue is unavailable; the request operation checks it again.
+  if (!polishEnabled(query.source))
+    throw createError({ statusCode: 409, statusMessage: 'Source disabled' })
   try {
     await queueClient()
     const run = await requestSync({ source: query.source, scopeRequest: query })

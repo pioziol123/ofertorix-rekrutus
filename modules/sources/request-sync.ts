@@ -51,6 +51,7 @@ export async function requestSync(
   } = {},
 ): Promise<AdmittedRun> {
   const connector = (options.connectors ?? sourceConnectors).get(request.source)
+  // ASSUMPTION(oferty-pracy-0mq.16/ASM-4): whether the source is enabled comes from its connector.
   if (!connector.enabled()) throw new SourceDisabledError(connector.name)
   const parameters = connector.scopeParameters(request.scopeRequest)
   return admitRun({

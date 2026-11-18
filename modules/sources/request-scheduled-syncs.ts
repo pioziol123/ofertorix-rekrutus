@@ -35,6 +35,7 @@ export async function requestScheduledSyncs(
   const requested: AdmittedRun[] = []
   for (const name of connectors.names()) {
     const connector = connectors.get(name)
+    // ASSUMPTION(oferty-pracy-0mq.16/ASM-4): the connector declares whether its source is scheduled.
     if (!connector.scheduled || !connector.enabled()) continue
     const run = await transaction(async (): Promise<AdmittedRun | null> => {
       await lockScheduleOccurrence(name, day)

@@ -168,7 +168,7 @@ flowchart TB
 | Component | Entry points and implementation |
 | --- | --- |
 | Queue handling and schedule | [Worker entry point](../../worker/index.ts). At start and every minute it checks for overdue work. The schedule requests the SOLID.Jobs import through the [Sources module](../../modules/sources/README.md#requesting-a-sync), whose single `source-sync` queue the worker serves for every source. |
-| Ad import | [SOLID.Jobs](../../lib/sources/sync.ts), [Polish sources](../../lib/sources/polish-sync.ts), [JobSpy](../../lib/sources/jobspy-sync.ts), [ad and revision storage](../../modules/sources/infrastructure/persistence/source-ads.ts). |
+| Ad import | [Sync request](../../modules/sources/request-sync.ts), [sync queue handler](../../modules/sources/infrastructure/worker/sync-queue.ts), [shared run executor](../../modules/sources/execute-sync-run.ts), [ad and revision storage](../../modules/sources/infrastructure/persistence/source-ads.ts). |
 | CV extraction | [`extractImport`](../../lib/profile/imports.ts) handles `profile-parse`. |
 | Match assessments | The [single request](../../lib/matching/store.ts) and the [group](../../lib/matching/groups.ts) use the [Batch client](../../lib/matching/batch.ts) and the [batch archive](../../lib/matching/archive.ts). |
 | Basic research | [`executeCompanyResearch`](../../lib/companies/research.ts) runs `company-research` and uses the [OpenAI provider](../../lib/companies/research-provider.ts). |

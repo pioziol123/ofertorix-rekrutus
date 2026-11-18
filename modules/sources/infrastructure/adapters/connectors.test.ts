@@ -16,6 +16,8 @@ const connectors: SourceConnector[] = sourceConnectors
   .names()
   .map((name) => sourceConnectors.get(name))
 
+afterEach(() => vi.unstubAllEnvs())
+
 /** Fingerprints of the default scopes, computed before the connectors. */
 const fingerprintsBefore: Record<string, string> = {
   'solid-jobs':
@@ -111,9 +113,21 @@ describe('source connectors', () => {
     )
   })
 
-  it('schedule only SOLID.Jobs, as before the shared requesting', () => {
+  it('schedule only SOLID.Jobs, as before the shared requesting (0mq.16 ASM-4)', () => {
     expect(connectors.filter((c) => c.scheduled).map((c) => c.name)).toEqual([
       'solid-jobs',
+    ])
+  })
+
+  it('are enabled by the configuration of their source, as before the shared requesting (0mq.16 ASM-4)', () => {
+    vi.stubEnv('JOBSPY_ENABLED', 'false')
+    vi.stubEnv('JOBSPY_SOURCES', 'bayt')
+    vi.stubEnv('POLISH_SOURCES', 'theprotocol')
+    expect(connectors.filter((c) => c.enabled()).map((c) => c.name)).toEqual([
+      'solid-jobs',
+      'himalayas',
+      'bayt',
+      'theprotocol',
     ])
   })
 })

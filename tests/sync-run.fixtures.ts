@@ -1,5 +1,6 @@
 import { db } from '../lib/db.ts'
-import { executeSyncRun, recoverSyncRuns } from '../modules/sources/index.ts'
+import { recoverSyncRuns } from '../modules/sources/index.ts'
+import { executeSyncRun } from '../modules/sources/execute-sync-run.ts'
 import type { ConnectorProvider } from '../modules/sources/infrastructure/adapters/connector-registry.ts'
 
 // The shared executor and recovery as the worker calls them.

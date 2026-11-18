@@ -53,6 +53,10 @@ const genericFailure = 'Import interrupted by a storage or processing error'
  * redelivered attempt or a finished run. Throws, without writing further,
  * when the signal is aborted or the attempt lost the run, so the queue
  * decides whether to retry; a retry continues the same run (F2-13).
+ *
+ * Internal to the module and used by its tests: it starts the run without
+ * waiting for its source's turn. The sync queue's handler starts runs in
+ * their source's turn instead (ASSUMPTION(oferty-pracy-0mq.16/ASM-3)).
  */
 export async function executeSyncRun(
   work: SyncRunWork,

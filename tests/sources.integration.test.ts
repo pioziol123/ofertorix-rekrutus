@@ -12,8 +12,8 @@ import {
   it,
   vi,
 } from 'vitest'
+import { executeSyncRun } from '../modules/sources/execute-sync-run.ts'
 import {
-  executeSyncRun,
   recoverSyncRuns,
   requestScheduledSyncs,
   requestSync,

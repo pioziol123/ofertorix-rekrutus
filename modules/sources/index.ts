@@ -4,14 +4,9 @@
  * Entry points (worker, CLI scripts, API routes) and other modules use only
  * these.
  */
-export {
-  executeSyncRun,
-  SyncRunLostError,
-  type SyncRunWork,
-} from './execute-sync-run.ts'
+export { SyncRunLostError, type SyncRunWork } from './execute-sync-run.ts'
 export { UnknownConnectorError } from './infrastructure/adapters/connector-registry.ts'
 export {
-  findSyncJob,
   syncQueue,
   syncQueueOptions,
   useSyncQueue,

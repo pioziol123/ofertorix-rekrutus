@@ -30,6 +30,7 @@ export function createJobspyConnector(
   return {
     name: source,
     infersUnavailabilityFromAbsence: false,
+    // ASSUMPTION(oferty-pracy-0mq.16/ASM-4): schedule and configuration declared by the connector.
     scheduled: false,
     enabled: () => jobspyEnabled(source),
     scopeParameters: () => parametersFor(source),

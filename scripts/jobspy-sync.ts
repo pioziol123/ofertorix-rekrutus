@@ -1,6 +1,7 @@
 import { closePool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
 import { parseJobspySource } from '../lib/sources/jobspy-catalog.ts'
+import { jobspyEnabled } from '../lib/sources/jobspy.ts'
 import {
   readSyncState,
   requestSync,
@@ -25,6 +26,8 @@ try {
   )
   if (remaining.some((arg) => arg !== '--wait'))
     throw new Error('Usage: jobspy:sync [--source source] [--wait]')
+  // Checked before the queue connects, as before; the request checks again.
+  if (!jobspyEnabled(source)) throw new SourceDisabledError(source)
   await boss.start()
   useSyncQueue(boss)
   const run = await requestSync({ source })

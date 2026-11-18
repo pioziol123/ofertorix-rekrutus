@@ -31,6 +31,7 @@ export function createSolidJobsConnector(
   return {
     name: source,
     infersUnavailabilityFromAbsence: true,
+    // ASSUMPTION(oferty-pracy-0mq.16/ASM-4): schedule and configuration declared by the connector.
     scheduled: true,
     enabled: () => true,
     scopeParameters: () => ({ ...parameters }),
