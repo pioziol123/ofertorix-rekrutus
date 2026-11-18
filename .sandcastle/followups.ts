@@ -83,6 +83,7 @@ export function resultShapeProblems(result: AgentResult): string[] {
   }
   for (const a of Array.isArray(result.assumptions) ? result.assumptions : []) {
     if (typeof a?.id !== 'string' || !strings(a.requirements)) problems.push('each assumption needs an id and a requirements list')
+    // ASSUMPTION(oferty-pracy-5yd.5/ASM-2)
     else if (!strings(a.sources) || !a.sources.length || typeof a.prd !== 'string' || !a.prd.trim()) {
       problems.push(`assumption ${a.id} needs a sources list naming what it rests on and a prd naming the part of the PRD it serves`)
     }
