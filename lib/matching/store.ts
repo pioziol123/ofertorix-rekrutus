@@ -74,6 +74,9 @@ export async function prepareMatching(
   kind: 'single' | 'group',
 ): Promise<PreparedRequest> {
   await lockAdRequests(adId)
+  // ASSUMPTION(oferty-pracy-0mq.21/ASM-1): under the ad lock, the ad's
+  // assessment still in progress in AI is reused; this keeps one
+  // assessment in progress per ad.
   const previous = await latestRequestedOfAd(adId)
   if (previous) {
     const execution = await readLatestExecution(previous.id)

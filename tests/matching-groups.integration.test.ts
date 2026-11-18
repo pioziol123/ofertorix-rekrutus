@@ -430,8 +430,46 @@ integration(
       ])
       const again = await enqueue([other, ad], commandId)
       expect(again).toMatchObject({ groupId: commandId, reused: true })
+      // Every item of the command, the excluded one included.
+      expect(again.items.map((i) => [i.offerId, i.id]).sort()).toEqual(
+        first.items.map((i) => [i.offerId, i.id]).sort(),
+      )
+      expect(again.items.find((i) => i.offerId === ad)!.state).toBe('excluded')
       expect(await count('matching_requests')).toBe(2)
       expect(await count('ai_executions')).toBe(1)
+      // A newer request of the excluded offer does not hide it from the
+      // command that excluded it.
+      await enqueueMatching(ad)
+      await expect(enqueue([ad, other], commandId)).resolves.toMatchObject({
+        reused: true,
+      })
+    })
+
+    it('recognises the identical repeat of a command after the single assessment it reused has finished (E03-AC04, FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {
+      const single = await enqueueMatching(ad)
+      const other = await anotherAd(),
+        commandId = randomUUID()
+      const first = await enqueue([ad, other], commandId)
+      expect(first.items.find((i) => i.offerId === ad)).toMatchObject({
+        id: single.id,
+        reused: true,
+      })
+      await queue.work()
+      expect((await latest(single.id)).state).toBe('completed')
+      const again = await enqueue([ad, other], commandId)
+      expect(again).toMatchObject({ groupId: commandId, reused: true })
+      expect(again.items.map((i) => [i.offerId, i.id]).sort()).toEqual(
+        first.items.map((i) => [i.offerId, i.id]).sort(),
+      )
+      expect(again.items.find((i) => i.offerId === ad)).toMatchObject({
+        state: 'completed',
+        reused: true,
+      })
+      expect(await count('ai_executions')).toBe(2)
+      // An offer the command never named is still refused.
+      await expect(
+        enqueue([ad, other, await anotherAd()], commandId),
+      ).rejects.toThrow('innych ofert')
     })
 
     it('does not recognise a repeated command that requested no AI work: the exclusion is recorded again, without AI work or cost (FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {

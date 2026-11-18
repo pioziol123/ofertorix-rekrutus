@@ -3,7 +3,7 @@ import { transaction } from '../db.ts'
 import {
   AiRequestError,
   readExecutionGroup,
-  readLatestExecution,
+  readExecutionHistory,
   type AiExecution,
 } from '../../modules/ai/index.ts'
 import {
@@ -17,7 +17,7 @@ import {
 } from '../../modules/matching/domain/assessment-state.ts'
 import {
   adsOfRequests,
-  latestRequestOfAd,
+  requestsOfAd,
   linkExecution,
   lockCommand,
 } from '../../modules/matching/infrastructure/persistence/assessment-requests.ts'
@@ -66,29 +66,51 @@ const otherOffers =
   'Ten identyfikator zlecenia dotyczy innych ofert. Odśwież zaznaczenie.'
 
 /**
- * Whether an offer of a repeated command can have been part of it without
- * getting AI work in its group: its latest request is excluded, or its
- * latest AI work is still in progress (the command reused it).
+ * The item a repeated command had for an offer outside its AI group, when
+ * the command's transaction can be told from the data: an excluded request
+ * saved at the moment of the command (a transaction saves every row with
+ * its start time), or a request whose AI work was in progress at that
+ * moment (the command reused it). Null when there is none.
  * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): Matching does not record the full
  * selection of a command, so this stands in for comparing with it.
  */
-async function outsideGroup(offerId: string) {
-  const latest = await latestRequestOfAd(offerId)
-  if (!latest) return false
-  if (latest.state === 'excluded') return true
-  const state = assessmentState(
-    'requested',
-    await readLatestExecution(latest.id),
-  )
-  return matchingPending.some((pending) => pending === state)
+async function itemOutsideGroup(
+  offerId: string,
+  acceptedAt: number,
+): Promise<Item | null> {
+  for (const request of await requestsOfAd(offerId)) {
+    const created = request.created_at.getTime()
+    if (created > acceptedAt) continue
+    if (request.state === 'excluded') {
+      if (created === acceptedAt)
+        return { id: request.id, offerId, state: 'excluded', reused: false }
+      continue
+    }
+    const history = await readExecutionHistory(request.id)
+    const spanning = history.some(
+      (execution) =>
+        execution.createdAt.getTime() <= acceptedAt &&
+        (execution.finishedAt === null ||
+          execution.finishedAt.getTime() >= acceptedAt),
+    )
+    if (spanning)
+      return {
+        id: request.id,
+        offerId,
+        state: assessmentState('requested', history.at(-1) ?? null),
+        reused: true,
+      }
+  }
+  return null
 }
 
 /**
  * The view of a group command already accepted: the requests its AI group
- * holds. A selection is a conflict when the group holds an offer it does
- * not name, or when it names an offer the group would have requested.
- * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the interim check of a changed
- * selection.
+ * holds, and the offers it reused or excluded. A selection is a conflict
+ * when the group holds an offer it does not name, or when it names an
+ * offer the command did not reuse or exclude.
+ * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the interim check of a selection
+ * and the interim items of a repeat.
  */
 async function acceptedGroup(
   groupId: string,
@@ -98,19 +120,26 @@ async function acceptedGroup(
   const latest = new Map<string, AiExecution>()
   for (const execution of executions)
     latest.set(execution.operationId, execution)
+  const acceptedAt = Math.min(
+    ...executions.map((execution) => execution.createdAt.getTime()),
+  )
   const requests = await adsOfRequests([...latest.keys()])
   if (requests.some((request) => !offerIds.includes(request.ad_id)))
     throw new MatchingError(otherOffers)
-  const inGroup = new Set(requests.map((request) => request.ad_id))
-  for (const offerId of offerIds)
-    if (!inGroup.has(offerId) && !(await outsideGroup(offerId)))
-      throw new MatchingError(otherOffers)
   const items: Item[] = requests.map((request) => ({
     id: request.id,
     offerId: request.ad_id,
     state: assessmentState('requested', latest.get(request.id) ?? null),
     reused: false,
   }))
+  const inGroup = new Set(requests.map((request) => request.ad_id))
+  for (const offerId of offerIds) {
+    if (inGroup.has(offerId)) continue
+    const item = await itemOutsideGroup(offerId, acceptedAt)
+    if (!item) throw new MatchingError(otherOffers)
+    items.push(item)
+  }
+  items.sort((a, b) => a.offerId.localeCompare(b.offerId))
   return { groupId, state: groupState(items), reused: true, items }
 }
 

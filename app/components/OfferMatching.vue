@@ -29,7 +29,7 @@ const current = computed(() => data.value?.current)
 const labels: Record<string, string> = {
   waiting_budget: 'Czeka na budżet',
   queued: 'W kolejce',
-  running: 'Ocena w toku — w partii do 24 godzin',
+  running: 'Ocena w toku',
   completed: 'Ocena gotowa',
   failed: 'Ocena nie powiodła się',
   unknown: 'Wysyłka lub koszt wymagają sprawdzenia',

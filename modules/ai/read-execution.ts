@@ -118,6 +118,9 @@ export async function readLatestExecutions(
   return (await readLatestExecutionRows([...operationIds])).map(toPublic)
 }
 
+// FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): its one client is Matching's interim
+// recognition of a repeated group command; the follow-up removes this read
+// or names the client that keeps it.
 /**
  * Every execution requested in a provider batch group, oldest first; empty
  * when the group has none. A client that names its groups uses it to

@@ -19,6 +19,7 @@ export {
   countActiveExecutions,
   readExecution,
   readExecutionArchive,
+  // FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): see readExecutionGroup.
   readExecutionGroup,
   readExecutionHistory,
   readLatestExecution,

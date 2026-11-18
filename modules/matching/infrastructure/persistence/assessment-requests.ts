@@ -67,20 +67,6 @@ export async function lockAdRequests(adId: string) {
   ])
 }
 
-/** The ad's latest request, or null when it has none. */
-export async function latestRequestOfAd(
-  adId: string,
-): Promise<{ id: string; state: 'requested' | 'excluded' } | null> {
-  return (
-    (
-      await db().query<{ id: string; state: 'requested' | 'excluded' }>(
-        'SELECT id,state FROM matching_requests WHERE ad_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1',
-        [adId],
-      )
-    ).rows[0] ?? null
-  )
-}
-
 /** The ad's latest request that asked AI for work, or null. */
 export async function latestRequestedOfAd(
   adId: string,
@@ -201,4 +187,22 @@ export async function lockCommand(commandId: string) {
   await db().query('SELECT pg_advisory_xact_lock(hashtext($1))', [
     `matching-command-${commandId}`,
   ])
+}
+
+/** Every request of an ad, newest first, with its state and time. */
+export async function requestsOfAd(
+  adId: string,
+): Promise<
+  { id: string; state: 'requested' | 'excluded'; created_at: Date }[]
+> {
+  return (
+    await db().query<{
+      id: string
+      state: 'requested' | 'excluded'
+      created_at: Date
+    }>(
+      'SELECT id,state,created_at FROM matching_requests WHERE ad_id=$1 ORDER BY created_at DESC,id DESC',
+      [adId],
+    )
+  ).rows
 }
