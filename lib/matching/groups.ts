@@ -139,7 +139,11 @@ async function commandGroup(commandId: string, offerIds: string[]) {
  * when the group holds an offer it does not name, or when it names an
  * offer the command did not reuse or exclude.
  * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the interim check of a selection
- * and the interim items of a repeat.
+ * and the interim items of a repeat. A changed selection is accepted as a
+ * repeat when it differs only in offers outside the group: it may drop an
+ * offer the command reused or excluded, or add an offer whose assessment
+ * was in progress when the command was accepted (shown as reused). Neither
+ * requests AI work.
  */
 async function acceptedGroup(
   groupId: string,

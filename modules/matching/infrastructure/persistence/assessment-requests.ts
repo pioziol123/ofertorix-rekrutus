@@ -147,6 +147,8 @@ export async function requestHistoryOfAd(
 /**
  * The saved provider payloads of requests sent before the batch archive
  * kept inputs: the request itself or the members of its former group.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-8): read only for the reconstruction
+ * of old inputs in the archive.
  */
 export async function legacyPayloads(
   archiveId: string,

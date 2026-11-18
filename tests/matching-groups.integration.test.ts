@@ -509,6 +509,40 @@ integration(
       expect(await count('ai_executions')).toBe(2)
     })
 
+    it('accepts as a repeat a changed selection that differs only in offers the command reused, excluded or could have reused, without AI work or cost (FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {
+      // (a) A narrower selection that drops an offer the command reused.
+      const single = await enqueueMatching(ad)
+      const other = await anotherAd(),
+        commandId = randomUUID()
+      const first = await enqueue([ad, other], commandId)
+      expect(first.items.find((i) => i.offerId === ad)).toMatchObject({
+        id: single.id,
+        reused: true,
+      })
+      const narrower = await enqueue([other], commandId)
+      expect(narrower).toMatchObject({ groupId: commandId, reused: true })
+      expect(narrower.items.map((i) => i.offerId)).toEqual([other])
+      expect(await count('matching_requests')).toBe(2)
+      expect(await count('ai_executions')).toBe(2)
+
+      // (b) A wider selection that adds an offer whose assessment was in
+      // progress when the command was accepted: it is shown as reused,
+      // though the command never named it.
+      const third = await anotherAd()
+      const inProgress = await enqueueMatching(third)
+      const secondCommand = randomUUID()
+      const fourth = await anotherAd()
+      await enqueue([fourth], secondCommand)
+      const executions = await count('ai_executions')
+      const wider = await enqueue([third, fourth], secondCommand)
+      expect(wider).toMatchObject({ groupId: secondCommand, reused: true })
+      expect(wider.items.find((i) => i.offerId === third)).toMatchObject({
+        id: inProgress.id,
+        reused: true,
+      })
+      expect(await count('ai_executions')).toBe(executions)
+    })
+
     it('refuses a repeated command whose selection shares no offer with the group it requested, with nothing requested (0mq.21 ASM-7, FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {
       const other = await anotherAd(),
         commandId = randomUUID()
@@ -519,7 +553,7 @@ integration(
     })
 
     it.todo(
-      'recognises every repeated command from its recorded selection, including one that requested no AI work, and refuses any other selection (E03-AC04, target of FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))',
+      'recognises every repeated command from its recorded selection, including one that requested no AI work, and refuses any other selection, also one that differs only in offers outside the AI group (E03-AC04, target of FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))',
     )
 
     it('canonicalizes UUID casing for idempotent commands and duplicate selection checks', async () => {

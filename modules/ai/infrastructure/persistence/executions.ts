@@ -396,7 +396,10 @@ export async function groupRequested(groupId: string) {
   return (rows.rowCount ?? 0) > 0
 }
 
-/** The latest execution of each given operation. */
+/**
+ * The latest execution of each given operation.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-4): exists only for readLatestExecutions.
+ */
 export async function readLatestExecutionRows(operationIds: string[]) {
   const rows = await db().query(
     `SELECT DISTINCT ON (e.operation_id) e.*,a.id AS attempt_id,a.attempt,a.generation,a.state AS attempt_state,a.month,
@@ -408,7 +411,10 @@ export async function readLatestExecutionRows(operationIds: string[]) {
   return rows.rows.map(toExecution)
 }
 
-/** How many executions of a settings key are in progress. */
+/**
+ * How many executions of a settings key are in progress.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-4): exists only for countActiveExecutions.
+ */
 export async function countActiveExecutionRows(settingsKey: string) {
   const row = (
     await db().query(
