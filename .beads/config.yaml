@@ -1,7 +1,7 @@
 repos:
     primary: "."
 export:
-    auto: true
+    auto: false
 routing:
     contributor: .
 sync:

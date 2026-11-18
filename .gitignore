@@ -35,3 +35,5 @@ docs/.obsidian/
 .sandcastle/node_modules
 .sandcastle/logs/
 .sandcastle/worktrees/
+
+.beads/issues.jsonl
