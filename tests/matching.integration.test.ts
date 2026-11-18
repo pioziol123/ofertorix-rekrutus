@@ -204,7 +204,7 @@ integration(
         usage: { inputTokens: 100, outputTokens: 20 },
       })
       expect(await revisions(request.id)).toBe(1)
-      const view = await readMatching(pool, ad)
+      const view = await readMatching(ad)
       expect(view).toMatchObject({
         configured: true,
         maximumCostPln: '0.020500',
@@ -270,7 +270,7 @@ integration(
         confirmed,
       ])
       await queue.work()
-      const view = await readMatching(pool, ad)
+      const view = await readMatching(ad)
       expect(view.current).toMatchObject({
         request_id: request.id,
         profile_number: 1,
@@ -298,7 +298,7 @@ integration(
         cost: { actual: '0.000120' },
       })
       expect(await revisions(request.id)).toBe(0)
-      expect((await readMatching(pool, ad)).history[0]).toMatchObject({
+      expect((await readMatching(ad)).history[0]).toMatchObject({
         state: 'failed',
         cost: { actual: '0.000120' },
       })
@@ -400,11 +400,25 @@ integration(
           /private|secret|provider|forged|Zod/,
         )
         expect(execution.cost.actual).toBe('0.000120')
-        expect((await readMatching(pool, ad)).history[0]!.error).toBe(
-          saved.error,
-        )
+        expect((await readMatching(ad)).history[0]!.error).toBe(saved.error)
       },
     )
+
+    it('refuses a single assessment whose input is above the input cap of the price list, before reserving (0mq.21 ASM-5)', async () => {
+      usePricing('matching', { ...pricing, maxInputTokens: 100 }, [
+        'single',
+        'batch',
+      ])
+      await expect(enqueueMatching(ad)).rejects.toThrow(
+        'Wejście przekracza skonfigurowany limit tokenów. Zwiększ limit lub skróć profil.',
+      )
+      expect(queue.send).not.toHaveBeenCalled()
+      for (const table of ['matching_requests', 'ai_executions', 'ai_attempts'])
+        expect(
+          (await pool.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0]
+            .n,
+        ).toBe(0)
+    })
 
     it('rejects a missing active profile or configuration before reserving or queueing', async () => {
       await pool.query('UPDATE profile_head SET active_version_id=NULL')
@@ -441,7 +455,7 @@ integration(
       })
       expect(await readExecutionHistory(request.id)).toEqual([])
       expect(queue.send).not.toHaveBeenCalled()
-      expect((await readMatching(pool, ad)).history[0]).toMatchObject({
+      expect((await readMatching(ad)).history[0]).toMatchObject({
         state: 'excluded',
         cost: null,
       })
@@ -457,7 +471,7 @@ integration(
       const second = await enqueueMatching(ad)
       expect(second.id).not.toBe(first.id)
       await queue.work()
-      const view = await readMatching(pool, ad)
+      const view = await readMatching(ad)
       expect(view.history).toHaveLength(2)
       expect(view.history.find((r) => r.id === first.id)).toMatchObject({
         state: 'completed',
@@ -477,9 +491,7 @@ integration(
       )
       const request = await enqueueMatching(ad)
       expect(request.state).toBe('waiting_budget')
-      expect((await readMatching(pool, ad)).history[0]!.state).toBe(
-        'waiting_budget',
-      )
+      expect((await readMatching(ad)).history[0]!.state).toBe('waiting_budget')
       expect(queue.executionJobs()).toEqual([])
       // A second request of the offer meets the waiting one.
       expect(await enqueueMatching(ad)).toMatchObject({

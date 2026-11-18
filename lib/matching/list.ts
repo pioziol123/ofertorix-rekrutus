@@ -1,4 +1,4 @@
-import type { QueryExecutor } from '../db.ts'
+import { db } from '../db.ts'
 import type { OfferView } from '../../modules/offers/index.ts'
 import { readLatestExecutions } from '../../modules/ai/index.ts'
 import {
@@ -15,14 +15,13 @@ import { matchingGroupLabels, type MatchingSummary } from './view.ts'
  * assessments, and the state of their AI work from the AI read.
  */
 export async function decorateMatching(
-  pool: QueryExecutor,
   offers: OfferView[],
 ): Promise<OfferView[]> {
   if (!offers.length) return []
   const activeId = (await activeProfileVersion())?.id ?? null
   const ids = offers.map((o) => o.id)
   const current = await currentAdVersions(ids)
-  const result = await pool.query(
+  const result = await db().query(
     `SELECT a.id,l.id AS request_id,l.state,s.id AS score_id,s.calculation,s.assessment_author,s.profile_version_id,s.ad_revision_id
     FROM unnest($1::uuid[]) AS a(id)
     LEFT JOIN LATERAL (SELECT id,state FROM matching_requests WHERE ad_id=a.id ORDER BY created_at DESC,id DESC LIMIT 1) l ON true
@@ -30,6 +29,8 @@ export async function decorateMatching(
     LEFT JOIN matching_rating_revisions s ON s.id=rh.revision_id`,
     [ids],
   )
+  // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the AI work of every request in
+  // one public read.
   const executions = new Map(
     (
       await readLatestExecutions(
@@ -90,6 +91,8 @@ export async function decorateMatching(
  * in progress and the most one item of a group reserves.
  */
 export async function matchingListStatus() {
+  // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reservation read and the
+  // count of assessments in progress.
   const reservation = assessmentReservation('group')
   const profile = await activeProfileVersion()
   return {

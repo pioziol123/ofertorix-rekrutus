@@ -643,6 +643,31 @@ integration('AI execution coordination with a real database and queue', () => {
     expect((await readBudget()).reserved).toBe('0.000000')
   })
 
+  it('sends a request above the input cap that did not ask to be refused, as before (0mq.21 ASM-5)', async () => {
+    await expect(
+      requestExecution(request({ input: 'x'.repeat(1001) })),
+    ).resolves.toMatchObject({ state: 'queued' })
+  })
+
+  it('refuses a paid request whose input is above the input cap of its price list, with nothing reserved or queued (0mq.21 ASM-5)', async () => {
+    // The cap is 1000 tokens; UTF-8 bytes count as a conservative ceiling.
+    const requested = request({
+      input: 'x'.repeat(1001),
+      refuseAboveInputCap: true,
+    })
+    await expect(requestExecution(requested)).rejects.toEqual(
+      new AiRequestError('input_too_large'),
+    )
+    expect(await readExecutionHistory(requested.operationId)).toEqual([])
+    expect(await jobs()).toEqual([])
+    expect((await readBudget()).reserved).toBe('0.000000')
+    await expect(
+      requestExecution(
+        request({ input: 'x'.repeat(800), refuseAboveInputCap: true }),
+      ),
+    ).resolves.toMatchObject({ state: 'queued' })
+  })
+
   it('ends a completed response that is not JSON without a result and settles its cost', async () => {
     const admitted = await requestExecution(request())
     answers.push(async () => ({

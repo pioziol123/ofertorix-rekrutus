@@ -562,14 +562,17 @@ export function openAiBatch(
     admit(items) {
       const lines = items.map((item) => batchLine(settings, item))
       const cap = settings.maxInputTokens ?? 0
+      // UTF-8 bytes are a conservative token ceiling including the
+      // instruction and schema overhead of the exact batch line.
+      if (lines.some((l) => Buffer.byteLength(JSON.stringify(l.body)) > cap))
+        throw new AiRequestError('input_too_large')
+      // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the refusal of a group one
+      // batch file cannot take.
       if (
         lines.length > maxLines ||
-        // UTF-8 bytes are a conservative token ceiling including the
-        // instruction and schema overhead.
-        lines.some((l) => Buffer.byteLength(JSON.stringify(l.body)) > cap) ||
         Buffer.byteLength(jsonl(lines)) > maxFileBytes
       )
-        throw new AiRequestError('input_too_large')
+        throw new AiRequestError('batch_too_large')
     },
     async advance(items, context) {
       let state = readState(context.state)

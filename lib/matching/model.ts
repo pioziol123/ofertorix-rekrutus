@@ -12,6 +12,16 @@ export const groups = [
 ] as const
 export type Group = (typeof groups)[number]
 export const weights = defaultWeights
+/**
+ * The most criteria one assessment covers: the assessment contract takes no
+ * more, so a request with more could never be published.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-6): the reason the limit applies to
+ * every assessment request, single or in a group.
+ */
+export const maxCriteria = 200
+/** Whether an input has more criteria than an assessment can cover. */
+export const exceedsCriteria = (input: { criteria: unknown[] }) =>
+  input.criteria.length > maxCriteria
 export type Criterion = {
   id: string
   group: Group
@@ -41,7 +51,7 @@ const entry = z
 export const assessmentSchema = z
   .object({
     summary: z.string().min(1).max(4000),
-    criteria: z.array(entry).max(200),
+    criteria: z.array(entry).max(maxCriteria),
     strengths: z.array(z.string().min(1).max(1000)).max(20),
     gaps: z.array(z.string().min(1).max(1000)).max(20),
   })

@@ -85,6 +85,9 @@ SELECT r.id,NULL,0,NULL,1,r.id,'matching','settled',0,0,r.configuration,r.id,r.c
 
 UPDATE matching_requests SET execution_id=coalesce(attempt_id,id)
  WHERE state<>'excluded' AND execution_id IS NULL;
+-- The stage now lives in AI, so the index of one pending request per ad
+-- cannot be kept; the transaction lock per ad that prepares requests
+-- holds the rule.
 DROP INDEX matching_one_pending;
 ALTER TABLE matching_requests DROP CONSTRAINT matching_requests_state_check;
 UPDATE matching_requests SET state='requested' WHERE state<>'excluded';

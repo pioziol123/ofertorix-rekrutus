@@ -210,8 +210,8 @@ integration('list matching projections in isolated PostgreSQL', () => {
     expect(one.queries).toBeLessThanOrEqual(5)
   })
   it('keeps an empty catalog and unassessed offers free of fabricated scores', async () => {
-    expect(await decorateMatching(pool, [])).toEqual([])
-    expect((await decorateMatching(pool, offers()))[0]).not.toHaveProperty(
+    expect(await decorateMatching([])).toEqual([])
+    expect((await decorateMatching(offers()))[0]).not.toHaveProperty(
       'assessment',
     )
   })
@@ -231,7 +231,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
       })
       const score = await request('completed', '2026-01-02', calculation)
       const latest = await request(state, '2026-01-03')
-      const result = (await decorateMatching(pool, offers()))[0]!
+      const result = (await decorateMatching(offers()))[0]!
       expect(result.assessment).toEqual({
         requestId: latest,
         author: 'ai',
@@ -256,9 +256,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
       rating: 0,
       completeness: 0,
     })
-    expect(
-      (await decorateMatching(pool, offers()))[0]!.assessment,
-    ).toMatchObject({
+    expect((await decorateMatching(offers()))[0]!.assessment).toMatchObject({
       rating: 0,
       completeness: 0,
       components: { conditions: null, direction: 0 },
@@ -266,9 +264,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
     await pool.query(
       'UPDATE matching_rating_revisions SET calculation=calculation || \'{"rating":null}\'::jsonb',
     )
-    expect(
-      (await decorateMatching(pool, offers()))[0]!.assessment!.rating,
-    ).toBeNull()
+    expect((await decorateMatching(offers()))[0]!.assessment!.rating).toBeNull()
   })
   it('marks scores stale independently after either source revision or active profile changes', async () => {
     await request('completed', '2026-01-01', calculation)
@@ -281,23 +277,17 @@ integration('list matching projections in isolated PostgreSQL', () => {
       'UPDATE source_ads SET current_revision_id=$2 WHERE id=$1',
       [ad, next],
     )
-    expect((await decorateMatching(pool, offers()))[0]!.assessment!.stale).toBe(
-      true,
-    )
+    expect((await decorateMatching(offers()))[0]!.assessment!.stale).toBe(true)
     await pool.query(
       'UPDATE source_ads SET current_revision_id=$2 WHERE id=$1',
       [ad, revision],
     )
     await pool.query('UPDATE profile_head SET active_version_id=NULL')
-    expect((await decorateMatching(pool, offers()))[0]!.assessment!.stale).toBe(
-      true,
-    )
+    expect((await decorateMatching(offers()))[0]!.assessment!.stale).toBe(true)
     await pool.query('UPDATE profile_head SET active_version_id=$1', [
       profileVersion,
     ])
-    expect((await decorateMatching(pool, offers()))[0]!.assessment!.stale).toBe(
-      false,
-    )
+    expect((await decorateMatching(offers()))[0]!.assessment!.stale).toBe(false)
   })
   it('uses the same owner head as details before and after reweighting without an AI request', async () => {
     const context = (await manualContext(ad))!
@@ -318,9 +308,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
     })
     const assertSame = async () => {
       const detail = (await readRatings(pool, ad, await activeId())).current!
-      expect(
-        (await decorateMatching(pool, offers()))[0]!.assessment,
-      ).toMatchObject({
+      expect((await decorateMatching(offers()))[0]!.assessment).toMatchObject({
         requestId: null,
         state: 'completed',
         author: 'owner',

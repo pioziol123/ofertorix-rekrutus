@@ -171,7 +171,9 @@ export type BatchContext = {
  * The batch mode of an adapter: the provider's cycle of sending, polling,
  * collecting and cleaning up a batch.
  * - `admit`: refuses, at request time, requests the provider's batch
- *   cannot take (`AiRequestError` with `input_too_large`).
+ *   cannot take (`AiRequestError` with `input_too_large` for an item
+ *   above the input cap, `batch_too_large` for too many items or bytes;
+ *   ASSUMPTION(oferty-pracy-0mq.21/ASM-4)).
  * - `advance`: carries the group one step further.
  * - `cleanup`: removes what the batch left at the provider once its
  *   outcomes are saved; `needsCleanup` says whether a saved state still

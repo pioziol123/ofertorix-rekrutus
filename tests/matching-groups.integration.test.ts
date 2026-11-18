@@ -228,8 +228,8 @@ integration(
       expect(openAi.batch.uploads).toBe(1)
       expect(openAi.batch.removed).toHaveLength(2)
       // The archive of the batch is read through AI, the same for every item.
-      const archive = await readBatchArchive(pool, first)
-      expect(await readBatchArchive(pool, second)).toEqual(archive)
+      const archive = await readBatchArchive(first)
+      expect(await readBatchArchive(second)).toEqual(archive)
       expect(archive).toMatchObject({
         operationId: group.groupId,
         reconstructedInput: null,
@@ -246,7 +246,7 @@ integration(
       await queue.work()
       for (const item of group.items)
         expect((await latest(item.id)).state).toBe('running')
-      expect((await readMatching(pool, ad)).history[0]!.state).toBe('running')
+      expect((await readMatching(ad)).history[0]!.state).toBe('running')
       openAi.batch.status = 'completed'
       await recoverExecutions()
       await queue.work()
@@ -293,10 +293,10 @@ integration(
           cause: 'network',
           cost: { reserved: '0.020500', actual: null },
         })
-        expect((await readMatching(pool, ad)).history.length).toBe(1)
+        expect((await readMatching(ad)).history.length).toBe(1)
       }
       expect(
-        (await readMatching(pool, group.items[0]!.offerId)).history[0],
+        (await readMatching(group.items[0]!.offerId)).history[0],
       ).toMatchObject({
         state: 'unknown',
         cost: { actual: null },
@@ -390,7 +390,8 @@ integration(
       expect(await count('ai_executions')).toBe(2)
     })
 
-    it('recognises a repeated command by its AI group; a command that requested no AI work is not recognised (0mq.21 ASM-2)', async () => {
+    /** The ad's required work mode conflicts: its requests are excluded. */
+    async function excludeAd() {
       const data = emptyProfile()
       data.expectations.workMode = {
         state: 'specified',
@@ -405,6 +406,36 @@ integration(
         'UPDATE source_ad_revisions SET payload=payload || \'{"isRemote":false,"isHybrid":false}\'::jsonb WHERE id=$1',
         [revision],
       )
+    }
+
+    it('refuses a larger selection under an accepted command instead of leaving the added offers unassessed (E03-AC04, FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {
+      const other = await anotherAd(),
+        commandId = randomUUID()
+      await enqueue([ad], commandId)
+      await expect(enqueue([ad, other], commandId)).rejects.toThrow(
+        'innych ofert',
+      )
+      expect(await count('matching_requests')).toBe(1)
+      expect(await count('ai_executions')).toBe(1)
+    })
+
+    it('recognises the repeat of an accepted command whose selection held an excluded offer (E03-AC04, FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {
+      await excludeAd()
+      const other = await anotherAd(),
+        commandId = randomUUID()
+      const first = await enqueue([ad, other], commandId)
+      expect(first.items.map((i) => i.state).sort()).toEqual([
+        'excluded',
+        'queued',
+      ])
+      const again = await enqueue([other, ad], commandId)
+      expect(again).toMatchObject({ groupId: commandId, reused: true })
+      expect(await count('matching_requests')).toBe(2)
+      expect(await count('ai_executions')).toBe(1)
+    })
+
+    it('does not recognise a repeated command that requested no AI work: the exclusion is recorded again, without AI work or cost (FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {
+      await excludeAd()
       const commandId = randomUUID()
       const first = await enqueue([ad], commandId)
       expect(first.items).toMatchObject([{ state: 'excluded', reused: false }])
@@ -416,6 +447,10 @@ integration(
       expect(await count('ai_executions')).toBe(0)
       expect(queue.send).not.toHaveBeenCalled()
     })
+
+    it.todo(
+      'recognises every repeated command from its recorded selection, including one that requested no AI work, and refuses any other selection (E03-AC04, target of FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))',
+    )
 
     it('canonicalizes UUID casing for idempotent commands and duplicate selection checks', async () => {
       const commandId = randomUUID()
@@ -512,7 +547,7 @@ integration(
           anotherAd('PHP backend '.repeat(18000)),
         ),
       )
-      await expect(enqueue(ids)).rejects.toThrow('limit danych partii')
+      await expect(enqueue(ids)).rejects.toThrow('2 MiB')
       expect(await count('matching_requests')).toBe(0)
       expect(await count('ai_executions')).toBe(0)
       expect(await count('ai_attempts')).toBe(0)

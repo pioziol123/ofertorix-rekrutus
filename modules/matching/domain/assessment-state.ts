@@ -1,4 +1,8 @@
-import type { ExecutionCause, ExecutionState } from '../../ai/index.ts'
+import type {
+  AiRequestErrorCode,
+  ExecutionCause,
+  ExecutionState,
+} from '../../ai/index.ts'
 import type { MatchingState } from '../../../lib/matching/view.ts'
 
 /**
@@ -64,4 +68,39 @@ export function endMessage(end: {
   const diagnostic = responseDiagnostic[end.cause]
   if (diagnostic) return rejectionMessage(diagnostic)
   return `Ocena nie została wykonana. Poprzednie wyniki pozostały bez zmian. [AI: ${end.cause}]`
+}
+
+/**
+ * The configuration message the owner sees.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-3): it no longer names the Batch price
+ * list, since a single assessment uses the standard one.
+ */
+export const notConfiguredMessage =
+  'Skonfiguruj model i cennik przed oceną ofert.'
+
+/**
+ * What a request AI refused means to the owner, for a single assessment or
+ * a group. The limits keep the messages they had on the former batch path.
+ */
+export function refusalMessage(
+  code: AiRequestErrorCode,
+  kind: 'single' | 'group',
+): string {
+  // ASSUMPTION(oferty-pracy-0mq.21/ASM-3): a message for a provider that
+  // cannot take the work now, which the former batch path never met.
+  if (code === 'provider_unavailable')
+    return 'Model jest teraz niedostępny. Spróbuj ponownie później.'
+  // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the refusal causes of the batch
+  // limits; ASSUMPTION(oferty-pracy-0mq.21/ASM-5): the input cap.
+  if (code === 'input_too_large') return inputLimitMessage(kind)
+  if (code === 'batch_too_large')
+    return 'Zaznacz mniej ofert: plik tej partii przekracza 2 MiB.'
+  return notConfiguredMessage
+}
+
+/** The message of an input above the limit, as the former paths had it. */
+export function inputLimitMessage(kind: 'single' | 'group'): string {
+  return kind === 'single'
+    ? 'Wejście przekracza skonfigurowany limit tokenów. Zwiększ limit lub skróć profil.'
+    : 'Jedna z ofert przekracza limit danych oceny. Zmień zaznaczenie lub limit wejścia.'
 }

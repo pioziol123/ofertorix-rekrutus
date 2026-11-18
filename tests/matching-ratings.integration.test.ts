@@ -442,7 +442,7 @@ integration(
         ratings: await profileReads(async () =>
           readRatings(pool, ad, await activeId()),
         ),
-        history: await profileReads(() => readMatching(pool, ad)),
+        history: await profileReads(() => readMatching(ad)),
       }
       for (const number of [2, 3]) {
         const version = randomUUID()
@@ -456,7 +456,7 @@ integration(
         await saveManualRating(ad, await manualCommand())
         await newRequest()
       }
-      const view = await readMatching(pool, ad)
+      const view = await readMatching(ad)
       expect(view.ratings.map((rating) => rating.profile_number)).toEqual([
         3, 2, 1,
       ])
@@ -468,7 +468,7 @@ integration(
         ratings: await profileReads(async () =>
           readRatings(pool, ad, await activeId()),
         ),
-        history: await profileReads(() => readMatching(pool, ad)),
+        history: await profileReads(() => readMatching(ad)),
       }).toEqual(one)
       expect(one).toEqual({ ratings: 2, history: 3 })
     })

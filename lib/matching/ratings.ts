@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { Pool } from 'pg'
 import { z } from 'zod'
-import { db, transaction } from '../db.ts'
+import { db, transaction, type QueryExecutor } from '../db.ts'
 import {
   readAdVersionList,
   readAdVersions,
@@ -488,7 +488,7 @@ export type RatingView = {
 }
 /** The rating history of an ad, stale against the given active profile version. */
 export async function readRatings(
-  pool: Pool,
+  pool: QueryExecutor,
   adId: string,
   activeProfileVersionId: string | null,
 ) {

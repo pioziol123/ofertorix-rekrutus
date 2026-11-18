@@ -84,6 +84,7 @@ onUnmounted(() => clearInterval(timer))
     </p>
     <p v-if="error" role="alert">Nie udało się wczytać ocen.</p>
     <p v-if="data && !data.configured" class="notice">
+      <!-- ASSUMPTION(oferty-pracy-0mq.21/ASM-3): no longer the Batch price list. -->
       Oceny AI wymagają konfiguracji modelu i cennika.
     </p>
     <p v-if="data && !data.profileReady" class="notice">

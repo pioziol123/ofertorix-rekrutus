@@ -140,7 +140,7 @@ describe('batch request and upload', () => {
     ).toThrow(new AiRequestError('input_too_large'))
     expect(() =>
       runner.admit(Array.from({ length: 101 }, (_, i) => item(`offer_${i}`))),
-    ).toThrow(new AiRequestError('input_too_large'))
+    ).toThrow(new AiRequestError('batch_too_large'))
     const large = openAiBatch(
       { ...settings, maxInputTokens: 3000000 },
       noTransport,
@@ -150,7 +150,7 @@ describe('batch request and upload', () => {
         item('a', 'x'.repeat(1100000)),
         item('b', 'x'.repeat(1100000)),
       ]),
-    ).toThrow(new AiRequestError('input_too_large'))
+    ).toThrow(new AiRequestError('batch_too_large'))
   })
   it('uploads multipart batch purpose with newline-terminated JSONL and expiration', async () => {
     const { client, fetcher } = fakeClient(async () =>

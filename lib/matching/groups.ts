@@ -1,22 +1,28 @@
 import { z } from 'zod'
-import { db, transaction } from '../db.ts'
+import { transaction } from '../db.ts'
 import {
   AiRequestError,
   readExecutionGroup,
+  readLatestExecution,
   type AiExecution,
 } from '../../modules/ai/index.ts'
 import {
   assessmentReservation,
   requestAssessmentGroup,
 } from '../../modules/matching/infrastructure/adapters/assessment-ai.ts'
-import { assessmentState } from '../../modules/matching/domain/assessment-state.ts'
-import { activeProfileVersion, adsForAssessment } from './ratings.ts'
 import {
-  linkExecution,
-  MatchingError,
+  assessmentState,
   notConfiguredMessage,
-  prepareMatching,
-} from './store.ts'
+  refusalMessage,
+} from '../../modules/matching/domain/assessment-state.ts'
+import {
+  adsOfRequests,
+  latestRequestOfAd,
+  linkExecution,
+  lockCommand,
+} from '../../modules/matching/infrastructure/persistence/assessment-requests.ts'
+import { activeProfileVersion, adsForAssessment } from './ratings.ts'
+import { MatchingError, prepareMatching } from './store.ts'
 import type { MatchingInput } from './model.ts'
 import { matchingPending, type MatchingState } from './view.ts'
 export const groupCommandSchema = z
@@ -56,9 +62,33 @@ function groupState(items: { state: MatchingState }[]): MatchingState {
   return pending?.state ?? 'completed'
 }
 
+const otherOffers =
+  'Ten identyfikator zlecenia dotyczy innych ofert. Odśwież zaznaczenie.'
+
+/**
+ * Whether an offer of a repeated command can have been part of it without
+ * getting AI work in its group: its latest request is excluded, or its
+ * latest AI work is still in progress (the command reused it).
+ * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): Matching does not record the full
+ * selection of a command, so this stands in for comparing with it.
+ */
+async function outsideGroup(offerId: string) {
+  const latest = await latestRequestOfAd(offerId)
+  if (!latest) return false
+  if (latest.state === 'excluded') return true
+  const state = assessmentState(
+    'requested',
+    await readLatestExecution(latest.id),
+  )
+  return matchingPending.some((pending) => pending === state)
+}
+
 /**
  * The view of a group command already accepted: the requests its AI group
- * holds. A command that names other offers than those is a conflict.
+ * holds. A selection is a conflict when the group holds an offer it does
+ * not name, or when it names an offer the group would have requested.
+ * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the interim check of a changed
+ * selection.
  */
 async function acceptedGroup(
   groupId: string,
@@ -68,16 +98,13 @@ async function acceptedGroup(
   const latest = new Map<string, AiExecution>()
   for (const execution of executions)
     latest.set(execution.operationId, execution)
-  const requests = (
-    await db().query<{ id: string; ad_id: string }>(
-      'SELECT id,ad_id FROM matching_requests WHERE id=ANY($1::uuid[]) ORDER BY id',
-      [[...latest.keys()]],
-    )
-  ).rows
+  const requests = await adsOfRequests([...latest.keys()])
   if (requests.some((request) => !offerIds.includes(request.ad_id)))
-    throw new MatchingError(
-      'Ten identyfikator zlecenia dotyczy innych ofert. Odśwież zaznaczenie.',
-    )
+    throw new MatchingError(otherOffers)
+  const inGroup = new Set(requests.map((request) => request.ad_id))
+  for (const offerId of offerIds)
+    if (!inGroup.has(offerId) && !(await outsideGroup(offerId)))
+      throw new MatchingError(otherOffers)
   const items: Item[] = requests.map((request) => ({
     id: request.id,
     offerId: request.ad_id,
@@ -105,14 +132,15 @@ export async function enqueueMatchingGroup(value: unknown) {
   const ads = await adsForAssessment(ids)
   try {
     return await transaction(async () => {
-      await db().query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-        `matching-command-${command.commandId}`,
-      ])
-      // ASSUMPTION(oferty-pracy-0mq.21/ASM-2): the AI group of the command
-      // records that it was accepted.
+      await lockCommand(command.commandId)
+      // FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the AI group of the command
+      // is the only record that it was accepted; a command that requested
+      // no AI work leaves none. ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the
+      // group read.
       const accepted = await readExecutionGroup(command.commandId)
       if (accepted.length)
         return acceptedGroup(command.commandId, accepted, ids)
+      // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reservation read.
       if (assessmentReservation('group') === null)
         throw new MatchingError(notConfiguredMessage)
       if (!profile)
@@ -124,6 +152,7 @@ export async function enqueueMatchingGroup(value: unknown) {
           offerId,
           profile,
           ads.get(offerId),
+          'group',
         )
         items.push({
           id: prepared.id,
@@ -154,13 +183,8 @@ export async function enqueueMatchingGroup(value: unknown) {
       }
     })
   } catch (error) {
-    if (error instanceof AiRequestError) {
-      if (error.code === 'input_too_large')
-        throw new MatchingError(
-          'Zaznaczone oferty przekraczają limit danych partii ocen. Zaznacz mniej ofert lub zmień limit wejścia.',
-        )
-      throw new MatchingError(notConfiguredMessage)
-    }
+    if (error instanceof AiRequestError)
+      throw new MatchingError(refusalMessage(error.code, 'group'))
     throw error
   }
 }

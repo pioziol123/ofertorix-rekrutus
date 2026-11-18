@@ -219,7 +219,7 @@ integration(
       ).rows[0]
       expect(rating.ad_revision_id).toBe(assessed)
       expect(rating.input.offer).toContain('Assessed PHP')
-      const view = await readMatching(pool, ad)
+      const view = await readMatching(ad)
       expect(view.current).toMatchObject({
         ad_revision_id: assessed,
         stale: true,
@@ -244,7 +244,7 @@ integration(
       expect(rating.input.offer).toContain('Assessed PHP')
       // Only promotion relied on the earlier read: the result became the
       // current assessment, and it shows as stale against the changed ad.
-      const view = await readMatching(pool, ad)
+      const view = await readMatching(ad)
       expect(view.current).toMatchObject({
         request_id: request.id,
         ad_revision_id: assessed,

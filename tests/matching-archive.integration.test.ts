@@ -123,7 +123,7 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
     await archive('metadata', 'batch_test', '{"status":"completed"}')
     await archive('output', 'file_output', 'malformed output\n')
     await archive('error', 'file_error', 'raw error\n')
-    const result = await readBatchArchive(pool, id)
+    const result = await readBatchArchive(id)
     expect(result).toMatchObject({ operationId: id, reconstructedInput: null })
     expect(result!.artifacts).toHaveLength(5)
     expect(result!.artifacts.find((a) => a.kind === 'input')).toMatchObject({
@@ -149,15 +149,15 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
     await request(b, { group })
     await keep(group)('input', 'request', 'exact whole group\n')
     await keep(group)('output', 'file_output', 'all results\n')
-    const first = await readBatchArchive(pool, a),
-      second = await readBatchArchive(pool, b)
+    const first = await readBatchArchive(a),
+      second = await readBatchArchive(b)
     expect(first).toEqual(second)
     expect(first).toMatchObject({
       operationId: group,
       reconstructedInput: null,
     })
     expect(first!.artifacts).toHaveLength(2)
-    expect(await readBatchArchive(pool, randomUUID())).toBeNull()
+    expect(await readBatchArchive(randomUUID())).toBeNull()
   })
 
   it('clearly marks reconstructed old inputs and never invents missing output', async () => {
@@ -179,7 +179,7 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
     await request(a, { group, oldGroup: group, payload: body })
     await request(b, { group, oldGroup: group, payload: body })
     await request(single, { payload: body })
-    const result = await readBatchArchive(pool, a)
+    const result = await readBatchArchive(a)
     expect(result!.artifacts).toEqual([])
     expect(result!.reconstructedInput!.endsWith('\n')).toBe(true)
     expect(
@@ -195,7 +195,7 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
         body,
       })),
     )
-    const one = await readBatchArchive(pool, single)
+    const one = await readBatchArchive(single)
     expect(one!.operationId).toBe(single)
     expect(JSON.parse(one!.reconstructedInput!)).toEqual({
       custom_id: single,
@@ -209,7 +209,7 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
     await request(direct, { group: null })
     await request(excluded, { excluded: true })
     for (const id of [direct, excluded])
-      expect(await readBatchArchive(pool, id)).toMatchObject({
+      expect(await readBatchArchive(id)).toMatchObject({
         artifacts: [],
         reconstructedInput: null,
       })

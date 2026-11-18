@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  assessmentSchema,
   calculate,
+  exceedsCriteria,
+  maxCriteria,
   matchingInput,
   salaryCheck,
   validateAssessment,
@@ -428,5 +431,37 @@ describe('owner authority and configurable weights', () => {
       }),
     ).toMatchObject({ rating: 100, completeness: 100 })
     expect(value).toEqual(original)
+  })
+})
+
+describe('the criteria limit of an assessment (0mq.21 ASM-6)', () => {
+  const criteria = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `criterion_${i}`,
+      group: 'technologies' as const,
+      label: 'PHP',
+      unknown: true,
+    }))
+  it('refuses more criteria than the assessment contract can return', () => {
+    expect(maxCriteria).toBe(200)
+    expect(exceedsCriteria({ criteria: criteria(200) })).toBe(false)
+    expect(exceedsCriteria({ criteria: criteria(201) })).toBe(true)
+    const entry = (id: string) => ({
+      id,
+      state: 'unknown',
+      score: null,
+      profileEvidence: null,
+      offerEvidence: null,
+      reason: 'Brak danych',
+    })
+    const result = (n: number) => ({
+      summary: 'Ocena',
+      strengths: [],
+      gaps: [],
+      criteria: criteria(n).map((c) => entry(c.id)),
+    })
+    // The reason: an assessment with more criteria never passes the contract.
+    expect(assessmentSchema.safeParse(result(200)).success).toBe(true)
+    expect(assessmentSchema.safeParse(result(201)).success).toBe(false)
   })
 })

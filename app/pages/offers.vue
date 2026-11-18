@@ -623,6 +623,7 @@ const pageLink = (page: number) => ({
             Zatwierdź profil, aby oceniać oferty.
           </p>
           <p v-else-if="data && !data.matching.configured">
+            <!-- ASSUMPTION(oferty-pracy-0mq.21/ASM-3): the group needs the batch price list. -->
             Oceny grupowe wymagają konfiguracji modelu i cennika partii.
           </p>
         </div>

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { transaction } from '../../lib/db.ts'
 import { admitExecutions, type RequestedExecution } from './admit-executions.ts'
 import { checkedValues, type ExecutionCheck } from './check-execution.ts'
+import { exceedsInputCap } from './domain/input-cap.ts'
 import { schemaValidator } from './domain/response-schema.ts'
 import { providerAdapter } from './provider-registry.ts'
 import { AiRequestError } from './errors.ts'
@@ -36,6 +37,14 @@ export type ExecutionRequest = {
   instruction: string
   responseSchema: { name: string; schema: Record<string, unknown> }
   input: string
+  /**
+   * Refuse the request with `input_too_large`, before anything is
+   * reserved, when its input may take more tokens than the price list's
+   * input cap the reservation covers. Without it the work is sent and a
+   * usage beyond the cap leaves the cost unknown.
+   * ASSUMPTION(oferty-pracy-0mq.21/ASM-5): an option the client chooses.
+   */
+  refuseAboveInputCap?: boolean
   /**
    * The result of the check before the request, for the same settings
    * key. Required when the provider fixes something before a request.
@@ -89,8 +98,18 @@ async function admit(requests: ExecutionRequest[]) {
   // Refused before anything is reserved: settings that are missing or
   // invalid, and a mode no adapter of the provider declares.
   const settings = executionSettings(first.settingsKey, first.mode.kind)
+  // A reservation covers the input cap of the price list, so a paid
+  // request that asks for it is refused above the cap before anything is
+  // reserved. ASSUMPTION(oferty-pracy-0mq.21/ASM-5)
+  const cap = settings.pricing?.maxInputTokens
+  if (
+    cap !== undefined &&
+    requests.some((r) => r.refuseAboveInputCap && exceedsInputCap(r, cap))
+  )
+    throw new AiRequestError('input_too_large')
   // A provider's batch refuses, before anything is reserved, what it
   // cannot take.
+  // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the refusal of the batch mode.
   if (first.mode.kind === 'batch')
     providerAdapter(settings.provider)
       ?.modes.batch?.(settings)

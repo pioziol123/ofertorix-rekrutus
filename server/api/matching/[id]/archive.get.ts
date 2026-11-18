@@ -1,10 +1,9 @@
 import { readBatchArchive } from '../../../../lib/matching/archive'
-import { database } from '../../../utils/database'
 import { apiHandler, routeUuid } from '../../../utils/http'
 
 export default apiHandler(async (event) => {
   const id = routeUuid(event)
-  const archive = await readBatchArchive(database, id)
+  const archive = await readBatchArchive(id)
   if (!archive)
     throw createError({
       statusCode: 404,

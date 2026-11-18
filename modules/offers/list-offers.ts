@@ -1,4 +1,3 @@
-import { db } from '../../lib/db.ts'
 import { decorateMatching } from '../../lib/matching/list.ts'
 import { filterOffers } from './domain/filter-offers.ts'
 import type { Filters } from './domain/filters.ts'
@@ -15,5 +14,5 @@ export type OfferList = ReturnType<typeof filterOffers>
 export async function listOffers(filters: Filters): Promise<OfferList> {
   const offers = await readOffers()
   // Until task 0mq.18 the list uses Matching's existing read.
-  return filterOffers(await decorateMatching(db(), offers), filters)
+  return filterOffers(await decorateMatching(offers), filters)
 }

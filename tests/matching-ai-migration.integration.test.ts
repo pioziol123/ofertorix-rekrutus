@@ -237,8 +237,8 @@ integration('migration of the assessment history to AI executions', () => {
   it('shows every assessment made before the migration with its state and cost read from AI executions (AM-AC03)', async () => {
     const history = new Map(
       [
-        ...(await readMatching(pool, ad)).history,
-        ...(await readMatching(pool, otherAd)).history,
+        ...(await readMatching(ad)).history,
+        ...(await readMatching(otherAd)).history,
       ].map((row) => [row.id, row]),
     )
     expect(history.size).toBe(Object.keys(ids).length)
@@ -359,7 +359,7 @@ integration('migration of the assessment history to AI executions', () => {
     const request = await enqueueMatching(ad)
     expect(request.reused).toBe(false)
     await queue.work()
-    expect((await readMatching(pool, ad)).history[0]).toMatchObject({
+    expect((await readMatching(ad)).history[0]).toMatchObject({
       id: request.id,
       state: 'completed',
       cost: { actual: '0.000120' },

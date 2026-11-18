@@ -7,7 +7,6 @@ import {
   withProfileNumbers,
 } from './ratings.ts'
 import { randomUUID } from 'node:crypto'
-import type { Pool } from 'pg'
 import {
   AiRequestError,
   readLatestExecution,
@@ -18,6 +17,7 @@ import { db, transaction } from '../db.ts'
 import type { ProfileVersion } from '../../modules/profile/index.ts'
 import type { SourceAd } from '../../modules/sources/index.ts'
 import {
+  exceedsCriteria,
   matchingInput,
   type MatchingInput,
   type Assessment,
@@ -28,25 +28,23 @@ import {
   assessmentReservation,
   assessmentsConfigured,
   checkAssessmentExecution,
-  maxCriteria,
   requestAssessment,
 } from '../../modules/matching/infrastructure/adapters/assessment-ai.ts'
-import { assessmentState } from '../../modules/matching/domain/assessment-state.ts'
+import {
+  assessmentState,
+  inputLimitMessage,
+  notConfiguredMessage,
+  refusalMessage,
+} from '../../modules/matching/domain/assessment-state.ts'
+import {
+  insertAssessmentRequest,
+  latestRequestedOfAd,
+  linkExecution,
+  lockAdRequests,
+  requestHistoryOfAd,
+} from '../../modules/matching/infrastructure/persistence/assessment-requests.ts'
 import { matchingPending, type MatchingState } from './view.ts'
 export class MatchingError extends Error {}
-
-/** The configuration error the owner sees; the message predates AI. */
-export const notConfiguredMessage =
-  'Skonfiguruj model i cennik przed oceną ofert.'
-
-/** What a request refused by AI means to the owner. */
-export function refusalMessage(error: AiRequestError): string {
-  if (error.code === 'provider_unavailable')
-    return 'Model jest teraz niedostępny. Spróbuj ponownie później.'
-  if (error.code === 'input_too_large')
-    return 'Wejście przekracza skonfigurowany limit tokenów. Zmień zaznaczenie lub skróć profil.'
-  return notConfiguredMessage
-}
 
 /** A prepared request: an existing one in progress, or a new one. */
 export type PreparedRequest = {
@@ -73,62 +71,36 @@ export async function prepareMatching(
   // The ad read before the transaction, without a lock (see
   // adsForAssessment); undefined when it does not exist.
   ad: SourceAd | undefined,
+  kind: 'single' | 'group',
 ): Promise<PreparedRequest> {
-  const client = db()
-  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-    `matching-enqueue-${adId}`,
-  ])
-  const previous = (
-    await client.query<{ id: string }>(
-      "SELECT id FROM matching_requests WHERE ad_id=$1 AND state='requested' ORDER BY created_at DESC,id DESC LIMIT 1",
-      [adId],
-    )
-  ).rows[0]
+  await lockAdRequests(adId)
+  const previous = await latestRequestedOfAd(adId)
   if (previous) {
     const execution = await readLatestExecution(previous.id)
     const state = assessmentState('requested', execution)
     if (execution && matchingPending.some((pending) => pending === state))
-      return {
-        id: previous.id,
-        state,
-        reused: true,
-        toRequest: null,
-      }
+      return { id: previous.id, state, reused: true, toRequest: null }
   }
   if (!profile) throw new MatchingError('Najpierw zatwierdź profil zawodowy.')
   if (!ad) throw new MatchingError('Nie znaleziono oferty.')
   const input = matchingInput(profile.data, ad)
-  if (input.criteria.length > maxCriteria)
-    throw new MatchingError(
-      'Wejście przekracza skonfigurowany limit tokenów. Zwiększ limit lub skróć profil.',
-    )
   const id = randomUUID()
   const excluded = input.checks.some((c) => c.state === 'conflict')
-  // ASSUMPTION(oferty-pracy-0mq.21/ASM-1): a request keeps only Matching's
-  // state; the AI work keeps the settings and prices, so the request
-  // stores none and no provider payload.
-  await client.query(
-    `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state) VALUES($1,$2,$3,$4,$5,'{}',$6)`,
-    [
-      id,
-      adId,
-      ad.versionId,
-      profile.id,
-      input,
-      excluded ? 'excluded' : 'requested',
-    ],
-  )
+  // ASSUMPTION(oferty-pracy-0mq.21/ASM-6): more criteria than an assessment
+  // covers is refused for every request that needs AI work.
+  if (!excluded && exceedsCriteria(input))
+    throw new MatchingError(inputLimitMessage(kind))
+  await insertAssessmentRequest({
+    id,
+    adId,
+    adRevisionId: ad.versionId,
+    profileVersionId: profile.id,
+    input,
+    state: excluded ? 'excluded' : 'requested',
+  })
   return excluded
     ? { id, state: 'excluded', reused: false, toRequest: null }
     : { id, state: 'queued', reused: false, toRequest: input }
-}
-
-/** Links a request to the execution AI accepted for it. */
-export async function linkExecution(requestId: string, executionId: string) {
-  await db().query('UPDATE matching_requests SET execution_id=$2 WHERE id=$1', [
-    requestId,
-    executionId,
-  ])
 }
 
 /**
@@ -144,12 +116,12 @@ export async function enqueueMatching(adId: string) {
     check = await checkAssessmentExecution()
   } catch (error) {
     if (error instanceof AiRequestError)
-      throw new MatchingError(refusalMessage(error))
+      throw new MatchingError(refusalMessage(error.code, 'single'))
     throw error
   }
   try {
     return await transaction(async () => {
-      const prepared = await prepareMatching(adId, profile, ad)
+      const prepared = await prepareMatching(adId, profile, ad, 'single')
       if (!prepared.toRequest)
         return {
           id: prepared.id,
@@ -166,7 +138,7 @@ export async function enqueueMatching(adId: string) {
     })
   } catch (error) {
     if (error instanceof AiRequestError)
-      throw new MatchingError(refusalMessage(error))
+      throw new MatchingError(refusalMessage(error.code, 'single'))
     throw error
   }
 }
@@ -193,27 +165,13 @@ export type MatchingHistory = {
   cost: { reserved: string; actual: string | null } | null
   stale: boolean
 }
-export async function readMatching(pool: Pool, adId: string) {
+
+/** The assessment history and ratings of an ad, for the offer details. */
+export async function readMatching(adId: string) {
   const activeId = (await activeProfileVersion())?.id ?? null
-  const rows = (
-    await pool.query<{
-      id: string
-      state: string
-      result: Assessment | null
-      calculation: ReturnType<typeof calculate> | null
-      error: string | null
-      created_at: Date
-      updated_at: Date
-      profile_version_id: string
-      ad_revision_id: string
-      checks: MatchingInput['checks']
-      criteria: Criterion[]
-    }>(
-      `SELECT r.id,r.state,r.result,r.calculation,r.error,r.created_at,r.updated_at,r.profile_version_id,r.ad_revision_id,r.input->'checks' AS checks,r.input->'criteria' AS criteria
-    FROM matching_requests r WHERE r.ad_id=$1 ORDER BY r.created_at DESC,r.id DESC`,
-      [adId],
-    )
-  ).rows
+  const rows = await requestHistoryOfAd(adId)
+  // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the AI work of every request in
+  // one public read.
   const executions = new Map(
     (
       await readLatestExecutions(
@@ -240,8 +198,9 @@ export async function readMatching(pool: Pool, adId: string) {
   return {
     configured: assessmentsConfigured(),
     profileReady: activeId !== null,
+    // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reservation read.
     maximumCostPln: assessmentReservation('single'),
     history,
-    ...(await readRatings(pool, adId, activeId)),
+    ...(await readRatings(db(), adId, activeId)),
   }
 }
