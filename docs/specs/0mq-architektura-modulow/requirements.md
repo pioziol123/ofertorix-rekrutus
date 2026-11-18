@@ -390,6 +390,8 @@ The AI module provides general capabilities for working with a model, independen
 | A14-R09 | An error in the requesting module while it takes over a result does not lose the result or end the execution: the result stays with the execution and its delivery is tried again. Only the requesting module's decision (accepted or rejected) or a failure on the AI side ends an execution. |
 | A14-R10 | Work in a mode that no provider handles yet (batch, agent) is refused when requested, without reserving the budget. |
 | A14-R11 | An execution's stage and the cause of its end are recorded once. A second record for the existing local Profile path is allowed until task 0mq.9 and is listed among the simplifications. |
+| A14-R12 | The public execution read gives every requesting module one closed list of states and one closed list of end causes, the same for every provider, exported as types of the AI contract. A requesting module interprets each state and cause the same way whatever the provider, and gets no information on how the execution reached it (the local process, an unconfirmed cost, the provider's protocol). Each provider adapter implements one shared adapter contract and decides inside its own code which public state and cause what it observed means. Carried out in task 0mq.9. |
+| A14-R13 | What AI fixes for an execution before the request (e.g. the version of a local model) reaches the requesting module only as an opaque value it keeps and passes back; its content is not part of the public contract. Carried out in task 0mq.9. |
 | A14-R08 | The requesting module owns the settings of its executions and names them with a key it defines. The settings are the provider, the model and the reasoning effort; everything else (prices, limits, endpoints) is AI configuration. AI keeps the settings, refuses a request whose settings are missing or invalid, and does not know which modules use it. |
 
 | Criterion | Acceptance condition | Check |
@@ -405,6 +407,8 @@ The AI module provides general capabilities for working with a model, independen
 | A14-AC11 | New code records the stage and cause only in the new fields; the AI module description lists the transitional fields of the local Profile path. | Code and documentation review |
 | A14-AC08 | A request with a missing settings key, or with settings whose provider, model or reasoning effort AI does not accept, is refused with the cause `not_configured`. Settings with today's values give the same provider requests as before. No AI code depends on a particular key value. | Unit tests and code review |
 | A14-AC07 | Provider protocols and states appear only in the adapters; the AI coordination and the requesting modules do not know them, and AI does not save the clients' business data. | Code review |
+| A14-AC12 | The public execution read exposes the state and the cause only as values of the exported lists and no provider facts; outside the adapters no code translates provider observations into a public state or cause, and the requesting modules choose their behaviour from the state and cause alone. | Code review |
+| A14-AC13 | The result of the check before a request is an opaque type in the public contract; no requesting module reads its content. | Code review |
 
 <a id="a9"></a>
 
@@ -414,12 +418,13 @@ The Profile requests preparing a proposal from a CV through the AI contract and 
 
 | Requirement | Content |
 | --- | --- |
-| A9-R01 | The Profile requests preparing a proposal from the cleaned CV text and gets an execution identifier. Through the same contract, it reads the unified state and result. Changing the provider or model does not require changing the Profile. |
+| A9-R01 | The Profile requests preparing a proposal from the cleaned CV text and gets an execution identifier. Through the same contract, it reads the unified state and result: only the public states and causes of A14-R12, never the provider or path an execution took. Changing the provider or model does not require changing the Profile. |
 | A9-R02 | Choosing the provider, the queue, the shared local execution, retries, recovery, the budget and settlement are on the AI side and work as before, including the attempt history and the handling of uncertain execution and cost ([F4](#f4)). |
 | A9-R03 | The integrating layer translates the proposal request into an instruction and a response schema and passes the result to the Profile in a fixed format. |
 | A9-R04 | The Profile ties the result to the text revision, checks the quotes and saves the proposal in its own data. A result for an older revision does not replace a newer proposal. The owner still chooses the changes for the draft and confirms the version separately. |
 | A9-R05 | The Profile does not read or write AI module data other than through its contract. At most one proposal preparation per import is in progress, as before. |
-| A9-R06 | The AI module description explains how to add a new execution path (e.g. a local model for another job) through the AI contract, for the needs of task `oferty-pracy-334.6`. |
+| A9-R06 | The AI module description explains how to add a new execution path (e.g. a local model for another job) through the AI contract, for the needs of task `oferty-pracy-334.6`, including how a new adapter maps what it observes to the public states and causes (A14-R12). |
+| A9-R07 | The message the owner sees when proposal preparation ends without a proposal depends only on the public state and cause, so the same state and cause give the same message on the paid and the local path. An uncertain end (state `uncertain`) shows one message: "Nie wiadomo, jak zakończyło się przygotowanie propozycji. Profil pozostaje bez zmian. Sprawdź stan wykonania przed ponowieniem." It replaces today's separate local and paid messages for an uncertain end. |
 
 | Criterion | Acceptance condition | Check |
 | --- | --- | --- |
@@ -430,6 +435,7 @@ The Profile requests preparing a proposal from a CV through the AI contract and 
 | A9-AC05 | Criteria E02-AC01–04 are met. | Tests named in the stage 2 SD |
 | A9-AC06 | The Profile does not use the AI module's data and internals outside its contract. | Code review |
 | A9-AC07 | The AI module description meets A9-R06. | Documentation review |
+| A9-AC08 | The message for each public state and cause is the same on the paid and the local path, and an uncertain end shows the message of A9-R07; the Profile code reads no `runtimeState`, unconfirmed-cost flag or path of the execution. | Automated test and code review |
 
 <a id="a11"></a>
 

@@ -635,6 +635,8 @@ Requirements: [A14](requirements.md#a14). F4 scope: [F4](requirements.md#f4). St
 | A14-AC08 | Unit tests of the settings validation: a missing key, an unknown provider or model, a reasoning effort the model does not accept. A search of the AI module finds the key literals only in the settings file. |
 | A14-AC06 | Review of the module description. |
 | A14-AC07 | Review of the dependencies of the AI coordination, adapters and public entry point. |
+| A14-AC12 | Review of the public entry point and the execution read: state and cause typed by the exported lists, no `runtimeState` or unconfirmed-cost flag; a search outside `modules/ai/infrastructure/adapters/` finds no translation of provider observations; unit tests of each adapter's translation, including `uncertain` for a lost local lease and for a paid response without usage. |
+| A14-AC13 | Review of the public type of the check and a search of the requesting modules for reads of its content. |
 
 <a id="a9"></a>
 
@@ -659,8 +661,10 @@ Requirements: [A9](requirements.md#a9). Stage 2: [requirements](../lokalne-ai/et
 
   The existing Profile-specific fields become optional and are not used by the new code; removing them belongs to the epic `oferty-pracy-sq2`.
 - **The import read** shows the state of proposal preparation from the AI execution read.
+- **Messages by state and cause (A9-R07).** The Profile domain maps the public state and cause to the owner's message in one table, with no branch on the execution path. Each cause keeps its existing message where that message names no path. An uncertain end (state `uncertain`) shows the message of A9-R07 on both paths. The context the Profile passes today to choose a message (`localRuntime`, `runtimeUnknown`, `costUnknown`) is removed.
+- **Public states and the opaque check.** The task carries out decisions 14–16 of 0mq.14: the adapters translate their observations into public states and causes, the execution read gives only public values, and the check before a request is an opaque value.
 - **Transitional exports.** The Profile stops using the transitional AI exports from 0mq.14. Removing the exports that no other module uses any more belongs to this task.
-- **The AI module description** gets a section on adding an execution path: a new adapter, or a new settings key with its settings and a result receiver.
+- **The AI module description** gets a section on adding an execution path: a new adapter, or a new settings key with its settings and a result receiver. For a new adapter, it says how the adapter implements the shared adapter contract and maps what it observes to the public states and causes (decision 14 of 0mq.14), with the OpenAI and Ollama mappings as examples.
 11. **Result delivery is retried, not failed.** When the provider returns a result that matches the schema, AI first saves the result and the usage with the execution, in its own transaction, and sets the state `delivering`. Then it delivers: in one transaction it calls the receiver and saves the settlement (decision 4), and sets the final state from the receiver's decision (`completed` or `rejected`).
     - If the receiver throws, the delivery transaction is rolled back in full: nothing of the client's writes or of the settlement remains, the execution stays `delivering` with the result saved, and the cost stays reserved. AI retries the delivery with the retry policy of the AI execution queue. The provider is not called again.
     - When the retries run out, the execution stays `delivering`. The execution read shows the state, the number of delivery attempts and the last error message. A person has to act; redelivering by hand belongs to the epic `oferty-pracy-sq2` and is listed among the simplifications (decision 9).
@@ -677,6 +681,19 @@ Requirements: [A9](requirements.md#a9). Stage 2: [requirements](../lokalne-ai/et
 13. **Unsupported modes are refused at request time.** Today no adapter supports batch or agent work through the public contract, so such requests are refused with `unsupported_mode` before any reservation (decision 5). The refusal follows from the adapters' declared modes, not from a fixed rule in coordination; task 0mq.17 adds the batch and agent adapters, and those modes then start working without changing the request.
 
     Options discarded: accepting a batch request and ending it as failed in the queue (its reservations would make real requests wait for budget, and the same cause would mean two different things).
+14. **Public states and causes, translated by the adapter (A14-R12).** The public entry point exports two closed lists as types: the execution states and the end causes. The public states are those of decision 12 plus `uncertain`: `waiting_budget`, `queued`, `running`, `delivering`, `uncertain`, `completed`, `rejected`, `failed`, `retried`. `uncertain` means that AI cannot tell how the work ended and keeps what it reserved for it (the budget or the shared local slot); a person checks the execution before trying again. The causes are the existing list of end causes.
+    - **The adapter decides.** The adapter contract has a step in which the adapter turns what it observed into a public state and cause: a response, an error, missing usage, the state of a local process. Examples: Ollama turns a lost lease of a running local process into `uncertain`; OpenAI turns a response without usage into `uncertain`. Coordination saves what the adapter returned and does not branch on provider facts.
+    - **The read shows only public values.** The public execution read gives `state` and `cause` typed by the exported lists, and the reserved and settled cost. It does not give `runtimeState` or a flag of an unconfirmed cost; those stay in the AI data as the adapter's and coordination's own records (`runtime_state` stays, decision 12).
+    - **The client maps state and cause only.** A requesting module chooses its behaviour from the state and cause alone; a check that compares them with string literals outside the exported types is not allowed.
+
+    Options discarded: exporting `runtimeState` as a typed list (the client would still learn the path and could tell local from paid work); letting coordination translate provider facts (coordination would know every provider's protocol, against A14-R03).
+15. **The check before a request returns an opaque value (A14-R13).** `checkExecution` returns a value of an opaque public type. The client keeps it and passes it with the request; only AI reads it (e.g. the local model version an adapter fixes). The public contract shows no provider fields such as `modelDigest`.
+
+    Options discarded: a public type with the provider's fields (the client would hold a provider detail, and later adapters would add theirs to the public contract).
+16. **Public operations added for the Profile path in task 0mq.9.** Besides the request, the execution read and the budget read (decision 7), the public entry point has:
+    - **Whether a settings key is configured:** for a client's overview of whether it can request work now.
+    - **The check before a request:** decision 15.
+    - **The execution read by operation:** the operation's latest execution, for a client that shows the state of its own operation.
 
 ### Verification
 
@@ -687,6 +704,7 @@ Requirements: [A9](requirements.md#a9). Stage 2: [requirements](../lokalne-ai/et
 | A9-AC05 | Tests from the stage 2 SD. |
 | A9-AC06 | Search of the Profile code for AI tables and imports of AI internals. |
 | A9-AC07 | Review of the AI module description. |
+| A9-AC08 | Unit test of the message table: for each public state and cause, the same message whatever the path; `uncertain` gives the message of A9-R07. Search of the Profile code for `runtimeState`, an unconfirmed-cost flag and string literals of states or causes. |
 
 <a id="a11"></a>
 
