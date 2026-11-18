@@ -126,6 +126,10 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
     }
   })
 
+  /** The jobs of runs ahead, looked up in this test's queue. */
+  const findJob = ({ jobId }: { jobId: string }) =>
+    boss.getJobById(queue, jobId)
+
   /** Admits a run of the connector's current scope with a real queue job. */
   async function admit(connector: SourceConnector | string): Promise<string> {
     const source = typeof connector === 'string' ? connector : connector.name
@@ -158,6 +162,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
         signal: new AbortController().signal,
       },
       createConnectorRegistry(connectors),
+      findJob,
     )
     await boss.complete(queue, job.id)
     return job
@@ -371,6 +376,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
             signal: new AbortController().signal,
           },
           createConnectorRegistry([simulated(name, late)]),
+          findJob,
         )
       expect(late).not.toHaveBeenCalled()
       expect(await stored(runId)).toEqual(before)
@@ -583,6 +589,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
       executeSyncRun(
         { runId, jobId: job!.id, attempt: 0, signal: stop.signal },
         createConnectorRegistry([connector]),
+        findJob,
       ),
     ).rejects.toThrow('aborted fetch')
     expect(await stored(runId)).toMatchObject({
@@ -620,6 +627,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
         signal: new AbortController().signal,
       },
       createConnectorRegistry([lostConnector]),
+      findJob,
     )
     await saved
     // Worker B receives the retried job once the heartbeat expires.
@@ -639,6 +647,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
               createConnectorRegistry([
                 simulated(name, batches([[ad('one'), ad('two'), ad('three')]])),
               ]),
+              findJob,
             )
             resolve(next!.retryCount)
           },
@@ -669,8 +678,6 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
 
   it('ends unfinished runs without active queue work with an interruption message (A5-AC09)', async () => {
     const connector = simulated('simulated-alpha', batches([]))
-    const findJob = ({ jobId }: { jobId: string }) =>
-      boss.getJobById(queue, jobId)
     // Running with saved ads, its job has failed for good.
     const withAds = await admit(connector)
     await pool.query(

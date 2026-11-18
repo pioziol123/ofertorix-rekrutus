@@ -15,9 +15,13 @@ import { sourceConnectors } from './infrastructure/adapters/source-connectors.ts
 import { markAbsentAdsUnavailable } from './mark-absent-ads-unavailable.ts'
 import { saveBatch } from './save-batch.ts'
 import {
+  findSyncJob,
+  type SyncJobLookup,
+} from './infrastructure/worker/sync-queue.ts'
+import { startInSourceTurn } from './start-in-source-turn.ts'
+import {
   finishRun,
   holdRun,
-  startRun,
   type RunAttempt,
   type SyncRun,
 } from './sync-run-state.ts'
@@ -54,24 +58,24 @@ const genericFailure = 'Import interrupted by a storage or processing error'
  * when the signal is aborted or the attempt lost the run, so the queue
  * decides whether to retry; a retry continues the same run (F2-13).
  *
- * Internal to the module and used by its tests: it starts the run without
- * waiting for its source's turn. The sync queue's handler starts runs in
- * their source's turn instead (ASSUMPTION(oferty-pracy-0mq.16/ASM-3)).
+ * The one way a run is started: the sync queue's handler calls it for every
+ * job. Internal to the module.
  */
 export async function executeSyncRun(
   work: SyncRunWork,
   connectors: ConnectorProvider = sourceConnectors,
+  /** Where the jobs of runs ahead are looked up; tests use their own queue. */
+  findJob: SyncJobLookup = findSyncJob,
 ): Promise<void> {
-  const run = await startRun(work.runId, work)
+  // ASSUMPTION(oferty-pracy-0mq.16/ASM-3): the run starts, or a later
+  // attempt takes it over, only in its source's turn.
+  const run = await startInSourceTurn(work, findJob)
   if (!run) return
   await executeStartedRun(run, work, connectors)
 }
 
-/**
- * Executes a run its attempt has just started or taken over. Internal to
- * the module: the sync queue's handler starts the run in its source's turn.
- */
-export async function executeStartedRun(
+/** Executes a run its attempt has just started or taken over. */
+async function executeStartedRun(
   run: SyncRun,
   work: Pick<SyncRunWork, 'attempt' | 'signal'>,
   connectors: ConnectorProvider,

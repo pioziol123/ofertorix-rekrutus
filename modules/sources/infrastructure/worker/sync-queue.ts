@@ -1,8 +1,7 @@
 import type { PgBoss } from 'pg-boss'
 import { queueDatabase } from '../../../../lib/db.ts'
 import { requireQueued } from '../../../../lib/queue.ts'
-import { executeStartedRun } from '../../execute-sync-run.ts'
-import { startInSourceTurn } from '../../start-in-source-turn.ts'
+import { executeSyncRun } from '../../execute-sync-run.ts'
 import type { ConnectorProvider } from '../adapters/connector-registry.ts'
 import { sourceConnectors } from '../adapters/source-connectors.ts'
 
@@ -90,18 +89,16 @@ export async function workSyncQueue(
       groupConcurrency: 1,
     },
     async (jobs) => {
-      for (const job of jobs) {
-        const work = {
-          runId: job.data.runId,
-          jobId: job.id,
-          attempt: job.retryCount,
-          signal: job.signal,
-        }
-        // ASSUMPTION(oferty-pracy-0mq.16/ASM-3): the run starts in its
-        // source's turn, not only when the queue lets its job in.
-        const run = await startInSourceTurn(work, findSyncJob)
-        if (run) await executeStartedRun(run, work, connectors)
-      }
+      for (const job of jobs)
+        await executeSyncRun(
+          {
+            runId: job.data.runId,
+            jobId: job.id,
+            attempt: job.retryCount,
+            signal: job.signal,
+          },
+          connectors,
+        )
     },
   )
 }
