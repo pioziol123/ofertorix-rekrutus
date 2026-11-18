@@ -182,7 +182,8 @@ export type BatchContext = {
  * collecting and cleaning up a batch.
  * - `admit`: refuses, at request time, requests the provider's batch
  *   cannot take (`AiRequestError` with `input_too_large` for an item
- *   above the input cap, `batch_too_large` for too many items or bytes;
+ *   above the input cap, ASSUMPTION(oferty-pracy-0mq.21/ASM-5);
+ *   `batch_too_large` for too many items or bytes,
  *   ASSUMPTION(oferty-pracy-0mq.21/ASM-4)).
  * - `advance`: carries the group one step further.
  * - `cleanup`: removes what the batch left at the provider once its

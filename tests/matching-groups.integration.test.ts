@@ -607,6 +607,15 @@ integration(
       expect(queue.send).not.toHaveBeenCalled()
     })
 
+    it('refuses a group without the Batch price list with the old group message, before any change (0mq.21 ASM-3)', async () => {
+      usePricing('matching', pricing, 'single')
+      await expect(enqueue([ad])).rejects.toThrow(
+        'Skonfiguruj model i cennik Batch przed oceną ofert.',
+      )
+      expect(await count('matching_requests')).toBe(0)
+      expect(queue.send).not.toHaveBeenCalled()
+    })
+
     it('rolls back a group too large for one batch file without reserving or queueing', async () => {
       usePricing('matching', { ...pricing, maxInputTokens: 1000000 }, [
         'single',

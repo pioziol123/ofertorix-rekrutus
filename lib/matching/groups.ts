@@ -11,7 +11,7 @@ import {
 } from '../../modules/matching/infrastructure/adapters/assessment-ai.ts'
 import {
   assessmentState,
-  notConfiguredMessage,
+  groupNotConfiguredMessage,
   refusalMessage,
 } from '../../modules/matching/domain/assessment-state.ts'
 import {
@@ -193,7 +193,7 @@ export async function enqueueMatchingGroup(value: unknown) {
       if (accepted) return acceptedGroup(command.commandId, accepted, ids)
       // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reservation read.
       if (assessmentReservation('group') === null)
-        throw new MatchingError(notConfiguredMessage)
+        throw new MatchingError(groupNotConfiguredMessage)
       if (!profile)
         throw new MatchingError('Najpierw zatwierdź profil zawodowy.')
       const items: Item[] = []

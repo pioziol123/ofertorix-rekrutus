@@ -23,6 +23,9 @@ export async function readBatchArchive(requestId: string) {
   // Inputs of requests sent before the archive kept them can be
   // reconstructed from the immutable payloads those requests saved.
   // Explicitly distinguish this from a byte-for-byte archived upload.
+  // ASSUMPTION(oferty-pracy-0mq.21/ASM-8): the framing of the old batch
+  // lines stays here, on Matching's read-only legacy payloads, which AI
+  // may not read.
   let reconstructedInput: string | null = null
   if (!artifacts.some((a) => a.kind === 'input')) {
     const rows = await legacyPayloads(operationId)

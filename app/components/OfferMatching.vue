@@ -111,6 +111,7 @@ onUnmounted(() => clearInterval(timer))
         labels[data.history[0].state] ?? data.history[0].state
       }}</strong>
       <p v-if="data.history[0].state === 'unknown'">
+        <!-- ASSUMPTION(oferty-pracy-0mq.21/ASM-3): the state of the AI work, not of a provider batch. -->
         Przed kolejnym zleceniem sprawdź stan wykonania u dostawcy. Ponowna
         ocena może wygenerować dodatkowy koszt.
       </p>

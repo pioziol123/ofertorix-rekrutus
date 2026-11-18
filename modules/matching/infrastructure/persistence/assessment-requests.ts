@@ -177,7 +177,6 @@ export async function lockCommand(commandId: string) {
   ])
 }
 
-/** Every request of an ad, newest first, with its state and time. */
 /**
  * The requests of the given ads that asked AI for work.
  * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): serves the interim recognition of
@@ -214,6 +213,11 @@ export async function requestedWith(
   ).rows
 }
 
+/**
+ * Every request of an ad, newest first, with its state and time.
+ * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): serves the interim recognition of
+ * a repeated group command (itemOutsideGroup).
+ */
 export async function requestsOfAd(
   adId: string,
 ): Promise<

@@ -564,6 +564,8 @@ export function openAiBatch(
       const cap = settings.maxInputTokens ?? 0
       // UTF-8 bytes are a conservative token ceiling including the
       // instruction and schema overhead of the exact batch line.
+      // ASSUMPTION(oferty-pracy-0mq.21/ASM-5): every batch item is checked,
+      // as every item of the former batch path was.
       if (lines.some((l) => Buffer.byteLength(JSON.stringify(l.body)) > cap))
         throw new AiRequestError('input_too_large')
       // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the refusal of a group one

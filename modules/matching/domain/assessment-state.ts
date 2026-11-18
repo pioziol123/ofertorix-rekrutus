@@ -79,6 +79,14 @@ export const notConfiguredMessage =
   'Skonfiguruj model i cennik przed oceną ofert.'
 
 /**
+ * The configuration message of a group command, as before: a group runs at
+ * the batch price, so it still names the Batch price list.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-3)
+ */
+export const groupNotConfiguredMessage =
+  'Skonfiguruj model i cennik Batch przed oceną ofert.'
+
+/**
  * What a request AI refused means to the owner, for a single assessment or
  * a group. The limits keep the messages they had on the former batch path.
  */
@@ -95,7 +103,7 @@ export function refusalMessage(
   if (code === 'input_too_large') return inputLimitMessage(kind)
   if (code === 'batch_too_large')
     return 'Zaznacz mniej ofert: plik tej partii przekracza 2 MiB.'
-  return notConfiguredMessage
+  return kind === 'group' ? groupNotConfiguredMessage : notConfiguredMessage
 }
 
 /** The message of an input above the limit, as the former paths had it. */

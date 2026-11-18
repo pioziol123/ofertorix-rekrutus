@@ -160,7 +160,7 @@ integration('full batch artifacts in isolated PostgreSQL', () => {
     expect(await readBatchArchive(randomUUID())).toBeNull()
   })
 
-  it('clearly marks reconstructed old inputs and never invents missing output', async () => {
+  it('clearly marks reconstructed old inputs and never invents missing output (0mq.21 ASM-8)', async () => {
     const group = randomUUID(),
       a = randomUUID(),
       b = randomUUID(),
