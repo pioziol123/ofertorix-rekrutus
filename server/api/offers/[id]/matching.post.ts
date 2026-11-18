@@ -1,19 +1,19 @@
-import { uuid } from '../../../../lib/profile/model'
 import { enqueueMatching, MatchingError } from '../../../../lib/matching/store'
 import { database } from '../../../utils/database'
 import {
-  profileHandler,
-  profileBoss,
-  profileBody,
-} from '../../../utils/profile'
+  apiHandler,
+  jsonBody,
+  queueClient,
+  routeUuid,
+} from '../../../utils/http'
 import { z } from 'zod'
-export default profileHandler(async (event) => {
-  const id = uuid.parse(getRouterParam(event, 'id'))
+export default apiHandler(async (event) => {
+  const id = routeUuid(event)
   z.object({})
     .strict()
-    .parse(await profileBody(event))
+    .parse(await jsonBody(event))
   try {
-    return await enqueueMatching(database, await profileBoss(), id)
+    return await enqueueMatching(database, await queueClient(), id)
   } catch (error) {
     if (error instanceof MatchingError)
       throw createError({

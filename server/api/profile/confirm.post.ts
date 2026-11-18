@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { uuid } from '../../../lib/profile/model'
 import { confirmProfile } from '../../../modules/profile/index'
-import { profileBody, profileHandler } from '../../utils/profile'
+import { jsonBody } from '../../utils/http'
+import { profileHandler } from '../../utils/profile'
 export default profileHandler(async (event) => {
   const b = z
     .object({
@@ -10,7 +11,7 @@ export default profileHandler(async (event) => {
       commandId: uuid,
     })
     .strict()
-    .parse(await profileBody(event))
+    .parse(await jsonBody(event))
   return confirmProfile(
     b.expectedRevision,
     b.expectedActiveVersionId,

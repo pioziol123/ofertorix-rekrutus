@@ -11,7 +11,8 @@ import {
 import { chargeCeiling } from '../modules/ai/index.ts'
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import type { AiConfiguration } from '../modules/ai/index.ts'
-import { scrubContacts, validateDocument } from '../lib/profile/imports.ts'
+import { scrubContacts } from '../lib/contact-details.ts'
+import { validateDocument } from '../lib/profile/imports.ts'
 
 const config: AiConfiguration = {
   model: 'test',

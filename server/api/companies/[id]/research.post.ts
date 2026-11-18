@@ -1,12 +1,12 @@
 import { requestResearch } from '../../../../lib/companies/research'
 import { database } from '../../../utils/database'
 import { companyHandler } from '../../../utils/companies'
-import { profileBody, profileBoss } from '../../../utils/profile'
+import { jsonBody, queueClient } from '../../../utils/http'
 export default companyHandler(async (event) =>
   requestResearch(
     database,
-    await profileBoss(),
+    await queueClient(),
     getRouterParam(event, 'id') ?? '',
-    await profileBody(event),
+    await jsonBody(event),
   ),
 )

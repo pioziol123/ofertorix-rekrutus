@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { saveDraft } from '../../../modules/profile/index'
-import { profileBody, profileHandler } from '../../utils/profile'
+import { jsonBody } from '../../utils/http'
+import { profileHandler } from '../../utils/profile'
 export default profileHandler(async (event) => {
   const body = z
     .object({
@@ -8,6 +9,6 @@ export default profileHandler(async (event) => {
       expectedRevision: z.number().int().nonnegative(),
     })
     .strict()
-    .parse(await profileBody(event))
+    .parse(await jsonBody(event))
   return saveDraft(body.data, body.expectedRevision)
 })

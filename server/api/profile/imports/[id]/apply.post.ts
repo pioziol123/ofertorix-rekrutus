@@ -4,7 +4,8 @@ import {
   applyProposal,
   ProposalNotFound,
 } from '../../../../../modules/profile/index'
-import { profileBody, profileHandler } from '../../../../utils/profile'
+import { jsonBody } from '../../../../utils/http'
+import { profileHandler } from '../../../../utils/profile'
 export default profileHandler(async (event) => {
   const selected = z
     .array(z.number().int().nonnegative())
@@ -20,7 +21,7 @@ export default profileHandler(async (event) => {
       experienceTargets: z.record(z.string(), uuid).optional(),
     })
     .strict()
-    .parse(await profileBody(event))
+    .parse(await jsonBody(event))
   const importId = uuid.parse(getRouterParam(event, 'id'))
   try {
     return await applyProposal({ importId, ...body })

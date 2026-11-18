@@ -2,9 +2,9 @@ import type { H3Event } from 'h3'
 import { createError } from 'h3'
 import { ZodError } from 'zod'
 import { RatingConflict } from '../../lib/matching/ratings'
-import { profileHandler } from './profile'
+import { apiHandler } from './http'
 export function ratingHandler<T>(run: (event: H3Event) => Promise<T>) {
-  return profileHandler(async (event) => {
+  return apiHandler(async (event) => {
     try {
       return await run(event)
     } catch (error) {

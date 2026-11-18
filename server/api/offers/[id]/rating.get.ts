@@ -1,7 +1,7 @@
-import { uuid } from '../../../../lib/profile/model'
 import { manualContext } from '../../../../lib/matching/ratings'
 import { database } from '../../../utils/database'
+import { routeUuid } from '../../../utils/http'
 import { ratingHandler } from '../../../utils/ratings'
 export default ratingHandler(async (event) =>
-  manualContext(database, uuid.parse(getRouterParam(event, 'id'))),
+  manualContext(database, routeUuid(event)),
 )

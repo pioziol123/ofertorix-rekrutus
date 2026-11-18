@@ -2,7 +2,7 @@ import { defaultWeights, weightsSchema, type Weights } from './weights.ts'
 import { z } from 'zod'
 import type { ProfileData } from '../../modules/profile/index.ts'
 import type { SourceAdContent } from '../../modules/sources/index.ts'
-import { scrubContacts } from '../profile/imports.ts'
+import { scrubContacts } from '../contact-details.ts'
 
 export const groups = [
   'technologies',

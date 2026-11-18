@@ -1,4 +1,4 @@
-import { scrubContacts } from '../../lib/profile/imports.ts'
+import { scrubContacts } from '../../lib/contact-details.ts'
 import { readLatestExecution } from '../ai/index.ts'
 import {
   preparationInProgress,

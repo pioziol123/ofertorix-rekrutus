@@ -1,10 +1,9 @@
-import { uuid } from '../../../../lib/profile/model'
 import { readBatchArchive } from '../../../../lib/matching/archive'
 import { database } from '../../../utils/database'
-import { profileHandler } from '../../../utils/profile'
+import { apiHandler, routeUuid } from '../../../utils/http'
 
-export default profileHandler(async (event) => {
-  const id = uuid.parse(getRouterParam(event, 'id'))
+export default apiHandler(async (event) => {
+  const id = routeUuid(event)
   const archive = await readBatchArchive(database, id)
   if (!archive)
     throw createError({
