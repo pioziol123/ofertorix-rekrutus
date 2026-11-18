@@ -29,14 +29,14 @@ The application works as before, with a few exceptions:
 - **Pending runs** at the moment the new queue is deployed must be requested again.
 - **A repeated ad** does not stop the fetch.
 - **Ad unavailability** after a full check of a scope follows from the history of which scopes the ad was seen in.
-- **Background jobs** other than source sync (assessments, CV import, company research) do not detect interrupted work until the separate task `oferty-pracy-0mq.15`. This change is knowingly accepted.
+- **Paid AI work** (assessments, Profile proposals, company research) does not detect an interrupted worker until the task `oferty-pracy-0mq.15`. This change is knowingly accepted.
 
 ## Out of scope
 
 - Moving the application's views.
 - Grouping ads into job offers.
 - New guarantees for handling and settling AI jobs. They belong to the epic `oferty-pracy-sq2`.
-- Protecting background jobs against interrupted work: task `oferty-pracy-0mq.15`.
+- Protecting paid AI work against an interrupted worker: task `oferty-pracy-0mq.15`.
 
 ## Success
 

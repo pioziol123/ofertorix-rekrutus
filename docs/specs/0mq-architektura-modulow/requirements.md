@@ -57,7 +57,7 @@ Applies to tasks 0mq.14, 0mq.9, 0mq.11 and 0mq.17.
   Working safeguards are not removed.
 - The tasks do not add new guarantees of handling, recovery or settlement. Simpler coordination is acceptable if it does not make the current behaviour worse. Improvements belong to the epic `oferty-pracy-sq2`.
 - A missing guarantee found during the work that is not a regression is reported by the implementer as follow-up work and not fixed. This also applies to criteria taken over from stages 1–4 of the epic `oferty-pracy-334`.
-- Until the task `oferty-pracy-0mq.15`, background jobs other than source sync do not detect interrupted work. This is a knowingly accepted change, not a regression.
+- Until the task `oferty-pracy-0mq.15`, paid AI executions do not detect interrupted work. This is a knowingly accepted change, not a regression. CV import recovers its own stalled imports.
 
 <a id="a13"></a>
 
@@ -502,6 +502,35 @@ Covers A17-R02, and A17-R03 and A17-R04 for Companies. Depends on task 0mq.21, w
 | AC-AC02 | Criteria E04-AC01–04 are met. | Tests named in the stage 4 SD |
 | AC-AC03 | After the migration, the research history shows each research made before the migration with its state and cost read from AI executions. | Migration test on a database with pre-migration data |
 | AC-AC04 | Companies code reads no AI tables and imports no AI internals; the old research queue is gone and the AI public entry point has no transitional exports. | Code search |
+
+<a id="a15"></a>
+
+## Task 0mq.15 — Interrupted paid AI work
+
+A paid AI execution whose worker is lost while the work runs no longer stays running for ever: it ends as uncertain, its cost stays reserved, and nothing is sent to the provider again. Depends on tasks 0mq.21 and 0mq.22, which add assessment groups and company research as AI executions.
+
+| Requirement | Content |
+| --- | --- |
+| A15-R01 | The rule covers every paid AI execution: single executions (assessments, Profile proposals), the sending of an assessment group and company research. Executions on the shared local slot keep their own lease rule unchanged. CV import is out of scope: its recovery already queues again an import that has not moved for 3 minutes. |
+| A15-R02 | While a paid execution runs, its worker shows it is alive at least every 30 seconds. An execution with no sign of life for about 2 minutes counts as interrupted. Only the database clock decides it. |
+| A15-R03 | An interrupted execution ends as `uncertain` with the cause `interrupted`, delivered to its client like any other end without a result. Its reservation stays, and nothing is sent to the provider again automatically. |
+| A15-R04 | Recovery at worker start and in each recovery cycle ends the interrupted executions. Several recoveries running at once end each execution once. |
+| A15-R05 | A worker that returns after its execution ended as interrupted does not publish its result and does not change the execution's state. The raw provider response it received is kept in the execution's archive for every paid execution, whether or not its client asks for an archive. |
+| A15-R06 | When a worker saves its outcome at the moment recovery ends the execution, exactly one of the two ends is kept. |
+| A15-R07 | An assessment group already sent to the provider does not end as interrupted when its worker is lost while it checks the batch; the next worker continues checking it. Only the sending of a group is protected by the rule. |
+| A15-R08 | Company research interrupted between its steps ends as uncertain with its whole reservation; finished steps are not settled separately. |
+| A15-R09 | Paid executions running when this change is deployed carry no sign of life and are ended as interrupted by the first recovery. |
+
+| Criterion | Acceptance condition | Check |
+| --- | --- | --- |
+| A15-AC01 | A single paid execution whose worker stops renewing its sign of life ends, after recovery, as `uncertain` with the cause `interrupted`; its client receives that end, its reservation stays, and the provider is called once. | Automated test on a real database with a simulated provider |
+| A15-AC02 | The same holds for the sending of an assessment group and for company research interrupted between steps (whole reservation kept). | Same as above |
+| A15-AC03 | A worker that renews its sign of life is not ended by recovery, also during a provider call longer than 2 minutes. | Same as above |
+| A15-AC04 | A worker returning after its execution ended as interrupted publishes nothing and leaves the state unchanged; its raw response is in the execution's archive, also for a Profile execution. | Same as above |
+| A15-AC05 | When the worker's save and recovery's end race, the execution has exactly one end, and two recoveries running at once deliver the interrupted end once. | Same as above |
+| A15-AC06 | A sent assessment group whose worker is lost while checking the batch is not ended as interrupted, and the next worker completes it. | Same as above |
+| A15-AC07 | Executions on the shared local slot behave as before this task: the existing local-slot tests pass unchanged. | Existing tests |
+| A15-AC08 | A paid execution that was running before the migration, and so has no sign of life, is ended as interrupted by the first recovery after it. | Migration test on a database with pre-migration data |
 
 <a id="a18"></a>
 

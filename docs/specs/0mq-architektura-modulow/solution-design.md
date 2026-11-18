@@ -795,6 +795,40 @@ Task 0mq.21 carries the steps for Matching and the adapter-state column; task 0m
 | AM-AC01–AC04 | As A17-AC01, AC02 and AC04 for Matching, plus a migration test that seeds pre-migration assessments and batches and reads the history after the migration. |
 | AC-AC01–AC04 | As A17-AC01, AC03 and AC04 for Companies, plus a migration test that seeds pre-migration research and reads the history after the migration. |
 
+<a id="a15"></a>
+
+## Task 0mq.15 — Interrupted paid AI work
+
+Requirements: [A15](requirements.md#a15). Depends on 0mq.21 and 0mq.22.
+
+- **Execution lease.** The AI executions table gets a lease of a running execution: an owner token and an expiry time, both set when the execution is claimed (`queued` → `running`). While the worker runs a paid execution it renews the expiry every 30 s to the database clock plus 120 s; the renewal is conditional on the owner token and the `running` state. Executions on the shared local slot do not take this lease (decision 2).
+- **Who may save.** Saving the outcome (`running` → `delivering`) is conditional on the owner token and the `running` state in the same statement, so of the worker's save and recovery's end exactly one succeeds (A15-R06).
+- **Recovery.** Recovery, at worker start and in its cycle, selects paid running executions whose lease expired by the database clock, or that have no lease, and ends each through its adapter's translation to public states with the lost-lease observation, giving `uncertain` with the cause `interrupted`, then sends the delivery job. The end is a conditional state change, so concurrent recoveries end an execution once. The reservation stays (an uncertain settlement).
+- **Late worker.** A worker whose conditional save failed saves its raw provider response in the execution's archive (the existing archive table, under the execution's archive identifier) and ends without delivering; this happens for every paid execution, regardless of whether the client asked for an archive (decision 3).
+- **Batch mode.** The lease covers only the sending of a batch, until the provider batch identifier is saved in the adapter state. Checking, collecting and cleaning up a sent batch hold no lease; a lost worker there leaves the execution to the next polling cycle.
+- **Agent mode.** The lease is renewed across all research steps; an interrupted research ends uncertain with its whole reservation.
+- **Migration.** Adds the two lease columns, nullable. No data is changed: running paid executions without a lease are ended by the first recovery (A15-R09). Deploy the migration before the worker.
+
+### Decisions (owner, 2026-11-18)
+
+1. **The lease lives on the AI execution.** Losing a worker is detected by an expired lease on the execution in the AI module.
+
+   Options discarded: the pg-boss job heartbeat with a retried job ending the execution (detection would depend on the queue retrying the job, and the late worker's result still needs a conditional save; it puts a domain rule into the queue library's state).
+2. **The shared local slot stays unchanged.** The execution lease covers paid executions only.
+
+   Options discarded: basing the local slot lease on the execution lease (none recorded; the working local path is not changed).
+3. **A late worker's raw response is always archived.** For every paid execution, not only for clients that ask for an archive.
+
+   Options discarded: archiving only for clients that ask for it (the archive is the only trace of a paid call whose result was not used).
+
+### Verification
+
+| Criterion | Check |
+| --- | --- |
+| A15-AC01–AC06 | Integration tests on a real database with a simulated provider; the lease timing may be shortened in tests. |
+| A15-AC07 | Existing local-slot tests unchanged. |
+| A15-AC08 | Migration test seeding a running paid execution without a lease. |
+
 <a id="a18"></a>
 
 ## Task 0mq.18 — Neutral mechanisms
