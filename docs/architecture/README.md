@@ -170,55 +170,55 @@ flowchart TB
 | Queue handling and schedule | [Worker entry point](../../worker/index.ts). At start and every minute it checks for overdue work. The schedule requests the SOLID.Jobs import. |
 | Ad import | [SOLID.Jobs](../../lib/sources/sync.ts), [Polish sources](../../lib/sources/polish-sync.ts), [JobSpy](../../lib/sources/jobspy-sync.ts), [ad and revision storage](../../lib/sources/store.ts). |
 | CV extraction | [`extractImport`](../../lib/profile/imports.ts) handles `profile-parse`. |
-| Profile proposal | [`executeAi`](../../lib/profile/ai.ts) handles `profile-ai`. The paid path uses the [AI budget](../../modules/ai/infrastructure/persistence/budget.ts). |
 | Match assessments | The [single request](../../lib/matching/store.ts) and the [group](../../lib/matching/groups.ts) use the [Batch client](../../lib/matching/batch.ts) and the [batch archive](../../lib/matching/archive.ts). |
 | Basic research | [`executeCompanyResearch`](../../lib/companies/research.ts) runs `company-research` and uses the [OpenAI provider](../../lib/companies/research-provider.ts). |
-| General AI executions | [`runExecution`](../../modules/ai/run-execution.ts) handles `ai-execution` for clients of the [AI module](../../modules/ai/README.md) contract; no client uses it yet. |
+| General AI executions | [`runExecution`](../../modules/ai/run-execution.ts) handles `ai-execution` for clients of the [AI module](../../modules/ai/README.md) contract, today the Profile's proposal preparation on the paid and the local path. [`recoverExecutions`](../../modules/ai/recover-executions.ts) runs at start and in the schedule cycle. |
 
 <a id="c4-kod-przygotowanie-propozycji-profilu"></a>
 
 ## C4 — code that prepares a profile proposal
 
-The view shows the calls inside the profile proposal component and its entry points. The choice of executor is based on the configuration saved with the attempt. The earlier text extraction belongs to a separate worker component.
+The view shows the calls of proposal preparation across the Profile and the AI module. The Profile knows no provider: the AI coordination picks the adapter from the settings fixed with the execution. The earlier text extraction belongs to a separate worker component.
 
 ```mermaid
 flowchart TB
   Prepare["prepare.post.ts<br/>[Nitro route]"]
-  Worker["worker/index.ts<br/>[profile-ai queue handler]"]
+  Worker["worker/index.ts<br/>[ai-execution queue handler]"]
 
-  subgraph Proposal["Code that prepares a profile proposal"]
-    Enqueue["prepareProposal<br/>[Function · ai.ts]"]
-    Config["profileConfiguration<br/>[Function · ai-configuration.ts]"]
-    LocalQueue["enqueueLocalProfile<br/>[Function · local-ai.ts]"]
-    Dispatch["executeAi<br/>[Function · ai.ts]"]
-    Paid["executePaidProfile<br/>[Function · ai.ts]"]
-    Local["executeLocalProfile<br/>[Function · local-ai.ts]"]
-    OpenAI["OpenAiAdapter<br/>[Class · models/openai.ts]"]
-    Ollama["OllamaAdapter<br/>[Class · models/ollama.ts]"]
-    Result["readAiProposal<br/>[Function · ai-result.ts]"]
-    Slot["claimLocal<br/>[Function · operations/local.ts]"]
+  subgraph Profile["Profile module"]
+    Enqueue["prepareProposal<br/>[Function · prepare-proposal.ts]"]
+    Integration["requestProposal, proposalReceiver<br/>[Integration · proposal-ai.ts]"]
+    Receive["recordPreparationResult<br/>[Function · receive-proposal.ts]"]
+  end
+
+  subgraph AI["AI module"]
+    Check["checkExecution<br/>[Function · check-execution.ts]"]
+    Request["requestExecution<br/>[Function · request-execution.ts]"]
+    Run["runExecution<br/>[Function · run-execution.ts]"]
+    Slot["claimLocalSlot<br/>[Function · local-slot.ts]"]
+    OpenAI["openAiProvider<br/>[Adapter · openai.ts]"]
+    Ollama["ollamaProvider<br/>[Adapter · ollama.ts]"]
   end
 
   Prepare -->|"Validates the request and passes the text and the revision"| Enqueue
-  Enqueue -->|"Reads the configuration and creates an execution snapshot"| Config
-  Config -.->|"Checks the availability of the chosen model"| Ollama
-  Enqueue -.->|"Saves a local attempt and requests delivery"| LocalQueue
-  Worker -->|"Passes the attempt ID"| Dispatch
-  Dispatch -->|"For OpenAI passes the adapter factory to the paid path"| Paid
-  Dispatch -.->|"For a saved Ollama snapshot starts the local path"| Local
-  Paid -->|"Generates a proposal from the professional data"| OpenAI
-  Paid -->|"Validates the model result"| Result
-  Local -->|"Claims the shared local slot"| Slot
-  Local -->|"Requests generation from the snapshot"| Ollama
-  Local -->|"Validates the model result"| Result
+  Enqueue -->|"Checks before the request; requests in its transaction"| Integration
+  Integration --> Check
+  Integration --> Request
+  Check -.->|"Fixes the local model version"| Ollama
+  Worker -->|"Passes the execution ID"| Run
+  Run -.->|"Takes the shared local slot for a local model"| Slot
+  Run -->|"Calls the provider and gets the public end"| OpenAI
+  Run -->|"Calls the provider and gets the public end"| Ollama
+  Run -->|"Delivers the result or the end"| Integration
+  Integration -->|"Checks quotes against the revision and saves the proposal"| Receive
 
   classDef internal fill:#dbeafe,stroke:#2563eb,color:#172554
   classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
-  class Enqueue,Config,LocalQueue,Dispatch,Paid,Local,OpenAI,Ollama,Result,Slot internal
+  class Enqueue,Integration,Receive,Check,Request,Run,Slot,OpenAI,Ollama internal
   class Prepare,Worker external
 ```
 
-`prepareProposal` removes contact data from the passed text and saves its revision. For OpenAI it creates an attempt with a budget reservation and requests the work once funds are available. For Ollama it saves a local operation and requests delivery through the same pg-boss queue. The worker reads the saved configuration. After validation it saves the proposal on the import, and applying the proposal is a separate operation by the owner. [HTTP entry point](../../server/api/profile/imports/%5Bid%5D/prepare.post.ts) · [Orchestration and settlement](../../lib/profile/ai.ts) · [Profile configuration](../../lib/profile/ai-configuration.ts) · [Local execution](../../lib/profile/local-ai.ts) · [Proposal validation](../../lib/profile/ai-result.ts) · [Applying the proposal](../../server/api/profile/imports/%5Bid%5D/apply.post.ts)
+`prepareProposal` removes contact data from the passed text, saves its revision and requests an execution in the same transaction; the AI module reserves the budget for a paid model and queues the work. The worker runs the execution and delivers the outcome to the Profile's receiver in the transaction that settles the cost. After validation the receiver saves the proposal on the import, and applying the proposal is a separate operation by the owner. [HTTP entry point](../../server/api/profile/imports/%5Bid%5D/prepare.post.ts) · [Preparation request](../../modules/profile/prepare-proposal.ts) · [Integration with AI](../../modules/profile/infrastructure/adapters/proposal-ai.ts) · [Proposal validation](../../modules/profile/receive-proposal.ts) · [AI execution](../../modules/ai/run-execution.ts) · [Applying the proposal](../../server/api/profile/imports/%5Bid%5D/apply.post.ts)
 
 <a id="stan-lokalnego-ai"></a>
 
@@ -226,8 +226,8 @@ flowchart TB
 
 | Area | State in the current code |
 | --- | --- |
-| Professional profile | The preparation route and the `profile-ai` handler lead to the local executor when the snapshot is Ollama. The profile settings in the AI module choose the local model; [Compose](../../compose.yaml) passes `AI_ENDPOINTS_JSON` to web and the worker. A configuration example is in the [environment file](../../.env.example). Model availability and connectivity from the containers need separate verification. |
-| Local queue and recovery | The [local AI migration](../../migrations/1770000000013_local_ai.cjs) adds operation, queue and slot data. The [local profile module](../../lib/profile/local-ai.ts) wakes pending jobs after the end of a generation is confirmed. The [worker](../../worker/index.ts) calls `recoverLocalProfiles` at start and in the schedule cycle. |
+| Professional profile | Proposal preparation runs on the local model when the Profile's settings in the AI module name it. The profile settings in the AI module choose the local model; [Compose](../../compose.yaml) passes `AI_ENDPOINTS_JSON` to web and the worker. A configuration example is in the [environment file](../../.env.example). Model availability and connectivity from the containers need separate verification. |
+| Local queue and recovery | The [local AI migration](../../migrations/1770000000013_local_ai.cjs) adds operation, queue and slot data. The [AI coordination](../../modules/ai/run-execution.ts) wakes pending jobs after the slot is released, and [recovery](../../modules/ai/recover-executions.ts) ends a local execution whose lease lapsed as uncertain, keeping the slot. |
 | Offer matching | The connected worker uses OpenAI Batch. The local assessment path is described in the [solution design](../specs/lokalne-ai/solution-design.md). |
 | Employer research | The connected basic research uses OpenAI Responses and web search. OpenCode and the browser for local research are described in the [solution design](../specs/lokalne-ai/solution-design.md). |
 

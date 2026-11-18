@@ -40,6 +40,12 @@ Matching fetches the active profile version together with its ID and applies its
 
 The Profile module uses one interface for proposal preparation. The choice of provider and the execution mode belong to the AI module.
 
-## Refactoring
+## State of implementation
 
-Extracting the proposal execution behind the AI module's interface is described by the Beads task `oferty-pracy-0mq.9` in the epic **Code architecture fixes** (Poprawki architektury kodu).
+Proposal preparation runs through the [AI module's contract](../ai/README.md#adding-an-execution-path). The Profile's integration layer turns the request into an instruction, a response schema and the cleaned text, under the settings key `profile`, and is the result receiver for that key. The import is the AI operation and the text revision its input version.
+
+- **Result.** The receiver checks the proposal contract and the quotes against the text revision and saves the proposal with the import. A result for a revision that is no longer current replaces nothing. A rejected result leaves the owner's message with the import.
+- **End without a result.** The import shows the message for the public state and cause, the same whichever provider ran the work. An `uncertain` end shows: "Nie wiadomo, jak zakończyło się przygotowanie propozycji. Profil pozostaje bez zmian. Sprawdź stan wykonania przed ponowieniem."
+- **Progress.** While preparation is in progress, the import read takes its status from the latest AI execution of the import.
+
+The other public operations still live in the shared code and move to this module in task `oferty-pracy-0mq.11`. The fields of the former Profile path in the AI data are no longer used; removing them belongs to the epic `oferty-pracy-sq2`.
