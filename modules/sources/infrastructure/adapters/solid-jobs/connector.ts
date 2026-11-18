@@ -31,6 +31,8 @@ export function createSolidJobsConnector(
   return {
     name: source,
     infersUnavailabilityFromAbsence: true,
+    scheduled: true,
+    enabled: () => true,
     scopeParameters: () => ({ ...parameters }),
     async fetch(_parameters, onBatch, signal) {
       // A fetcher per run keeps the request pacing local to the run, as when

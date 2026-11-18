@@ -1,58 +1,41 @@
 import { finishedRunStatus } from './domain/run-status.ts'
 import {
+  findSyncJob,
+  type SyncJobLookup,
+} from './infrastructure/worker/sync-queue.ts'
+import {
   finishRun,
   listUnfinishedRuns,
-  readRun,
   type SyncRun,
 } from './sync-run-state.ts'
 
 /** Queue job states in which no attempt will execute the job any more. */
 const endedJobStates = new Set(['completed', 'failed', 'cancelled'])
 
-/** The state of a run's queue job, or null when the queue has no such job. */
-export type SyncJobLookup = (job: {
-  source: string
-  jobId: string
-}) => Promise<{ state: string } | null>
-
 const interrupted = {
   running: 'Worker interrupted; request a new import',
   queued: 'Queue delivery ended; request a new import',
-  inProcess: 'Import interrupted; request a new import',
 } as const
 
 /**
- * How long a run executed in the requesting process may run before recovery
- * treats it as left by a process that died. Such a run has no queue job to
- * tell whether it is alive. Twice the Himalayas run limit of 120 s, the only
- * source run this way until 0mq.16 (owner decision 2026-11-17).
- */
-export const inProcessRunLimitSeconds = 240
-const inProcessLimitMs = inProcessRunLimitSeconds * 1000
-
-/**
  * Finishes the unfinished runs no work will execute any more (A5-R06): a
- * queued or running run whose queue job does not exist or has ended, and a
- * run executed without a queue that has been running longer than
- * `inProcessRunLimitSeconds`. Such a run ends partial or failed by its saved ads,
- * with a message that asks for a new request. Runs whose job waits, is
- * retried or is active stay as they are.
+ * queued or running run without a job in the sync queue, or whose job has
+ * ended. That includes a run whose job lies in a queue of the per-source
+ * requesting before 0mq.16 and a run executed by a CLI process before it
+ * (A16-R07). Such a run ends partial or failed by its saved ads, with a
+ * message that asks for a new request. Runs whose job waits, is retried or
+ * is active stay as they are.
  *
  * Every change is conditional on the run still being unfinished, without
  * session locks, so several workers may recover at the same time.
  */
 export async function recoverSyncRuns(
-  findJob: SyncJobLookup,
-  now: Date = new Date(),
+  findJob: SyncJobLookup = findSyncJob,
 ): Promise<void> {
   for (const run of await listUnfinishedRuns()) {
     if (run.jobId) {
       const job = await findJob({ source: run.source, jobId: run.jobId })
       if (job && !endedJobStates.has(job.state)) continue
-    } else if (run.status === 'running') {
-      if (!leftByDeadProcess(run, now)) continue
-      await finishInterrupted(run, interrupted.inProcess)
-      continue
     }
     await finishInterrupted(
       run,
@@ -61,49 +44,13 @@ export async function recoverSyncRuns(
   }
 }
 
-/**
- * Finishes the source's runs executed without a queue that have been running
- * longer than `inProcessRunLimitSeconds`, so a process that died does not
- * block the source until a worker recovers. The process that executes runs
- * in-process calls it before admitting its own run; the change is
- * conditional, so concurrent callers and workers finish such a run once.
- */
-export async function recoverInProcessRuns(
-  source: string,
-  now: Date = new Date(),
-): Promise<void> {
-  for (const run of await listUnfinishedRuns(source))
-    if (!run.jobId && run.status === 'running' && leftByDeadProcess(run, now))
-      await finishInterrupted(run, interrupted.inProcess)
-}
-
-function leftByDeadProcess(run: SyncRun, now: Date): boolean {
-  return now.getTime() - (run.startedAt ?? now).getTime() >= inProcessLimitMs
-}
-
-/**
- * Finishes a run executed in the requesting process after that process
- * stopped it, while its attempt still holds it.
- */
-export async function finishStoppedRun(
-  runId: string,
-  attempt: number,
-): Promise<void> {
-  const run = await readRun(runId)
-  if (run) await finishInterrupted(run, interrupted.inProcess, attempt)
-}
-
-function finishInterrupted(run: SyncRun, error: string, attempt?: number) {
-  return finishRun(
-    run.id,
-    {
-      status: finishedRunStatus({
-        sourceComplete: false,
-        saveFailed: false,
-        uniqueAds: run.uniqueAds,
-      }),
-      error,
-    },
-    attempt,
-  )
+function finishInterrupted(run: SyncRun, error: string) {
+  return finishRun(run.id, {
+    status: finishedRunStatus({
+      sourceComplete: false,
+      saveFailed: false,
+      uniqueAds: run.uniqueAds,
+    }),
+    error,
+  })
 }

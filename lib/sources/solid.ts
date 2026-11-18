@@ -9,7 +9,6 @@ import { hash } from '../../modules/sources/domain/canonical-hash.ts'
 export { canonical, hash } from '../../modules/sources/domain/canonical-hash.ts'
 
 export const source = 'solid-jobs'
-export const importQueue = 'source-solid-jobs'
 export const parameters = {
   division: 'IT',
   category: 'Developer',

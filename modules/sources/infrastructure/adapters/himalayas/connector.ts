@@ -37,6 +37,8 @@ export function createHimalayasConnector(
   return {
     name: source,
     infersUnavailabilityFromAbsence: false,
+    scheduled: false,
+    enabled: () => true,
     scopeParameters: () => ({ ...parameters }),
     async fetch(_parameters, onBatch, signal) {
       const diagnostics = {

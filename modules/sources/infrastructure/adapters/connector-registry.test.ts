@@ -12,6 +12,8 @@ import { sourceConnectors } from './source-connectors.ts'
 const connector = (name: string): SourceConnector => ({
   name,
   infersUnavailabilityFromAbsence: false,
+  scheduled: false,
+  enabled: () => true,
   scopeParameters: () => ({}),
   fetch: async () => ({ complete: true }),
 })

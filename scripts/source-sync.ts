@@ -1,9 +1,13 @@
-import { setTimeout as delay } from 'node:timers/promises'
-import { closePool, getPool } from '../lib/db.ts'
+import { closePool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
-import { enqueueSync, syncStatus } from '../lib/sources/sync.ts'
+import { source } from '../lib/sources/solid.ts'
+import {
+  readSyncState,
+  requestSync,
+  useSyncQueue,
+  waitForSyncRun,
+} from '../modules/sources/index.ts'
 
-const pool = getPool()
 const boss = createBoss()
 boss.on('error', () => {
   console.error('Queue connection error')
@@ -13,24 +17,19 @@ try {
   if (args.some((arg) => arg !== '--wait'))
     throw new Error('Usage: source:sync [--wait]')
   await boss.start()
-  const result = await enqueueSync(boss)
-  console.info(JSON.stringify(result, null, 2))
-  if (args.includes('--wait') && result) {
-    const deadline = Date.now() + 120_000
-    while (Date.now() < deadline) {
-      const status = await syncStatus(pool, result.id)
-      if (status.run && !['queued', 'running'].includes(status.run.status)) {
-        console.info(JSON.stringify(status, null, 2))
-        if (status.run.status !== 'complete') process.exitCode = 1
-        break
-      }
-      await delay(1000)
-    }
-    const status = await syncStatus(pool, result.id)
-    if (status.run && ['queued', 'running'].includes(status.run.status)) {
-      console.info('Still pending; inspect source:status with the run id')
-      process.exitCode = 2
-    }
+  useSyncQueue(boss)
+  const run = await requestSync({ source })
+  console.info(JSON.stringify({ id: run.id, reused: run.existing }, null, 2))
+  if (args.includes('--wait')) {
+    // No time limit; stopping the script leaves the run to the worker.
+    const finished = await waitForSyncRun(run.id)
+    const { run: stored, lastComplete } = await readSyncState({
+      source,
+      runId: run.id,
+      scope: {},
+    })
+    console.info(JSON.stringify({ run: stored, lastComplete }, null, 2))
+    if (finished.status !== 'complete') process.exitCode = 1
   }
 } catch (error) {
   console.error(

@@ -14,13 +14,14 @@ import {
   vi,
 } from 'vitest'
 import {
-  enqueueJobspy,
-  jobspyStatus,
-  jobspyCatalogStatus,
-} from '../lib/sources/jobspy-sync.ts'
-import { jobspyQueue, queueFor } from '../lib/sources/jobspy.ts'
-import { enqueueSync } from '../lib/sources/sync.ts'
-import { hash, importQueue } from '../lib/sources/solid.ts'
+  readSourceCatalog,
+  readSyncState,
+  requestSync,
+  syncQueue,
+  syncQueueOptions,
+  useSyncQueue,
+} from '../modules/sources/index.ts'
+import { hash } from '../lib/sources/solid.ts'
 import { readOffers } from '../modules/offers/read-offers.ts'
 import { job, result, sourceResult } from './fixtures/jobspy/result.ts'
 import { jobspyWith, solidJobsWith } from './source-connectors.fixtures.ts'
@@ -61,10 +62,8 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     })
     boss.on('error', () => {})
     await boss.start()
-    await boss.createQueue(importQueue, { retryLimit: 0 })
-    await boss.createQueue(jobspyQueue, { retryLimit: 0 })
-    await boss.createQueue(queueFor('linkedin'), { retryLimit: 0 })
-    await boss.createQueue(queueFor('bayt'), { retryLimit: 0 })
+    await boss.createQueue(syncQueue, syncQueueOptions)
+    useSyncQueue(boss)
   }, 30000)
   beforeEach(async () => {
     vi.stubEnv('JOBSPY_ENABLED', 'true')
@@ -86,7 +85,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     (await pool.query('SELECT * FROM source_sync_runs WHERE id=$1', [id]))
       .rows[0]
   async function run(overrides: Record<string, unknown> = {}) {
-    const queued = await enqueueJobspy(boss)
+    const queued = await requestSync({ source: 'indeed' })
     await deliver(
       queued.id,
       jobspyWith(async () => result(overrides), 'indeed'),
@@ -106,7 +105,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
         throw new Error('synthetic dispatch failure')
       })
     try {
-      await expect(enqueueJobspy(boss)).rejects.toThrow(
+      await expect(requestSync({ source: 'indeed' })).rejects.toThrow(
         'synthetic dispatch failure',
       )
     } finally {
@@ -123,12 +122,12 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
   })
   it('deduplicates concurrent requests into one real queue delivery', async () => {
     const queued = await Promise.all(
-      Array.from({ length: 5 }, () => enqueueJobspy(boss)),
+      Array.from({ length: 5 }, () => requestSync({ source: 'indeed' })),
     )
     expect(new Set(queued.map((q) => q.id)).size).toBe(1)
-    expect(queued.filter((q) => !q.reused)).toHaveLength(1)
+    expect(queued.filter((q) => !q.existing)).toHaveLength(1)
     const row = await stored(queued[0]!.id)
-    expect((await boss.getJobById(jobspyQueue, row.job_id))?.data).toEqual({
+    expect((await boss.getJobById(syncQueue, row.job_id))?.data).toEqual({
       runId: row.id,
     })
     expect(row.trigger).toBe('manual')
@@ -237,14 +236,16 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       },
     })
     expect(row.diagnostics).not.toHaveProperty('jobs')
-    expect(await jobspyStatus(pool, row.id)).toMatchObject({
+    expect(
+      await readSyncState({ source: 'indeed', runId: row.id }),
+    ).toMatchObject({
       enabled: true,
       scheduled: false,
       run: { id: row.id, status: 'partial' },
     })
   })
   it('keeps a running import intact during recovery and concurrent delivery, ignoring late delivery', async () => {
-    const queued = await enqueueJobspy(boss)
+    const queued = await requestSync({ source: 'indeed' })
     let entered!: () => void, release!: () => void
     const started = new Promise<void>((resolve) => {
       entered = resolve
@@ -262,7 +263,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     )
     await started
     try {
-      await recover(boss)
+      await recover()
       const duplicate = vi.fn()
       await deliver(queued.id, jobspyWith(duplicate, 'indeed'))
       expect(duplicate).not.toHaveBeenCalled()
@@ -279,17 +280,17 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
   // Since 0mq.5 one recovery serves every source and ends only runs whose
   // queue job has ended (A5-R06).
   it('recovers a run only when its own queue job has ended and permits a fresh JobSpy run', async () => {
-    const indeed = await enqueueJobspy(boss)
-    const solid = (await enqueueSync(boss))!
+    const indeed = await requestSync({ source: 'indeed' })
+    const solid = await requestSync({ source: 'solid-jobs' })
     await pool.query("UPDATE source_sync_runs SET status='running'")
-    await boss.cancel(importQueue, (await stored(solid.id)).job_id)
-    await recover(boss)
+    await boss.cancel(syncQueue, (await stored(solid.id)).job_id)
+    await recover()
     expect((await stored(indeed.id)).status).toBe('running')
     expect((await stored(solid.id)).status).toBe('failed')
-    await boss.cancel(jobspyQueue, (await stored(indeed.id)).job_id)
-    await recover(boss)
+    await boss.cancel(syncQueue, (await stored(indeed.id)).job_id)
+    await recover()
     expect((await stored(indeed.id)).status).toBe('failed')
-    expect((await enqueueJobspy(boss)).id).not.toBe(indeed.id)
+    expect((await requestSync({ source: 'indeed' })).id).not.toBe(indeed.id)
     const late = vi.fn()
     await deliver(indeed.id, jobspyWith(late, 'indeed'))
     expect(late).not.toHaveBeenCalled()
@@ -297,7 +298,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
   // Since 0mq.5 the shared executor runs the delivered run with its own
   // source's connector; the queue no longer selects the source (A5-R01).
   it('never merges an identical external ID across sources', async () => {
-    const solid = (await enqueueSync(boss))!
+    const solid = await requestSync({ source: 'solid-jobs' })
     await deliver(
       solid.id,
       solidJobsWith(async () => ({
@@ -320,7 +321,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     ])
   })
   it('redacts arbitrary collector exceptions and rejects disabled execution without invoking collection', async () => {
-    const queued = await enqueueJobspy(boss)
+    const queued = await requestSync({ source: 'indeed' })
     await deliver(
       queued.id,
       jobspyWith(async () => {
@@ -332,7 +333,7 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       status: 'failed',
       error: 'Import interrupted by a storage or processing error',
     })
-    const next = await enqueueJobspy(boss)
+    const next = await requestSync({ source: 'indeed' })
     vi.stubEnv('JOBSPY_ENABLED', 'false')
     const collector = vi.fn()
     await deliver(next.id, jobspyWith(collector, 'indeed'))
@@ -343,23 +344,24 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     })
   })
   it('recovers queued imports whose actual queue delivery has ended', async () => {
-    const queued = await enqueueJobspy(boss)
+    const queued = await requestSync({ source: 'indeed' })
     const row = await stored(queued.id)
-    await boss.cancel(jobspyQueue, row.job_id)
-    await recover(boss)
+    await boss.cancel(syncQueue, row.job_id)
+    await recover()
     expect((await stored(queued.id)).status).toBe('failed')
   })
-  it('deduplicates across parameter scopes and rejects a stale scope before collection', async () => {
-    const queued = await enqueueJobspy(boss)
+  // Since 0mq.16 a request meets only the pending run of its own scope
+  // (F2-07); a run of a stale scope no longer holds a request back.
+  it('admits the current scope apart from a stale one and rejects the stale scope before collection', async () => {
+    const queued = await requestSync({ source: 'indeed' })
     const row = await stored(queued.id)
     await pool.query(
       "UPDATE source_scopes SET fingerprint='old-parameters',parameters='{}'::jsonb WHERE id=$1",
       [row.scope_id],
     )
-    expect(await enqueueJobspy(boss)).toEqual({
-      id: queued.id,
-      reused: true,
-    })
+    const current = await requestSync({ source: 'indeed' })
+    expect(current).toMatchObject({ existing: false })
+    expect(current.id).not.toBe(queued.id)
     const collector = vi.fn()
     await deliver(queued.id, jobspyWith(collector, 'indeed'))
     expect(collector).not.toHaveBeenCalled()
@@ -381,18 +383,18 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     vi.stubEnv('JOBSPY_SOURCES', 'linkedin,bayt')
     vi.stubEnv('JOBSPY_LINKEDIN_ACCESS_CONFIRMED', 'true')
     const [linkedin, bayt] = await Promise.all([
-      enqueueJobspy(boss, new Date(), 'linkedin'),
-      enqueueJobspy(boss, new Date(), 'bayt'),
+      requestSync({ source: 'linkedin' }),
+      requestSync({ source: 'bayt' }),
     ])
     expect(linkedin.id).not.toBe(bayt.id)
     const linkedinRow = await stored(linkedin.id)
     const baytRow = await stored(bayt.id)
-    expect(
-      await boss.getJobById(queueFor('linkedin'), linkedinRow.job_id),
-    ).toMatchObject({ data: { runId: linkedin.id } })
-    expect(
-      await boss.getJobById(queueFor('bayt'), baytRow.job_id),
-    ).toMatchObject({ data: { runId: bayt.id } })
+    expect(await boss.getJobById(syncQueue, linkedinRow.job_id)).toMatchObject({
+      data: { runId: linkedin.id },
+    })
+    expect(await boss.getJobById(syncQueue, baytRow.job_id)).toMatchObject({
+      data: { runId: bayt.id },
+    })
 
     let entered!: () => void, release!: () => void
     const started = new Promise<void>((resolve) => {
@@ -411,8 +413,8 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
     )
     await started
     try {
-      await recover(boss)
-      await recover(boss)
+      await recover()
+      await recover()
       expect((await stored(linkedin.id)).status).toBe('running')
       await deliver(
         bayt.id,
@@ -436,25 +438,27 @@ integration('offline JobSpy persistence and real pg-boss delivery', () => {
       { source: 'bayt', external_id: 'ab123' },
       { source: 'linkedin', external_id: 'ab123' },
     ])
-    expect(await jobspyStatus(pool, linkedin.id, 'bayt')).toMatchObject({
+    expect(
+      await readSyncState({ source: 'bayt', runId: linkedin.id }),
+    ).toMatchObject({
       run: null,
     })
-    const catalog = await jobspyCatalogStatus(pool)
+    const { jobspy: catalog } = await readSourceCatalog()
     expect(catalog.sources.find((s) => s.source === 'linkedin')).toMatchObject({
       run: { id: linkedin.id, seen: 1 },
     })
     expect(catalog.sources.find((s) => s.source === 'bayt')).toMatchObject({
       run: { id: bayt.id, seen: 1 },
     })
-    const next = await enqueueJobspy(boss, new Date(), 'bayt')
+    const next = await requestSync({ source: 'bayt' })
     await pool.query(
       "UPDATE source_sync_runs SET status='running' WHERE id=ANY($1::uuid[])",
       [[linkedin.id, next.id]],
     )
-    await recover(boss)
+    await recover()
     expect((await stored(next.id)).status).toBe('running')
-    await boss.cancel(queueFor('bayt'), (await stored(next.id)).job_id)
-    await recover(boss)
+    await boss.cancel(syncQueue, (await stored(next.id)).job_id)
+    await recover()
     expect((await stored(next.id)).status).toBe('failed')
     expect((await stored(linkedin.id)).status).toBe('running')
   })

@@ -36,6 +36,8 @@ export function createPolishConnector(
   return {
     name: source,
     infersUnavailabilityFromAbsence: false,
+    scheduled: false,
+    enabled: () => polishEnabled(source),
     scopeParameters(request) {
       const query = polishQuery.parse(request)
       if (query.source !== source) throw new ConnectorError(invalid)

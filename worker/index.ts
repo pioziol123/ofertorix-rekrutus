@@ -24,11 +24,12 @@ import { closePool, getPool } from '../lib/db.ts'
 import { createBoss, smokeQueue } from '../lib/queue.ts'
 
 import { scheduleDay } from '../lib/sources/solid.ts'
-import { enqueueSync } from '../lib/sources/sync.ts'
 import {
-  recoverSyncQueues,
-  workSyncQueues,
-} from '../lib/sources/sync-queues.ts'
+  recoverSyncRuns,
+  requestScheduledSyncs,
+  useSyncQueue,
+  workSyncQueue,
+} from '../modules/sources/index.ts'
 
 import {
   parseQueue,
@@ -66,8 +67,9 @@ await boss.work<{ checkId: string }>(smokeQueue, async (jobs) => {
 })
 // Validate the schedule before registering the importer.
 scheduleDay()
-await recoverSyncQueues(boss)
-await workSyncQueues(boss)
+useSyncQueue(boss)
+await recoverSyncRuns()
+await workSyncQueue(boss)
 await recoverImports(boss)
 await boss.work<{ importId: string }>(parseQueue, async (jobs) => {
   for (const job of jobs) await extractImport(job.data.importId)
@@ -96,8 +98,8 @@ async function schedule() {
   if (scheduling || stopping) return
   scheduling = true
   try {
-    await recoverSyncQueues(boss)
-    await enqueueSync(boss, 'scheduled')
+    await recoverSyncRuns()
+    await requestScheduledSyncs()
     await recoverImports(boss)
     await recoverMatching(pool, boss)
     await recoverMatchingGroups(pool, boss)

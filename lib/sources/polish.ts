@@ -34,7 +34,6 @@ export const polishQuery = z
   })
   .strict()
 export type PolishQuery = z.output<typeof polishQuery>
-export const polishQueue = (source: PolishSource) => `source-${source}-polish`
 export const polishParameters = (query: PolishQuery) => ({
   adapterVersion: 1,
   query,

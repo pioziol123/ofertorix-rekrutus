@@ -110,6 +110,12 @@ describe('source connectors', () => {
       ),
     )
   })
+
+  it('schedule only SOLID.Jobs, as before the shared requesting', () => {
+    expect(connectors.filter((c) => c.scheduled).map((c) => c.name)).toEqual([
+      'solid-jobs',
+    ])
+  })
 })
 
 describe('SOLID.Jobs connector', () => {

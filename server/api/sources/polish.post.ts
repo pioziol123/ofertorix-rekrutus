@@ -1,5 +1,5 @@
-import { polishEnabled, polishQuery } from '../../../lib/sources/polish'
-import { enqueuePolish } from '../../../lib/sources/polish-sync'
+import { polishQuery } from '../../../lib/sources/polish'
+import { requestSync, SourceDisabledError } from '../../../modules/sources'
 import { limitedBytes, queueClient } from '../../utils/http'
 
 export default defineEventHandler(async (event) => {
@@ -22,11 +22,13 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Invalid import criteria',
     })
   }
-  if (!polishEnabled(query.source))
-    throw createError({ statusCode: 409, statusMessage: 'Source disabled' })
   try {
-    return await enqueuePolish(await queueClient(), query)
-  } catch {
+    await queueClient()
+    const run = await requestSync({ source: query.source, scopeRequest: query })
+    return { id: run.id, reused: run.existing }
+  } catch (error) {
+    if (error instanceof SourceDisabledError)
+      throw createError({ statusCode: 409, statusMessage: 'Source disabled' })
     throw createError({
       statusCode: 503,
       statusMessage: 'Could not queue source import',

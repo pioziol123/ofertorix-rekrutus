@@ -1,11 +1,14 @@
-import { setTimeout as delay } from 'node:timers/promises'
-import { closePool, getPool } from '../lib/db.ts'
+import { closePool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
-import { enqueueJobspy, jobspyStatus } from '../lib/sources/jobspy-sync.ts'
 import { parseJobspySource } from '../lib/sources/jobspy-catalog.ts'
-import { jobspyEnabled } from '../lib/sources/jobspy.ts'
+import {
+  readSyncState,
+  requestSync,
+  SourceDisabledError,
+  useSyncQueue,
+  waitForSyncRun,
+} from '../modules/sources/index.ts'
 
-const pool = getPool()
 const boss = createBoss()
 boss.on('error', () => {
   console.error('JobSpy queue error')
@@ -22,35 +25,31 @@ try {
   )
   if (remaining.some((arg) => arg !== '--wait'))
     throw new Error('Usage: jobspy:sync [--source source] [--wait]')
-  if (!jobspyEnabled(source)) throw new Error('JobSpy source is disabled')
   await boss.start()
-  const result = await enqueueJobspy(boss, new Date(), source)
-  console.info(JSON.stringify(result))
+  useSyncQueue(boss)
+  const run = await requestSync({ source })
+  console.info(JSON.stringify({ id: run.id, reused: run.existing }))
   if (args.includes('--wait')) {
-    const deadline = Date.now() + 150_000
-    let finished = false
-    while (Date.now() < deadline) {
-      const status = await jobspyStatus(pool, result.id, source)
-      if (status.run && !['queued', 'running'].includes(status.run.status)) {
-        console.info(JSON.stringify(status, null, 2))
-        if (status.run.status !== 'complete') process.exitCode = 1
-        finished = true
-        break
-      }
-      await delay(1000)
-    }
-    if (!finished) {
-      console.info('Still pending; use jobspy:status')
-      process.exitCode = 2
-    }
+    // No time limit; stopping the script leaves the run to the worker.
+    const finished = await waitForSyncRun(run.id)
+    const {
+      enabled,
+      scheduled,
+      run: stored,
+    } = await readSyncState({
+      source,
+      runId: run.id,
+    })
+    console.info(JSON.stringify({ enabled, scheduled, run: stored }, null, 2))
+    if (finished.status !== 'complete') process.exitCode = 1
   }
 } catch (error) {
   console.error(
-    error instanceof Error &&
-      (error.message.startsWith('Usage:') ||
-        error.message === 'JobSpy source is disabled')
-      ? error.message
-      : 'Could not request JobSpy import',
+    error instanceof SourceDisabledError
+      ? 'JobSpy source is disabled'
+      : error instanceof Error && error.message.startsWith('Usage:')
+        ? error.message
+        : 'Could not request JobSpy import',
   )
   process.exitCode = 1
 } finally {

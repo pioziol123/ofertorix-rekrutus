@@ -1,3 +1,4 @@
-import { jobspyCatalogStatus } from '../../../lib/sources/jobspy-sync'
-import { database } from '../../utils/database'
-export default defineEventHandler(() => jobspyCatalogStatus(database))
+import { readSourceCatalog } from '../../../modules/sources'
+export default defineEventHandler(
+  async () => (await readSourceCatalog()).jobspy,
+)

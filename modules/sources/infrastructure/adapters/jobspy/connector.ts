@@ -30,6 +30,8 @@ export function createJobspyConnector(
   return {
     name: source,
     infersUnavailabilityFromAbsence: false,
+    scheduled: false,
+    enabled: () => jobspyEnabled(source),
     scopeParameters: () => parametersFor(source),
     async fetch(parameters, onBatch, signal) {
       throwIfAborted(signal)

@@ -15,7 +15,6 @@ import {
 } from './jobspy-catalog.ts'
 
 export const jobspySource = 'indeed'
-export const jobspyQueue = 'source-indeed-jobspy'
 export const jobspyParameters = {
   source: jobspySource,
   adapterVersion: 5,
@@ -58,8 +57,6 @@ export function parametersFor(source: JobspySource = 'indeed') {
     },
   }
 }
-export const queueFor = (source: JobspySource) =>
-  `source-${source === 'indeed' ? 'indeed' : source}-jobspy`
 export const fingerprintFor = (source: JobspySource) =>
   hash(parametersFor(source))
 const count = z.number().int().nonnegative().max(1_000_000)

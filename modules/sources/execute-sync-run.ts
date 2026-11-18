@@ -64,9 +64,8 @@ export async function executeSyncRun(
 }
 
 /**
- * Executes a run its attempt already holds. Internal to the module: the
- * queue path starts the run in `executeSyncRun`, a run executed without a
- * queue starts it at admission.
+ * Executes a run its attempt has just started or taken over. Internal to
+ * the module: the sync queue's handler starts the run in its source's turn.
  */
 export async function executeStartedRun(
   run: SyncRun,

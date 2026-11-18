@@ -55,10 +55,8 @@ export type RunAdmission = {
   /**
    * Sends the run's queue job inside the admission's transaction (pg-boss
    * with the shared `db` adapter) and returns the job id, or throws.
-   * Without it the run has no queue job: the requesting process executes it
-   * itself.
    */
-  sendJob?: (runId: string) => Promise<string>
+  sendJob: (runId: string) => Promise<string>
 }
 
 export type AdmittedRun = { id: string; existing: boolean }
@@ -95,7 +93,7 @@ export function admitRun(admission: RunAdmission): Promise<AdmittedRun> {
     })
     if (inserted.id) {
       const id = inserted.id
-      if (admission.sendJob) await setRunJob(id, await admission.sendJob(id))
+      await setRunJob(id, await admission.sendJob(id))
       return { id, existing: false }
     }
     // ASSUMPTION(oferty-pracy-0mq.19/ASM-1): the scope's run that was

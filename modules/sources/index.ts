@@ -9,13 +9,35 @@ export {
   SyncRunLostError,
   type SyncRunWork,
 } from './execute-sync-run.ts'
-export { recoverSyncRuns, type SyncJobLookup } from './recover-sync-runs.ts'
+export { UnknownConnectorError } from './infrastructure/adapters/connector-registry.ts'
 export {
-  runSyncInProcess,
-  SyncRunAlreadyActiveError,
-} from './run-sync-in-process.ts'
-export { syncJobOptions } from './sync-job-options.ts'
-export type { SyncRun, SyncRunStatus } from './sync-run-state.ts'
+  findSyncJob,
+  syncQueue,
+  syncQueueOptions,
+  useSyncQueue,
+  workSyncQueue,
+  type SyncJobLookup,
+} from './infrastructure/worker/sync-queue.ts'
+export {
+  readSourceCatalog,
+  readSyncState,
+  type SourceSyncState,
+  type SyncRunRecord,
+} from './read-sync-state.ts'
+export { recoverSyncRuns } from './recover-sync-runs.ts'
+export { requestScheduledSyncs } from './request-scheduled-syncs.ts'
+export {
+  requestSync,
+  SourceDisabledError,
+  type SyncRequest,
+} from './request-sync.ts'
+export {
+  AdmittedRunFinishedError,
+  type AdmittedRun,
+  type SyncRun,
+  type SyncRunStatus,
+} from './sync-run-state.ts'
+export { waitForSyncRun } from './wait-for-sync-run.ts'
 export {
   readAdVersionList,
   readAdVersions,

@@ -232,3 +232,117 @@ export async function findUnfinishedRuns(source?: string): Promise<SyncRun[]> {
   )
   return result.rows.map(toRun)
 }
+
+/**
+ * Inside a transaction: waits for, then holds until the transaction ends,
+ * the lock of one schedule occurrence (source and schedule day), so parallel
+ * schedule cycles check and request it one after another.
+ */
+export async function lockScheduleOccurrence(
+  source: string,
+  scheduleDay: string,
+): Promise<void> {
+  await db().query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+    `source-schedule:${source}:${scheduleDay}`,
+  ])
+}
+
+/** Whether the scope has a run requested by the schedule for the day. */
+export async function hasScheduledRun(
+  fingerprint: string,
+  scheduleDay: string,
+): Promise<boolean> {
+  const result = await db().query(
+    `SELECT 1 FROM source_sync_runs r JOIN source_scopes s ON s.id=r.scope_id
+    WHERE s.fingerprint=$1 AND r.trigger='scheduled' AND r.schedule_day=$2::date LIMIT 1`,
+    [fingerprint, scheduleDay],
+  )
+  return result.rowCount === 1
+}
+
+/**
+ * A run as the status reads have always shown it: the stored columns under
+ * their stored names, and the scope parameters when read for a scope.
+ */
+export type RunRecord = {
+  id: string
+  scope_id: string
+  trigger: RunTrigger
+  schedule_day: Date
+  status: SyncRunStatus
+  job_id: string | null
+  attempt: number | null
+  pages: number
+  seen: number
+  revisions: number
+  error: string | null
+  diagnostics: Record<string, unknown> | null
+  created_at: Date
+  started_at: Date | null
+  finished_at: Date | null
+  /** Only when read for a scope. */
+  parameters?: Record<string, unknown>
+}
+
+/**
+ * The run with the id, or the latest run, of the source or, given a
+ * fingerprint, of that scope, in the stored form.
+ */
+export async function findLatestRunRecord(filter: {
+  source: string
+  fingerprint?: string
+  runId?: string
+}): Promise<RunRecord | null> {
+  const result = await db().query<RunRecord>(
+    `SELECT r.* ${filter.fingerprint ? ',s.parameters' : ''}
+    FROM source_sync_runs r JOIN source_scopes s ON s.id=r.scope_id
+    WHERE s.source=$1 AND ($2::text IS NULL OR s.fingerprint=$2)
+      AND ($3::uuid IS NULL OR r.id=$3::uuid)
+    ORDER BY r.created_at DESC, r.id DESC LIMIT 1`,
+    [filter.source, filter.fingerprint ?? null, filter.runId ?? null],
+  )
+  return result.rows[0] ?? null
+}
+
+/** The latest complete run of the source or, given a fingerprint, the scope. */
+export async function findLatestCompleteRun(filter: {
+  source: string
+  fingerprint?: string
+}): Promise<{ id: string; finished_at: Date } | null> {
+  const result = await db().query<{ id: string; finished_at: Date }>(
+    `SELECT r.id,r.finished_at FROM source_sync_runs r JOIN source_scopes s ON s.id=r.scope_id
+    WHERE s.source=$1 AND ($2::text IS NULL OR s.fingerprint=$2) AND r.status='complete'
+    ORDER BY r.finished_at DESC LIMIT 1`,
+    [filter.source, filter.fingerprint ?? null],
+  )
+  return result.rows[0] ?? null
+}
+
+/**
+ * Inside a transaction: waits for, then holds until the transaction ends,
+ * the lock on starting runs of the source.
+ */
+export async function lockSourceTurn(source: string): Promise<void> {
+  await db().query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+    `source-sync-turn:${source}`,
+  ])
+}
+
+/**
+ * The other runs of the run's source that may hold its turn: those running
+ * and those queued before it, with their queue jobs.
+ */
+export async function findRunsAhead(
+  runId: string,
+): Promise<{ id: string; jobId: string | null }[]> {
+  const result = await db().query<{ id: string; job_id: string | null }>(
+    `SELECT o.id, o.job_id FROM source_sync_runs r
+      JOIN source_scopes s ON s.id=r.scope_id
+      JOIN source_scopes os ON os.source=s.source
+      JOIN source_sync_runs o ON o.scope_id=os.id
+    WHERE r.id=$1 AND o.id<>r.id AND (o.status='running'
+      OR (o.status='queued' AND (o.created_at, o.id) < (r.created_at, r.id)))`,
+    [runId],
+  )
+  return result.rows.map((row) => ({ id: row.id, jobId: row.job_id }))
+}

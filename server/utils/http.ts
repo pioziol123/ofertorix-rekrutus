@@ -10,6 +10,7 @@ import type { H3Event } from 'h3'
 import { z, ZodError } from 'zod'
 import { createBoss } from '../../lib/queue'
 import { useAiQueue } from '../../modules/ai/index'
+import { useSyncQueue } from '../../modules/sources/index'
 
 /**
  * Request handling shared by the API routes of every module: identifier
@@ -25,8 +26,9 @@ export function queueClient() {
     const boss = createBoss()
     boss.on('error', () => console.error('Queue unavailable'))
     await boss.start()
-    // Requests from the routes send AI executions on this client.
+    // Requests from the routes send AI executions and sync runs on this client.
     useAiQueue(boss)
+    useSyncQueue(boss)
     return boss
   })().catch((error) => {
     bossPromise = undefined

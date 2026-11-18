@@ -1,11 +1,14 @@
 import { parseArgs } from 'node:util'
-import { setTimeout as delay } from 'node:timers/promises'
-import { closePool, getPool } from '../lib/db.ts'
+import { closePool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
 import { polishQuery } from '../lib/sources/polish.ts'
-import { enqueuePolish, polishStatus } from '../lib/sources/polish-sync.ts'
-const pool = getPool(),
-  boss = createBoss()
+import {
+  readSyncState,
+  requestSync,
+  useSyncQueue,
+  waitForSyncRun,
+} from '../modules/sources/index.ts'
+const boss = createBoss()
 boss.on('error', () => console.error('Source queue unavailable'))
 try {
   const { values } = parseArgs({
@@ -32,25 +35,22 @@ try {
       : {}),
   })
   await boss.start()
-  const result = await enqueuePolish(boss, query)
-  console.info(JSON.stringify(result))
+  useSyncQueue(boss)
+  const run = await requestSync({ source: query.source, scopeRequest: query })
+  console.info(JSON.stringify({ id: run.id, reused: run.existing }))
   if (values.wait) {
-    const deadline = Date.now() + 240_000
-    let finished = false
-    while (Date.now() < deadline) {
-      const state = await polishStatus(pool, result.id, query.source)
-      if (state.run && !['queued', 'running'].includes(state.run.status)) {
-        console.info(JSON.stringify(state, null, 2))
-        if (state.run.status !== 'complete') process.exitCode = 1
-        finished = true
-        break
-      }
-      await delay(1000)
-    }
-    if (!finished) {
-      console.info('Still pending; use polish:status')
-      process.exitCode = 2
-    }
+    // No time limit; stopping the script leaves the run to the worker.
+    const finished = await waitForSyncRun(run.id)
+    const {
+      enabled,
+      scheduled,
+      run: stored,
+    } = await readSyncState({
+      source: query.source,
+      runId: run.id,
+    })
+    console.info(JSON.stringify({ enabled, scheduled, run: stored }, null, 2))
+    if (finished.status !== 'complete') process.exitCode = 1
   }
 } catch {
   console.error(

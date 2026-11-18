@@ -12,10 +12,17 @@ import {
   it,
   vi,
 } from 'vitest'
-import { enqueueSync } from '../lib/sources/sync.ts'
-import { executeSyncRun, recoverSyncRuns } from '../modules/sources/index.ts'
+import {
+  executeSyncRun,
+  recoverSyncRuns,
+  requestScheduledSyncs,
+  requestSync,
+  syncQueue,
+  syncQueueOptions,
+  useSyncQueue,
+} from '../modules/sources/index.ts'
 import type { ConnectorProvider } from '../modules/sources/infrastructure/adapters/connector-registry.ts'
-import { importQueue, type Offer, type Page } from '../lib/sources/solid.ts'
+import { source, type Offer, type Page } from '../lib/sources/solid.ts'
 import { createPageFetcher, hash } from '../lib/sources/solid.ts'
 import { solidJobsWith } from './source-connectors.fixtures.ts'
 
@@ -64,7 +71,8 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     })
     boss.on('error', () => {})
     await boss.start()
-    await boss.createQueue(importQueue, { retryLimit: 0 })
+    await boss.createQueue(syncQueue, syncQueueOptions)
+    useSyncQueue(boss)
   }, 30_000)
 
   beforeEach(async () => {
@@ -100,11 +108,11 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
       connectors,
     )
   }
-  const recoverSync = () =>
-    recoverSyncRuns(({ jobId }) => boss.getJobById(importQueue, jobId))
+  const recoverSync = () => recoverSyncRuns()
+  const enqueueSync = () => requestSync({ source })
 
   async function run(jobs: Offer[], overrides: Partial<Page> = {}) {
-    const queued = await enqueueSync(boss)
+    const queued = await enqueueSync()
     await executeSync(
       queued!.id,
       solidJobsWith(async () => page(jobs, overrides)),
@@ -128,7 +136,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
         throw new Error('queue insert failed')
       })
     try {
-      await expect(enqueueSync(boss)).rejects.toThrow('queue insert failed')
+      await expect(enqueueSync()).rejects.toThrow('queue insert failed')
     } finally {
       send.mockRestore()
     }
@@ -144,13 +152,13 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
 
   it('deduplicates concurrent enqueue requests and creates only one real queue job', async () => {
     const results = await Promise.all(
-      Array.from({ length: 5 }, () => enqueueSync(boss)),
+      Array.from({ length: 5 }, () => enqueueSync()),
     )
     expect(new Set(results.map((r) => r!.id)).size).toBe(1)
-    expect(results.filter((r) => !r!.reused)).toHaveLength(1)
+    expect(results.filter((r) => !r!.existing)).toHaveLength(1)
     const stored = (await pool.query('SELECT * FROM source_sync_runs')).rows
     expect(stored).toHaveLength(1)
-    const job = await boss.getJobById(importQueue, stored[0].job_id)
+    const job = await boss.getJobById(syncQueue, stored[0].job_id)
     expect(job?.data).toEqual({ runId: stored[0].id })
   })
 
@@ -208,7 +216,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
 
   it('retains a successful page and does not mark unseen ads unavailable after a page error', async () => {
     await run([{ jobOfferKey: 'old' }])
-    const queued = await enqueueSync(boss)
+    const queued = await enqueueSync()
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(
@@ -238,7 +246,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     'prevents false absence for unstable %s',
     async (kind) => {
       await run([{ jobOfferKey: 'old' }])
-      const queued = await enqueueSync(boss)
+      const queued = await enqueueSync()
       const fetcher = vi
         .fn()
         .mockResolvedValueOnce(
@@ -300,7 +308,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
   })
 
   it('keeps an actively locked run intact during recovery and duplicate delivery', async () => {
-    const queued = await enqueueSync(boss)
+    const queued = await enqueueSync()
     let release!: () => void
     let entered!: () => void
     const started = new Promise<void>((resolve) => {
@@ -353,12 +361,12 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
   // Since 0mq.5 a running run is orphaned when its queue job has ended, and
   // it ends partial by its saved ads (A5-R03, A5-R06).
   it('recovers orphaned running imports and ignores late delivery', async () => {
-    const queued = await enqueueSync(boss)
+    const queued = await enqueueSync()
     const { rows } = await pool.query(
       "UPDATE source_sync_runs SET status='running',attempt=0,pages=1,seen=1 WHERE id=$1 RETURNING job_id",
       [queued!.id],
     )
-    await boss.cancel(importQueue, rows[0].job_id)
+    await boss.cancel(syncQueue, rows[0].job_id)
     await recoverSync()
     expect(
       (
@@ -370,7 +378,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     const fetcher = vi.fn()
     await executeSync(queued!.id, solidJobsWith(fetcher))
     expect(fetcher).not.toHaveBeenCalled()
-    expect((await enqueueSync(boss))!.id).not.toBe(queued!.id)
+    expect((await enqueueSync())!.id).not.toBe(queued!.id)
   })
 
   it('stores ads with the identifiers, links, expiry, hashes and content from before connectors', async () => {
@@ -404,7 +412,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
   })
 
   it('retries a transient source failure inside the same run', async () => {
-    const queued = await enqueueSync(boss)
+    const queued = await enqueueSync()
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(new Response('', { status: 503 }))
@@ -443,12 +451,12 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
 
   it('makes one catchup slot after downtime and does not enqueue every missed day', async () => {
     const now = new Date('2026-10-31T12:00:00Z')
-    const queued = await enqueueSync(boss, 'scheduled', now)
+    const [queued] = await requestScheduledSyncs({ now })
     await executeSync(
       queued!.id,
       solidJobsWith(async () => page([])),
     )
-    expect(await enqueueSync(boss, 'scheduled', now)).toBeNull()
+    expect(await requestScheduledSyncs({ now })).toEqual([])
     expect(
       (
         await pool.query(

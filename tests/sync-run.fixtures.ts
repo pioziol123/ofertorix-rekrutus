@@ -1,7 +1,5 @@
-import type { PgBoss } from 'pg-boss'
 import { db } from '../lib/db.ts'
-import { recoverSyncQueues } from '../lib/sources/sync-queues.ts'
-import { executeSyncRun } from '../modules/sources/index.ts'
+import { executeSyncRun, recoverSyncRuns } from '../modules/sources/index.ts'
 import type { ConnectorProvider } from '../modules/sources/infrastructure/adapters/connector-registry.ts'
 
 // The shared executor and recovery as the worker calls them.
@@ -27,5 +25,5 @@ export async function deliver(
   )
 }
 
-/** The worker's recovery, reading job states from the source queues. */
-export const recover = (boss: PgBoss): Promise<void> => recoverSyncQueues(boss)
+/** The worker's recovery, reading job states from the connected sync queue. */
+export const recover = (): Promise<void> => recoverSyncRuns()

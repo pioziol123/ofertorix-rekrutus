@@ -1,5 +1,4 @@
 import type { Pool } from 'pg'
-import type { PgBoss } from 'pg-boss'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
 import {
@@ -11,15 +10,16 @@ import {
   sourceEnabled,
 } from '../lib/sources/jobspy-catalog.ts'
 import {
-  enqueueJobspy,
-  jobspyCatalogStatus,
-} from '../lib/sources/jobspy-sync.ts'
-import {
   fingerprintFor,
   parametersFor,
   parseJobspy,
-  queueFor,
 } from '../lib/sources/jobspy.ts'
+import {
+  readSourceCatalog,
+  requestSync,
+  SourceDisabledError,
+} from '../modules/sources/index.ts'
+import { polishSources } from '../lib/sources/polish-catalog.ts'
 import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 import { job, result, sourceResult } from './fixtures/jobspy/result.ts'
 
@@ -210,12 +210,11 @@ describe('additional JobSpy sources', () => {
       })
     },
   )
-  it('assigns independent queue names and parameter fingerprints to all adapters', () => {
-    expect(new Set(jobspySources.map(queueFor)).size).toBe(jobspySources.length)
+  // Since 0mq.16 every source shares one sync queue (F2-06).
+  it('assigns independent parameter fingerprints to all adapters', () => {
     expect(new Set(jobspySources.map(fingerprintFor)).size).toBe(
       jobspySources.length,
     )
-    expect(queueFor('indeed')).toBe('source-indeed-jobspy')
   })
 })
 
@@ -271,9 +270,9 @@ describe('explicit source activation', () => {
         query = vi.fn()
       setPool({ connect, query, end: vi.fn() } as unknown as Pool)
       try {
-        await expect(
-          enqueueJobspy({} as PgBoss, new Date(), source),
-        ).rejects.toThrow('JobSpy source is disabled')
+        await expect(requestSync({ source })).rejects.toBeInstanceOf(
+          SourceDisabledError,
+        )
       } finally {
         await closePool()
       }
@@ -291,15 +290,21 @@ describe('explicit source activation', () => {
           ? [{ id: 'bayt-last', status: 'failed', seen: 0 }]
           : [],
     }))
-    const catalog = await jobspyCatalogStatus({ query } as unknown as Pool)
+    setPool({ connect: vi.fn(), query, end: vi.fn() } as unknown as Pool)
+    let catalog
+    try {
+      catalog = (await readSourceCatalog()).jobspy
+    } finally {
+      await closePool()
+    }
     expect(catalog).toMatchObject({
       enabled: false,
       scheduled: false,
       run: null,
     })
     expect(catalog.sources.map((s) => s.source)).toEqual(jobspySources)
-    expect(query.mock.calls.map(([, values]) => values)).toEqual(
-      jobspySources.map((s) => [s]),
+    expect(new Set(query.mock.calls.map(([, values]) => values[0]))).toEqual(
+      new Set([...jobspySources, ...polishSources]),
     )
     expect(catalog.sources.find((s) => s.source === 'bayt')).toMatchObject({
       enabled: true,

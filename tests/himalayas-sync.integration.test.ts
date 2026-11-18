@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
+import { PgBoss } from 'pg-boss'
 import { setPool } from '../lib/db.ts'
 import {
   afterAll,
@@ -14,12 +15,20 @@ import {
 import {
   HimalayasHttpError,
   parsePage,
+  source,
   type HimalayasPage,
 } from '../lib/sources/himalayas.ts'
-import { syncHimalayas } from '../lib/sources/himalayas-sync.ts'
 import { hash } from '../lib/sources/solid.ts'
 import { readOffers } from '../modules/offers/read-offers.ts'
+import {
+  requestSync,
+  syncQueue,
+  syncQueueOptions,
+  useSyncQueue,
+} from '../modules/sources/index.ts'
+import type { ConnectorProvider } from '../modules/sources/infrastructure/adapters/connector-registry.ts'
 import { himalayasWith } from './source-connectors.fixtures.ts'
+import { deliver } from './sync-run.fixtures.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -52,8 +61,10 @@ const page = (
 integration(
   'manual Himalayas pilot persistence in an isolated PostgreSQL schema',
   () => {
-    const schema = `himalayas_test_${randomUUID().replaceAll('-', '')}`
-    let admin: Pool, pool: Pool
+    const suffix = randomUUID().replaceAll('-', '')
+    const schema = `himalayas_test_${suffix}`
+    const queueSchema = `himalayas_queue_${suffix}`
+    let admin: Pool, pool: Pool, boss: PgBoss
     beforeAll(async () => {
       admin = new Pool({ connectionString: process.env.DATABASE_URL })
       await admin.query(`CREATE SCHEMA ${schema}`)
@@ -76,19 +87,49 @@ integration(
         })
         await pool.query(sql.join('\n'))
       }
-    })
+      boss = new PgBoss({
+        connectionString: process.env.DATABASE_URL,
+        schema: queueSchema,
+      })
+      boss.on('error', () => {})
+      await boss.start()
+      await boss.createQueue(syncQueue, syncQueueOptions)
+      useSyncQueue(boss)
+    }, 30_000)
     beforeEach(async () => {
       await pool.query(
         'TRUNCATE source_run_seen,source_ad_revisions,source_ads,source_sync_runs,source_scopes CASCADE',
       )
     })
     afterAll(async () => {
+      await boss?.stop()
       await pool?.end()
       if (admin) {
         await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
+        await admin.query(`DROP SCHEMA IF EXISTS ${queueSchema} CASCADE`)
         await admin.end()
       }
     })
+    // Since 0mq.16 the pilot is requested to the sync queue like every
+    // source and executed by the worker (A16-R05); here the queue delivery.
+    async function syncHimalayas(connectors: ConnectorProvider) {
+      const requested = await requestSync({ source }, { connectors })
+      await deliver(requested.id, connectors)
+      const run = (
+        await pool.query('SELECT * FROM source_sync_runs WHERE id=$1', [
+          requested.id,
+        ])
+      ).rows[0]
+      return {
+        id: run.id,
+        status: run.status,
+        seen: run.seen,
+        revisions: run.revisions,
+        pages: run.pages,
+        error: run.error,
+        diagnostics: run.diagnostics as Record<string, unknown> | null,
+      }
+    }
     const run = (ids: string[], overrides: Partial<HimalayasPage> = {}) =>
       syncHimalayas(himalayasWith(async () => page(ids, overrides)))
 
@@ -339,7 +380,9 @@ integration(
       })
     })
 
-    it('prevents a concurrent manual run from fetching and keeps the active run intact', async () => {
+    // Since 0mq.16 a request during a run queues one pending run instead of
+    // being refused (F2-07), and nothing interrupts the active run.
+    it('queues one pending run next to the active one and keeps the active run intact', async () => {
       let release!: () => void
       let entered!: () => void
       const gate = new Promise<void>((resolve) => {
@@ -357,18 +400,30 @@ integration(
       )
       await started
       try {
-        const duplicate = vi.fn()
-        await expect(syncHimalayas(himalayasWith(duplicate))).rejects.toThrow(
-          'already running',
-        )
-        expect(duplicate).not.toHaveBeenCalled()
+        const pending = await requestSync({ source })
+        expect(pending.existing).toBe(false)
+        expect(await requestSync({ source })).toEqual({
+          id: pending.id,
+          existing: true,
+        })
         expect(
-          (await pool.query('SELECT status FROM source_sync_runs')).rows,
-        ).toEqual([{ status: 'running' }])
+          (
+            await pool.query(
+              'SELECT status FROM source_sync_runs ORDER BY created_at',
+            )
+          ).rows,
+        ).toEqual([{ status: 'running' }, { status: 'queued' }])
       } finally {
         release()
         await active
       }
+      expect(
+        (
+          await pool.query(
+            'SELECT status FROM source_sync_runs ORDER BY created_at',
+          )
+        ).rows,
+      ).toEqual([{ status: 'complete' }, { status: 'queued' }])
     })
   },
 )

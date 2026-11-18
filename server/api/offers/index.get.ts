@@ -1,8 +1,7 @@
 import { matchingListStatus } from '../../../lib/matching/list'
 import { listOffers, parseFilters } from '../../../modules/offers'
-import { syncStatus } from '../../../lib/sources/sync'
-import { jobspyCatalogStatus } from '../../../lib/sources/jobspy-sync'
-import { polishCatalogStatus } from '../../../lib/sources/polish-sync'
+import { readSourceCatalog, readSyncState } from '../../../modules/sources'
+import { source as solidJobs } from '../../../lib/sources/solid'
 import { database } from '../../utils/database'
 export default defineEventHandler(async (event) => {
   let filters
@@ -11,11 +10,10 @@ export default defineEventHandler(async (event) => {
   } catch {
     throw createError({ statusCode: 400, statusMessage: 'Invalid filters' })
   }
-  const [list, sync, jobspy, polish, matching] = await Promise.all([
+  const [list, sync, { jobspy, polish }, matching] = await Promise.all([
     listOffers(filters),
-    syncStatus(database),
-    jobspyCatalogStatus(database),
-    polishCatalogStatus(database),
+    readSyncState({ source: solidJobs, scope: {} }),
+    readSourceCatalog(),
     matchingListStatus(database),
   ])
   return {

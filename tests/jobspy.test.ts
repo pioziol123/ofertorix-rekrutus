@@ -2,7 +2,6 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Pool } from 'pg'
-import type { PgBoss } from 'pg-boss'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   jobspyEnabled,
@@ -12,7 +11,11 @@ import {
   runJobspy,
 } from '../lib/sources/jobspy.ts'
 import { closePool, setPool } from '../lib/db.ts'
-import { enqueueJobspy, jobspyStatus } from '../lib/sources/jobspy-sync.ts'
+import {
+  readSyncState,
+  requestSync,
+  SourceDisabledError,
+} from '../modules/sources/index.ts'
 import { parseFilters } from '../modules/offers/index.ts'
 import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 import { salaryMatch } from '../modules/offers/domain/salary-match.ts'
@@ -174,7 +177,9 @@ describe('JobSpy contract and projection', () => {
       query = vi.fn()
     setPool({ connect, query, end: vi.fn() } as unknown as Pool)
     try {
-      await expect(enqueueJobspy({} as PgBoss)).rejects.toThrow('disabled')
+      await expect(requestSync({ source: 'indeed' })).rejects.toBeInstanceOf(
+        SourceDisabledError,
+      )
     } finally {
       await closePool()
     }
@@ -185,9 +190,14 @@ describe('JobSpy contract and projection', () => {
   })
   it('validates status UUID before querying', async () => {
     const query = vi.fn()
-    await expect(
-      jobspyStatus({ query } as unknown as Pool, 'bad'),
-    ).rejects.toThrow('Invalid run UUID')
+    setPool({ connect: vi.fn(), query, end: vi.fn() } as unknown as Pool)
+    try {
+      await expect(
+        readSyncState({ source: 'indeed', runId: 'bad' }),
+      ).rejects.toThrow('Invalid run UUID')
+    } finally {
+      await closePool()
+    }
     expect(query).not.toHaveBeenCalled()
   })
 })

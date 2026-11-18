@@ -37,6 +37,13 @@ export interface SourceConnector {
    * Whether an ad missing from a complete run may be taken as unavailable.
    */
   readonly infersUnavailabilityFromAbsence: boolean
+  /** Whether the schedule requests the source's sync every day. */
+  readonly scheduled: boolean
+  /**
+   * Whether configuration allows requesting the source. A disabled source
+   * stays registered, so its earlier runs stay readable.
+   */
+  enabled(): boolean
   /**
    * Scope parameters for a request. The request is source specific (e.g.
    * the query of a Polish portal); sources with a fixed scope ignore it.
