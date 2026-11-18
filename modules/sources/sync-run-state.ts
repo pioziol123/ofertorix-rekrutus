@@ -1,7 +1,7 @@
 import { transaction } from '../../lib/db.ts'
 import { hash } from './domain/canonical-hash.ts'
 import {
-  findQueuedRunId,
+  findBlockingRunId,
   findRun,
   findUnfinishedRuns,
   insertQueuedRun,
@@ -63,16 +63,23 @@ export type RunAdmission = {
 
 export type AdmittedRun = { id: string; existing: boolean }
 
-// A queued run seen as a conflict can start before it is read back; the
-// admission then inserts again, which F2-07 allows once the queued run has
-// started. Bounded so a fault cannot loop forever: after the last attempt the
-// admission fails, rolls back and the caller may request again.
-const admissionAttempts = 3
+/** The run an admission met has finished; nothing was created. */
+export class AdmittedRunFinishedError extends Error {
+  override name = 'AdmittedRunFinishedError'
+  constructor() {
+    super('The sync run this request met has already finished; request again')
+  }
+}
 
 /**
  * Admits a run for the source and scope (F2-07): returns the scope's queued
  * run if there is one, otherwise creates a queued run and its queue job
  * together. Concurrent admissions are settled by the queued-run index.
+ *
+ * One insert attempt only: when the index rejects it, the run that blocked
+ * it is returned as existing, also when it has started since. When that run
+ * has already finished, the admission throws `AdmittedRunFinishedError` and
+ * rolls back; the caller may request again.
  */
 export function admitRun(admission: RunAdmission): Promise<AdmittedRun> {
   return transaction(async () => {
@@ -81,20 +88,22 @@ export function admitRun(admission: RunAdmission): Promise<AdmittedRun> {
       hash(admission.parameters),
       admission.parameters,
     )
-    for (let attempt = 0; attempt < admissionAttempts; attempt++) {
-      const id = await insertQueuedRun({
-        scopeId,
-        trigger: admission.trigger,
-        scheduleDay: admission.scheduleDay,
-      })
-      if (id) {
-        if (admission.sendJob) await setRunJob(id, await admission.sendJob(id))
-        return { id, existing: false }
-      }
-      const queued = await findQueuedRunId(scopeId)
-      if (queued) return { id: queued, existing: true }
+    const inserted = await insertQueuedRun({
+      scopeId,
+      trigger: admission.trigger,
+      scheduleDay: admission.scheduleDay,
+    })
+    if (inserted.id) {
+      const id = inserted.id
+      if (admission.sendJob) await setRunJob(id, await admission.sendJob(id))
+      return { id, existing: false }
     }
-    throw new Error('Sync run admission did not settle; retry the request')
+    // ASSUMPTION(oferty-pracy-0mq.19/ASM-1): the scope's run that was
+    // already running before the insert did not block it and is never
+    // returned in place of the blocking run.
+    const blocking = await findBlockingRunId(scopeId, inserted.runningBefore)
+    if (blocking) return { id: blocking, existing: true }
+    throw new AdmittedRunFinishedError()
   })
 }
 

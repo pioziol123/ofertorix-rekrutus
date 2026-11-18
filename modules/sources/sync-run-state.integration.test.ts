@@ -14,6 +14,7 @@ import {
 import { closePool, queueDatabase, setPool } from '../../lib/db.ts'
 import { requireQueued } from '../../lib/queue.ts'
 import {
+  AdmittedRunFinishedError,
   admitRun,
   finishRun,
   listUnfinishedRuns,
@@ -33,9 +34,13 @@ vi.mock('./infrastructure/persistence/sync-runs.ts', async (importOriginal) => {
   return {
     ...actual,
     insertQueuedRun: vi.fn(actual.insertQueuedRun),
-    findQueuedRunId: vi.fn(actual.findQueuedRunId),
+    findBlockingRunId: vi.fn(actual.findBlockingRunId),
   }
 })
+
+const { findBlockingRunId: actualFindBlockingRunId } = await vi.importActual<
+  typeof import('./infrastructure/persistence/sync-runs.ts')
+>('./infrastructure/persistence/sync-runs.ts')
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -139,57 +144,90 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
     ])
   })
 
-  it('admits a new queued run when the conflicting one starts before it is read (A3-AC01, F2-07, ASM-2)', async () => {
+  // Runs `race` between the admission's rejected insert and its read of the
+  // blocking run, as another worker would.
+  const raceBeforeRead = (race: (scopeId: string) => Promise<unknown>) =>
+    vi
+      .mocked(repository.findBlockingRunId)
+      .mockImplementationOnce(async (scopeId, runningBefore) => {
+        await race(scopeId)
+        return actualFindBlockingRunId(scopeId, runningBefore)
+      })
+
+  it('points at the blocking run that starts before it is read, without inserting again (A19-AC01, A19-AC03)', async () => {
     const first = await admitRun(admission())
-    // The admission's insert conflicts with the queued run, which then starts
-    // (another worker) before the admission reads it back.
-    vi.mocked(repository.findQueuedRunId).mockImplementationOnce(
-      async (scopeId) => {
-        await pool.query(
-          `UPDATE source_sync_runs SET status='running', started_at=now()
+    raceBeforeRead((scopeId) =>
+      pool.query(
+        `UPDATE source_sync_runs SET status='running', started_at=now()
         WHERE scope_id=$1 AND status='queued'`,
-          [scopeId],
-        )
-        return null
-      },
+        [scopeId],
+      ),
     )
     vi.clearAllMocks()
-    const second = await admitRun(admission())
-    expect(repository.insertQueuedRun).toHaveBeenCalledTimes(2)
-    expect(repository.findQueuedRunId).toHaveBeenCalledTimes(1)
-    expect(second).toEqual({ id: expect.any(String), existing: false })
-    expect(second.id).not.toBe(first.id)
-    const rows = await runs()
-    expect(rows.map((run) => [run.id, run.status])).toEqual([
-      [first.id, 'running'],
-      [second.id, 'queued'],
-    ])
-    expect((await jobs()).map((job) => job.data.runId).sort()).toEqual(
-      [first.id, second.id].sort(),
-    )
     expect(await admitRun(admission())).toEqual({
-      id: second.id,
+      id: first.id,
       existing: true,
     })
+    expect(repository.insertQueuedRun).toHaveBeenCalledTimes(1)
+    expect(repository.findBlockingRunId).toHaveBeenCalledTimes(1)
+    expect(await runs()).toEqual([
+      { id: first.id, status: 'running', job_id: expect.any(String) },
+    ])
+    expect((await jobs()).map((job) => job.data.runId)).toEqual([first.id])
   })
 
-  it('fails the admission without changes when it does not settle after three attempts (ASM-2)', async () => {
-    vi.mocked(repository.insertQueuedRun).mockResolvedValue(null)
-    vi.mocked(repository.findQueuedRunId).mockResolvedValue(null)
-    try {
-      await expect(admitRun(admission())).rejects.toThrow(
-        'Sync run admission did not settle; retry the request',
-      )
-      expect(repository.insertQueuedRun).toHaveBeenCalledTimes(3)
-      expect(repository.findQueuedRunId).toHaveBeenCalledTimes(3)
-    } finally {
-      // Restores the real repository functions given to vi.fn.
-      vi.mocked(repository.insertQueuedRun).mockReset()
-      vi.mocked(repository.findQueuedRunId).mockReset()
+  it('fails without changes when the blocking run finishes before it is read (A19-AC02, A19-AC03)', async () => {
+    const first = await admitRun(admission())
+    const before = {
+      runs: await runs(),
+      jobs: await jobs(),
+      scopes: (await pool.query('SELECT * FROM source_scopes')).rows,
     }
-    expect(await runs()).toEqual([])
-    expect(await jobs()).toEqual([])
-    expect((await pool.query('SELECT * FROM source_scopes')).rowCount).toBe(0)
+    raceBeforeRead((scopeId) =>
+      pool.query(
+        `UPDATE source_sync_runs SET status='complete', started_at=now(),
+          finished_at=now() WHERE scope_id=$1 AND status='queued'`,
+        [scopeId],
+      ),
+    )
+    vi.clearAllMocks()
+    await expect(admitRun(admission())).rejects.toBeInstanceOf(
+      AdmittedRunFinishedError,
+    )
+    expect(repository.insertQueuedRun).toHaveBeenCalledTimes(1)
+    expect(repository.findBlockingRunId).toHaveBeenCalledTimes(1)
+    expect(await runs()).toEqual([
+      { id: first.id, status: 'complete', job_id: before.runs[0]!.job_id },
+    ])
+    expect(await jobs()).toEqual(before.jobs)
+    expect((await pool.query('SELECT * FROM source_scopes')).rows).toEqual(
+      before.scopes,
+    )
+    // The caller may request again.
+    expect(await admitRun(admission())).toMatchObject({ existing: false })
+  })
+
+  it('does not point at the run already running when the blocking queued run finishes (A19-R02, 0mq.19 ASM-1)', async () => {
+    const running = await admitRun(admission())
+    await startRun(running.id)
+    const blocking = await admitRun(admission())
+    raceBeforeRead((scopeId) =>
+      pool.query(
+        `UPDATE source_sync_runs SET status='failed', finished_at=now()
+        WHERE scope_id=$1 AND status='queued'`,
+        [scopeId],
+      ),
+    )
+    vi.clearAllMocks()
+    await expect(admitRun(admission())).rejects.toBeInstanceOf(
+      AdmittedRunFinishedError,
+    )
+    expect(repository.insertQueuedRun).toHaveBeenCalledTimes(1)
+    expect((await runs()).map((run) => [run.id, run.status])).toEqual([
+      [running.id, 'running'],
+      [blocking.id, 'failed'],
+    ])
+    expect(await jobs()).toHaveLength(2)
   })
 
   it('creates neither the run nor the job when sending the job fails (A3-R02)', async () => {

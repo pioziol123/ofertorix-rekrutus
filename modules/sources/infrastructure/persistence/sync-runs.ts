@@ -75,25 +75,46 @@ export async function upsertScope(
 
 /**
  * Inserts a queued run unless the scope already has one. Returns the new
- * run's id, or null when the queued-run index rejected it.
+ * run's id, or null when the queued-run index rejected it. With it, the id
+ * of the scope's run that was already running when the statement began (its
+ * snapshot): that run cannot have blocked the insert, since the blocker was
+ * queued.
  */
 export async function insertQueuedRun(run: {
   scopeId: string
   trigger: RunTrigger
   scheduleDay: string
-}): Promise<string | null> {
-  const result = await db().query<{ id: string }>(
-    `INSERT INTO source_sync_runs(id,scope_id,trigger,schedule_day) VALUES ($1,$2,$3,$4)
-    ON CONFLICT (scope_id) WHERE status = 'queued' DO NOTHING RETURNING id`,
+}): Promise<{ id: string | null; runningBefore: string | null }> {
+  const result = await db().query<{
+    id: string | null
+    running_before: string | null
+  }>(
+    `WITH inserted AS (
+      INSERT INTO source_sync_runs(id,scope_id,trigger,schedule_day) VALUES ($1,$2,$3,$4)
+      ON CONFLICT (scope_id) WHERE status = 'queued' DO NOTHING RETURNING id
+    ) SELECT (SELECT id FROM inserted) AS id,
+      (SELECT id FROM source_sync_runs WHERE scope_id=$2 AND status='running')
+        AS running_before`,
     [randomUUID(), run.scopeId, run.trigger, run.scheduleDay],
   )
-  return result.rows[0]?.id ?? null
+  const row = result.rows[0]!
+  return { id: row.id, runningBefore: row.running_before }
 }
 
-export async function findQueuedRunId(scopeId: string): Promise<string | null> {
+/**
+ * The run that blocked an insert of a queued run: the scope's queued run or,
+ * when it has started since, the scope's running run other than the one
+ * already running before the insert. Null when the blocker has finished.
+ */
+export async function findBlockingRunId(
+  scopeId: string,
+  runningBefore: string | null,
+): Promise<string | null> {
   const result = await db().query<{ id: string }>(
-    `SELECT id FROM source_sync_runs WHERE scope_id=$1 AND status='queued'`,
-    [scopeId],
+    `SELECT id FROM source_sync_runs WHERE scope_id=$1
+      AND (status='queued' OR (status='running' AND id IS DISTINCT FROM $2::uuid))
+    ORDER BY status='queued' DESC LIMIT 1`,
+    [scopeId, runningBefore],
   )
   return result.rows[0]?.id ?? null
 }
