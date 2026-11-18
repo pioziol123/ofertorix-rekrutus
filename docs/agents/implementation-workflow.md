@@ -49,6 +49,7 @@ One bd task (type `task`, `bug` or `feature`) per increment, a child of its epic
 | `ready-for-agent` | Readiness checklist met; the runner may take it |
 | `ready-for-human` | Human in the loop required; the runner skips it |
 | `needs-info` | Returned by the runner or still missing decisions; the runner skips it |
+| `start-fresh` | The owner orders the next attempt to start from `main`, ignoring the kept work of a returned attempt; the runner removes the label when it claims the task. See [Continuation](#continuation). |
 
 A task leaves preparation with `ready-for-agent` only. Mark a task `ready-for-human` when its work needs the owner during implementation, for example a manual product check or access only the owner has.
 
@@ -62,6 +63,7 @@ A task leaves preparation with `ready-for-agent` only. Mark a task `ready-for-hu
 | Task | `type` | Runner | `follow-up` on a task created from a deviation. |
 | Task | `marker`, `origin` | Runner | On a follow-up: the code marker it owns and the task that created it. |
 | Task | `type`, `epic` | Runner | `assumptions` and the epic id on the triage task that collects assumptions to confirm. |
+| Task | `kept_branch`, `kept_base` | Runner | On a returned task: the return branch on GitHub holding the attempt's kept work, and the commit of `main` that work sits on. Set by a return that pushed the branch, cleared by `start-fresh` and by delivery. See [Continuation](#continuation). |
 
 ## Epic hand-off
 
@@ -119,13 +121,13 @@ The runner runs as many tasks at the same time as its slots allow, one by defaul
 
 ### One task
 
-1. Create the task branch of the claimed task at the fetched `main` commit: `<epic>-<task>-<title slug>`, for example `0mq-13-wprowadzic-wspolne-zarzadzanie-polaczeniami` for `oferty-pracy-0mq.13`. Ids drop the project prefix; the task part is relative to the epic, and a task outside any epic uses its own id alone. Branches made by hand follow the same prefix.
-2. Run the implementing agent (`claude-opus-5-5`, effort `medium` by default) in a sandbox on that branch with the task and its documents. The agent runs the gate itself before finishing, writes a result file and commits on its branch; bd, delivery and `main` belong to the runner.
+1. Create the task branch of the claimed task at the fetched `main` commit, or at the kept work of a returned attempt for a [continuation](#continuation): `<epic>-<task>-<title slug>`, for example `0mq-13-wprowadzic-wspolne-zarzadzanie-polaczeniami` for `oferty-pracy-0mq.13`. Ids drop the project prefix; the task part is relative to the epic, and a task outside any epic uses its own id alone. Branches made by hand follow the same prefix.
+2. Run the implementing agent (`claude-opus-5-5`, effort `medium` by default) in a sandbox on that branch with the task and its documents, and for a continuation with what [Continuation](#continuation) lists. The agent runs the gate itself before finishing, writes a result file and commits on its branch; bd, delivery and `main` belong to the runner.
 3. Check, in the same warm sandbox: the result file exists, the worktree is clean, the branch has commits and rebases cleanly on the `main` commit the work must sit on (the fetched one, or a newer one from delivery), the result's shape and deviations pass the [deterministic checks](#what-the-runner-checks), and the gate passes.
-4. In a fresh sandbox on a copy of the branch, run the gate again, start PostgreSQL with the schema migrated so the reviewer can run single tests, then run a separate reviewing agent against the diff, the documents, the acceptance criteria and the result's assumptions and deviations. Its verdict is `pass`, `pass-with-deferral` (every deviation accepted) or `fail` with findings. A result with deviations needs `pass-with-deferral`. Only committed work reaches this step.
-5. When step 3 or 4 fails, send the report back into the implementing agent's session in the same warm sandbox (Sandcastle resume), so it keeps its context, and repeat from step 3. A rebase conflict is such a failure too: the report names the conflicting files and the commits of `main` that changed them, and the agent rebases and resolves it itself. Three feedback turns per task at most, shared by every kind of failure, including those from delivery; a `blocked` result returns the task at once.
+4. In a fresh sandbox on a copy of the branch, run the gate again, start PostgreSQL with the schema migrated so the reviewer can run single tests, then run a separate reviewing agent against the diff of the task's whole change against `main` (for a continuation the kept commits included), the documents, the acceptance criteria and the result's assumptions and deviations. Its verdict is `pass`, `pass-with-deferral` (every deviation accepted) or `fail` with findings. A result with deviations needs `pass-with-deferral`. Only committed work reaches this step.
+5. When step 3 or 4 fails, send the report back into the implementing agent's session in the same warm sandbox (Sandcastle resume), so it keeps its context, and repeat from step 3. A rebase conflict is such a failure too: the report names the conflicting files and the commits of `main` that changed them, and the agent rebases and resolves it itself. Three feedback turns per attempt at most, counted from zero in every attempt and shared by every kind of failure, including those from delivery; a `blocked` result returns the task at once. When a fourth turn would be needed, the runner first resumes the session once more and asks the agent for a [state note](#state-note); that request is not a feedback turn.
 6. Deliver, before the warm sandbox closes, as described in [Delivery](#delivery).
-7. After delivery: comment the evidence, the assumptions and the deviations, file a follow-up for each deviation and wire it to block the tasks that depend on it, add the assumptions to the epic's assumptions task, file new scope as `discovered-from` tasks with `needs-triage`, close the task with the delivered commit, remove the branch an earlier return left on GitHub, and notify the owner that the work is on GitHub.
+7. After delivery: comment the evidence, the assumptions and the deviations, file a follow-up for each deviation and wire it to block the tasks that depend on it, add the assumptions to the epic's assumptions task, file new scope as `discovered-from` tasks with `needs-triage`, close the task with the delivered commit, remove the branch an earlier return left on GitHub and the task's `kept_branch` and `kept_base`, and notify the owner that the work is on GitHub.
 
 ### Delivery
 
@@ -139,9 +141,28 @@ Only work that passed the gate on exactly the `main` commit it is pushed onto re
 
 The task is returned when a fourth feedback turn would be needed, when `main` changes a sixth time during delivery, and when a feedback turn would be needed after the image was rebuilt during the task: the agent's sandbox is then out of date.
 
-**Return of a task.** Remove `ready-for-agent`, add `needs-info`, release the claim and comment the concrete reason. When the task has a branch, push it to GitHub as `agent/<task branch>`, forced over an earlier return, and name it in the comment; when that push fails, the comment says the work stayed only in the runner's copy.
+**Return of a task.** Remove `ready-for-agent`, add `needs-info`, release the claim and comment the concrete reason. When the task has a branch, push it to GitHub as `agent/<task branch>`, forced over an earlier return, and name it in the comment; when that push fails, the comment says the work stayed only in the runner's copy. After a successful push the task records the kept work: `kept_branch` is the return branch and `kept_base` the commit of `main` the work sits on (the newest fetched `main` the branch contains), overwriting an earlier return's values. The comment starts with `Runner returned the task.` and, when there is anything to carry, ends with a fenced `json` block holding `state_note`, the [state note](#state-note) the agent wrote, and `last_review`, the last review report of the attempt or of the attempt it continued. The next attempt reads that block; the owner's agent can read it too.
 
 The runner never syncs Dolt.
+
+### State note
+
+What the implementing agent leaves when an attempt stops before it is done; the agents' `task-state-note` skill, mounted in the agent's sandbox, defines its shape. The runner keeps it as a JSON object in the result file's `state_note` field:
+
+- An agent that finishes `blocked` writes it with its question; the return carries it.
+- When the feedback turns are used up, the runner asks the agent once, in its running session, to write the note and change nothing else, then reads `state_note` from the result file. A failed turn, a missing note or one that is not a JSON object leaves the return without a note; the comment still gives the reason.
+
+### Continuation
+
+The next attempt of a task with recorded kept work is a continuation, whatever the cause of the return:
+
+1. When the task carries `start-fresh`, the runner removes the label and clears `kept_branch` and `kept_base` right after the claim; the attempt starts from `main`.
+2. Otherwise it fetches `kept_branch` from GitHub and creates the task branch at it. When GitHub no longer has the branch, the attempt starts from `main` and the task's log says why; the task is not returned for it. When GitHub cannot be reached, the runner releases the claim and logs it; the task stays ready, its kept work recorded, and is tried again in a later cycle.
+3. The agent receives, beside what every attempt receives: the state note of the returned attempt when its return comment has one, the owner's answer, and the last review report when there was one. The owner's answer is every comment of the task added after its latest return comment, and `git diff <kept_base> <fetched main>` limited to the task's linked documents. A malformed data block is logged and the attempt goes on without it.
+4. The first check after the agent's turn replays the branch on the fetched `main`, as every check does. A conflict is a feedback turn whose report names the conflicting files and the commits of `main` since `kept_base` that change them, as during delivery.
+5. The review covers the task's whole change against `main`, the kept commits included.
+
+No conversation is resumed across attempts: a continuation is a new agent with the kept code and the state note.
 
 ### Running the runner
 
