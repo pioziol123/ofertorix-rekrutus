@@ -267,8 +267,10 @@ export function openAiProvider(
           reasoningEffort: settings.reasoningEffort,
         }),
       ),
-    // ASSUMPTION(oferty-pracy-0mq.21/ASM-8): old batch inputs are framed
-    // by the batch mode that frames every batch line.
+    // ASSUMPTION(oferty-pracy-0mq.21/ASM-8): Matching's former batch path
+    // ran on OpenAI Batch; old batch inputs are framed by the batch mode
+    // that frames every batch line.
+    ranBeforeSettings: true,
     reconstructBatchInput,
     endOf: openAiEnd,
   }

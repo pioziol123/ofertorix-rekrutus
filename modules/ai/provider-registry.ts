@@ -12,11 +12,17 @@ const adapters = new Map<string, ProviderAdapter>(
 )
 
 /**
- * The provider of executions saved without provider settings: those
- * migration 18 moved from Matching's former batch path, whose only
- * provider was OpenAI Batch. ASSUMPTION(oferty-pracy-0mq.21/ASM-8)
+ * The adapter of an execution: the one of the provider its settings name,
+ * or, for an execution saved without provider settings (moved by migration
+ * 18 from before AI kept them), the adapter that declares it ran those
+ * executions. ASSUMPTION(oferty-pracy-0mq.21/ASM-8)
  */
-export const providerBeforeSettings = 'openai'
+export function adapterOfExecution(
+  provider: string | undefined,
+): ProviderAdapter | undefined {
+  if (provider !== undefined) return adapters.get(provider)
+  return [...adapters.values()].find((adapter) => adapter.ranBeforeSettings)
+}
 
 /**
  * Registers the adapter of a provider, replacing the one registered before,

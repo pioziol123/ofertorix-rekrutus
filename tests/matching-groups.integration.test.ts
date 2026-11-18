@@ -543,6 +543,38 @@ integration(
       expect(await count('ai_executions')).toBe(executions)
     })
 
+    it('handles the identical repeat of a command accepted before migration 18 as a new command: an offer whose assessment has ended gets new paid AI work (FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {
+      // As migration 18 leaves it: the old group key differs from the
+      // command id, and the moved execution is grouped under the old key.
+      const commandId = randomUUID(),
+        oldGroup = randomUUID(),
+        old = randomUUID()
+      await pool.query(
+        "INSERT INTO matching_groups(id,command_id,ad_ids,state,configuration) VALUES($1,$2,$3,'completed','{}')",
+        [oldGroup, commandId, [ad]],
+      )
+      await pool.query(
+        `INSERT INTO ai_executions(id,settings_key,operation_id,configuration,publication_token,state,mode,group_id)
+         VALUES($1,'matching',$1,'{}',$2,'completed','batch',$3)`,
+        [old, randomUUID(), oldGroup],
+      )
+      await pool.query(
+        `INSERT INTO ai_attempts(id,import_id,text_revision,attempt,generation,operation_type,state,reserved_pln,actual_pln,configuration,execution_id)
+         VALUES($1,NULL,0,1,$2,'matching','settled',0,0,'{}',$1)`,
+        [old, randomUUID()],
+      )
+      await pool.query(
+        `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state,group_id,execution_id)
+         VALUES($1,$2,$3,$4,'{}','{}','requested',$5,$1)`,
+        [old, ad, revision, profileVersion, oldGroup],
+      )
+      const again = await enqueue([ad], commandId)
+      expect(again).toMatchObject({ groupId: commandId, reused: false })
+      expect(again.items).toMatchObject([{ reused: false, state: 'queued' }])
+      expect(again.items[0]!.id).not.toBe(old)
+      expect(await count('ai_executions')).toBe(2)
+    })
+
     it('refuses a repeated command whose selection shares no offer with the group it requested, with nothing requested (0mq.21 ASM-7, FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {
       const other = await anotherAd(),
         commandId = randomUUID()
@@ -553,7 +585,7 @@ integration(
     })
 
     it.todo(
-      'recognises every repeated command from its recorded selection, including one that requested no AI work, and refuses any other selection, also one that differs only in offers outside the AI group (E03-AC04, target of FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))',
+      'recognises every repeated command from its recorded selection, including one that requested no AI work, and refuses any other selection, also one that differs only in offers outside the AI group, and recognises commands accepted before migration 18 (E03-AC04, target of FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))',
     )
 
     it('canonicalizes UUID casing for idempotent commands and duplicate selection checks', async () => {

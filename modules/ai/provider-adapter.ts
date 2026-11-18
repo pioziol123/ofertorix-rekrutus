@@ -225,6 +225,10 @@ export type BatchRunner = {
  *   sends for a request, so the input cap is checked on what the provider
  *   receives, as the batch mode's `admit` checks its exact batch line
  *   (ASSUMPTION(oferty-pracy-0mq.21/ASM-5)).
+ * - `ranBeforeSettings`: the provider ran the executions saved without
+ *   provider settings, those migration 18 moved from Matching's former
+ *   batch path (today OpenAI), so their archive is read through it
+ *   (ASSUMPTION(oferty-pracy-0mq.21/ASM-8)).
  * - `reconstructBatchInput`: the batch input file rebuilt from request
  *   bodies saved before the archive kept inputs, framed as the batch mode
  *   frames its lines (ASSUMPTION(oferty-pracy-0mq.21/ASM-8)).
@@ -246,5 +250,6 @@ export type ProviderAdapter = {
     settings: ProviderSettings,
     request: ModelRequest,
   ) => number
+  ranBeforeSettings?: boolean
   reconstructBatchInput?: (bodies: SavedBatchBody[]) => string
 }

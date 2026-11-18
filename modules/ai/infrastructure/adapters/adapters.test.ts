@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ModelError, type ModelRequest } from '../../provider-adapter.ts'
+import { adapterOfExecution } from '../../provider-registry.ts'
 import { OllamaAdapter, ollamaEnd } from './ollama.ts'
 import {
   ArchiveError,
@@ -517,5 +518,14 @@ describe('A14-AC12: each adapter decides the public end of what it observed', ()
     ],
   ] as const)('Ollama: %s', (_, observation, state, cause) => {
     expect(ollamaEnd(observation)).toEqual({ state, cause })
+  })
+})
+
+describe('the adapter of an execution saved without provider settings (0mq.21 ASM-8)', () => {
+  it('is the OpenAI adapter, which ran the former batch path of Matching, and frames its old inputs', () => {
+    const adapter = adapterOfExecution(undefined)
+    expect(adapter?.provider).toBe('openai')
+    expect(adapter?.reconstructBatchInput).toBeTypeOf('function')
+    expect(adapterOfExecution('ollama')?.ranBeforeSettings).toBeFalsy()
   })
 })

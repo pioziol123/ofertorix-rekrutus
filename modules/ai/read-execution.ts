@@ -12,7 +12,7 @@ import {
   type ExecutionRow,
   type ExecutionSnapshot,
 } from './infrastructure/persistence/executions.ts'
-import { providerAdapter, providerBeforeSettings } from './provider-registry.ts'
+import { adapterOfExecution } from './provider-registry.ts'
 import type { ExecutionMode } from './execution-settings.ts'
 import type { ModelUsage, SavedBatchBody } from './provider-adapter.ts'
 
@@ -158,10 +158,9 @@ export async function readExecutionArchive(
   let reconstructedInput: string | null = null
   if (savedBodies && !artifacts.some((a) => a.kind === 'input')) {
     const bodies = await savedBodies(archiveId)
-    const provider =
-      (row.snapshot as Partial<ExecutionSnapshot>).settings?.provider ??
-      providerBeforeSettings
-    const reconstruct = providerAdapter(provider)?.reconstructBatchInput
+    const reconstruct = adapterOfExecution(
+      (row.snapshot as Partial<ExecutionSnapshot>).settings?.provider,
+    )?.reconstructBatchInput
     if (bodies.length && reconstruct) reconstructedInput = reconstruct(bodies)
   }
   return { archiveId, artifacts, reconstructedInput }
