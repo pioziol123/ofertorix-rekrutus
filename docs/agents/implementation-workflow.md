@@ -57,12 +57,12 @@ A task leaves preparation with `ready-for-agent` only. Mark a task `ready-for-hu
 
 | Where | Key | Set by | Meaning |
 | --- | --- | --- | --- |
-| Epic | `load_bearing` | Preparation | Comma-separated requirement and criterion IDs the epic rests on, for example `R-03,T2-AC04`. A conflict touching one of them always blocks. Missing means none is marked. |
+| Epic | `load_bearing` | Preparation | Comma-separated requirement and criterion IDs the epic rests on, for example `R-03,T2-AC04`. A deviation may not touch one of them; an assumption that settles one is checked strictly by the reviewer and confirmed by the owner first. Missing means none is marked. |
 | Epic | `shared` | Preparation | Comma-separated IDs of the criteria every task of the epic repeats, for example `W-AC01,W-AC03`. The runner leaves them out when it counts the tasks that wait for a deviation. Missing means none. |
 | Epic | `follow_ups` | Runner | `true` while every other child is closed and open follow-ups remain. See [Epic with open follow-ups](#epic-with-open-follow-ups). |
 | Task | `type` | Runner | `follow-up` on a task created from a deviation. |
 | Task | `marker`, `origin` | Runner | On a follow-up: the code marker it owns and the task that created it. |
-| Task | `type`, `epic` | Runner | `assumptions` and the epic id on the triage task that collects assumptions to confirm. |
+| Task | `type`, `epic`, `marker` | Runner | On an issue filed for one assumption: `assumption`, the epic id, and the assumption's code marker. Open while unconfirmed. See [Follow-ups and assumptions in bd](#follow-ups-and-assumptions-in-bd). |
 | Task | `kept_branch`, `kept_base` | Runner | On a returned task: the return branch on GitHub holding the attempt's kept work, and the commit of `main` the attempt worked on. Set by a return that pushed the branch, cleared by `start-fresh` and by delivery. See [Continuation](#continuation). |
 
 ## Epic hand-off
@@ -131,7 +131,7 @@ The runner runs as many tasks at the same time as its slots allow, one by defaul
    The review file holds `findings` as a list of `{ "kind": "fix" | "owner", "text": "...", "question": {...} }`, with `question` on owner findings. A finding written as a plain string, or without the `owner` kind, counts as a fix finding.
 5. When the review has at least one owner finding, whatever its verdict, the attempt ends without a feedback turn: the runner asks the agent for a [state note](#state-note), which carries the owner findings and the fix findings, and returns the task with every finding in its comment. Otherwise, when step 3 or 4 fails, send the report back into the implementing agent's session in the same warm sandbox (Sandcastle resume), so it keeps its context, and repeat from step 3. A rebase conflict is such a failure too: the report names the conflicting files and the commits of `main` that changed them, and the agent rebases and resolves it itself. Three feedback turns per attempt at most, counted from zero in every attempt and shared by every kind of failure, including those from delivery but not [environment failures](#environment-retries), which have their own count; a `blocked` result returns the task at once. When a fourth turn would be needed, the runner first resumes the session once more and asks the agent for a [state note](#state-note); that request is not a feedback turn.
 6. Deliver, before the warm sandbox closes, as described in [Delivery](#delivery).
-7. After delivery: comment the evidence, the assumptions and the deviations, file a follow-up for each deviation and wire it to block the tasks that depend on it, add the assumptions to the epic's assumptions task, file new scope as `discovered-from` tasks with `needs-triage`, close the task with the delivered commit, remove the branch an earlier return left on GitHub and the task's `kept_branch` and `kept_base`, and notify the owner that the work is on GitHub.
+7. After delivery: comment the evidence, the assumptions and the deviations, file a follow-up for each deviation and wire it to block the tasks that depend on it, file each assumption as its own issue, file new scope as `discovered-from` tasks with `needs-triage`, close the task with the delivered commit, remove the branch an earlier return left on GitHub and the task's `kept_branch` and `kept_base`, and notify the owner that the work is on GitHub.
 
 ### Delivery
 
@@ -214,12 +214,16 @@ Inside the sandbox, run project commands directly from the worktree root:
 The agent classifies anything it learns that the documents do not cover:
 
 - **Code defect** in the task: fix it within the task.
-- **Spec conflict**, a gap or contradiction in the documents: classify it as described in [Spec conflicts during implementation](#spec-conflicts-during-implementation). The outcome is an assumption, a deviation with a follow-up, or `blocked`.
+- **Spec conflict**, a gap or contradiction in the documents: classify it as described in [Spec conflicts during implementation](#spec-conflicts-during-implementation). The outcome is an assumption, otherwise a deviation with a follow-up, otherwise `blocked`.
 - **New scope** outside the task: note it in the result under `new_scope`; the runner files it as a bd task linked `discovered-from` the current one, with `needs-triage`.
 
 ## Spec conflicts during implementation
 
-A spec conflict blocks only the work that depends on its answer. The agent records a local conflict and carries on; the owner settles it asynchronously in a follow-up. A conflict whose answer the rest of the epic depends on still stops the task.
+A spec conflict blocks only the work that depends on its answer. The agent stops only for what cannot be undone by changing code; every other open question it settles itself, from the documents and the code, as an assumption the owner confirms later or as a deviation with a follow-up the owner decides. Later tasks of the epic know the open assumptions and build on them knowingly.
+
+### Where an answer comes from
+
+The agent looks for the answer to an open question in the task's documents, the architecture rules, the glossary, the ADRs, the confirmed assumptions (recorded in the solution design) and the code. The code is evidence of existing patterns and behaviour; the documents are evidence of what new behaviour is meant to be, so code alone never decides what a new behaviour should do. An assumption cites the sources it rests on.
 
 ### Precedence
 
@@ -233,20 +237,41 @@ Read "at most N" and "up to X s" as upper bounds that must hold together, not as
 
 ### Classification
 
-The agent walks these questions in order and stops at the first that decides. No step may take an option the solution design records as discarded, because the owner has already rejected it: no interpretation in step 1 and no interim code in step 5.
+The agent classifies every conflict in this order and takes the first outcome that holds:
 
-0. **Would only a discarded option resolve the conflict?** Then `blocked`; the question names the option and quotes the reason recorded for discarding it, or says that none was recorded.
-1. **Is every acceptance criterion met under one interpretation, chosen by precedence?** Then it is an **assumption**: decide, record and carry on.
-2. **Does the conflict touch a requirement in the epic's `load_bearing` list?** Then `blocked`.
-3. **Would the interim code be one-way:** a schema change or migration, a change to the meaning of stored data, a public module contract, an external integration, security? Then `blocked`.
-4. **Is there no variant in which the epic stays consistent?** Then `blocked`.
-5. **Does the deviation qualify** (below) and fit the limits? Then it is a **deviation**: implement the interim behaviour, mark it and describe the follow-up. Otherwise `blocked`.
+1. An **assumption**, when it meets every condition in [What makes an assumption](#what-makes-an-assumption).
+2. Otherwise a **deviation**, when it qualifies and fits the limits in [What qualifies as a deviation](#what-qualifies-as-a-deviation).
+3. Otherwise a **stop**: the task finishes `blocked`.
 
-An **assumption** needs all four: every criterion is met, the choice follows precedence, reversing it later is a local change, and a test covers the case the assumption rests on. An assumption may settle a `load_bearing` requirement when every criterion is met; the reviewer then checks it strictly and the owner confirms it first. Example: one requirement sorts a list by date, another puts pinned items first. Pinned items first, each group by date, meets both.
+Only these stop a task:
 
-A **deviation** leaves a criterion or requirement unmet on purpose. Example: a shared rule says every export includes archived records, while a criterion of the task forbids changing what today's export contains for one client. Precedence keeps today's export; the shared rule for that client is deferred to a follow-up.
+- a change of the database schema, or of the meaning of stored data;
+- security;
+- an external integration;
+- an option the solution design records as discarded, because the owner has already rejected it: no assumption and no interim code may take it. The question names the option and quotes the reason recorded for discarding it, or says that none was recorded;
+- a conflict that neither an assumption nor a qualifying deviation settles.
+
+The first four stop the task even where an assumption or a deviation would otherwise settle the conflict: neither may carry such a change.
+
+A stop explains, in its question, why neither an assumption nor a deviation was enough. A stop the classification did not need is a fix finding of the review: the agent records the assumption or the deviation and carries on.
+
+### What makes an assumption
+
+An assumption is a decision the agent takes where the documents leave a question open. It needs all of these:
+
+- **Every acceptance criterion is met.** When the way a requirement or a design decision prescribes cannot be followed, the agent may meet the same requirement another way that is consistent with the epic's goal and the other requirements and meets every criterion. When the requirement itself would stay unmet, the conflict is a deviation, not an assumption.
+- **The choice follows precedence**, or, for a design cost the solution design does not record, names the architecture rule instead.
+- **It rests on sources** from [Where an answer comes from](#where-an-answer-comes-from) and cites them.
+- **It fits the PRD**: the epic's goal and scope, and it names the part of the PRD it serves.
+- **Reversing it later is a local change**: the places that rely on it carry its marker, so a change task can find every one.
+- **A test covers the case it rests on**, so the reading is pinned before anyone confirms it.
+- **A new public module contract** is an assumption only when it follows an existing similar contract or contract pattern, which the assumption names.
+
+An assumption may settle a `load_bearing` requirement when every criterion is met; the reviewer then checks it strictly and the owner confirms it first. Example: one requirement sorts a list by date, another puts pinned items first. Pinned items first, each group by date, meets both.
 
 ### What qualifies as a deviation
+
+A **deviation** leaves a criterion or requirement unmet on purpose. Example: a shared rule says every export includes archived records, while a criterion of the task forbids changing what today's export contains for one client. Precedence keeps today's export; the shared rule for that client is deferred to a follow-up.
 
 The kind is one of:
 
@@ -256,36 +281,46 @@ The kind is one of:
 
 And every constraint holds:
 
-- it is local to one module and touches one requirement;
-- the interim code is isolated, so the follow-up replaces it without reworking anything else;
-- it changes at most three files, not counting one-line edits such as a constant or a rename;
+- it is local to one module and names one or two requirements, none of them in the epic's `load_bearing` list;
+- the interim code is isolated, so the follow-up replaces it without reworking anything else. The number of files it changes is not limited; every place of interim code carries the deviation's marker;
 - it defers at most part of the task's criteria: at least one criterion is met, and the deferred ones are not the task's main outcome;
-- at most two other open tasks of the epic mention the conflicting IDs, and those become blocked by the follow-up.
+- at most four other open tasks of the epic mention the deviation's IDs, and those become blocked by the follow-up.
 
-Limits: at most 2 deviations per task and at most 3 open follow-ups per epic; a task outside any epic has only the first. Past either limit the task finishes `blocked`.
+Limits: at most 3 deviations per task and at most 6 open follow-ups per epic; a task outside any epic has only the first. Past either limit the conflict is a stop.
 
 ### What the agent leaves behind
 
-- **The interim code** carries the marker `FOLLOW-UP(<task id>/DEV-<n>)` in a comment at each place the follow-up will change. A test of interim behaviour has the same marker in its name, and an `it.todo` names the target behaviour, so whoever takes the follow-up knows which tests to flip.
+- **The interim code** of a deviation carries the marker `FOLLOW-UP(<task id>/DEV-<n>)` in a comment at each place the follow-up will change. A test of interim behaviour has the same marker in its name, and an `it.todo` names the target behaviour, so whoever takes the follow-up knows which tests to flip.
 - **The follow-up description**, written with the `write-documents` skill, for a developer who arrives without any context: the business context of the requirements, the conflict quoted with links to the requirement IDs, current behaviour with `file:line` at the commit, the interim decision and why it is safe, why a follow-up rather than a block (each qualification criterion), target options with their trade-offs, the decision the owner has to make, the marker, and how to verify the target. In the language of the specifications.
-- **Each assumption** in the result with the requirements, the gap, the decision, the precedence rule applied and what changes if the owner decides otherwise, and a test of the case it rests on, so the reading is pinned before anyone confirms it.
+- **The assumption marker** `ASSUMPTION(<task id>/<assumption id>)` in a comment at each place of the code that relies on the assumption, added by the task's own change.
+- **Each assumption** in the result with the requirements, the gap, the decision, its `sources`, the part of the PRD it serves (`prd`), the rule applied (precedence, or the architecture rule for a design cost) and what changes if the owner decides otherwise, and a test of the case it rests on.
 
-Later tasks of the epic receive the open follow-ups in their prompt. They build no new behaviour on interim code. When they must touch it, they leave the marker in place and add the place to the follow-up through `new_scope`.
+### Later tasks of the epic
+
+Every attempt of a task in an epic receives in its prompt the epic's open follow-ups and its unconfirmed assumptions. For each assumption it receives the id of its issue, the decision, what changes if the owner reverses it, and its marker.
+
+- **Follow-ups.** A later task builds no new behaviour on interim code. When it must touch it, it leaves the marker in place and adds the place to the follow-up through `new_scope`.
+- **Assumptions.** A later task that only uses an assumption's code follows the assumption. A task that would build new behaviour on it uses it only through the places carrying its marker, does not copy the assumed reading to new places, and marks every new place that depends on it with the same marker. A rejected assumption then changes in every marked place, those of later tasks included.
 
 ### What the runner checks
 
-Deterministically, before the review: the result's shape; the limits; one or two requirement IDs per deviation; deferred criteria that are criteria of the task, not all of them, and none in `load_bearing`; every criterion either in the evidence or deferred; the marker added by the task's own diff; and at most two other open, non-follow-up tasks of the epic mentioning the deviation's IDs in their fields, not counting the epic's `shared` criteria, which every task names. An ID written inside a range such as `F2-01–F2-05` counts as mentioned; ranges in `load_bearing` count the same way. A failed check goes back to the agent as feedback.
+Deterministically, before the review: the result's shape, each assumption with its `sources` and `prd` included; the limits; one or two requirement IDs per deviation; deferred criteria that are criteria of the task, not all of them, and none in `load_bearing`; every criterion either in the evidence or deferred; each deviation's and each assumption's marker added by the task's own diff; and at most four other open, non-follow-up tasks of the epic mentioning the deviation's IDs in their fields, not counting the epic's `shared` criteria, which every task names. An ID written inside a range such as `F2-01–F2-05` counts as mentioned; ranges in `load_bearing` count the same way. A failed check goes back to the agent as feedback.
 
-The reviewer then judges what a script cannot: whether each deviation qualifies, whether the interim choice follows precedence, whether the follow-up description stands on its own, whether every assumption really meets every criterion and has a test of its case, whether an assumption on a `load_bearing` requirement fixes its meaning for the rest of the epic, and whether the change builds on another follow-up's interim code.
+The reviewer then judges what a script cannot: whether each deviation qualifies, whether the interim choice follows precedence, whether the follow-up description stands on its own, whether every assumption really meets every criterion and has a test of its case, whether its sources say what it claims, whether it fits the PRD's goal and scope, whether a new public module contract follows the pattern the assumption names, whether its marker is at every place that relies on it, whether an assumption on a `load_bearing` requirement fixes its meaning for the rest of the epic, whether the change follows the epic's unconfirmed assumptions or isolates what it builds on them, and whether the change builds on another follow-up's interim code.
 
 ### Follow-ups and assumptions in bd
 
 After the merge the runner creates each follow-up as a child of the epic (standalone for a task outside any epic), with `needs-info`, `metadata.type=follow-up`, `metadata.marker`, `metadata.origin` and `discovered-from` the task. Tasks of the epic that mention the deviation's IDs get the follow-up as a blocker. The follow-up goes through preparation like any task: the owner decides, documents are updated, and `ready-for-agent` hands it off. Its acceptance criteria include removing its markers.
 
-Assumptions are collected in one triage task per epic, `metadata.type=assumptions` with `needs-triage`, outside the epic so it holds nothing back. The owner confirms each assumption in the solution design, or turns it into a change. Assumptions on `load_bearing` requirements are flagged there; confirm them first, since later tasks build on that reading.
+The runner files each assumption of a delivered task as its own issue, outside the epic so it holds nothing back: `needs-triage`, `metadata.type=assumption`, `metadata.epic` (the task's own id for a task outside any epic), `metadata.marker` and `discovered-from` the task. Its description holds the gap, the decision, the sources, the part of the PRD, the rule and what changes if it is reversed. An assumption on a `load_bearing` requirement also carries the label `load-bearing` and a flag in its description; confirm those first, since later tasks build on that reading. An assumption issue that could not be filed is logged and listed as not filed in the task's comment. An open assumption issue is unconfirmed; the owner's agent closes it once the owner decides:
+
+- **Confirmed**: the owner's agent records the decision in the solution design, then closes the issue.
+- **Rejected**: the owner's agent files a change task before closing the issue. It searches `main` for the assumption's marker and lists every place carrying it, those added by later tasks of the epic included; the change task covers each of them, and its acceptance criteria include the target behaviour at every listed place and the removal of the marker. The change task goes through preparation like any task.
+
+Epics prepared before this rule may still have one triage task of type `assumptions` collecting assumptions as comments; the runner no longer adds to it, and its assumptions do not reach the prompts of later tasks.
 
 A change to a requirement that would alter the epic's outcome is not a follow-up. Finish the epic in its consistent variant and prepare the change as a new epic.
 
 ## After merge
 
-The owner pulls `main` from GitHub and tests it. Open follow-ups of the epic list the known deviations in `main`; they are not bugs. A defect found there becomes a new bug linked `discovered-from` the original task and goes through preparation. Check the epic's open follow-ups and its assumptions task, the flagged assumptions first.
+The owner pulls `main` from GitHub and tests it. Open follow-ups of the epic list the known deviations in `main`; they are not bugs. A defect found there becomes a new bug linked `discovered-from` the original task and goes through preparation. Check the epic's open follow-ups and its open assumption issues, the `load-bearing` ones first.
