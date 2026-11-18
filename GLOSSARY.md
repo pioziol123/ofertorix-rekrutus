@@ -132,3 +132,82 @@ The organisation with which the candidate is to sign the contract.
 
 **Client** (klient):
 The organisation for which the work is done, if it is separate from the employing company; its identity may be unknown.
+
+## AI module
+
+Terms used when other modules hand work to AI models or agents and when the owner oversees that work and its cost.
+
+### Assignments and operations
+
+**Requesting module** (moduł zlecający):
+A module that hands work to the AI module by placing assignments, and that decides alone how to use their results in its own process.
+_Avoid_: client (the glossary uses Client for an employer's customer), caller
+
+**Assignment** (zlecenie AI):
+One piece of work a requesting module hands to the AI module, with its type, its frozen input and settings and a label for the owner; the AI module carries it out through one or more operations and reports one final result.
+_Avoid_: task, job, request, execution
+
+**Assignment type** (typ zlecenia):
+The kind of work an assignment asks for: a single answer, a batch of independent items or an agent session; the requesting module chooses it, and the way an executor carries it out stays hidden.
+
+**Batch item** (pozycja partii):
+One independent element of a batch assignment, such as one offer to assess, with its own result that is either correct or failed.
+
+**Assignment label** (etykieta zlecenia):
+A short description the requesting module gives the owner so the assignment can be recognised, e.g. which offer it assesses; the AI module shows it but never interprets it.
+
+**Operation** (operacja):
+One call to an executor made on behalf of an assignment; a retry is a new operation of the same assignment.
+_Avoid_: attempt, execution, próba; do not use "operation" for the requesting module's own matter
+
+**Executor** (wykonawca):
+The external service or local runtime that performs an operation, such as OpenAI, Ollama or OpenCode.
+_Avoid_: provider (when the runtime is meant), backend
+
+### Assignment status
+
+**Assignment status** (status zlecenia):
+The state of an assignment as other modules see it: in progress, needs attention, succeeded, partially succeeded or failed.
+
+**Needs attention** (wymaga uwagi):
+A non-final status in which the AI module has stopped retrying an assignment and waits for the owner to retry, reject or approve it.
+_Avoid_: failed (it is not final), stuck
+
+**Partially succeeded** (zakończone częściowo):
+The final status of a batch assignment that has at least one correct item and at least one failed item; the requesting module treats it as a success.
+
+**Non-retryable failure** (błąd bez ponawiania):
+An operation failure that, according to the executor's judgement, another operation would not fix, so the assignment needs the owner's attention instead of an automatic retry.
+
+**Operation state** (stan operacji):
+What happened to one call to an executor: pending, running, succeeded, failed or uncertain; it is separate from the assignment status and from the owner's intent.
+
+**Uncertain operation** (operacja niepewna):
+An operation whose outcome and cost cannot be established, e.g. the connection broke after the call was sent; it is never counted as free or as failed without cost.
+
+### Owner's actions
+
+**Retry** (Ponów):
+The owner's decision to run one more operation of an assignment that needs attention, covering only what still has no correct result.
+_Avoid_: rerun, new assignment
+
+**Reject** (Odrzuć):
+The owner's decision to end an assignment as failed, discarding any correct batch items.
+
+**Approve** (Zatwierdź):
+The owner's decision to end a batch assignment with at least one correct item as partially succeeded.
+
+**Abandonment** (porzucenie):
+The requesting module withdrawing its assignment; the assignment ends as failed and nothing is reported back to that module.
+
+### Cost
+
+**Potential cost** (koszt potencjalny):
+The highest cost an operation may incur, held against the budget while the operation runs.
+_Avoid_: estimate
+
+**Actual cost** (koszt faktyczny):
+The cost an operation really incurred, based on the executor's usage; when it cannot be established it stays unknown, never zero.
+
+**Budget charge** (koszt obciążający budżet):
+What an assignment takes from the budget: for each operation its actual cost when known, otherwise its potential cost.
