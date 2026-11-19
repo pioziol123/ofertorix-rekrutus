@@ -3,10 +3,7 @@
  * time (HH:mm) has passed, otherwise the day before. Throws when the time is
  * not HH:mm.
  */
-export function scheduleDay(
-  now: Date,
-  time: string,
-): string {
+export function scheduleDay(now: Date, time: string): string {
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))
     throw new Error('SOURCE_SYNC_TIME must be HH:mm')
   const parts = new Intl.DateTimeFormat('en-CA', {

@@ -115,7 +115,7 @@ Besides the operations above, `index.ts` exports what the CLI scripts, the route
 
 | Place                         | Contents                                                                                                              |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| operation files               | Requesting, executing, recovering and reading runs, saving batches, reading ads; the configured sync time.                                |
+| operation files               | Requesting, executing, recovering and reading runs, saving batches, reading ads; the configured sync time.            |
 | `domain/`                     | The ad projection, the source catalogues, the remote-work qualification, the run status and the schedule day.         |
 | `infrastructure/adapters/`    | The connector contract and registry, and one directory per connector with its portal client or helper process runner. |
 | `infrastructure/persistence/` | Source ads and sync runs.                                                                                             |
