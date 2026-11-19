@@ -498,7 +498,7 @@ Covers A17-R02, and A17-R03 and A17-R04 for Companies. Depends on task 0mq.21, w
 
 | Criterion | Acceptance condition | Check |
 | --- | --- | --- |
-| AC-AC01 | Company research with a simulated provider ends with the report published or rejected and the cost of each step settled; reusing a report and an explicit refresh work. | Company and research tests |
+| AC-AC01 | Company research with a simulated provider ends with the report published or rejected and the cost of both steps (search and synthesis) settled as one sum; reusing a report and an explicit refresh work. | Company and research tests |
 | AC-AC02 | Criteria E04-AC01–04 are met. | Tests named in the stage 4 SD |
 | AC-AC03 | After the migration, the research history shows each research made before the migration with its state and cost read from AI executions. | Migration test on a database with pre-migration data |
 | AC-AC04 | Companies code reads no AI tables and imports no AI internals; the old research queue is gone and the AI public entry point has no transitional exports. | Code search |

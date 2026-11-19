@@ -603,7 +603,7 @@ Requirements: [A14](requirements.md#a14). F4 scope: [F4](requirements.md#f4). St
 5. **Adapter contract.** An adapter declares the execution modes it supports. A request in a mode that no adapter for the chosen provider supports is refused at request time with the cause `unsupported_mode`: no budget is reserved and no job is queued (decision 13).
    - **Single:** request, result and usage, with errors classified like the existing model errors.
    - **Batch:** creating a batch with item identifiers, polling the state, fetching results per item, and cleanup. It includes telling a missing result file apart from a correct result, and an uncertain state after sending.
-   - **Agent:** starting work with allowed tools, the result, the materials and the usage of each step.
+   - **Agent:** starting work with allowed tools, the result, the materials and the usage of the whole work, with a mark when a sent step's usage is unknown. The usage of each step stays in the adapter's own state (0mq.17 decision 6).
 
    Coordination computes the cost from the usage and the price list snapshot. The existing OpenAI (single call) and Ollama adapters go into the module as single-mode adapters. The OpenAI batch adapter and the research adapter are created from the Matching and Companies code in task 0mq.17.
 6. **Configuration and budget.** The cost arithmetic and the monthly budget move into the module without changing behaviour (E01-AC02–AC04). Configuration changes as decision 10 describes, which replaces E01-AC01. Reservation and settlement work in the current transaction.
@@ -748,7 +748,7 @@ Delivered as tasks 0mq.21 ([requirements](requirements.md#a17m)) and 0mq.22 ([re
   - The batch diagnostic archive is saved by the adapter. The existing archive table passes to AI ownership without a schema change, and the archive view reads it through a public AI read.
   - A single or manual assessment keeps a diagnostic archive too (decision 5): the single adapter saves the exact request body and the raw provider response as input and output artefacts under the execution's archive identifier, in the same archive table. The client asks for the archive per request; only Matching's assessments ask for it, so Profile executions are not archived.
 - **Company research:**
-  - The existing research provider (web search and synthesis in OpenAI) moves to AI as an agent-mode adapter. It reports the usage and cost of each step separately, so a synthesis error does not reset the search cost to zero.
+  - The existing research provider (web search and synthesis in OpenAI) moves to AI as an agent-mode adapter. It keeps each step's usage in its step log, and coordination settles the research as one sum, as research was settled before 0mq.22 (decision 6). If a step was sent but its usage never came back, the cost of the research stays unknown and its whole reservation stays blocked in the budget. The usage of the steps that did come back, such as the web search, is still recorded.
   - Companies prepare the research goal and are the result receiver: they validate the sources, quotes and coverage, and publish or reject the report. Reusing an existing report and an explicit refresh stay in Companies.
   - The existing research queue moves to AI.
 - **Recovery:** a restart with an unknown outcome of paid work does not start a new search or batch; the execution goes into the uncertain state as today.
@@ -772,6 +772,12 @@ Delivered as tasks 0mq.21 ([requirements](requirements.md#a17m)) and 0mq.22 ([re
 5. **Single assessments keep their diagnostic archive.** Before the change every assessment was archived as a batch, and the owner opens its exact input and provider output from the history link. A single-mode execution of Matching keeps that archive (requirements F4: working safeguards are not removed). Archiving is requested per request, so clients that do not ask, such as the Profile, are not archived.
 
    Options discarded: no archive for single assessments with the history link hidden (owner, 2026-11-18: it removes a safeguard the owner uses).
+
+6. **Company research is settled as one sum (owner, 2026-11-19).** Research settles as it did before 0mq.22: the attempt records the summed usage of the search and the synthesis (input and output tokens, paid search calls) and one cost. The usage of each step stays in the agent adapter's step log (decision 4), which coordination does not read; no cost per step is computed or stored. The reservation covers the whole research at the caps of the agent price list, and an unknown step usage keeps all of it reserved. The agent work of AI also fixes two choices for every agent client:
+   - **The agent price list repeats the standard rates.** The agent-mode price list of a model holds the same token rates, caps and price-list version as its single-mode list, plus the price of a paid tool call and the most calls a reservation covers. A change of the standard rates has to be made in both lists. The owner accepts this duplication against the architecture rule of one owner for a shared fact; both lists stay in the AI configuration (A14-R06).
+   - **The result step names its input `target` and `evidence`.** The writing step gets the JSON object `{"target": <the request input>, "evidence": <the materials>}`, so the synthesis request to OpenAI stays the same as before the change. The owner accepts these names in the public agent contract despite A14-AC01; later agent clients get the same names.
+
+   Options discarded: building the agent price list from the single one and recording the usage and known cost of each step with the attempt, settlement staying one sum (agent's recommendation after the returned attempt of 0mq.22); the same with the client naming the two input keys of the result step. No reason given by the owner.
 
 <a id="a17-migration"></a>
 
