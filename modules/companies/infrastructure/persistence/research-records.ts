@@ -2,7 +2,7 @@ import { db } from '../../../../lib/db.ts'
 import type {
   ResearchReport,
   ResearchTarget,
-} from '../../../../lib/companies/research-model.ts'
+} from '../../domain/research-report.ts'
 
 /**
  * Companies' records of research: the company it is about, the target

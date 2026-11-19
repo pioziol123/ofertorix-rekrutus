@@ -1,7 +1,7 @@
 import { ResearchConfigurationError } from '../../modules/companies/index'
 import { createError } from 'h3'
 import type { H3Event } from 'h3'
-import { CompanyConflict, CompanyNotFound } from '../../lib/companies/store'
+import { CompanyConflict, CompanyNotFound } from '../../modules/companies/index'
 import { apiHandler } from './http'
 export function companyHandler<T>(run: (event: H3Event) => Promise<T>) {
   return apiHandler(async (event) => {

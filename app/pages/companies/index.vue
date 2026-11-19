@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { companyKindLabels } from '../../../lib/companies/model'
+import { companyKindLabels } from '../../../modules/companies/view'
 useHead({ title: 'Firmy — Oferty pracy' })
 const route = useRoute()
 const q = ref(typeof route.query.q === 'string' ? route.query.q : ''),

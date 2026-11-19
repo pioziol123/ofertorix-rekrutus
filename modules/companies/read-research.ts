@@ -1,9 +1,9 @@
 import { z } from 'zod'
-import { CompanyNotFound } from '../../lib/companies/store.ts'
+import { CompanyNotFound } from './errors.ts'
 import type {
   ResearchReport,
   ResearchTarget,
-} from '../../lib/companies/research-model.ts'
+} from './domain/research-report.ts'
 import {
   interruptedMessage,
   researchCostState,

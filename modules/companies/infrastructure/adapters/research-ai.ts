@@ -14,7 +14,7 @@ import {
 import {
   researchDraft,
   type ResearchTarget,
-} from '../../../../lib/companies/research-model.ts'
+} from '../../domain/research-report.ts'
 import {
   recordResearchEnd,
   recordResearchResult,

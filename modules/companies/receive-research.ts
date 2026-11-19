@@ -3,10 +3,8 @@ import type {
   ExecutionCause,
   ReceiverDecision,
 } from '../ai/index.ts'
-import {
-  NoResearchFindings,
-  validateResearch,
-} from '../../lib/companies/research-model.ts'
+import { NoResearchFindings } from './domain/research-report.ts'
+import { validateResearch } from './domain/validate-research.ts'
 import {
   endMessage,
   rejectionMessage,

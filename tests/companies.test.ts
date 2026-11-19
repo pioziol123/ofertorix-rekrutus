@@ -4,8 +4,8 @@ import {
   companyLinkCommand,
   companyRoles,
   createCompanyCommand,
-} from '../lib/companies/model.ts'
-import { companyFilters } from '../lib/companies/store.ts'
+} from '../modules/companies/domain/company.ts'
+import { companyFilters } from '../modules/companies/read-companies.ts'
 
 const profile = () => ({
   commandId: randomUUID(),

@@ -4,7 +4,7 @@ import {
   companyRoleLabels,
   companyKindLabels,
   type CompanyRole,
-} from '../../lib/companies/model'
+} from '../../modules/companies/view'
 const props = defineProps<{ offerId: string; companyName: string }>()
 const {
   data,

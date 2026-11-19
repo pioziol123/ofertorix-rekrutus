@@ -3,7 +3,7 @@ import type { AiConfiguration } from '../modules/ai/model-catalog.ts'
 import {
   researchTopics,
   type ResearchDraft,
-} from '../lib/companies/research-model.ts'
+} from '../modules/companies/domain/research-report.ts'
 export const pricing: AiConfiguration = {
   model: 'gpt-4.1-mini',
   version: 'test',

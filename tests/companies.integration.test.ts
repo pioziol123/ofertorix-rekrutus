@@ -12,7 +12,7 @@ import {
   vi,
 } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
-import { companyRoles } from '../lib/companies/model.ts'
+import { companyRoles } from '../modules/companies/domain/company.ts'
 import {
   changeCompanyLink,
   CompanyConflict,
@@ -21,7 +21,7 @@ import {
   listCompanies,
   offerCompanies,
   readCompany,
-} from '../lib/companies/store.ts'
+} from '../modules/companies/index.ts'
 import { readOffer } from '../modules/offers/index.ts'
 
 // A change of the ad injected right after linking reads its current version,
@@ -136,7 +136,7 @@ integration('company profiles in isolated PostgreSQL', () => {
     }
   })
   it('keeps same names and domains separate and suggestions never create or merge profiles', async () => {
-    expect(await offerCompanies(pool, adId)).toEqual({
+    expect(await offerCompanies(adId)).toEqual({
       name: 'Same name',
       links: [],
       suggestions: [],
@@ -145,14 +145,14 @@ integration('company profiles in isolated PostgreSQL', () => {
       b = await create('Same name', 'brand'),
       c = await create('Same name Ltd', 'unknown')
     expect(new Set([a.id, b.id, c.id]).size).toBe(3)
-    const suggestions = await offerCompanies(pool, adId)
+    const suggestions = await offerCompanies(adId)
     expect(suggestions!.suggestions.map((s) => s.id).sort()).toEqual(
       [a.id, b.id].sort(),
     )
     expect(suggestions!.links).toEqual([])
-    await readCompany(pool, a.id)
-    await listCompanies(pool)
-    await offerCompanies(pool, adId)
+    await readCompany(a.id)
+    await listCompanies()
+    await offerCompanies(adId)
     expect(
       (await pool.query('SELECT count(*)::int AS count FROM companies')).rows[0]
         .count,
@@ -181,7 +181,7 @@ integration('company profiles in isolated PostgreSQL', () => {
     await expect(
       createCompany({ ...command, name: 'Different' }),
     ).rejects.toBeInstanceOf(CompanyConflict)
-    expect((await listCompanies(pool)).total).toBe(1)
+    expect((await listCompanies()).total).toBe(1)
     expect(
       (await pool.query('SELECT count(*)::int AS count FROM company_commands'))
         .rows[0].count,
@@ -191,7 +191,7 @@ integration('company profiles in isolated PostgreSQL', () => {
     const company = await create()
     for (const role of companyRoles)
       await changeCompanyLink(company.id, link(role))
-    const detail = await readCompany(pool, company.id)
+    const detail = await readCompany(company.id)
     expect(detail!.offers).toHaveLength(1)
     expect(detail!.offers[0]!.roles.sort()).toEqual([...companyRoles].sort())
     expect(detail!.technologies.map((t) => [t.name, t.optional])).toEqual([
@@ -209,9 +209,9 @@ integration('company profiles in isolated PostgreSQL', () => {
     expect(JSON.stringify(detail)).not.toMatch(
       /secretScript|Do not expose raw data|sourceRecord/,
     )
-    expect(
-      (await listCompanies(pool, { sort: 'offers' })).items[0]!.offerCount,
-    ).toBe(1)
+    expect((await listCompanies({ sort: 'offers' })).items[0]!.offerCount).toBe(
+      1,
+    )
   })
   it('has one winner for concurrent assignments and stale operations cannot unlink another company', async () => {
     const a = await create('A'),
@@ -225,7 +225,7 @@ integration('company profiles in isolated PostgreSQL', () => {
       (r) => r.status === 'rejected',
     ) as PromiseRejectedResult
     expect(rejection.reason).toBeInstanceOf(CompanyConflict)
-    const current = (await offerCompanies(pool, adId))!.links[0]!.id
+    const current = (await offerCompanies(adId))!.links[0]!.id
     const other = current === a.id ? b.id : a.id
     await expect(
       changeCompanyLink(other, link('employer', current, 'unlink')),
@@ -233,7 +233,7 @@ integration('company profiles in isolated PostgreSQL', () => {
     await expect(
       changeCompanyLink(current, link('employer', null, 'unlink')),
     ).rejects.toBeInstanceOf(CompanyConflict)
-    expect((await offerCompanies(pool, adId))!.links[0]!.id).toBe(current)
+    expect((await offerCompanies(adId))!.links[0]!.id).toBe(current)
     expect(
       (
         await pool.query(
@@ -268,7 +268,7 @@ integration('company profiles in isolated PostgreSQL', () => {
       ...link('client'),
       adId: secondAd,
     })
-    const detail = await readCompany(pool, company.id)
+    const detail = await readCompany(company.id)
     expect(detail!.offers.find((o) => o.id === adId)).toMatchObject({
       roles: ['publisher'],
       skills: [{ name: 'PHP' }, { name: 'Vue' }, { name: 'Mystery' }],
@@ -317,7 +317,7 @@ integration('company profiles in isolated PostgreSQL', () => {
       'UPDATE source_ads SET current_revision_id=$2 WHERE id=$1',
       [adId, next],
     )
-    const changed = await readCompany(pool, company.id)
+    const changed = await readCompany(company.id)
     expect(changed!.offers[0]!.title).toBe('New role')
     expect(changed!.technologies[0]!.name).toBe('Go')
     expect(changed!.history[0]).toMatchObject({
@@ -334,7 +334,7 @@ integration('company profiles in isolated PostgreSQL', () => {
         evidence: 'Changed unlink evidence',
       }),
     ).rejects.toBeInstanceOf(CompanyConflict)
-    const detail = await readCompany(pool, company.id)
+    const detail = await readCompany(company.id)
     expect(detail!.offers).toEqual([])
     expect(detail!.technologies).toEqual([])
     expect(detail!.history).toHaveLength(2)
@@ -381,7 +381,7 @@ integration('company profiles in isolated PostgreSQL', () => {
         )
       ).rows,
     ).toEqual([{ revision_id: revisionId }])
-    const detail = await readCompany(pool, company.id)
+    const detail = await readCompany(company.id)
     expect(detail!.history).toEqual([
       expect.objectContaining({ revisionId, title: 'PHP role' }),
     ])
@@ -399,8 +399,8 @@ integration('company profiles in isolated PostgreSQL', () => {
     await expect(
       changeCompanyLink(company.id, { ...link(), role: 'invented' }),
     ).rejects.toThrow()
-    expect(await readCompany(pool, "' OR 1=1 --")).toBeNull()
-    expect(await offerCompanies(pool, randomUUID())).toBeNull()
+    expect(await readCompany("' OR 1=1 --")).toBeNull()
+    expect(await offerCompanies(randomUUID())).toBeNull()
     expect(
       (await pool.query('SELECT count(*)::int AS count FROM company_commands'))
         .rows[0].count,
@@ -416,26 +416,26 @@ integration('company profiles in isolated PostgreSQL', () => {
   it('searches literal owner text and provides stable sorted pages of 25', async () => {
     for (let n = 0; n < 27; n++)
       await create(`Company ${String(n).padStart(2, '0')}`)
-    expect((await listCompanies(pool)).items.map((c) => c.name)).toEqual(
+    expect((await listCompanies()).items.map((c) => c.name)).toEqual(
       Array.from(
         { length: 25 },
         (_, n) => `Company ${String(n).padStart(2, '0')}`,
       ),
     )
-    expect(await listCompanies(pool, { page: 999 })).toMatchObject({
+    expect(await listCompanies({ page: 999 })).toMatchObject({
       page: 2,
       pageSize: 25,
       total: 27,
       items: [{ name: 'Company 25' }, { name: 'Company 26' }],
     })
-    expect((await listCompanies(pool, { q: 'company 26' })).total).toBe(1)
-    expect((await listCompanies(pool, { q: 'OWNER EVIDENCE' })).total).toBe(27)
-    expect((await listCompanies(pool, { q: '%' })).total).toBe(0)
+    expect((await listCompanies({ q: 'company 26' })).total).toBe(1)
+    expect((await listCompanies({ q: 'OWNER EVIDENCE' })).total).toBe(27)
+    expect((await listCompanies({ q: '%' })).total).toBe(0)
     await pool.query("UPDATE companies SET created_at='2026-01-01'")
     await pool.query(
       "UPDATE companies SET created_at='2026-02-01' WHERE name='Company 26'",
     )
-    expect((await listCompanies(pool, { sort: 'newest' })).items[0]!.name).toBe(
+    expect((await listCompanies({ sort: 'newest' })).items[0]!.name).toBe(
       'Company 26',
     )
   })
@@ -464,7 +464,7 @@ integration('company profiles in isolated PostgreSQL', () => {
         await changeAd(title, 'Same name')
         const company = await create()
         await changeCompanyLink(company.id, link())
-        const detail = await readCompany(pool, company.id)
+        const detail = await readCompany(company.id)
         expect(detail!.history[0]!.title).toBe('Oferta')
       },
     )
@@ -472,7 +472,7 @@ integration('company profiles in isolated PostgreSQL', () => {
       await changeAd('  PHP role  ', 'Same name')
       const company = await create()
       await changeCompanyLink(company.id, link())
-      expect((await readCompany(pool, company.id))!.history[0]!.title).toBe(
+      expect((await readCompany(company.id))!.history[0]!.title).toBe(
         'PHP role',
       )
     })
@@ -488,7 +488,7 @@ integration('company profiles in isolated PostgreSQL', () => {
         await changeAd('PHP role', name)
         await create('Firma niepodana')
         await create('42')
-        expect(await offerCompanies(pool, adId)).toEqual({
+        expect(await offerCompanies(adId)).toEqual({
           name: null,
           links: [],
           suggestions: [],
@@ -498,7 +498,7 @@ integration('company profiles in isolated PostgreSQL', () => {
     it('suggests a profile whose name differs from the ad company only by spaces at the ends', async () => {
       await changeAd('PHP role', '  Same name  ')
       const company = await create('Same name')
-      const offer = await offerCompanies(pool, adId)
+      const offer = await offerCompanies(adId)
       expect(offer!.name).toBe('Same name')
       expect(offer!.suggestions.map((s) => s.id)).toEqual([company.id])
     })

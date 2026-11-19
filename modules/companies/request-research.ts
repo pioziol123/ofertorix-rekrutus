@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { transaction } from '../../lib/db.ts'
-import { CompanyConflict, CompanyNotFound } from '../../lib/companies/store.ts'
-import { researchCommand } from '../../lib/companies/research-model.ts'
+import { CompanyConflict, CompanyNotFound } from './errors.ts'
+import { researchCommand } from './domain/research-report.ts'
 import {
   checkResearchExecution,
   isRefusal,

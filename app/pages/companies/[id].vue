@@ -3,7 +3,7 @@ import {
   companyKindLabels,
   companyRoleLabels,
   companyRoles,
-} from '../../../lib/companies/model'
+} from '../../../modules/companies/view'
 const route = useRoute()
 const { data, error } = await useFetch(
   () => `/api/companies/${String(route.params.id)}`,

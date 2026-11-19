@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   hasSourcedFindings,
   NoResearchFindings,
-  validateResearch,
   type ResearchDraft,
   type ResearchEvidence,
   type ResearchReport,
-} from '../lib/companies/research-model.ts'
+} from '../modules/companies/domain/research-report.ts'
+import { validateResearch } from '../modules/companies/domain/validate-research.ts'
 import { safeSourceUrl } from '../modules/ai/index.ts'
 import { citedMaterials } from '../modules/ai/infrastructure/adapters/openai-agent.ts'
 import { draft, searchResponse } from './company-research.fixtures.ts'

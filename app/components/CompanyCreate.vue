@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { companyKindLabels } from '../../lib/companies/model'
+import { companyKindLabels } from '../../modules/companies/view'
 const props = defineProps<{ suggestedName?: string }>()
 const emit = defineEmits<{ created: [id: string] }>()
 const name = ref(props.suggestedName ?? ''),

@@ -5,7 +5,7 @@ import {
   researchScopeLabels,
   researchTopics,
   hasSourcedFindings,
-} from '../../lib/companies/research-model'
+} from '../../modules/companies/view'
 const props = defineProps<{ companyId: string }>()
 const { data, error, refresh } = await useFetch(
   () => `/api/companies/${props.companyId}/research`,
