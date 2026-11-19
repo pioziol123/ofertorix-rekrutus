@@ -128,6 +128,8 @@ integration('local profile executions in PostgreSQL', () => {
       '1770000000007_matching_payload',
       '1770000000008_matching_groups',
       '1770000000018_matching_ai_executions',
+      // ASSUMPTION(oferty-pracy-0mq.15/ASM-1): the schema gains the lease
+      // columns recovery reads; the local-slot assertions stay unchanged.
       '1770000000020_ai_execution_lease',
     ])
       require(`../migrations/${migration}.cjs`).up({
