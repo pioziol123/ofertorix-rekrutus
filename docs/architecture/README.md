@@ -31,7 +31,7 @@ flowchart LR
   class Owner,Boards,OpenAI,Ollama external
 ```
 
-The shared portal boundary covers SOLID.Jobs, Bulldogjob, theprotocol.it, Just Join IT, No Fluff Jobs, the portals handled by JobSpy and the separate Himalayas pilot. The import scope depends on the adapter; every source is requested through one operation to one queue. Basic research uses web search through OpenAI. The result goes to the company profile with its sources. [JobSpy catalogue](../../lib/sources/jobspy-catalog.ts) · [Polish sources catalogue](../../lib/sources/polish-catalog.ts) · [Himalayas pilot](../../scripts/himalayas-sync.ts) · [Research agent](../../modules/ai/infrastructure/adapters/openai-agent.ts)
+The shared portal boundary covers SOLID.Jobs, Bulldogjob, theprotocol.it, Just Join IT, No Fluff Jobs, the portals handled by JobSpy and the separate Himalayas pilot. The import scope depends on the adapter; every source is requested through one operation to one queue. Basic research uses web search through OpenAI. The result goes to the company profile with its sources. [JobSpy catalogue](../../modules/sources/domain/jobspy-catalog.ts) · [Polish sources catalogue](../../modules/sources/domain/polish-catalog.ts) · [Himalayas pilot](../../scripts/himalayas-sync.ts) · [Research agent](../../modules/ai/infrastructure/adapters/openai-agent.ts)
 
 <a id="c2-kontenery"></a>
 
@@ -72,7 +72,7 @@ flowchart LR
 
 Nuxt delivers the Vue code that runs in the browser and handles the Nitro routes in the same web application. Compose publishes its port on `127.0.0.1`. PostgreSQL runs in the Compose network. The `pg` and `pg-boss` libraries use PostgreSQL, and pg-boss jobs have the default schema `pgboss`. A separate `migrate` service prepares the application and queue schema at start, before web and the worker start. [Compose](../../compose.yaml) · [Nuxt configuration](../../nuxt.config.ts) · [Database access](../../lib/db.ts) ([rules](moduly-i-zasady-kodu.md#database-access)) · [Queue](../../lib/queue.ts) · [Queue initialisation](../../scripts/init-queue.ts)
 
-The `documents` volume is shared by web and the worker under `/data/documents`. The database stores import metadata, extracted text, profile versions and operation results. Python subprocesses serve as adapters started by the worker. [CV import](../../lib/profile/imports.ts) · [Worker image](../../Dockerfile) · [Commands](../../package.json)
+The `documents` volume is shared by web and the worker under `/data/documents`. The database stores import metadata, extracted text, profile versions and operation results. Python subprocesses serve as adapters started by the worker. [CV import](../../modules/profile/import-cv.ts) · [Worker image](../../Dockerfile) · [Commands](../../package.json)
 
 <a id="c3-komponenty"></a>
 
@@ -116,9 +116,9 @@ flowchart TB
 | Component | Entry points and implementation |
 | --- | --- |
 | Vue views | [Offer list](../../app/pages/offers.vue), [professional profile](../../app/pages/profile.vue), [company details](../../app/pages/companies/%5Bid%5D.vue) |
-| Offers and matching | [Offer list API](../../server/api/offers/index.get.ts), [Offers module](../../modules/offers/index.ts), [assessment data in the list](../../lib/matching/list.ts), [assessment group request](../../server/api/matching/index.post.ts) |
+| Offers and matching | [Offer list API](../../server/api/offers/index.get.ts), [Offers module](../../modules/offers/index.ts), [assessment data in the list](../../modules/matching/read-offer-assessments.ts), [assessment group request](../../server/api/matching/index.post.ts) |
 | Professional profile | [Version confirmation](../../server/api/profile/confirm.post.ts), [CV import](../../server/api/profile/imports/index.post.ts), [proposal request](../../server/api/profile/imports/%5Bid%5D/prepare.post.ts), [profile storage](../../modules/profile/infrastructure/persistence/profile.ts) |
-| Companies and research | [Company list API](../../server/api/companies/index.get.ts), [links to an offer](../../server/api/companies/%5Bid%5D/links.post.ts), [research request](../../server/api/companies/%5Bid%5D/research.post.ts), [company profile storage](../../lib/companies/store.ts) |
+| Companies and research | [Company list API](../../server/api/companies/index.get.ts), [links to an offer](../../server/api/companies/%5Bid%5D/links.post.ts), [research request](../../server/api/companies/%5Bid%5D/research.post.ts), [company commands](../../modules/companies/company-commands.ts), [company reads](../../modules/companies/read-companies.ts) |
 | Source handling | [Import request](../../server/api/sources/polish.post.ts), [Polish sources status](../../server/api/sources/polish.get.ts), [JobSpy status](../../server/api/sources/jobspy.get.ts) |
 | Shared route handling | [Identifier validation, body limit, error mapping and queue client](../../server/utils/http.ts), used by the routes of every module |
 
@@ -169,8 +169,8 @@ flowchart TB
 | --- | --- |
 | Queue handling and schedule | [Worker entry point](../../worker/index.ts). At start and every minute it checks for overdue work. The schedule requests the SOLID.Jobs import through the [Sources module](../../modules/sources/README.md#requesting-a-sync), whose single `source-sync` queue the worker serves for every source. |
 | Ad import | [Sync request](../../modules/sources/request-sync.ts), [sync queue handler](../../modules/sources/infrastructure/worker/sync-queue.ts), [shared run executor](../../modules/sources/execute-sync-run.ts), [ad and revision storage](../../modules/sources/infrastructure/persistence/source-ads.ts). |
-| CV extraction | [`extractImport`](../../lib/profile/imports.ts) handles `profile-parse`. |
-| Match assessments | The [single request](../../lib/matching/store.ts) and the [group](../../lib/matching/groups.ts) request AI work through [Matching's AI integration](../../modules/matching/infrastructure/adapters/assessment-ai.ts); its [receiver](../../modules/matching/receive-assessment.ts) publishes or rejects each result. Groups run as provider batches in the AI module's [OpenAI Batch adapter](../../modules/ai/infrastructure/adapters/openai-batch.ts), which keeps the batch archive. |
+| CV extraction | [`extractImport`](../../modules/profile/extract-cv-text.ts) handles `profile-parse` through the [Profile queue handler](../../modules/profile/infrastructure/worker/cv-text-queue.ts). |
+| Match assessments | The [single request](../../modules/matching/request-assessment.ts) and the [group](../../modules/matching/request-assessment-group.ts) request AI work through [Matching's AI integration](../../modules/matching/infrastructure/adapters/assessment-ai.ts); its [receiver](../../modules/matching/receive-assessment.ts) publishes or rejects each result. Groups run as provider batches in the AI module's [OpenAI Batch adapter](../../modules/ai/infrastructure/adapters/openai-batch.ts), which keeps the batch archive. |
 | Basic research | The [research request](../../modules/companies/request-research.ts) requests agent work through [Companies' AI integration](../../modules/companies/infrastructure/adapters/research-ai.ts); its [receiver](../../modules/companies/receive-research.ts) validates and publishes or rejects each report. The search and synthesis run in the AI module's [OpenAI agent adapter](../../modules/ai/infrastructure/adapters/openai-agent.ts). |
 | General AI executions | [`runExecution`](../../modules/ai/run-execution.ts) handles `ai-execution` for clients of the [AI module](../../modules/ai/README.md) contract, today the Profile's proposal preparation on the paid and the local path, Matching's assessments and Companies' research. [`recoverExecutions`](../../modules/ai/recover-executions.ts) runs at start and in the schedule cycle. |
 

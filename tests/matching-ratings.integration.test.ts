@@ -15,6 +15,8 @@ import { confirmProfile, saveDraft } from '../modules/profile/index.ts'
 import {
   activeProfileVersion,
   currentAdVersions,
+} from '../modules/matching/read-assessment-inputs.ts'
+import {
   manualContext,
   publishAiRating,
   readRatings,
@@ -27,7 +29,7 @@ import type {
   Assessment,
   MatchingInput,
 } from '../modules/matching/domain/assessment.ts'
-import { readMatching } from '../modules/matching/request-assessment.ts'
+import { readMatching } from '../modules/matching/read-assessments.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import { insertExecution, migrate } from './matching-ai.fixtures.ts'
 
@@ -190,7 +192,7 @@ integration(
       const context = (await manualContext(ad))!
       expect(context.input.criteria[0]!.unknown).toBe(true)
       const saved = await saveManualRating(ad, await manualCommand())
-      const view = await readRatings(pool, ad, await activeId())
+      const view = await readRatings(ad, await activeId())
       expect(view.current).toMatchObject({
         id: saved.id,
         author: 'owner',
@@ -214,9 +216,7 @@ integration(
       await expect(
         saveManualRating(ad, { ...command, reason: 'Different' }),
       ).rejects.toThrow('innej treści')
-      expect(
-        (await readRatings(pool, ad, await activeId())).ratings,
-      ).toHaveLength(1)
+      expect((await readRatings(ad, await activeId())).ratings).toHaveLength(1)
     })
     it.each(['head', 'profile', 'ad'])(
       'rejects optimistic %s conflict without mutation',
@@ -240,14 +240,13 @@ integration(
             [ad, next],
           )
         }
-        const before = (await readRatings(pool, ad, await activeId())).ratings
-          .length
+        const before = (await readRatings(ad, await activeId())).ratings.length
         await expect(saveManualRating(ad, command)).rejects.toThrow(
           'zmieniły się',
         )
-        expect(
-          (await readRatings(pool, ad, await activeId())).ratings,
-        ).toHaveLength(before)
+        expect((await readRatings(ad, await activeId())).ratings).toHaveLength(
+          before,
+        )
       },
     )
     it.each(['missing', 'blank-reason', 'unknown-score'])(
@@ -260,14 +259,14 @@ integration(
         if (kind === 'unknown-score')
           command.assessment.criteria[0]!.state = 'unknown'
         await expect(saveManualRating(ad, command)).rejects.toThrow()
-        expect(
-          (await readRatings(pool, ad, await activeId())).ratings,
-        ).toHaveLength(0)
+        expect((await readRatings(ad, await activeId())).ratings).toHaveLength(
+          0,
+        )
       },
     )
     it('keeps identical weights as no-op and snapshots recalculated owner history with system author', async () => {
       const manual = await saveManualRating(ad, await manualCommand()),
-        initial = (await readWeights(pool)).current
+        initial = (await readWeights()).current
       expect(
         await saveWeights({
           commandId: randomUUID(),
@@ -275,9 +274,7 @@ integration(
           weights: defaultWeights,
         }),
       ).toMatchObject({ versionId: initial.id, updated: 0 })
-      expect(
-        (await readRatings(pool, ad, await activeId())).ratings,
-      ).toHaveLength(1)
+      expect((await readRatings(ad, await activeId())).ratings).toHaveLength(1)
       const weights = {
         technologies: 100,
         experience: 0,
@@ -290,7 +287,7 @@ integration(
           weights,
         },
         result = await saveWeights(command)
-      const ratings = await readRatings(pool, ad, await activeId())
+      const ratings = await readRatings(ad, await activeId())
       expect(result.updated).toBe(1)
       expect(ratings.current).toMatchObject({
         author: 'system',
@@ -314,7 +311,7 @@ integration(
     })
     it('remembers a no-op command across subsequent weight changes without reverting or recalculating', async () => {
       await saveManualRating(ad, await manualCommand())
-      const original = (await readWeights(pool)).current
+      const original = (await readWeights()).current
       const noop = {
         commandId: randomUUID(),
         expectedVersionId: original.id,
@@ -336,19 +333,19 @@ integration(
         expectedVersionId: original.id,
         weights: nextWeights,
       })
-      const before = await readRatings(pool, ad, await activeId())
+      const before = await readRatings(ad, await activeId())
       expect(await saveWeights(noop)).toEqual({
         versionId: original.id,
         updated: 0,
         reused: true,
       })
-      expect((await readWeights(pool)).current.id).toBe(changed.versionId)
-      expect((await readWeights(pool)).history).toHaveLength(2)
-      expect(await readRatings(pool, ad, await activeId())).toEqual(before)
+      expect((await readWeights()).current.id).toBe(changed.versionId)
+      expect((await readWeights()).history).toHaveLength(2)
+      expect(await readRatings(ad, await activeId())).toEqual(before)
       await expect(
         saveWeights({ ...noop, weights: nextWeights }),
       ).rejects.toThrow('innych wag')
-      expect(await readRatings(pool, ad, await activeId())).toEqual(before)
+      expect(await readRatings(ad, await activeId())).toEqual(before)
     })
     it('allows only one owner save for an expected rating head', async () => {
       const command = await manualCommand()
@@ -362,9 +359,7 @@ integration(
       ])
       expect(outcomes.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
       expect(outcomes.filter((r) => r.status === 'rejected')).toHaveLength(1)
-      expect(
-        (await readRatings(pool, ad, await activeId())).ratings,
-      ).toHaveLength(1)
+      expect((await readRatings(ad, await activeId())).ratings).toHaveLength(1)
     })
     it('confirms a new profile version and changes the ad without waiting for an AI rating being published (A10-AC04)', async () => {
       const request = await newRequest()
@@ -415,13 +410,13 @@ integration(
         end()
         await publication
         expect((await activeProfileVersion())?.id).toBe(confirmed.id)
-        expect(
-          (await readRatings(pool, ad, await activeId())).current,
-        ).toMatchObject({
-          request_id: request.id,
-          profile_number: 1,
-          stale: true,
-        })
+        expect((await readRatings(ad, await activeId())).current).toMatchObject(
+          {
+            request_id: request.id,
+            profile_number: 1,
+            stale: true,
+          },
+        )
       } finally {
         end()
         await publication.catch(() => undefined)
@@ -443,7 +438,7 @@ integration(
       await newRequest()
       const one = {
         ratings: await profileReads(async () =>
-          readRatings(pool, ad, await activeId()),
+          readRatings(ad, await activeId()),
         ),
         history: await profileReads(() => readMatching(ad)),
       }
@@ -469,7 +464,7 @@ integration(
       expect(view.profileReady).toBe(true)
       expect({
         ratings: await profileReads(async () =>
-          readRatings(pool, ad, await activeId()),
+          readRatings(ad, await activeId()),
         ),
         history: await profileReads(() => readMatching(ad)),
       }).toEqual(one)
@@ -485,13 +480,11 @@ integration(
       }
       const changed = await saveWeights({
         commandId: randomUUID(),
-        expectedVersionId: (await readWeights(pool)).current.id,
+        expectedVersionId: (await readWeights()).current.id,
         weights,
       })
       const ai = await publish(request)
-      expect(
-        (await readRatings(pool, ad, await activeId())).current,
-      ).toMatchObject({
+      expect((await readRatings(ad, await activeId())).current).toMatchObject({
         id: ai.id,
         weights_version_id: changed.versionId,
         weights,
@@ -501,9 +494,7 @@ integration(
         expectedVersionId: changed.versionId,
         weights: defaultWeights,
       })
-      expect(
-        (await readRatings(pool, ad, await activeId())).ratings,
-      ).toHaveLength(2)
+      expect((await readRatings(ad, await activeId())).ratings).toHaveLength(2)
       // Only the request's own AI attempt exists; reweighting added none.
       expect(
         (await pool.query('SELECT count(*) FROM ai_attempts')).rows[0].count,
@@ -514,7 +505,7 @@ integration(
       ).toBe('0')
     })
     it('allows only one concurrent weight edit from the same expected version', async () => {
-      const current = (await readWeights(pool)).current
+      const current = (await readWeights()).current
       const outcomes = await Promise.allSettled([
         saveWeights({
           commandId: randomUUID(),
@@ -539,7 +530,7 @@ integration(
       ])
       expect(outcomes.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
       expect(outcomes.filter((r) => r.status === 'rejected')).toHaveLength(1)
-      expect((await readWeights(pool)).history).toHaveLength(2)
+      expect((await readWeights()).history).toHaveLength(2)
     })
     it('promotes a fresh AI request over owner rating once, retaining history and AI provenance after reweighting', async () => {
       const owner = await saveManualRating(ad, await manualCommand()),
@@ -547,21 +538,19 @@ integration(
       const ai = await publish(request),
         again = await publish(request)
       expect(again.id).toBe(ai.id)
-      expect(
-        (await readRatings(pool, ad, await activeId())).current,
-      ).toMatchObject({
+      expect((await readRatings(ad, await activeId())).current).toMatchObject({
         id: ai.id,
         author: 'ai',
         assessment_author: 'ai',
       })
       expect(
-        (await readRatings(pool, ad, await activeId())).ratings.find(
+        (await readRatings(ad, await activeId())).ratings.find(
           (r) => r.id === owner.id,
         ),
       ).toMatchObject({ author: 'owner', is_current: false })
       await saveWeights({
         commandId: randomUUID(),
-        expectedVersionId: (await readWeights(pool)).current.id,
+        expectedVersionId: (await readWeights()).current.id,
         weights: {
           technologies: 100,
           experience: 0,
@@ -569,9 +558,7 @@ integration(
           direction: 0,
         },
       })
-      expect(
-        (await readRatings(pool, ad, await activeId())).current,
-      ).toMatchObject({
+      expect((await readRatings(ad, await activeId())).current).toMatchObject({
         author: 'system',
         assessment_author: 'ai',
       })
@@ -594,7 +581,7 @@ integration(
       )
       const owner = await saveManualRating(ad, await manualCommand())
       const archived = await publish(request),
-        view = await readRatings(pool, ad, await activeId())
+        view = await readRatings(ad, await activeId())
       expect(view.current).toMatchObject({
         id: owner.id,
         stale: false,

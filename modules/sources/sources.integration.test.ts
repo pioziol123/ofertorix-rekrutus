@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
-import { setPool } from '../lib/db.ts'
+import { setPool } from '../../lib/db.ts'
 import { PgBoss } from 'pg-boss'
 import {
   afterAll,
@@ -12,7 +12,7 @@ import {
   it,
   vi,
 } from 'vitest'
-import { executeSyncRun } from '../modules/sources/execute-sync-run.ts'
+import { executeSyncRun } from './execute-sync-run.ts'
 import {
   recoverSyncRuns,
   requestScheduledSyncs,
@@ -20,18 +20,18 @@ import {
   syncQueue,
   syncQueueOptions,
   useSyncQueue,
-} from '../modules/sources/index.ts'
-import type { ConnectorProvider } from '../modules/sources/infrastructure/adapters/connector-registry.ts'
+} from './index.ts'
+import type { ConnectorProvider } from './infrastructure/adapters/connector-registry.ts'
 import {
   source,
   type Offer,
   type Page,
-} from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
+} from './infrastructure/adapters/solid-jobs/api.ts'
 import {
   createPageFetcher,
   hash,
-} from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
-import { solidJobsWith } from './source-connectors.fixtures.ts'
+} from './infrastructure/adapters/solid-jobs/api.ts'
+import { solidJobsWith } from '../../tests/source-connectors.fixtures.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -68,7 +68,7 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
       '1770000000014_sync_run_state',
       '1770000000015_sync_run_attempt',
     ])
-      createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
+      createRequire(import.meta.url)(`../../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),
       })
     await pool.query(sql.join(';\n'))

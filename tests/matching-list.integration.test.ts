@@ -15,8 +15,8 @@ import {
   matchingListStatus,
 } from '../modules/matching/read-offer-assessments.ts'
 import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
+import { activeProfileVersion } from '../modules/matching/read-assessment-inputs.ts'
 import {
-  activeProfileVersion,
   manualContext,
   readRatings,
   readWeights,
@@ -310,7 +310,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
       reason: 'Własna ocena',
     })
     const assertSame = async () => {
-      const detail = (await readRatings(pool, ad, await activeId())).current!
+      const detail = (await readRatings(ad, await activeId())).current!
       expect((await decorateMatching(offers()))[0]!.assessment).toMatchObject({
         requestId: null,
         state: 'completed',
@@ -324,7 +324,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
     await assertSame()
     await saveWeights({
       commandId: randomUUID(),
-      expectedVersionId: (await readWeights(pool)).current.id,
+      expectedVersionId: (await readWeights()).current.id,
       weights: {
         technologies: 100,
         experience: 0,

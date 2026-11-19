@@ -2,7 +2,28 @@
 
 Companies gathers information about companies and records their roles in recruitments. [Module map](../../docs/architecture/moduly.md)
 
-Most of its code still lives in `lib/companies/` and moves here in task `oferty-pracy-0mq.12`. This directory holds what task `oferty-pracy-0mq.22` created: basic research of a company through the AI module.
+## Public operations
+
+Routes, the worker and other modules import operations from `index.ts`. Views run in the browser, so they have a separate entry `view.ts`, which does not reach into server code.
+
+| Operation                                                        | Entry      | Contract                                                                                                                                                                                                                                               |
+| ---------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Company creation (`createCompany`)                               | `index.ts` | Takes a command identifier, the name, kind, website and description. The same command gives the same answer; a reused identifier with other content ends with `CompanyConflict`.                                                                       |
+| Link change (`changeCompanyLink`)                                | `index.ts` | Links a company to an ad in a role, or removes the link, with the evidence and the expected current company; records the change with the ad version read. An unknown company or ad ends with `CompanyNotFound`, a changed link with `CompanyConflict`. |
+| Company reads (`listCompanies`, `readCompany`, `offerCompanies`) | `index.ts` | The list with search, sort and pages of 25; a company with its offers, technologies and link history; the companies of an offer and suggestions by the offer's company name.                                                                           |
+| Research (`requestResearch`, `readCompanyResearch`)              | `index.ts` | Described in Research through AI below.                                                                                                                                                                                                                |
+| Labels for views                                                 | `view.ts`  | Company kinds and roles, research topics, kinds and scopes, and whether a report has sourced findings.                                                                                                                                                 |
+
+## Directory layout
+
+| Place                                                            | Contents                                                                                                  |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `index.ts`, `view.ts`                                            | Public entries: for the server and other modules, and for views.                                          |
+| `company-commands.ts`, `read-companies.ts`                       | Commands on companies and their links, and their reads.                                                   |
+| `request-research.ts`, `read-research.ts`, `receive-research.ts` | Research request, read and receiver.                                                                      |
+| `domain/`                                                        | Company and link commands, the research report and its validation, and the messages of research outcomes. |
+| `infrastructure/persistence/`                                    | Companies, links and their history; research records.                                                     |
+| `infrastructure/adapters/`                                       | The integration with the AI module.                                                                       |
 
 ## Data
 

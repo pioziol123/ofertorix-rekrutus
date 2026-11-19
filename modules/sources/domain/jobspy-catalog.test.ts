@@ -1,6 +1,6 @@
 import type { Pool } from 'pg'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { closePool, setPool } from '../lib/db.ts'
+import { closePool, setPool } from '../../../lib/db.ts'
 import {
   configuredSources,
   jobspyCatalog,
@@ -8,20 +8,24 @@ import {
   parseJobspySource,
   remoteMarkets,
   sourceEnabled,
-} from '../modules/sources/domain/jobspy-catalog.ts'
+} from './jobspy-catalog.ts'
 import {
   fingerprintFor,
   parametersFor,
   parseJobspy,
-} from '../modules/sources/infrastructure/adapters/jobspy/runner.ts'
+} from '../infrastructure/adapters/jobspy/runner.ts'
 import {
   readSourceCatalog,
   requestSync,
   SourceDisabledError,
-} from '../modules/sources/index.ts'
-import { polishSources } from '../modules/sources/domain/polish-catalog.ts'
-import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
-import { job, result, sourceResult } from './fixtures/jobspy/result.ts'
+} from '../index.ts'
+import { polishSources } from './polish-catalog.ts'
+import { projectSourceAd } from './ad-projection.ts'
+import {
+  job,
+  result,
+  sourceResult,
+} from '../../../tests/fixtures/jobspy/result.ts'
 
 afterEach(() => vi.unstubAllEnvs())
 

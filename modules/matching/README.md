@@ -2,7 +2,33 @@
 
 Matching assesses how well an ad fits the owner's confirmed professional profile and justifies the result. [Module map](../../docs/architecture/moduly.md)
 
-Most of its code still lives in `lib/matching/` and moves here in task `oferty-pracy-0mq.12`. This directory holds what task `oferty-pracy-0mq.21` created: Matching's integration with the AI module.
+## Public operations
+
+Routes, the worker and other modules import operations from `index.ts`. Views run in the browser, so they have a separate entry `view.ts`, which does not reach into server code.
+
+| Operation                                                                                  | Entry      | Contract                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Assessment request (`enqueueMatching`)                                                     | `index.ts` | Requests the assessment of one offer, or reuses the offer's assessment still in progress. A request the module cannot make ends with `MatchingError` and the owner's message.           |
+| Group request (`enqueueMatchingGroup`)                                                     | `index.ts` | Takes a command identifier and the selected offers and requests their assessments as one group.                                                                                         |
+| Assessments of an offer (`readMatching`)                                                   | `index.ts` | The assessment history of an offer with the state and cost of each request's AI work, and its ratings.                                                                                  |
+| Offer-list summary (`decorateMatching`, `matchingListStatus`)                              | `index.ts` | Adds the assessment summary to each offer of a list, in a fixed number of queries; whether groups can be requested, how many assessments are in progress and the most an item reserves. |
+| Archive (`readBatchArchive`)                                                               | `index.ts` | The diagnostic archive of a request's assessment, read through AI.                                                                                                                      |
+| Own rating and weights (`manualContext`, `saveManualRating`, `readWeights`, `saveWeights`) | `index.ts` | The form of the owner's own rating and its save, and the group weights with their history and change; a change made meanwhile ends with `RatingConflict`.                               |
+| States, labels and weights for views                                                       | `view.ts`  | The states of an assessment and their labels, the groups of the rating, the criterion label, the assessment and weights types and the weights schema.                                   |
+
+## Directory layout
+
+| Place                                                                            | Contents                                                                                                                   |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `index.ts`, `view.ts`                                                            | Public entries: for the server and other modules, and for views.                                                           |
+| `request-assessment.ts`, `request-assessment-group.ts`                           | Requesting a single assessment and a group.                                                                                |
+| `read-assessments.ts`, `read-offer-assessments.ts`, `read-assessment-archive.ts` | Reads of an offer's assessments, of the list summary and of the archive.                                                   |
+| `ratings.ts`                                                                     | Publishing ratings, the owner's own rating and the weights.                                                                |
+| `read-assessment-inputs.ts`                                                      | The profile versions and ads Matching reads through the public reads of Profile and Sources.                               |
+| `receive-assessment.ts`                                                          | The receiver of assessment outcomes.                                                                                       |
+| `domain/`                                                                        | The assessment contract and its calculation, the weights, the states and labels, and the messages of each state and cause. |
+| `infrastructure/persistence/`                                                    | Assessment requests, ratings and weights.                                                                                  |
+| `infrastructure/adapters/`                                                       | The integration with the AI module.                                                                                        |
 
 ## Data
 

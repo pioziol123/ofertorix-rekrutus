@@ -5,7 +5,7 @@ import {
   pageUrl,
   parameters,
   parsePage,
-} from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
+} from './api.ts'
 
 const envelope = (jobs: unknown[] = []) => ({
   jobs,

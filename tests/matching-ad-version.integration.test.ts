@@ -14,17 +14,15 @@ import type {
   Assessment,
   MatchingInput,
 } from '../modules/matching/domain/assessment.ts'
+import { currentAdVersions } from '../modules/matching/read-assessment-inputs.ts'
 import {
-  currentAdVersions,
   manualContext,
   publishAiRating,
   RatingConflict,
   saveManualRating,
 } from '../modules/matching/ratings.ts'
-import {
-  enqueueMatching,
-  readMatching,
-} from '../modules/matching/request-assessment.ts'
+import { enqueueMatching } from '../modules/matching/request-assessment.ts'
+import { readMatching } from '../modules/matching/read-assessments.ts'
 import { registerResultReceiver, useAiQueue } from '../modules/ai/index.ts'
 import {
   assessmentReceiver,

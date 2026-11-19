@@ -49,3 +49,15 @@ Proposal preparation runs through the [AI module's contract](../ai/README.md#add
 - **Progress.** While preparation is in progress, the import read takes its status from the latest AI execution of the import.
 
 The profile routes pass every request to these public operations: the CV import and the original file, the import read, the proposal preparation request, the proposal application, the draft read and write, the confirmation and the read of a given version. The profile page shows the AI budget from the AI module's budget history read. Proposal application takes no text revision from the owner: it applies the proposal with the text revision the proposal was prepared for, which is the import's current one (assumption `oferty-pracy-0mq.11/ASM-1`). The fields of the former Profile path in the AI data are no longer used; removing them belongs to the epic `oferty-pracy-sq2`.
+
+## Entries and directory layout
+
+Routes, the worker and other modules import operations from `index.ts`; it also exports what the worker uses to extract the text of uploaded documents (`workCvTextQueue`, `recoverImports`) and the queue settings the queue schema is prepared with. Views run in the browser, so they have a separate entry `view.ts`, which does not reach into server code: the profile data type, the empty profile and its items, the expectation keys and the proposal type.
+
+| Place                         | Contents                                                                                         |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| operation files               | CV import, text extraction, proposal preparation and application, draft and confirmed versions.  |
+| `domain/`                     | The profile data and proposal contracts, the CV document rules, proposal preparation and result. |
+| `infrastructure/persistence/` | Imports, the draft and the confirmed versions.                                                   |
+| `infrastructure/adapters/`    | The stored original documents and the integration with the AI module.                            |
+| `infrastructure/worker/`      | The queue that extracts the text of an uploaded document.                                        |

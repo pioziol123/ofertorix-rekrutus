@@ -29,10 +29,8 @@ import {
   type MatchingInput,
 } from '../modules/matching/domain/assessment.ts'
 import { readBatchArchive } from '../modules/matching/read-assessment-archive.ts'
-import {
-  enqueueMatching,
-  readMatching,
-} from '../modules/matching/request-assessment.ts'
+import { enqueueMatching } from '../modules/matching/request-assessment.ts'
+import { readMatching } from '../modules/matching/read-assessments.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {
   migrate,

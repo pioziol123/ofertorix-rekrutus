@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { parsePolish } from '../modules/sources/infrastructure/adapters/polish/runner.ts'
-import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
-import { nfjAliasRecord } from './fixtures/polish/json-record.ts'
-import { query, record, result } from './fixtures/polish/result.ts'
+import { parsePolish } from './runner.ts'
+import { projectSourceAd } from '../../../domain/ad-projection.ts'
+import { nfjAliasRecord } from '../../../../../tests/fixtures/polish/json-record.ts'
+import {
+  query,
+  record,
+  result,
+} from '../../../../../tests/fixtures/polish/result.ts'
 
 describe('JSON Polish portal records', () => {
   it('maps JJ listing guid to detail id and retains only original-currency salaries', () => {
