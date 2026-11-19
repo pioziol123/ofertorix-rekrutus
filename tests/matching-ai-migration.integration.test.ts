@@ -23,6 +23,7 @@ import { enqueueMatching } from '../modules/matching/request-assessment.ts'
 import { readMatching } from '../modules/matching/read-assessments.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {
+  aiLeaseMigration,
   matchingMigrations,
   migrate,
   pricing,
@@ -241,7 +242,10 @@ integration('migration of the assessment history to AI executions', () => {
              ($2,'file_in_submitted','batch_submitted',NULL,'in_progress',false)`,
       [ids.completed, ids.submitted],
     )
-    await migrate(pool, ['1770000000018_matching_ai_executions'])
+    await migrate(pool, [
+      '1770000000018_matching_ai_executions',
+      aiLeaseMigration,
+    ])
   })
   afterAll(async () => {
     await closePool()
