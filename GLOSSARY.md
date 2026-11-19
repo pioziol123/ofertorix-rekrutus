@@ -68,7 +68,7 @@ Expectations of a future job, separate from the skills and experience held.
 A profile criterion that must be met for an offer to count as suitable; missing information stays an unknown, not evidence that the criterion is not met.
 
 **View filter** (filtr widoku):
-A condition that limits the offers shown from the saved database, independent of the fetch criteria and the match assessment.
+A condition that limits the offers shown, independent of the fetch criteria and the match assessment.
 
 **Offer triage** (triage ofert):
 The stage of assessing fetched offers against professional preferences, covering the match assessment and its descriptive justification.
@@ -83,7 +83,7 @@ Collected information about a company, its business, projects, conditions and wo
 A record of information about an organisation, its links and its offers, to which the employer research results are attached.
 
 **Information source** (źródło informacji):
-The origin of information, e.g. an ad, the company's website, own knowledge or a conversation with a recruiter; entering or correcting information by hand uses the same mechanism whatever its origin.
+The origin of information, e.g. an ad, the company's website, own knowledge or a conversation with a recruiter.
 
 **Research version** (wersja researchu):
 A report attached to the company profile, kept together with earlier reports; the result of an on-demand retry becomes the current version.
@@ -164,8 +164,23 @@ One call to an executor made on behalf of an assignment; a retry is a new operat
 _Avoid_: attempt, execution, próba; do not use "operation" for the requesting module's own matter
 
 **Executor** (wykonawca):
-The external service or local runtime that performs an operation, such as OpenAI, Ollama or OpenCode.
-_Avoid_: provider (when the runtime is meant), backend
+A unit that performs operations, with its own configuration. It offers services for assignment types, such as a single request, a batch or an agent, and may use one or several providers to do so.
+_Avoid_: provider, backend (a provider is what an executor uses, not the executor itself)
+
+**Assignment time limit** (limit czasu zlecenia):
+The time, counted from placing an assignment, after which an assignment that has not reached a final status fails. An operation already running is allowed to finish first.
+
+**Executor capacity** (limit operacji naraz):
+The number of operations an executor may run at the same time.
+
+**Maximum run time** (maksymalny czas działania):
+The longest an operation may run on a given executor before it is treated as failed.
+
+**Interrupted operation** (operacja przerwana):
+An operation whose work stopped without an outcome, e.g. because the application stopped. Depending on the executor's service it is either retried or becomes uncertain.
+
+**Result delivery** (dostawa wyniku):
+The single handover of an assignment's outcome to its requesting module, which settles the assignment's final status; a delivery the requesting module does not take makes the assignment fail.
 
 ### Assignment status
 
@@ -203,6 +218,9 @@ The owner's decision to end a batch assignment with at least one correct item as
 **Abandonment** (porzucenie):
 The requesting module withdrawing its assignment; the assignment ends as failed and nothing is reported back to that module.
 
+**Settle** (Rozlicz):
+The owner enters the actual cost of an operation whose cost was unknown, taken from the provider's billing.
+
 ### Cost
 
 **Potential cost** (koszt potencjalny):
@@ -214,3 +232,67 @@ The cost an operation really incurred, based on the executor's usage; when it ca
 
 **Budget charge** (koszt obciążający budżet):
 What an assignment takes from the budget: for each operation its actual cost when known, otherwise its potential cost.
+
+**Monthly budget** (budżet miesięczny):
+The amount that operations started in a calendar month may charge, shared by all requesting modules and executors.
+
+**Default limit** (limit domyślny):
+The amount a new month's budget starts with.
+
+**Top-up** (doładowanie):
+The owner raising the current month's budget; unspent money does not carry over to the next month.
+
+**Price list** (cennik):
+The prices and exchange rate an executor uses to calculate costs; an operation keeps those valid when it started.
+
+## Technical terms
+
+Terms for the mechanisms that carry out the system's work. They describe how work gets done, not what the owner sees or decides.
+
+### Queues
+
+**Queue** (kolejka):
+A named line of queue jobs waiting for the worker.
+_Avoid_: calling any other form of waiting a queue; treating a queue as a kind of work
+
+**Worker** (worker):
+The process that takes queue jobs and calls the handler registered for each.
+_Avoid_: executor (an executor performs AI operations), runner (the runner implements bd tasks), scheduler
+
+**Queue job** (zadanie kolejki):
+One entry in a queue, made from a job definition, that tells the worker to take up one piece of background work identified by its id. It carries no content, status or result of that work.
+_Avoid_: task, job (alone)
+
+**Job definition** (definicja zadania kolejki):
+A module's description of one kind of queue job: its name, the shape of the data the job carries and its job settings.
+_Avoid_: job class, job type, queue (a definition is not a queue)
+
+**Job setting** (ustawienie zadania):
+A property of handling a queue job that its definition may set, such as the highest number of attempts or the time limit. It is all a module knows about how its jobs are handled: a setting states what will hold.
+_Avoid_: option (the queue implementation's own parameters); queue setting, worker setting (how a queue or the worker is configured is internal to the libraries)
+
+**Job handler** (obsługa zadania):
+The module's function that the worker calls for a queue job of a given definition.
+
+**Handler registry** (rejestr obsługi):
+The list, by job definition name, of the handlers the worker may call.
+
+### Scheduler
+
+**Periodic operation** (operacja okresowa):
+A module's operation that is to run at a set time or at a set interval, such as requesting the daily ad sync or checking whether the module's work has stalled.
+
+**Scheduler** (proces harmonogramu):
+The process that calls periodic operations when they are due. It is separate from the worker.
+_Avoid_: worker, cron; harmonogram alone (in Offer sources it means the plan of the daily ad sync)
+
+### Assembly
+
+**Application assembly** (składanie aplikacji):
+The code that, when a process starts, calls every module's registration of its job handlers and periodic operations.
+_Avoid_: bootstrap, wiring
+
+### AI module structure
+
+**Executor submodule** (podmoduł wykonawcy):
+The part of the AI module that defines what an executor offers: its services and the models and settings an assignment may ask for, with their prices.
