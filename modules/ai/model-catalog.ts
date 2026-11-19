@@ -79,7 +79,9 @@ export const aiCatalog: AiCatalog = {
           maxOutputTokens: 6000,
         },
         // Agent work with web search: the standard rates of its steps
-        // and the web search price per call, at most three calls.
+        // and the web search price per call, at most three calls. The
+        // standard rates repeat those of `single`; a change of them is
+        // made in both lists (solution design 0mq.17, decision 6).
         // ASSUMPTION(oferty-pracy-0mq.22/ASM-4)
         agent: {
           model: 'gpt-6-luna',

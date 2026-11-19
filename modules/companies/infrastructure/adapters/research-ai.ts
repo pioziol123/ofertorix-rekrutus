@@ -62,6 +62,8 @@ export function researchResponseSchema() {
  */
 export async function checkResearchExecution(): Promise<ExecutionCheck | null> {
   try {
+    // The check in agent mode, the mode the request reserves in.
+    // ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
     return await checkExecution(researchSettingsKey, 'agent')
   } catch (error) {
     if (isRefusal(error)) return null
