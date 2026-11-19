@@ -645,11 +645,11 @@ integration(
       expect(openAi.batch.uploads).toBe(1)
     })
 
-    it('leaves a group another run is sending alone, without sending it again, until oferty-pracy-0mq.15', async () => {
+    it('leaves a group another live run is sending alone, without sending it again (A15-AC03)', async () => {
       const group = await enqueue([ad, await anotherAd()])
-      // Another run took the group and is sending it.
+      // Another run took the group, holds its lease and is sending it.
       await pool.query(
-        "UPDATE ai_executions SET state='running',adapter_state=$1 WHERE group_id=$2",
+        "UPDATE ai_executions SET state='running',adapter_state=$1,lease_owner=$3,lease_expires_at=now()+interval '2 minutes' WHERE group_id=$2",
         [
           {
             stage: 'sending',
@@ -661,6 +661,7 @@ integration(
             cleaned: false,
           },
           group.groupId,
+          randomUUID(),
         ],
       )
       await recoverExecutions()
@@ -671,6 +672,101 @@ integration(
           state: 'running',
           cost: { actual: null },
         })
+    })
+
+    it('A15-AC02: ends a group whose sending run was lost as uncertain and interrupted, keeps the whole reservation and sends nothing more', async () => {
+      const group = await enqueue([ad, await anotherAd()])
+      const reserved = (await latest(group.items[0]!.id)).cost.reserved
+      let release!: () => void, entered!: () => void
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      const uploading = new Promise<void>((resolve) => (entered = resolve))
+      const upload = openAi.batch.upload.bind(openAi.batch)
+      openAi.batch.upload = async (lines) => {
+        entered()
+        await gate
+        return upload(lines)
+      }
+      // The run that took the group stops in the upload, and its lease
+      // lapses.
+      const sending = runExecution(queue.executionJobs()[0]!)
+      await uploading
+      await pool.query(
+        "UPDATE ai_executions SET lease_expires_at=now()-interval '1 second' WHERE group_id=$1",
+        [group.groupId],
+      )
+      await Promise.all([recoverExecutions(), recoverExecutions()])
+      await queue.work()
+      for (const item of group.items)
+        expect(await latest(item.id)).toMatchObject({
+          state: 'uncertain',
+          cause: 'interrupted',
+          cost: { reserved, actual: null },
+        })
+      // The lost run returns: it saves nothing and creates no batch.
+      release()
+      await sending
+      await recoverExecutions()
+      await queue.work()
+      expect(openAi.batch.uploads).toBe(1)
+      expect(openAi.batch.creates).toBe(0)
+      for (const item of group.items) {
+        expect(await latest(item.id)).toMatchObject({
+          state: 'uncertain',
+          cause: 'interrupted',
+        })
+        expect(await readExecutionHistory(item.id)).toHaveLength(1)
+      }
+      expect(
+        (
+          await pool.query(
+            "SELECT DISTINCT adapter_state->>'inputFileId' AS file FROM ai_executions WHERE group_id=$1",
+            [group.groupId],
+          )
+        ).rows,
+      ).toEqual([{ file: null }])
+    })
+
+    it('A15-AC06: a sent group whose run was lost while checking the batch is not interrupted, and the next run completes it', async () => {
+      openAi.batch.status = 'in_progress'
+      const group = await enqueue([ad, await anotherAd()])
+      await queue.work()
+      expect(openAi.batch.creates).toBe(1)
+      // A later run stops while it checks the batch, and every lease lapsed.
+      let release!: () => void, entered!: () => void
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      const checking = new Promise<void>((resolve) => (entered = resolve))
+      const retrieve = openAi.batch.retrieve.bind(openAi.batch)
+      openAi.batch.retrieve = async () => {
+        entered()
+        await gate
+        return retrieve()
+      }
+      const lost = runExecution(queue.executionJobs()[0]!)
+      await checking
+      await pool.query(
+        "UPDATE ai_executions SET lease_expires_at=now()-interval '1 second' WHERE group_id=$1",
+        [group.groupId],
+      )
+      await recoverExecutions()
+      for (const item of group.items)
+        expect((await latest(item.id)).state).toBe('running')
+      // The next run completes the batch.
+      openAi.batch.retrieve = retrieve
+      openAi.batch.status = 'completed'
+      queue.reset()
+      await recoverExecutions()
+      await queue.work()
+      for (const item of group.items)
+        expect(await latest(item.id)).toMatchObject({
+          state: 'completed',
+          cost: { actual: '0.000120' },
+        })
+      release()
+      await lost
+      for (const item of group.items)
+        expect((await latest(item.id)).state).toBe('completed')
+      expect(openAi.batch.uploads).toBe(1)
+      expect(openAi.batch.creates).toBe(1)
     })
 
     it('refuses duplicate IDs and more than 100 offers before any change', async () => {

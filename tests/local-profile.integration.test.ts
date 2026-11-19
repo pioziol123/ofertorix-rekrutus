@@ -128,6 +128,7 @@ integration('local profile executions in PostgreSQL', () => {
       '1770000000007_matching_payload',
       '1770000000008_matching_groups',
       '1770000000018_matching_ai_executions',
+      '1770000000020_ai_execution_lease',
     ])
       require(`../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),

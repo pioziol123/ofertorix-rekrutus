@@ -42,7 +42,13 @@ export const matchingMigrations = [
   '1770000000018_matching_ai_executions',
 ]
 
-export async function migrate(pool: Pool, names = matchingMigrations) {
+/** The lease of running paid AI work (task oferty-pracy-0mq.15). */
+export const aiLeaseMigration = '1770000000020_ai_execution_lease'
+
+export async function migrate(
+  pool: Pool,
+  names = [...matchingMigrations, aiLeaseMigration],
+) {
   const statements: string[] = []
   for (const name of names)
     createRequire(import.meta.url)(`../migrations/${name}.cjs`).up({

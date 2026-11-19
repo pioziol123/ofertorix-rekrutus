@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type {
   AgentMaterial,
+  AgentContext,
   AgentOutcome,
   AgentRequest,
   AgentRunner,
@@ -203,7 +204,7 @@ export function openAiAgent(
     fits: () => fits(settings),
     materials: (state) => agentState.parse(state).materials,
     async run(request, context) {
-      return runAgent(settings, request, context.save, fetcher, apiKey())
+      return runAgent(settings, request, context, fetcher, apiKey())
     },
   }
 }
@@ -211,10 +212,11 @@ export function openAiAgent(
 async function runAgent(
   settings: ProviderSettings,
   request: AgentRequest,
-  save: (state: AgentState) => Promise<void>,
+  context: AgentContext,
   fetcher: typeof fetch,
   key: string | undefined,
 ): Promise<AgentOutcome> {
+  const save = (state: AgentState) => context.save(state)
   const state: AgentState = { version: 1, steps: [], materials: [] }
   let input = 0,
     output = 0,
@@ -301,7 +303,10 @@ async function runAgent(
     }
     let r: ProviderResponse
     try {
-      r = responseSchema.parse(await response.json())
+      const raw = await response.text()
+      // The raw response is kept before it is read.
+      await context.keepArtifact?.('output', name, raw)
+      r = responseSchema.parse(JSON.parse(raw))
     } catch {
       logged.status = 'unknown'
       await save(state)

@@ -596,3 +596,25 @@ describe('the input of a batch sent before the archive kept inputs (0mq.21 ASM-8
     )
   })
 })
+
+describe('whether a group is still being sent (0mq.15)', () => {
+  const runner = openAiBatch(settings, () => new BatchClient('test'))
+  const state = (stage: string, batchId: string | null) => ({
+    stage,
+    inputFileId: 'file_input',
+    batchId,
+    status: null,
+    outputFileId: null,
+    errorFileId: null,
+    cleaned: false,
+  })
+  it('is sending before anything is saved and until the batch identifier is saved', () => {
+    expect(runner.sending(null)).toBe(true)
+    expect(runner.sending(state('sending', null))).toBe(true)
+  })
+  it('is not sending once the batch was created, or once it ended', () => {
+    expect(runner.sending(state('submitted', 'batch_test'))).toBe(false)
+    expect(runner.sending(state('ended', 'batch_test'))).toBe(false)
+    expect(runner.sending(state('unconfirmed', null))).toBe(false)
+  })
+})

@@ -599,8 +599,8 @@ export function openAiBatch(
       api.archive = context.archive
       if (state === null) {
         // Only the run that took the queued items sends them; a group in
-        // sending belongs to that run (detecting interrupted sending
-        // belongs to task oferty-pracy-0mq.15).
+        // sending belongs to that run, and recovery ends it when that run
+        // is lost.
         if (!context.claimed || context.state !== null) return { kind: 'wait' }
         const sent = await send(
           api,
@@ -634,6 +634,12 @@ export function openAiBatch(
     needsCleanup: (value) => {
       const state = readState(value)
       return state !== null && needsCleanup(state)
+    },
+    // Nothing saved yet, or the batch not yet created: the group is being
+    // sent. A state this adapter cannot read is not continued by it either.
+    sending: (value) => {
+      const state = readState(value)
+      return state === null || state.stage === 'sending'
     },
   }
 }

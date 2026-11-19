@@ -44,6 +44,7 @@ import { closePool, setPool } from '../lib/db.ts'
 import {
   aiExecutionJobOptions,
   aiExecutionQueue,
+  readExecutionArchive,
   readLatestExecution,
   recoverExecutions,
   registerResultReceiver,
@@ -107,7 +108,9 @@ integration(
         '1770000000017_profile_ai_executions',
         '1770000000007_matching_payload',
         '1770000000008_matching_groups',
+        '1770000000012_matching_batch_archives',
         '1770000000018_matching_ai_executions',
+        '1770000000020_ai_execution_lease',
       ])
         createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
           sql: (s: string) => sql.push(s),
@@ -808,16 +811,71 @@ integration(
         cost: { actual: '0.000150' },
       })
     })
-    it('A9-AC03: leaves an interrupted paid request running with its cost reserved until oferty-pracy-0mq.15', async () => {
+    it('A9-AC03, A15-AC08: ends a paid request running without a lease as interrupted, with the uncertain message and its cost reserved', async () => {
       const { id, executionId } = await readyAttempt()
+      // Running as before leases existed: no sign of life.
       await pool.query("UPDATE ai_executions SET state='running' WHERE id=$1", [
         executionId,
       ])
       await recoverExecutions()
-      expect((await readLatestExecution(id))!.state).toBe('running')
+      await executeAi(executionId, vi.fn<typeof fetch>())
+      expect(await readLatestExecution(id)).toMatchObject({
+        state: 'uncertain',
+        cause: 'interrupted',
+        cost: { actual: null },
+      })
+      expect(await attemptOf(executionId)).toMatchObject({
+        state: 'unknown',
+        actual_pln: null,
+      })
       expect(
         Number((await attemptOf(executionId)).reserved_pln),
       ).toBeGreaterThan(0)
+      expect(await importOf(id)).toMatchObject({
+        status: 'needs_attention',
+        proposal: null,
+        error:
+          'Nie wiadomo, jak zakończyło się przygotowanie propozycji. Profil pozostaje bez zmian. Sprawdź stan wykonania przed ponowieniem.',
+      })
+    })
+    it('A15-AC04: a worker returning after its proposal preparation ended as interrupted publishes nothing and keeps its raw response in the archive', async () => {
+      const { id, executionId } = await readyAttempt()
+      let release!: () => void, entered!: () => void
+      const gate = new Promise<void>((resolve) => (release = resolve)),
+        started = new Promise<void>((resolve) => (entered = resolve))
+      const proposal = { summary: 'late', skills: [], experience: [] }
+      const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => {
+        entered()
+        await gate
+        return response(proposal)
+      })
+      const lost = executeAi(executionId, fetcher)
+      await started
+      await pool.query(
+        "UPDATE ai_executions SET lease_expires_at=now()-interval '1 second' WHERE id=$1",
+        [executionId],
+      )
+      await recoverExecutions()
+      await runExecution(executionId)
+      const ended = await importOf(id)
+      expect(ended).toMatchObject({ status: 'needs_attention', proposal: null })
+      release()
+      await lost
+      expect(fetcher).toHaveBeenCalledTimes(1)
+      expect(await importOf(id)).toEqual(ended)
+      expect(await readLatestExecution(id)).toMatchObject({
+        state: 'uncertain',
+        cause: 'interrupted',
+        result: null,
+        cost: { actual: null },
+      })
+      const archive = await readExecutionArchive(executionId)
+      expect(archive!.artifacts.map((a) => [a.kind, a.artifact_key])).toEqual([
+        ['output', 'response'],
+      ])
+      expect(JSON.parse(archive!.artifacts[0]!.content)).toMatchObject({
+        id: 'synthetic-response',
+      })
     })
   },
 )

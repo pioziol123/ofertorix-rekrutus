@@ -98,10 +98,10 @@ export type ProviderSettings = {
 
 /**
  * What an adapter observed when the work ended without a result: a
- * response the model did not complete, an error, or a lost lease of a
- * running process on the shared local slot. For a lost lease,
- * `processEnded` says whether the end of the process was observed and the
- * slot released.
+ * response the model did not complete, an error, or a lost lease: of a
+ * running process on the shared local slot, or of the worker of paid work
+ * (whose end is never observed). For a lost lease, `processEnded` says
+ * whether the end of the process was observed and the slot released.
  */
 export type ProviderObservation =
   | { kind: 'outcome'; outcome: 'refused' | 'incomplete' | 'no_content' }
@@ -124,8 +124,10 @@ export type RequestContext = {
   archive?: (raw: string) => Promise<void>
   /**
    * Keeps an exact provider artefact (the request body sent, the raw
-   * response received) in the execution's diagnostic archive. Given only
-   * when the client asked for the archive.
+   * response received) for the execution's diagnostic archive. Given when
+   * the client asked for the archive, and for every paid run: the
+   * coordination archives a paid run's raw response also when the run
+   * finds its execution already ended (SD 0mq.15 decision 3).
    */
   keepArtifact?: (
     kind: 'input' | 'output',
@@ -197,6 +199,12 @@ export type AgentContext = {
    * longer runs, and the adapter sends nothing more.
    */
   save: (state: unknown) => Promise<void>
+  /**
+   * Keeps an exact provider artefact, such as the raw response of a step,
+   * before the adapter reads it, as `RequestContext.keepArtifact` does for
+   * a single call.
+   */
+  keepArtifact?: RequestContext['keepArtifact']
 }
 
 /**
@@ -293,12 +301,17 @@ export type BatchContext = {
  * - `cleanup`: removes what the batch left at the provider once its
  *   outcomes are saved; `needsCleanup` says whether a saved state still
  *   needs it.
+ * - `sending`: whether a saved state (null before the first save) shows a
+ *   group still being sent, before the provider's batch identifier was
+ *   saved. Only sending runs under the lease of the run that took the
+ *   group; a group already sent is left to polling when its run is lost.
  */
 export type BatchRunner = {
   admit: (items: BatchItem[]) => void
   advance: (items: BatchItem[], context: BatchContext) => Promise<BatchStep>
   cleanup: (context: BatchContext) => Promise<void>
   needsCleanup: (state: unknown) => boolean
+  sending: (state: unknown) => boolean
 }
 
 /**

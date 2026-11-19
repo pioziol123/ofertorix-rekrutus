@@ -34,6 +34,7 @@ import {
   type ReceiverDecision,
 } from './index.ts'
 import { budgetMonth } from './domain/cost.ts'
+import { executionLease } from './domain/execution-lease.ts'
 import { admitExecutions } from './admit-executions.ts'
 import { executionSettings } from './execution-settings.ts'
 import {
@@ -197,6 +198,7 @@ integration('AI execution coordination with a real database and queue', () => {
       '1770000000008_matching_groups',
       '1770000000012_matching_batch_archives',
       '1770000000018_matching_ai_executions',
+      '1770000000020_ai_execution_lease',
     ])
       createRequire(import.meta.url)(`../../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),
@@ -1062,6 +1064,168 @@ integration('AI execution coordination with a real database and queue', () => {
     )
     expect(await readBudget(new Date('2020-01-15T12:00:00Z'))).toMatchObject({
       settled: '0.000800',
+    })
+  })
+
+  describe('interrupted paid work (task oferty-pracy-0mq.15)', () => {
+    /** A provider call that waits until the test lets it answer. */
+    function heldAnswer(answer: () => Promise<ModelResult>) {
+      let release!: () => void, entered!: () => void
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      const started = new Promise<void>((resolve) => (entered = resolve))
+      answers.push(async () => {
+        entered()
+        await gate
+        return answer()
+      })
+      return { release, started }
+    }
+    const expireLease = (executionId: string) =>
+      pool.query(
+        "UPDATE ai_executions SET lease_expires_at=now()-interval '1 second' WHERE id=$1",
+        [executionId],
+      )
+    /** Handles every job left in the queue, as the worker would. */
+    async function drain() {
+      while ((await jobs()).length) await work()
+    }
+
+    it('A15-AC01, A15-AC04: a lost worker ends as uncertain and interrupted, delivered once with its reservation; when it returns it publishes nothing and its raw response is archived', async () => {
+      const admitted = await requestExecution(request())
+      const held = heldAnswer(completed({ text: 'late summary' }))
+      const lost = work()
+      await held.started
+      expect(
+        (
+          await pool.query(
+            'SELECT lease_owner IS NOT NULL AS leased, lease_expires_at>now() AS live FROM ai_executions WHERE id=$1',
+            [admitted.executionId],
+          )
+        ).rows[0],
+      ).toEqual({ leased: true, live: true })
+      await expireLease(admitted.executionId)
+      // Two recoveries at once end it once and queue one delivery.
+      await Promise.all([recoverExecutions(), recoverExecutions()])
+      expect(await jobs()).toEqual([admitted.executionId])
+      await drain()
+      const ended = {
+        state: 'uncertain',
+        cause: 'interrupted',
+        result: null,
+        cost: { reserved: ceiling, actual: null },
+      }
+      expect(await readExecution(admitted.executionId)).toMatchObject(ended)
+      expect(failures).toMatchObject([
+        {
+          executionId: admitted.executionId,
+          state: 'uncertain',
+          cause: 'interrupted',
+        },
+      ])
+      expect((await readBudget()).reserved).toBe(ceiling)
+      // The worker returns with a correct result.
+      held.release()
+      await lost
+      await recoverExecutions()
+      expect(await jobs()).toEqual([])
+      expect(calls).toHaveLength(1)
+      expect(results).toEqual([])
+      expect(failures).toHaveLength(1)
+      expect(await clientRows()).toEqual([])
+      expect(await readExecution(admitted.executionId)).toMatchObject(ended)
+      expect((await readBudget()).reserved).toBe(ceiling)
+      // The client did not ask for an archive; the late response is kept.
+      const archive = await readExecutionArchive(admitted.executionId)
+      expect(
+        archive!.artifacts.map((a) => [a.kind, a.artifact_key, a.content]),
+      ).toEqual([
+        ['output', 'response', JSON.stringify({ text: 'late summary' })],
+      ])
+    })
+
+    it('A15-AC04: a worker returning after the end does not retry a transient error and archives nothing it did not receive', async () => {
+      const requested = request()
+      const admitted = await requestExecution(requested)
+      const held = heldAnswer(async () => {
+        throw new ModelError('network', { requestSent: true, transient: true })
+      })
+      const lost = work()
+      await held.started
+      await expireLease(admitted.executionId)
+      await recoverExecutions()
+      await drain()
+      held.release()
+      await lost
+      expect(await jobs()).toEqual([])
+      expect(await readExecutionHistory(requested.operationId)).toMatchObject([
+        { state: 'uncertain', cause: 'interrupted' },
+      ])
+      expect(
+        (await readExecutionArchive(admitted.executionId))!.artifacts,
+      ).toEqual([])
+    })
+
+    it('A15-AC03: a worker that renews its lease is not ended by recovery during a call longer than the lease', async () => {
+      const timing = { ...executionLease }
+      executionLease.renewEveryMs = 100
+      executionLease.durationSeconds = 1
+      try {
+        const admitted = await requestExecution(request())
+        const held = heldAnswer(completed({ text: 'summary' }))
+        const running = work()
+        await held.started
+        // The call lasts 2.5 leases; recovery runs throughout.
+        const until = Date.now() + 2500
+        while (Date.now() < until) {
+          await recoverExecutions()
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+        expect((await readExecution(admitted.executionId))!.state).toBe(
+          'running',
+        )
+        held.release()
+        await running
+        expect(await readExecution(admitted.executionId)).toMatchObject({
+          state: 'completed',
+          result: { text: 'summary' },
+        })
+        expect(failures).toEqual([])
+        expect(results).toHaveLength(1)
+      } finally {
+        Object.assign(executionLease, timing)
+      }
+    })
+
+    it('A15-AC05: when the worker saves its outcome as recovery ends the execution, exactly one end is kept and delivered once', async () => {
+      let completedRounds = 0
+      for (let round = 0; round < 6; round++) {
+        results = []
+        failures = []
+        const admitted = await requestExecution(request())
+        const held = heldAnswer(completed({ text: `summary ${round}` }))
+        const running = work()
+        await held.started
+        await expireLease(admitted.executionId)
+        held.release()
+        await Promise.all([running, recoverExecutions(), recoverExecutions()])
+        await drain()
+        const execution = await readExecution(admitted.executionId)
+        expect(results.length + failures.length).toBe(1)
+        if (results.length) {
+          completedRounds++
+          expect(execution).toMatchObject({
+            state: 'completed',
+            result: { text: `summary ${round}` },
+          })
+        } else
+          expect(execution).toMatchObject({
+            state: 'uncertain',
+            cause: 'interrupted',
+            result: null,
+          })
+        expect(await clientRows()).toHaveLength(completedRounds)
+      }
+      expect(calls).toHaveLength(6)
     })
   })
 })

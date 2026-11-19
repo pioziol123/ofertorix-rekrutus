@@ -17,9 +17,11 @@ import type {
 } from './provider-adapter.ts'
 import { providerAdapter } from './provider-registry.ts'
 import {
+  newLease,
   noOutcome,
   responseOutcome,
   settlementOf,
+  whileLeased,
   type Outcome,
 } from './run-execution.ts'
 
@@ -35,22 +37,24 @@ import {
 
 /**
  * The context of one step: the adapter's state as it was read, and a save
- * that succeeds only while no other run has changed it since.
+ * that succeeds only while no other run has changed it since. The run that
+ * took the group (`holder`, the owner of its lease) saves only while the
+ * group still runs under its lease.
  */
 function batchContext(
   groupId: string,
   state: unknown,
-  claimed: boolean,
+  holder: string | null,
 ): BatchContext & { current: () => unknown } {
   let current = state
   return {
     groupId,
     state,
-    claimed,
+    claimed: holder !== null,
     current: () => current,
     async save(next) {
       const saved = await transaction(() =>
-        saveGroupAdapterState(groupId, current, next),
+        saveGroupAdapterState(groupId, current, next, holder),
       )
       if (saved) current = next
       return saved
@@ -89,7 +93,8 @@ function itemOutcome(
  * Saves the outcome of every running item with the adapter's state of the
  * ended batch, and queues each item's delivery. Nothing is saved when
  * another run changed the adapter's state first, so a batch's outcomes are
- * saved and settled once.
+ * saved and settled once, nor, for the run that took the group, when
+ * recovery ended the group while it was being sent.
  */
 async function saveOutcomes(
   groupId: string,
@@ -97,9 +102,11 @@ async function saveOutcomes(
   adapter: ProviderAdapter,
   expected: unknown,
   ended: { outcomes: Map<string, BatchItemOutcome>; state: unknown },
+  holder: string | null,
 ) {
   await transaction(async () => {
-    if (!(await saveGroupAdapterState(groupId, expected, ended.state))) return
+    if (!(await saveGroupAdapterState(groupId, expected, ended.state, holder)))
+      return
     for (const execution of items) {
       const outcome = itemOutcome(
         execution,
@@ -110,6 +117,7 @@ async function saveOutcomes(
         execution.id,
         { result: outcome.result, end: outcome.end },
         settlementOf(execution, outcome),
+        holder ? { holder } : undefined,
       )
       if (saved) await sendExecutionJob(execution.id)
     }
@@ -152,16 +160,21 @@ async function cleanUp(groupId: string) {
   if (!saved) return
   const found = runnerOf(saved)
   if (!found || !found.runner.needsCleanup(saved.state)) return
-  await found.runner.cleanup(batchContext(groupId, saved.state, false))
+  await found.runner.cleanup(batchContext(groupId, saved.state, null))
 }
 
 /**
  * Carries a batch group one step further: takes its queued items, has the
  * adapter send, poll or collect the batch, saves the outcomes once it
- * ends, and cleans up what it left at the provider.
+ * ends, and cleans up what it left at the provider. The run that takes the
+ * items holds their lease and renews it while the adapter sends them; once
+ * the batch is sent, the adapter's state tells recovery that the group no
+ * longer needs it (SD 0mq.15, batch mode).
  */
 export async function runBatch(groupId: string): Promise<void> {
-  const claimed = (await transaction(() => claimGroup(groupId))) > 0
+  const lease = newLease()
+  const claimed = (await transaction(() => claimGroup(groupId, lease))) > 0
+  const holder = claimed ? lease.owner : null
   const items = await runningGroupRows(groupId)
   if (items.length) {
     const found = runnerOf(items[0]!)
@@ -169,21 +182,30 @@ export async function runBatch(groupId: string): Promise<void> {
       await endUnavailable(items)
       return
     }
-    const context = batchContext(groupId, items[0]!.adapterState, claimed)
-    const step = await found.runner.advance(
-      items.map((execution) => ({
-        itemId: execution.operationId,
-        request: {
-          model: execution.snapshot.settings.model,
-          instructions: execution.snapshot.instruction,
-          input: execution.snapshot.input,
-          output: execution.snapshot.responseSchema,
-        },
-      })),
-      context,
-    )
+    const context = batchContext(groupId, items[0]!.adapterState, holder)
+    const advance = () =>
+      found.runner.advance(
+        items.map((execution) => ({
+          itemId: execution.operationId,
+          request: {
+            model: execution.snapshot.settings.model,
+            instructions: execution.snapshot.instruction,
+            input: execution.snapshot.input,
+            output: execution.snapshot.responseSchema,
+          },
+        })),
+        context,
+      )
+    const step = claimed ? await whileLeased(lease, advance) : await advance()
     if (step.kind === 'wait') return
-    await saveOutcomes(groupId, items, found.adapter, context.current(), step)
+    await saveOutcomes(
+      groupId,
+      items,
+      found.adapter,
+      context.current(),
+      step,
+      holder,
+    )
   }
   await cleanUp(groupId)
 }

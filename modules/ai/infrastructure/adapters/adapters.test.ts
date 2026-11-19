@@ -448,6 +448,12 @@ describe('A14-AC12: each adapter decides the public end of what it observed', ()
       'uncertain',
       'unknown',
     ],
+    [
+      'a lost lease of the worker of paid work (0mq.15)',
+      { kind: 'lost_lease', processEnded: false },
+      'uncertain',
+      'interrupted',
+    ],
   ] as const)('OpenAI: %s', (_, observation, state, cause) => {
     expect(openAiEnd(observation)).toEqual({ state, cause })
   })

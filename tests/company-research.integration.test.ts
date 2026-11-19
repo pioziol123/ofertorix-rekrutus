@@ -107,6 +107,7 @@ integration(
       for (const migration of [
         ...researchMigrations,
         '1770000000019_research_ai_executions',
+        '1770000000020_ai_execution_lease',
       ])
         createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
           sql: (s: string) => sql.push(s),
@@ -446,24 +447,74 @@ integration(
       expect(queue.executionJobs()).toHaveLength(1)
     })
 
-    it('E04-AC04: leaves running research alone with its reservation and never starts a new search, until oferty-pracy-0mq.15', async () => {
+    it('E04-AC04, A15-AC02: ends research interrupted between its steps as uncertain with its whole reservation, and never starts a new search', async () => {
       const op = await requestResearch(companyId, command())
       const executionId = await executionOf(op.id)
-      await pool.query("UPDATE ai_executions SET state='running' WHERE id=$1", [
-        executionId,
-      ])
+      // The worker finishes the search and stops before the synthesis
+      // comes back; its lease lapses.
+      let release!: () => void, entered!: () => void
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      const between = new Promise<void>((resolve) => (entered = resolve))
+      const transport = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json(searchResponse()))
+        .mockImplementationOnce(async () => {
+          entered()
+          await gate
+          return Response.json(synthesisResponse())
+        })
+      const lost = execute(op.id, transport)
+      await between
+      await pool.query(
+        "UPDATE ai_executions SET lease_expires_at=now()-interval '1 second' WHERE id=$1",
+        [executionId],
+      )
       queue.reset()
-      await recoverExecutions()
-      await recoverExecutions()
-      await execute(op.id, mockedProvider())
-      expect(fetcher).not.toHaveBeenCalled()
-      expect(queue.executionJobs()).toHaveLength(0)
-      expect(await operation(op.id)).toMatchObject({
-        state: 'running',
-        costState: 'reserved',
-        error: null,
+      await Promise.all([recoverExecutions(), recoverExecutions()])
+      expect(queue.executionJobs()).toEqual([executionId])
+      await queue.work()
+      const ended = {
+        state: 'unknown',
+        report: null,
+        cost: null,
+        costState: 'unknown',
         reserved: '0.536000',
-      })
+        error: expect.any(String),
+      }
+      expect(await operation(op.id)).toMatchObject(ended)
+      expect(await readExecutionHistory(op.id)).toMatchObject([
+        { state: 'uncertain', cause: 'interrupted' },
+      ])
+      // The lost worker returns: it publishes nothing and changes nothing,
+      // and the responses it received are in the execution's archive.
+      release()
+      await lost
+      await recoverExecutions()
+      await queue.work()
+      expect(transport).toHaveBeenCalledTimes(2)
+      expect(await operation(op.id)).toMatchObject(ended)
+      expect(await readExecutionHistory(op.id)).toMatchObject([
+        { state: 'uncertain', cause: 'interrupted' },
+      ])
+      expect(
+        (
+          await pool.query(
+            'SELECT kind,artifact_key,content FROM matching_batch_artifacts WHERE operation_id=$1 ORDER BY artifact_key',
+            [executionId],
+          )
+        ).rows,
+      ).toEqual([
+        {
+          kind: 'output',
+          artifact_key: 'search',
+          content: JSON.stringify(searchResponse()),
+        },
+        {
+          kind: 'output',
+          artifact_key: 'synthesis',
+          content: JSON.stringify(synthesisResponse()),
+        },
+      ])
       expect(await count('SELECT count(*)::int AS n FROM ai_attempts')).toBe(1)
     })
 
