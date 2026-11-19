@@ -1,4 +1,4 @@
-import { saveWeights } from '../../../lib/matching/ratings'
+import { saveWeights } from '../../../modules/matching'
 import { jsonBody } from '../../utils/http'
 import { ratingHandler } from '../../utils/ratings'
 export default ratingHandler(async (event) =>

@@ -1,4 +1,4 @@
-import { saveManualRating } from '../../../../lib/matching/ratings'
+import { saveManualRating } from '../../../../modules/matching'
 import { jsonBody, routeUuid } from '../../../utils/http'
 import { ratingHandler } from '../../../utils/ratings'
 export default ratingHandler(async (event) =>

@@ -2,7 +2,7 @@
 import {
   matchingStateLabels,
   matchingGroupLabels,
-} from '../../lib/matching/view'
+} from '../../modules/matching/view'
 import type { PolishSource } from '../../modules/sources/view'
 import { remoteEligibilityLabel } from '../../modules/sources/view'
 import {

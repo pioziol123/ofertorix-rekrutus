@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { weightsSchema, type Weights } from '../../lib/matching/weights'
+import { weightsSchema, type Weights } from '../../modules/matching/view'
 const emit = defineEmits<{ updated: [] }>()
 const { data, refresh, error } = await useFetch('/api/matching/weights')
 const draft = ref<Weights | null>(null),
@@ -67,7 +67,7 @@ async function save() {
       zero.
     </p>
     <p v-if="error" role="alert">Nie udało się wczytać wag.</p>
-    <form class="matching-editor" v-if="draft" @submit.prevent="save">
+    <form v-if="draft" class="matching-editor" @submit.prevent="save">
       <fieldset :disabled="busy">
         <label v-for="(label, key) in labels" :key="key"
           >{{ label }} (%)<input

@@ -15,7 +15,10 @@ import {
   assessmentReceiver,
   assessmentSettingsKey,
 } from '../modules/matching/index.ts'
-import { enqueueMatching, readMatching } from '../lib/matching/store.ts'
+import {
+  enqueueMatching,
+  readMatching,
+} from '../modules/matching/request-assessment.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {
   matchingMigrations,

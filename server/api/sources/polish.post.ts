@@ -1,5 +1,9 @@
-import { polishEnabled, polishQuery } from '../../../modules/sources'
-import { requestSync, SourceDisabledError } from '../../../modules/sources'
+import {
+  polishEnabled,
+  polishQuery,
+  requestSync,
+  SourceDisabledError,
+} from '../../../modules/sources'
 import { limitedBytes, queueClient } from '../../utils/http'
 
 export default defineEventHandler(async (event) => {

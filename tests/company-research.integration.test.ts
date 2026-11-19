@@ -22,8 +22,9 @@ import {
 } from '../modules/ai/index.ts'
 import { openAiProvider } from '../modules/ai/infrastructure/adapters/openai.ts'
 import { registerProviderAdapter } from '../modules/ai/provider-registry.ts'
-import { createCompany, CompanyConflict } from '../modules/companies/index.ts'
 import {
+  createCompany,
+  CompanyConflict,
   readCompanyResearch,
   requestResearch,
   researchReceiver,

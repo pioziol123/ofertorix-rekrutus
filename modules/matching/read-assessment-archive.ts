@@ -1,11 +1,8 @@
-import {
-  readExecutionArchive,
-  readLatestExecution,
-} from '../../modules/ai/index.ts'
+import { readExecutionArchive, readLatestExecution } from '../ai/index.ts'
 import {
   legacyPayloads,
   requestExists,
-} from '../../modules/matching/infrastructure/persistence/assessment-requests.ts'
+} from './infrastructure/persistence/assessment-requests.ts'
 
 /**
  * The diagnostic archive of a request's assessment, read through AI: the

@@ -1,6 +1,9 @@
 import { closePool } from '../lib/db.ts'
-import { parseJobspySource } from '../modules/sources/index.ts'
-import { readSourceCatalog, readSyncState } from '../modules/sources/index.ts'
+import {
+  parseJobspySource,
+  readSourceCatalog,
+  readSyncState,
+} from '../modules/sources/index.ts'
 try {
   if (process.argv.length > 4) throw new Error('Invalid arguments')
   let state

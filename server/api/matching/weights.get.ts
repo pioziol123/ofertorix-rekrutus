@@ -1,4 +1,3 @@
-import { readWeights } from '../../../lib/matching/ratings'
-import { database } from '../../utils/database'
+import { readWeights } from '../../../modules/matching'
 import { ratingHandler } from '../../utils/ratings'
-export default ratingHandler(async () => readWeights(database))
+export default ratingHandler(async () => readWeights())

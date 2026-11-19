@@ -1,7 +1,7 @@
 import { closePool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
-import { solidJobsSource as source } from '../modules/sources/index.ts'
 import {
+  solidJobsSource as source,
   readSyncState,
   requestSync,
   useSyncQueue,

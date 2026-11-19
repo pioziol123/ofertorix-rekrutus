@@ -1,13 +1,19 @@
-import { db } from '../db.ts'
-import type { OfferView } from '../../modules/offers/index.ts'
-import { readLatestExecutions } from '../../modules/ai/index.ts'
+import type { OfferView } from '../offers/index.ts'
+import { readLatestExecutions } from '../ai/index.ts'
 import {
   activeAssessments,
   assessmentReservation,
-} from '../../modules/matching/infrastructure/adapters/assessment-ai.ts'
-import { assessmentState } from '../../modules/matching/domain/assessment-state.ts'
-import { activeProfileVersion, currentAdVersions } from './ratings.ts'
-import { matchingGroupLabels, type MatchingSummary } from './view.ts'
+} from './infrastructure/adapters/assessment-ai.ts'
+import { assessmentState } from './domain/assessment-state.ts'
+import { latestOfAds } from './infrastructure/persistence/ratings.ts'
+import {
+  activeProfileVersion,
+  currentAdVersions,
+} from './read-assessment-inputs.ts'
+import {
+  matchingGroupLabels,
+  type MatchingSummary,
+} from './domain/assessment-view.ts'
 /**
  * Adds to each offer the summary of its match assessment. Reads in bulk, a
  * fixed number of queries for any number of offers: the active profile
@@ -21,20 +27,13 @@ export async function decorateMatching(
   const activeId = (await activeProfileVersion())?.id ?? null
   const ids = offers.map((o) => o.id)
   const current = await currentAdVersions(ids)
-  const result = await db().query(
-    `SELECT a.id,l.id AS request_id,l.state,s.id AS score_id,s.calculation,s.assessment_author,s.profile_version_id,s.ad_revision_id
-    FROM unnest($1::uuid[]) AS a(id)
-    LEFT JOIN LATERAL (SELECT id,state FROM matching_requests WHERE ad_id=a.id ORDER BY created_at DESC,id DESC LIMIT 1) l ON true
-    LEFT JOIN matching_rating_heads rh ON rh.ad_id=a.id
-    LEFT JOIN matching_rating_revisions s ON s.id=rh.revision_id`,
-    [ids],
-  )
+  const rows = await latestOfAds(ids)
   // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the AI work of every request in
   // one public read.
   const executions = new Map(
     (
       await readLatestExecutions(
-        result.rows
+        rows
           .filter((row) => row.request_id && row.state !== 'excluded')
           .map((row) => row.request_id),
       )
@@ -42,9 +41,7 @@ export async function decorateMatching(
   )
   // Ads the Sources read no longer knows get no summary, as before.
   const byId = new Map(
-    result.rows
-      .filter((row) => current.has(row.id))
-      .map((row) => [row.id, row]),
+    rows.filter((row) => current.has(row.id)).map((row) => [row.id, row]),
   )
   const percent = (value: unknown) =>
     typeof value === 'number' &&

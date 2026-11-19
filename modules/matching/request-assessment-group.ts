@@ -1,30 +1,36 @@
 import { z } from 'zod'
-import { transaction } from '../db.ts'
+import { transaction } from '../../lib/db.ts'
 import {
   AiRequestError,
   readExecutionHistory,
   readLatestExecutions,
-} from '../../modules/ai/index.ts'
+} from '../ai/index.ts'
 import {
   assessmentReservation,
   requestAssessmentGroup,
-} from '../../modules/matching/infrastructure/adapters/assessment-ai.ts'
+} from './infrastructure/adapters/assessment-ai.ts'
 import {
   assessmentState,
   groupNotConfiguredMessage,
   refusalMessage,
-} from '../../modules/matching/domain/assessment-state.ts'
+} from './domain/assessment-state.ts'
 import {
   requestedOfAds,
   requestedWith,
   requestsOfAd,
   linkExecution,
   lockCommand,
-} from '../../modules/matching/infrastructure/persistence/assessment-requests.ts'
-import { activeProfileVersion, adsForAssessment } from './ratings.ts'
-import { MatchingError, prepareMatching } from './store.ts'
-import type { MatchingInput } from './model.ts'
-import { matchingPending, type MatchingState } from './view.ts'
+} from './infrastructure/persistence/assessment-requests.ts'
+import {
+  activeProfileVersion,
+  adsForAssessment,
+} from './read-assessment-inputs.ts'
+import { MatchingError, prepareMatching } from './request-assessment.ts'
+import type { MatchingInput } from './domain/assessment.ts'
+import {
+  matchingPending,
+  type MatchingState,
+} from './domain/assessment-view.ts'
 export const groupCommandSchema = z
   .object({
     commandId: z

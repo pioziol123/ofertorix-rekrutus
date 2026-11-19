@@ -9,7 +9,7 @@ import {
   validateAssessment,
   type Assessment,
   type MatchingInput,
-} from '../lib/matching/model.ts'
+} from '../modules/matching/domain/assessment.ts'
 import { emptyProfile, emptySkill } from '../modules/profile/view.ts'
 import type { OfferView } from '../modules/offers/index.ts'
 

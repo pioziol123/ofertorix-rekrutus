@@ -24,7 +24,19 @@ import {
   extractImport,
   recoverImports,
 } from '../modules/profile/extract-cv-text.ts'
-import { parseQueue } from '../modules/profile/index.ts'
+import {
+  parseQueue,
+  confirmProfile,
+  importCvDocument,
+  importCvText,
+  prepareProposal,
+  proposalReceiver,
+  proposalSettingsKey,
+  readImport,
+  readOriginalFile,
+  readProfile,
+  saveDraft,
+} from '../modules/profile/index.ts'
 import { closePool, setPool } from '../lib/db.ts'
 import {
   aiExecutionJobOptions,
@@ -38,18 +50,6 @@ import {
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import { openAiProvider } from '../modules/ai/infrastructure/adapters/openai.ts'
 import { registerProviderAdapter } from '../modules/ai/provider-registry.ts'
-import {
-  confirmProfile,
-  importCvDocument,
-  importCvText,
-  prepareProposal,
-  proposalReceiver,
-  proposalSettingsKey,
-  readImport,
-  readOriginalFile,
-  readProfile,
-  saveDraft,
-} from '../modules/profile/index.ts'
 import { usePricing } from './ai-test-configuration.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.

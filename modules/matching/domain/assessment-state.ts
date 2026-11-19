@@ -3,7 +3,7 @@ import type {
   ExecutionCause,
   ExecutionState,
 } from '../../ai/index.ts'
-import type { MatchingState } from '../../../lib/matching/view.ts'
+import type { MatchingState } from './assessment-view.ts'
 
 /**
  * The state of an assessment request the owner sees. A request Matching

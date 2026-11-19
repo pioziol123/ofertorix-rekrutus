@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { matchingCriterionLabel } from '../../lib/matching/view'
-import type { Assessment } from '../../lib/matching/model'
+import { matchingCriterionLabel } from '../../modules/matching/view'
+import type { Assessment } from '../../modules/matching/view'
 const props = defineProps<{ offerId: string }>()
 const emit = defineEmits<{ updated: [] }>()
 const { data, refresh, error } = await useFetch(
@@ -83,7 +83,7 @@ async function save() {
     </p>
     <p v-if="error" role="alert">Nie udało się wczytać formularza.</p>
     <p v-else-if="!data">Najpierw zatwierdź profil zawodowy.</p>
-    <form class="matching-editor" v-if="data && draft" @submit.prevent="save">
+    <form v-if="data && draft" class="matching-editor" @submit.prevent="save">
       <fieldset :disabled="busy">
         <p v-if="data.staleBase" class="notice">
           Profil lub ogłoszenie zmieniły się. Formularz obejmuje aktualne

@@ -1,4 +1,4 @@
-import { enqueueMatching, MatchingError } from '../../../../lib/matching/store'
+import { enqueueMatching, MatchingError } from '../../../../modules/matching'
 import {
   apiHandler,
   jsonBody,

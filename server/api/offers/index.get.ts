@@ -1,7 +1,10 @@
-import { matchingListStatus } from '../../../lib/matching/list'
+import { matchingListStatus } from '../../../modules/matching'
 import { listOffers, parseFilters } from '../../../modules/offers'
-import { readSourceCatalog, readSyncState } from '../../../modules/sources'
-import { solidJobsSource as solidJobs } from '../../../modules/sources'
+import {
+  readSourceCatalog,
+  readSyncState,
+  solidJobsSource as solidJobs,
+} from '../../../modules/sources'
 export default defineEventHandler(async (event) => {
   let filters
   try {

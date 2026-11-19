@@ -14,7 +14,7 @@ import {
 import {
   assessmentSchema,
   type MatchingInput,
-} from '../../../../lib/matching/model.ts'
+} from '../../domain/assessment.ts'
 import {
   recordAssessmentEnd,
   recordAssessmentResult,

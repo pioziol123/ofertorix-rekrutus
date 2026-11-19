@@ -1,4 +1,4 @@
-import { decorateMatching } from '../../lib/matching/list.ts'
+import { decorateMatching } from '../matching/index.ts'
 import { filterOffers } from './domain/filter-offers.ts'
 import type { Filters } from './domain/filters.ts'
 import { readOffers } from './read-offers.ts'

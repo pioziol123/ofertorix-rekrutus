@@ -2,7 +2,7 @@
 import {
   matchingCriterionLabel,
   matchingPending,
-} from '../../lib/matching/view'
+} from '../../modules/matching/view'
 const props = defineProps<{ offerId: string; refreshVersion?: number }>()
 const emit = defineEmits<{ updated: [] }>()
 const { data, refresh, error } = await useFetch(

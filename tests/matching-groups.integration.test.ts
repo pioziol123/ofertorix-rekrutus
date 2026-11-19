@@ -25,9 +25,12 @@ import {
   assessmentReceiver,
   assessmentSettingsKey,
 } from '../modules/matching/index.ts'
-import { enqueueMatching, readMatching } from '../lib/matching/store.ts'
-import { enqueueMatchingGroup } from '../lib/matching/groups.ts'
-import { readBatchArchive } from '../lib/matching/archive.ts'
+import {
+  enqueueMatching,
+  readMatching,
+} from '../modules/matching/request-assessment.ts'
+import { enqueueMatchingGroup } from '../modules/matching/request-assessment-group.ts'
+import { readBatchArchive } from '../modules/matching/read-assessment-archive.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {
   migrate,

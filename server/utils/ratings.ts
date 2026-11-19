@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { createError } from 'h3'
 import { ZodError } from 'zod'
-import { RatingConflict } from '../../lib/matching/ratings'
+import { RatingConflict } from '../../modules/matching'
 import { apiHandler } from './http'
 export function ratingHandler<T>(run: (event: H3Event) => Promise<T>) {
   return apiHandler(async (event) => {

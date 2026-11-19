@@ -10,7 +10,10 @@ import {
   it,
   vi,
 } from 'vitest'
-import { decorateMatching, matchingListStatus } from '../lib/matching/list.ts'
+import {
+  decorateMatching,
+  matchingListStatus,
+} from '../modules/matching/read-offer-assessments.ts'
 import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 import {
   activeProfileVersion,
@@ -19,7 +22,7 @@ import {
   readWeights,
   saveManualRating,
   saveWeights,
-} from '../lib/matching/ratings.ts'
+} from '../modules/matching/ratings.ts'
 import { emptyProfile } from '../modules/profile/view.ts'
 import { listOffers, parseFilters } from '../modules/offers/index.ts'
 import { usePricing } from './ai-test-configuration.ts'

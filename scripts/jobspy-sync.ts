@@ -1,8 +1,8 @@
 import { closePool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
-import { parseJobspySource } from '../modules/sources/index.ts'
-import { jobspyEnabled } from '../modules/sources/index.ts'
 import {
+  parseJobspySource,
+  jobspyEnabled,
   readSyncState,
   requestSync,
   SourceDisabledError,

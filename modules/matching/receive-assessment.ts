@@ -1,13 +1,10 @@
 import type { ExecutionCause, ReceiverDecision } from '../ai/index.ts'
-import {
-  AssessmentError,
-  validateAssessment,
-} from '../../lib/matching/model.ts'
+import { AssessmentError, validateAssessment } from './domain/assessment.ts'
+import { publishAiRating } from './ratings.ts'
 import {
   activeProfileVersion,
   currentAdVersions,
-  publishAiRating,
-} from '../../lib/matching/ratings.ts'
+} from './read-assessment-inputs.ts'
 import { endMessage, rejectionMessage } from './domain/assessment-state.ts'
 import {
   lockAssessmentRequest,

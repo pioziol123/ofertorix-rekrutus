@@ -3,7 +3,7 @@ import type {
   Assessment,
   MatchingInput,
   calculate,
-} from '../../../../lib/matching/model.ts'
+} from '../../domain/assessment.ts'
 
 /**
  * Matching's assessment requests. A request keeps its own state only:

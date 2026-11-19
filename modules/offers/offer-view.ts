@@ -1,4 +1,4 @@
-import type { MatchingSummary } from '../../lib/matching/view.ts'
+import type { MatchingSummary } from '../matching/view.ts'
 import type { Salary, SourceAdContent } from '../sources/index.ts'
 
 export type { Salary }

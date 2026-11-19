@@ -21,10 +21,13 @@ import {
   readWeights,
   saveManualRating,
   saveWeights,
-} from '../lib/matching/ratings.ts'
-import { defaultWeights } from '../lib/matching/weights.ts'
-import type { Assessment, MatchingInput } from '../lib/matching/model.ts'
-import { readMatching } from '../lib/matching/store.ts'
+} from '../modules/matching/ratings.ts'
+import { defaultWeights } from '../modules/matching/domain/weights.ts'
+import type {
+  Assessment,
+  MatchingInput,
+} from '../modules/matching/domain/assessment.ts'
+import { readMatching } from '../modules/matching/request-assessment.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import { insertExecution, migrate } from './matching-ai.fixtures.ts'
 

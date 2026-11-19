@@ -10,21 +10,27 @@ import {
   vi,
 } from 'vitest'
 import { closePool, setPool, transaction } from '../lib/db.ts'
-import type { Assessment, MatchingInput } from '../lib/matching/model.ts'
+import type {
+  Assessment,
+  MatchingInput,
+} from '../modules/matching/domain/assessment.ts'
 import {
   currentAdVersions,
   manualContext,
   publishAiRating,
   RatingConflict,
   saveManualRating,
-} from '../lib/matching/ratings.ts'
-import { enqueueMatching, readMatching } from '../lib/matching/store.ts'
+} from '../modules/matching/ratings.ts'
+import {
+  enqueueMatching,
+  readMatching,
+} from '../modules/matching/request-assessment.ts'
 import { registerResultReceiver, useAiQueue } from '../modules/ai/index.ts'
 import {
   assessmentReceiver,
   assessmentSettingsKey,
 } from '../modules/matching/index.ts'
-import { defaultWeights } from '../lib/matching/weights.ts'
+import { defaultWeights } from '../modules/matching/domain/weights.ts'
 import { emptyProfile } from '../modules/profile/view.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {

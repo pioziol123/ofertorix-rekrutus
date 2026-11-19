@@ -1,4 +1,4 @@
-import { matchingPending } from '../../../lib/matching/view.ts'
+import { matchingPending } from '../../matching/view.ts'
 import type { OfferView } from '../offer-view.ts'
 import type { Filters } from './filters.ts'
 import { salaryMatch } from './salary-match.ts'

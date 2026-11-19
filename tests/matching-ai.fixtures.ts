@@ -13,7 +13,7 @@ import {
 } from '../modules/ai/infrastructure/adapters/openai-batch.ts'
 import { openAiProvider } from '../modules/ai/infrastructure/adapters/openai.ts'
 import { registerProviderAdapter } from '../modules/ai/provider-registry.ts'
-import type { MatchingInput } from '../lib/matching/model.ts'
+import type { MatchingInput } from '../modules/matching/domain/assessment.ts'
 
 /**
  * Shared setup of the Matching tests that run assessments through the AI

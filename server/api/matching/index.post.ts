@@ -1,5 +1,4 @@
-import { enqueueMatchingGroup } from '../../../lib/matching/groups'
-import { MatchingError } from '../../../lib/matching/store'
+import { enqueueMatchingGroup, MatchingError } from '../../../modules/matching'
 import { apiHandler, jsonBody, queueClient } from '../../utils/http'
 export default apiHandler(async (event) => {
   const body = await jsonBody(event)
