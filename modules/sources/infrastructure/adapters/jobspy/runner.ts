@@ -304,6 +304,8 @@ export function runJobspy(options: ProcessOptions = {}): Promise<unknown> {
     const runner =
       options.runner ??
       process.env.JOBSPY_RUNNER_PATH ??
+      // The helper tool stays in scripts/ as a startup file (solution design,
+      // connector structure). ASSUMPTION(oferty-pracy-0mq.12/ASM-2)
       resolve('scripts/jobspy-runner.py')
     const child = spawn(python, [runner], {
       shell: false,

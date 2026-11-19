@@ -6,7 +6,7 @@ Canonical code: [JobSpy fork](https://github.com/pioziol123/JobSpy/tree/codex/in
 
 When updating, change the code in the separate repo, verify it with the tester, give the fork the next version and build the package. Put the new wheel, the dependency export and the manifest in this directory; keep only the version in use. After an authorised publication, fill in the exact commit and confirm that the package files match it. Check the licence, the checksums, the tests and the worker image build. Do not update automatically from the moving main branch.
 
-Entry into the application: [Python runner](../../scripts/jobspy-runner.py), [process and validation](../../lib/sources/jobspy.ts), [queue and storage](../../lib/sources/jobspy-sync.ts). Scope and acceptance: [requirements](../../docs/specs/jobspy/features/integracja-aplikacji/requirements.md).
+Entry into the application: [Python runner](../../scripts/jobspy-runner.py), [process and validation](../../modules/sources/infrastructure/adapters/jobspy/runner.ts), [connector](../../modules/sources/infrastructure/adapters/jobspy/connector.ts), [request and queue](../../modules/sources/README.md#requesting-a-sync). Scope and acceptance: [requirements](../../docs/specs/jobspy/features/integracja-aplikacji/requirements.md).
 
 Running the source stays disabled (`JOBSPY_ENABLED=false`). The Indeed HTML adapter is connected to the runner; a trial of the Indeed Poland list returned HTTP 403, so the source stays disabled until a successful pilot.
 

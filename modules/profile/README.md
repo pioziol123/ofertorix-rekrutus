@@ -54,10 +54,10 @@ The profile routes pass every request to these public operations: the CV import 
 
 Routes, the worker and other modules import operations from `index.ts`; it also exports what the worker uses to extract the text of uploaded documents (`workCvTextQueue`, `recoverImports`) and the queue settings the queue schema is prepared with. Views run in the browser, so they have a separate entry `view.ts`, which does not reach into server code: the profile data type, the empty profile and its items, the expectation keys and the proposal type.
 
-| Place                         | Contents                                                                                         |
-| ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| operation files               | CV import, text extraction, proposal preparation and application, draft and confirmed versions.  |
-| `domain/`                     | The profile data and proposal contracts, the CV document rules, proposal preparation and result. |
-| `infrastructure/persistence/` | Imports, the draft and the confirmed versions.                                                   |
-| `infrastructure/adapters/`    | The stored original documents and the integration with the AI module.                            |
-| `infrastructure/worker/`      | The queue that extracts the text of an uploaded document.                                        |
+| Place                         | Contents                                                                                                  |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| operation files               | CV import, text extraction, proposal preparation and application, draft and confirmed versions.           |
+| `domain/`                     | The profile data and proposal contracts, the CV document rules, proposal preparation and result.          |
+| `infrastructure/persistence/` | Imports, the draft and the confirmed versions.                                                            |
+| `infrastructure/adapters/`    | The stored original documents, the text extraction helper process and the integration with the AI module. |
+| `infrastructure/worker/`      | The queue that extracts the text of an uploaded document.                                                 |

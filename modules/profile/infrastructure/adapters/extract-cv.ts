@@ -1,3 +1,9 @@
+/**
+ * The helper process that extracts the text of a CV document. The Profile's
+ * text extraction starts it with a memory limit and a time limit, so a
+ * malformed document cannot take the worker down. Arguments: the kind (pdf or
+ * docx) and the document path; prints {"text": ...} as JSON.
+ */
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'

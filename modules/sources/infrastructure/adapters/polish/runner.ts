@@ -394,6 +394,8 @@ export function runPolish(
   return new Promise((resolveResult, reject) => {
     const child = spawn(
       options.python ?? process.env.JOBSPY_PYTHON ?? '/opt/jobspy/bin/python',
+      // The helper tool stays in scripts/ as a startup file (solution design,
+      // connector structure). ASSUMPTION(oferty-pracy-0mq.12/ASM-2)
       [options.runner ?? resolve('scripts/polish-runner.py')],
       {
         shell: false,

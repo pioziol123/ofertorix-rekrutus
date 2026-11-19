@@ -44,7 +44,9 @@ export async function extractImport(id: string, root = documentRoot()) {
         '--max-old-space-size=256',
         '--import',
         'tsx',
-        fileURLToPath(new URL('../../scripts/extract-cv.ts', import.meta.url)),
+        fileURLToPath(
+          new URL('./infrastructure/adapters/extract-cv.ts', import.meta.url),
+        ),
         taken.kind,
         storedDocumentPath(taken.pathKey, root),
       ],

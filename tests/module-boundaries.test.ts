@@ -131,6 +131,41 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
     expect(reads).toEqual([])
   })
 
+  it('leaves in scripts only startup scripts, tooling and the helper tools the design keeps there (0mq.12 ASM-2)', () => {
+    const listed = readdirSync(join(root, 'scripts')).sort()
+    expect(listed).toEqual(
+      [
+        // Startup scripts named in package.json.
+        'himalayas-sync.ts',
+        'init-queue.ts',
+        'jobspy-status.ts',
+        'jobspy-sync.ts',
+        'polish-status.ts',
+        'polish-sync.ts',
+        'smoke.ts',
+        'source-status.ts',
+        'source-sync.ts',
+        'worker-health.ts',
+        // Project tooling.
+        'check-format.ts',
+        'check-spec-altitude.ts',
+        'check-spec-sync.ts',
+        'format-changes.ts',
+        'gate.sh',
+        'setup-env.mjs',
+        'spec-altitude.ts',
+        'spec-sync.ts',
+        'test-integration.sh',
+        // The Sources connectors' Python helper tools, which the solution
+        // design keeps here as startup files (ASSUMPTION(oferty-pracy-0mq.12/ASM-2)).
+        'jobspy-runner.py',
+        'polish-runner.py',
+        'polish_json_sources.py',
+        'polish_sources.py',
+      ].sort(),
+    )
+  })
+
   it('leaves outside the modules only the shared infrastructure in lib', () => {
     expect(files('lib').sort()).toEqual([
       'lib/contact-details.ts',
