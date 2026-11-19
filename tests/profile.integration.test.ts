@@ -18,13 +18,13 @@ import {
   applyProposal,
   emptyProfile,
   emptySkill,
-} from '../lib/profile/model.ts'
+} from '../modules/profile/domain/profile-data.ts'
+import { digest } from '../modules/profile/domain/cv-document.ts'
 import {
-  digest,
   extractImport,
-  parseQueue,
   recoverImports,
-} from '../lib/profile/imports.ts'
+} from '../modules/profile/extract-cv-text.ts'
+import { parseQueue } from '../modules/profile/index.ts'
 import { closePool, setPool } from '../lib/db.ts'
 import {
   aiExecutionJobOptions,

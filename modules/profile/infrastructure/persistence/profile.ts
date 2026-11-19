@@ -1,5 +1,5 @@
 import { db } from '../../../../lib/db.ts'
-import type { ProfileData } from '../../../../lib/profile/model.ts'
+import type { ProfileData } from '../../domain/profile-data.ts'
 
 /**
  * The profile aggregate: the head that points at the active version, the

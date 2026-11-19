@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
 import { readBatchArchive } from '../lib/matching/archive.ts'
 import { archiveArtifact } from '../modules/ai/infrastructure/persistence/batch-archive.ts'
-import { emptyProfile } from '../lib/profile/model.ts'
+import { emptyProfile } from '../modules/profile/view.ts'
 import { migrate } from './matching-ai.fixtures.ts'
 
 /**

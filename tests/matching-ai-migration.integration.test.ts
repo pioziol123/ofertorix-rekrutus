@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
-import { emptyProfile } from '../lib/profile/model.ts'
+import { emptyProfile } from '../modules/profile/view.ts'
 import {
   readBudget,
   readExecutionHistory,

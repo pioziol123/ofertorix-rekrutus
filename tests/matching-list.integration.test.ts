@@ -20,7 +20,7 @@ import {
   saveManualRating,
   saveWeights,
 } from '../lib/matching/ratings.ts'
-import { emptyProfile } from '../lib/profile/model.ts'
+import { emptyProfile } from '../modules/profile/view.ts'
 import { listOffers, parseFilters } from '../modules/offers/index.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import { insertExecution, migrate } from './matching-ai.fixtures.ts'

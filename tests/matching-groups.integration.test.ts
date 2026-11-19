@@ -10,7 +10,7 @@ import {
   it,
   vi,
 } from 'vitest'
-import { emptyProfile } from '../lib/profile/model.ts'
+import { emptyProfile } from '../modules/profile/view.ts'
 import { confirmProfile, saveDraft } from '../modules/profile/index.ts'
 import {
   readExecutionHistory,

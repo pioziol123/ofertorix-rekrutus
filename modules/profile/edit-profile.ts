@@ -4,7 +4,7 @@ import {
   emptyProfile,
   profileSchema,
   type ProfileData,
-} from '../../lib/profile/model.ts'
+} from './domain/profile-data.ts'
 import { ProfileConflict } from './errors.ts'
 import {
   activateVersion,

@@ -1,5 +1,5 @@
-import { uuid } from '../../../../../lib/profile/model'
 import { readOriginalFile } from '../../../../../modules/profile/index'
+import { uuid } from '../../../../utils/http'
 import { profileHandler } from '../../../../utils/profile'
 export default profileHandler(async (event) => {
   const file = await readOriginalFile(uuid.parse(getRouterParam(event, 'id')))

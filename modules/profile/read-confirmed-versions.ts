@@ -1,4 +1,4 @@
-import { profileSchema, type ProfileData } from '../../lib/profile/model.ts'
+import { profileSchema, type ProfileData } from './domain/profile-data.ts'
 import {
   findActiveVersion,
   findVersionMetadata,

@@ -1,5 +1,6 @@
 import { db } from '../../../../lib/db.ts'
-import type { Proposal } from '../../../../lib/profile/model.ts'
+import type { Proposal } from '../../domain/profile-data.ts'
+import type { StoredDocument } from '../adapters/document-storage.ts'
 
 /** The import fields proposal preparation checks before it starts. */
 export type ImportForPreparation = {
@@ -211,4 +212,88 @@ export async function markImportFailed(importId: string, message: string) {
     "UPDATE profile_imports SET status='failed',error=$2 WHERE id=$1",
     [importId, message],
   )
+}
+
+/** The stored original of an import, or null when it has none. */
+export async function readImportDocument(
+  importId: string,
+): Promise<StoredDocument | null> {
+  const row = (
+    await db().query(
+      'SELECT path_key,sha256,original_name,kind FROM profile_imports WHERE id=$1',
+      [importId],
+    )
+  ).rows[0]
+  if (!row?.path_key) return null
+  return {
+    pathKey: String(row.path_key),
+    sha256: String(row.sha256),
+    name: String(row.original_name),
+    kind: String(row.kind),
+  }
+}
+
+/**
+ * Moves a queued file import to extracting and returns its document, or
+ * null when another run took it or it is not queued.
+ */
+export async function takeQueuedImport(
+  importId: string,
+): Promise<{ kind: string; pathKey: string } | null> {
+  const row = (
+    await db().query(
+      "UPDATE profile_imports SET status='extracting',updated_at=now() WHERE id=$1 AND status='queued' RETURNING kind,path_key",
+      [importId],
+    )
+  ).rows[0]
+  return row ? { kind: String(row.kind), pathKey: String(row.path_key) } : null
+}
+
+/** Saves the extracted text while the import is still being extracted. */
+export async function saveExtractedText(importId: string, text: string) {
+  await db().query(
+    "UPDATE profile_imports SET status='ready',source_text=$2,error=NULL,updated_at=now() WHERE id=$1 AND status='extracting'",
+    [importId, text],
+  )
+}
+
+/** Asks for pasted text while the import is still being extracted. */
+export async function markTextNeeded(importId: string, message: string) {
+  await db().query(
+    "UPDATE profile_imports SET status='needs_text',error=$2,updated_at=now() WHERE id=$1 AND status='extracting'",
+    [importId, message],
+  )
+}
+
+/** A file import that has not moved, with the state and moment read. */
+export type StalledImport = { id: string; status: string; seen: string }
+
+/** The file imports that have not moved for 3 minutes. */
+export async function stalledImports(): Promise<StalledImport[]> {
+  return (
+    await db().query<StalledImport>(
+      "SELECT id,status,updated_at::text AS seen FROM profile_imports WHERE status IN ('receiving','queued','extracting') AND updated_at<now()-interval '3 minutes'",
+    )
+  ).rows
+}
+
+const unchanged = 'id=$1 AND status=$2 AND updated_at=$3::timestamptz'
+
+/** Marks a stalled import whose original is unusable, if it has not moved. */
+export async function markSourceMissing(stalled: StalledImport) {
+  await db().query(
+    `UPDATE profile_imports SET status='source_missing',error='Brak poprawnego pliku źródłowego',updated_at=now() WHERE ${unchanged}`,
+    [stalled.id, stalled.status, stalled.seen],
+  )
+}
+
+/** Queues a stalled import again; false when it has moved since the read. */
+export async function requeueStalledImport(
+  stalled: StalledImport,
+): Promise<boolean> {
+  const taken = await db().query(
+    `UPDATE profile_imports SET status='queued',updated_at=now() WHERE ${unchanged}`,
+    [stalled.id, stalled.status, stalled.seen],
+  )
+  return !!taken.rowCount
 }

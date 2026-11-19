@@ -7,11 +7,11 @@ import {
   emptySkill,
   profileSchema,
   ProposalEvidenceError,
-} from '../lib/profile/model.ts'
+} from '../modules/profile/domain/profile-data.ts'
 import { budgetMonth, chargeCeiling } from '../modules/ai/domain/cost.ts'
 import type { AiConfiguration } from '../modules/ai/model-catalog.ts'
 import { scrubContacts } from '../lib/contact-details.ts'
-import { validateDocument } from '../lib/profile/imports.ts'
+import { validateDocument } from '../modules/profile/domain/cv-document.ts'
 
 const config: AiConfiguration = {
   model: 'test',

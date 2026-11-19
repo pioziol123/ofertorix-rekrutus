@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { closePool, setPool, transaction } from '../../lib/db.ts'
-import { emptyProfile } from '../../lib/profile/model.ts'
+import { emptyProfile } from './domain/profile-data.ts'
 import {
   confirmProfile,
   saveDraft,

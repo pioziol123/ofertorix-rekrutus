@@ -7,7 +7,7 @@ import {
   type RequestedExecution,
   type ResultReceiver,
 } from '../../../ai/index.ts'
-import { factSchema } from '../../../../lib/profile/model.ts'
+import { factSchema } from '../../domain/profile-data.ts'
 import {
   recordPreparationEnd,
   recordPreparationResult,

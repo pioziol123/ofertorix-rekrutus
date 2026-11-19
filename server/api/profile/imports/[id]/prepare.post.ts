@@ -1,7 +1,6 @@
 import { z } from 'zod'
-import { uuid } from '../../../../../lib/profile/model'
 import { prepareProposal } from '../../../../../modules/profile/index'
-import { jsonBody, queueClient } from '../../../../utils/http'
+import { jsonBody, queueClient, uuid } from '../../../../utils/http'
 import { profileHandler } from '../../../../utils/profile'
 export default profileHandler(async (event) => {
   const body = z

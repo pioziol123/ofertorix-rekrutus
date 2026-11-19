@@ -1,7 +1,6 @@
 import { z } from 'zod'
-import { uuid } from '../../../lib/profile/model'
 import { confirmProfile } from '../../../modules/profile/index'
-import { jsonBody } from '../../utils/http'
+import { jsonBody, uuid } from '../../utils/http'
 import { profileHandler } from '../../utils/profile'
 export default profileHandler(async (event) => {
   const b = z

@@ -2,7 +2,7 @@ import {
   checkProposal,
   ProposalEvidenceError,
   type Proposal,
-} from '../../../lib/profile/model.ts'
+} from './profile-data.ts'
 
 /**
  * A result the Profile does not accept: the owner's message, and the rule

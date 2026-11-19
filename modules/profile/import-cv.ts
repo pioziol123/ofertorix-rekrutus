@@ -2,15 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { PgBoss } from 'pg-boss'
-import { db, queueDatabase, transaction } from '../../lib/db.ts'
-import { requireQueued } from '../../lib/queue.ts'
-import {
-  digest,
-  documentRoot,
-  originalFile,
-  parseQueue,
-  validateDocument,
-} from '../../lib/profile/imports.ts'
+import { transaction } from '../../lib/db.ts'
+import { digest, validateDocument } from './domain/cv-document.ts'
+import { originalFile } from './extract-cv-text.ts'
+import { documentRoot } from './infrastructure/adapters/document-storage.ts'
+import { sendCvTextJob } from './infrastructure/worker/cv-text-queue.ts'
 import {
   insertFileImport,
   insertTextImport,
@@ -63,13 +59,7 @@ export async function importCvDocument(
     await rename(join(root, `${pathKey}.tmp`), join(root, pathKey))
     await transaction(async () => {
       await setImportStatus(id, 'queued')
-      await requireQueued(
-        boss.send(
-          parseQueue,
-          { importId: id },
-          { db: queueDatabase, retryLimit: 0, expireInSeconds: 120 },
-        ),
-      )
+      await sendCvTextJob(boss, id)
     })
   } catch {
     await markImportFailed(
@@ -89,5 +79,5 @@ export async function readOriginalFile(
   importId: string,
   root = documentRoot(),
 ) {
-  return originalFile(db(), importId, root)
+  return originalFile(importId, root)
 }

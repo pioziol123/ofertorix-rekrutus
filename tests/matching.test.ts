@@ -10,7 +10,7 @@ import {
   type Assessment,
   type MatchingInput,
 } from '../lib/matching/model.ts'
-import { emptyProfile, emptySkill } from '../lib/profile/model.ts'
+import { emptyProfile, emptySkill } from '../modules/profile/view.ts'
 import type { OfferView } from '../modules/offers/index.ts'
 
 const offer = (changes: Partial<OfferView> = {}): OfferView => ({

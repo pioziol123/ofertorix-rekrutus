@@ -25,7 +25,7 @@ import {
   assessmentSettingsKey,
 } from '../modules/matching/index.ts'
 import { defaultWeights } from '../lib/matching/weights.ts'
-import { emptyProfile } from '../lib/profile/model.ts'
+import { emptyProfile } from '../modules/profile/view.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {
   migrate,

@@ -37,9 +37,12 @@ export function queueClient() {
   return bossPromise
 }
 
+/** A UUID, as identifiers in route parameters and request bodies are. */
+export const uuid = z.string().uuid()
+
 /** A route parameter that must be a UUID; another value fails with 422. */
 export function routeUuid(event: H3Event, name = 'id'): string {
-  return z.string().uuid().parse(getRouterParam(event, name))
+  return uuid.parse(getRouterParam(event, name))
 }
 
 /** The raw request body, refused with 413 above `limit` bytes. */

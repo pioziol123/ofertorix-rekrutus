@@ -2,7 +2,7 @@ import { transaction } from '../../lib/db.ts'
 import {
   applyProposal as mergeProposal,
   checkProposal,
-} from '../../lib/profile/model.ts'
+} from './domain/profile-data.ts'
 import { currentDraft, writeDraft } from './edit-profile.ts'
 import { ProfileConflict, ProposalNotFound } from './errors.ts'
 import { findSavedProposal } from './infrastructure/persistence/imports.ts'

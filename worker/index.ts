@@ -8,24 +8,21 @@ import {
 import {
   proposalReceiver,
   proposalSettingsKey,
+  recoverImports,
   resumeProposalPreparations,
+  workCvTextQueue,
 } from '../modules/profile/index.ts'
 import { closePool, getPool } from '../lib/db.ts'
 import { createBoss, smokeQueue } from '../lib/queue.ts'
 
-import { scheduleDay } from '../modules/sources/index.ts'
 import {
   recoverSyncRuns,
+  scheduleDay,
   requestScheduledSyncs,
   useSyncQueue,
   workSyncQueue,
 } from '../modules/sources/index.ts'
 
-import {
-  parseQueue,
-  extractImport,
-  recoverImports,
-} from '../lib/profile/imports.ts'
 import {
   assessmentReceiver,
   assessmentSettingsKey,
@@ -64,9 +61,7 @@ useSyncQueue(boss)
 await recoverSyncRuns()
 await workSyncQueue(boss)
 await recoverImports(boss)
-await boss.work<{ importId: string }>(parseQueue, async (jobs) => {
-  for (const job of jobs) await extractImport(job.data.importId)
-})
+await workCvTextQueue(boss)
 useAiQueue(boss)
 registerResultReceiver(proposalSettingsKey, proposalReceiver)
 registerResultReceiver(assessmentSettingsKey, assessmentReceiver)

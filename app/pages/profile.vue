@@ -6,7 +6,7 @@ import {
   expectationKeys,
   type ProfileData,
   type Proposal,
-} from '../../lib/profile/model'
+} from '../../modules/profile/view'
 useHead({ title: 'Mój profil — Oferty pracy' })
 type Version = {
   id: string

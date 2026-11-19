@@ -11,8 +11,10 @@ import { Pool } from 'pg'
 import { PgBoss } from 'pg-boss'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
-import { emptyProfile } from '../lib/profile/model.ts'
-import { digest, extractImport, parseQueue } from '../lib/profile/imports.ts'
+import { emptyProfile } from '../modules/profile/view.ts'
+import { digest } from '../modules/profile/domain/cv-document.ts'
+import { extractImport } from '../modules/profile/extract-cv-text.ts'
+import { parseQueue } from '../modules/profile/index.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
