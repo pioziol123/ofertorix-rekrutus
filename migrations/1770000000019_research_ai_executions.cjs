@@ -6,7 +6,10 @@
 //   report as the result and an attempt carrying its cost. A funded research
 //   keeps its attempt, which becomes the execution's settlement record (the
 //   execution takes the attempt's identifier); a research that never got
-//   funding gets an attempt with nothing reserved.
+//   funding gets an attempt with nothing reserved. The usage of an adopted
+//   attempt names its paid search calls as AI names the calls of a paid
+//   tool (`tool_calls`, formerly `search_calls`), so the execution read
+//   returns them. ASSUMPTION(oferty-pracy-0mq.22/ASM-4)
 // ASSUMPTION(oferty-pracy-0mq.22/ASM-1): the mapping of every old research
 // state, and of the message it saved, to the stage and cause of the AI work.
 // - A published report is completed. A report Companies did not accept (no
@@ -66,6 +69,9 @@ UPDATE ai_attempts a SET state='settled',actual_pln=0,finished_at=coalesce(a.fin
  WHERE r.attempt_id=a.id AND r.state IN ('waiting_budget','queued','running');
 UPDATE ai_attempts a SET execution_id=a.id
  FROM company_research r WHERE r.attempt_id=a.id AND a.execution_id IS NULL;
+UPDATE ai_attempts a
+ SET usage=(a.usage-'search_calls')||jsonb_build_object('tool_calls',a.usage->'search_calls')
+ FROM company_research r WHERE r.attempt_id=a.id AND a.usage ? 'search_calls';
 INSERT INTO ai_attempts(id,import_id,text_revision,month,attempt,generation,operation_type,state,reserved_pln,actual_pln,configuration,execution_id,created_at,finished_at)
 SELECT r.id,NULL,0,NULL,1,r.id,'research','settled',0,0,r.configuration,r.id,r.created_at,coalesce(r.finished_at,now())
  FROM company_research r

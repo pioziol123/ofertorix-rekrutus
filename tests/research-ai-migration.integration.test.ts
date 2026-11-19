@@ -238,6 +238,14 @@ integration('migration of the research history to AI executions', () => {
         reserved: '0.536000',
         error: expect.stringContaining(key === 'http' ? 'HTTP 500' : 'search'),
       })
+    // The usage of each adopted attempt, its paid search calls included,
+    // is read back from AI. ASSUMPTION(oferty-pracy-0mq.22/ASM-4)
+    for (const key of ['completed', 'uncited', 'http'] as const)
+      expect((await readExecutionHistory(ids[key]))[0]?.usage).toEqual({
+        inputTokens: 8300,
+        outputTokens: 120,
+        toolCalls: 1,
+      })
     // Work in progress at the deploy ended, with its reservation released.
     expect(byId.get(ids.running)).toMatchObject({
       state: 'failed',

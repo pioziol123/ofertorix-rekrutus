@@ -76,10 +76,11 @@ export function isConfigured(settingsKey: string): boolean {
 // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): a public read for Matching's views.
 /**
  * What one execution under a client's key reserves in a mode, in PLN as a
- * decimal string: the cost of the price list's token caps, or zero for a
- * model without a price list. Null when the key cannot be requested in the
- * mode now. Nothing is called; a client uses it to show the most a request
- * reserves.
+ * decimal string: the cost of the price list's token caps and of the most
+ * calls of its paid tool, or zero for a model without a price list. Null
+ * when the key cannot be requested in the mode now. Nothing is called; a
+ * client uses it to show the most a request reserves.
+ * ASSUMPTION(oferty-pracy-0mq.22/ASM-4): the most calls of the paid tool.
  */
 export function readReservation(
   settingsKey: string,
