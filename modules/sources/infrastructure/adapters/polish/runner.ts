@@ -1,23 +1,20 @@
 import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { hash, type Offer } from './solid.ts'
-import {
-  ConnectorAbortedError,
-  ConnectorError,
-} from '../../modules/sources/infrastructure/adapters/connector.ts'
-import { normalizeJsonSource } from './polish-json.ts'
+import { hash, type Offer } from '../solid-jobs/api.ts'
+import { ConnectorAbortedError, ConnectorError } from '../connector.ts'
+import { normalizeJsonSource } from './json-sources.ts'
 
 import {
   polishCatalog,
   polishSources,
   type PolishSource,
-} from './polish-catalog.ts'
+} from '../../../domain/polish-catalog.ts'
 export {
   polishCatalog,
   polishSources,
   type PolishSource,
-} from './polish-catalog.ts'
+} from '../../../domain/polish-catalog.ts'
 export const sourceSchema = z.enum(polishSources)
 export const polishQuery = z
   .object({

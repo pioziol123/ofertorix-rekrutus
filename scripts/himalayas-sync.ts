@@ -1,6 +1,6 @@
 import { closePool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
-import { source } from '../lib/sources/himalayas.ts'
+import { himalayasSource as source } from '../modules/sources/index.ts'
 import {
   requestSync,
   useSyncQueue,

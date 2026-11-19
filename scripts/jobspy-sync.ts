@@ -1,7 +1,7 @@
 import { closePool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
-import { parseJobspySource } from '../lib/sources/jobspy-catalog.ts'
-import { jobspyEnabled } from '../lib/sources/jobspy.ts'
+import { parseJobspySource } from '../modules/sources/index.ts'
+import { jobspyEnabled } from '../modules/sources/index.ts'
 import {
   readSyncState,
   requestSync,

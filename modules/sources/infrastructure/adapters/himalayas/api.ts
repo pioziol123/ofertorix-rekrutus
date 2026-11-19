@@ -1,11 +1,8 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
-import { hash, type Offer } from './solid.ts'
-import { RetryDeferredError } from '../../modules/sources/infrastructure/adapters/connector.ts'
-import {
-  createHttpRequest,
-  type Clock,
-} from '../../modules/sources/infrastructure/adapters/http-request.ts'
+import { hash, type Offer } from '../solid-jobs/api.ts'
+import { RetryDeferredError } from '../connector.ts'
+import { createHttpRequest, type Clock } from '../http-request.ts'
 
 export const source = 'himalayas'
 /** Why a Himalayas run is incomplete; the diagnostics say more. */

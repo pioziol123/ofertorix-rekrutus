@@ -12,8 +12,8 @@ import {
   createSolidJobsConnector,
   type SolidJobsPageFetcher,
 } from '../modules/sources/infrastructure/adapters/solid-jobs/connector.ts'
-import type { JobspySource } from '../lib/sources/jobspy-catalog.ts'
-import type { PolishSource } from '../lib/sources/polish-catalog.ts'
+import type { JobspySource } from '../modules/sources/domain/jobspy-catalog.ts'
+import type { PolishSource } from '../modules/sources/domain/polish-catalog.ts'
 
 // Registries holding one connector whose source access is simulated.
 

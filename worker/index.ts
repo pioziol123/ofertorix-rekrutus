@@ -13,7 +13,7 @@ import {
 import { closePool, getPool } from '../lib/db.ts'
 import { createBoss, smokeQueue } from '../lib/queue.ts'
 
-import { scheduleDay } from '../lib/sources/solid.ts'
+import { scheduleDay } from '../modules/sources/index.ts'
 import {
   recoverSyncRuns,
   requestScheduledSyncs,

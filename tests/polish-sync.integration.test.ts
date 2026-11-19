@@ -24,10 +24,10 @@ import {
   polishCatalog,
   polishSources,
   type PolishQuery,
-} from '../lib/sources/polish.ts'
+} from '../modules/sources/infrastructure/adapters/polish/runner.ts'
 import { readOffers } from '../modules/offers/read-offers.ts'
 import { deliver, recover } from './sync-run.fixtures.ts'
-import { hash } from '../lib/sources/solid.ts'
+import { hash } from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
 import { nfjAliasRecord } from './fixtures/polish/json-record.ts'
 import { query, record, result } from './fixtures/polish/result.ts'
 import { polishWith } from './source-connectors.fixtures.ts'

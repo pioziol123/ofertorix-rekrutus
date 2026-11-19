@@ -15,8 +15,8 @@ import {
   vi,
 } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
-import { polishSources } from '../lib/sources/polish.ts'
-import type { Page } from '../lib/sources/solid.ts'
+import { polishSources } from '../modules/sources/infrastructure/adapters/polish/runner.ts'
+import type { Page } from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
 import {
   requestSync,
   syncQueue,

@@ -1,12 +1,6 @@
-import { assessRemoteEligibility } from '../../../lib/sources/remote-eligibility.ts'
-import {
-  polishCatalog,
-  type PolishSource,
-} from '../../../lib/sources/polish-catalog.ts'
-import {
-  jobspyCatalog,
-  type JobspySource,
-} from '../../../lib/sources/jobspy-catalog.ts'
+import { assessRemoteEligibility } from './remote-eligibility.ts'
+import { polishCatalog, type PolishSource } from './polish-catalog.ts'
+import { jobspyCatalog, type JobspySource } from './jobspy-catalog.ts'
 import {
   missingAdCompany,
   missingAdTitle,

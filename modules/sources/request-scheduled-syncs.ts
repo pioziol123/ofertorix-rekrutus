@@ -1,5 +1,5 @@
 import { transaction } from '../../lib/db.ts'
-import { scheduleDay } from '../../lib/sources/solid.ts'
+import { scheduleDay } from './domain/schedule-day.ts'
 import { hash } from './domain/canonical-hash.ts'
 import type { ConnectorProvider } from './infrastructure/adapters/connector-registry.ts'
 import { sourceConnectors } from './infrastructure/adapters/source-connectors.ts'

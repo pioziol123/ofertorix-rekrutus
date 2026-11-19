@@ -5,8 +5,8 @@ import {
   parametersFor,
   parseJobspy,
   runJobspy,
-} from '../../../../../lib/sources/jobspy.ts'
-import type { JobspySource } from '../../../../../lib/sources/jobspy-catalog.ts'
+} from './runner.ts'
+import type { JobspySource } from '../../../domain/jobspy-catalog.ts'
 import {
   ConnectorError,
   throwIfAborted,

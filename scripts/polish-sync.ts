@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util'
 import { closePool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
-import { polishQuery } from '../lib/sources/polish.ts'
+import { polishQuery } from '../modules/sources/index.ts'
 import {
   readSyncState,
   requestSync,

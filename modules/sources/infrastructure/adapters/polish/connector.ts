@@ -6,7 +6,7 @@ import {
   runPolish,
   type PolishQuery,
   type PolishSource,
-} from '../../../../../lib/sources/polish.ts'
+} from './runner.ts'
 import {
   ConnectorError,
   throwIfAborted,

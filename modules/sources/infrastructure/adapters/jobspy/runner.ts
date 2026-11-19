@@ -1,18 +1,15 @@
-import { assessRemoteEligibility } from './remote-eligibility.ts'
+import { assessRemoteEligibility } from '../../../domain/remote-eligibility.ts'
 import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { hash, type Offer } from './solid.ts'
-import {
-  ConnectorAbortedError,
-  ConnectorError,
-} from '../../modules/sources/infrastructure/adapters/connector.ts'
+import { hash, type Offer } from '../solid-jobs/api.ts'
+import { ConnectorAbortedError, ConnectorError } from '../connector.ts'
 import {
   jobspyCatalog,
   remoteMarket,
   sourceEnabled,
   type JobspySource,
-} from './jobspy-catalog.ts'
+} from '../../../domain/jobspy-catalog.ts'
 
 export const jobspySource = 'indeed'
 export const jobspyParameters = {

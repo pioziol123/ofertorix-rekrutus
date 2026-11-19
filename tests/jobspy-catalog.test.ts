@@ -8,18 +8,18 @@ import {
   parseJobspySource,
   remoteMarkets,
   sourceEnabled,
-} from '../lib/sources/jobspy-catalog.ts'
+} from '../modules/sources/domain/jobspy-catalog.ts'
 import {
   fingerprintFor,
   parametersFor,
   parseJobspy,
-} from '../lib/sources/jobspy.ts'
+} from '../modules/sources/infrastructure/adapters/jobspy/runner.ts'
 import {
   readSourceCatalog,
   requestSync,
   SourceDisabledError,
 } from '../modules/sources/index.ts'
-import { polishSources } from '../lib/sources/polish-catalog.ts'
+import { polishSources } from '../modules/sources/domain/polish-catalog.ts'
 import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 import { job, result, sourceResult } from './fixtures/jobspy/result.ts'
 

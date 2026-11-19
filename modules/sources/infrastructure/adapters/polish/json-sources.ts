@@ -1,6 +1,6 @@
-import type { PolishQuery } from './polish.ts'
-import { polishCatalog } from './polish-catalog.ts'
-import type { Offer } from './solid.ts'
+import type { PolishQuery } from './runner.ts'
+import { polishCatalog } from '../../../domain/polish-catalog.ts'
+import type { Offer } from '../solid-jobs/api.ts'
 
 type Raw = Record<string, unknown>
 const object = (v: unknown): Raw =>

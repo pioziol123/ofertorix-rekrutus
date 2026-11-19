@@ -1,5 +1,5 @@
 import { closePool } from '../lib/db.ts'
-import { sourceSchema } from '../lib/sources/polish.ts'
+import { polishSourceSchema as sourceSchema } from '../modules/sources/index.ts'
 import { readSourceCatalog, readSyncState } from '../modules/sources/index.ts'
 try {
   if (process.argv.length > 4) throw new Error('Invalid arguments')

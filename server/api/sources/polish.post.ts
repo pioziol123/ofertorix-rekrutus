@@ -1,4 +1,4 @@
-import { polishEnabled, polishQuery } from '../../../lib/sources/polish'
+import { polishEnabled, polishQuery } from '../../../modules/sources'
 import { requestSync, SourceDisabledError } from '../../../modules/sources'
 import { limitedBytes, queueClient } from '../../utils/http'
 

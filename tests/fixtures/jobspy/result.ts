@@ -1,4 +1,7 @@
-import { jobspyParameters, parametersFor } from '../../../lib/sources/jobspy.ts'
+import {
+  jobspyParameters,
+  parametersFor,
+} from '../../../modules/sources/infrastructure/adapters/jobspy/runner.ts'
 
 export const job = (overrides: Record<string, unknown> = {}) => ({
   id: 'in-ab123',

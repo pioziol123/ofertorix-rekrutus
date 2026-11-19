@@ -5,7 +5,7 @@ import {
   pageUrl,
   parameters,
   parsePage,
-} from '../lib/sources/himalayas.ts'
+} from '../modules/sources/infrastructure/adapters/himalayas/api.ts'
 
 const job = (overrides: Record<string, unknown> = {}) => ({
   guid: 'https://himalayas.app/companies/acme/jobs/php',

@@ -1,12 +1,6 @@
 import { hash } from './domain/canonical-hash.ts'
-import {
-  jobspyCatalog,
-  jobspySources,
-} from '../../lib/sources/jobspy-catalog.ts'
-import {
-  polishCatalog,
-  polishSources,
-} from '../../lib/sources/polish-catalog.ts'
+import { jobspyCatalog, jobspySources } from './domain/jobspy-catalog.ts'
+import { polishCatalog, polishSources } from './domain/polish-catalog.ts'
 import type { ConnectorProvider } from './infrastructure/adapters/connector-registry.ts'
 import { sourceConnectors } from './infrastructure/adapters/source-connectors.ts'
 import {

@@ -17,8 +17,8 @@ import {
   parsePage,
   source,
   type HimalayasPage,
-} from '../lib/sources/himalayas.ts'
-import { hash } from '../lib/sources/solid.ts'
+} from '../modules/sources/infrastructure/adapters/himalayas/api.ts'
+import { hash } from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
 import { readOffers } from '../modules/offers/read-offers.ts'
 import {
   requestSync,

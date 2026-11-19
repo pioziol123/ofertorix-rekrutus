@@ -3,8 +3,8 @@ import {
   matchingStateLabels,
   matchingGroupLabels,
 } from '../../lib/matching/view'
-import type { PolishSource } from '../../lib/sources/polish-catalog'
-import { remoteEligibilityLabel } from '../../lib/sources/remote-eligibility'
+import type { PolishSource } from '../../modules/sources/view'
+import { remoteEligibilityLabel } from '../../modules/sources/view'
 import {
   offerFilterQuery,
   hasSalaryFilter,

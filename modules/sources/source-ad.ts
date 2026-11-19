@@ -1,4 +1,4 @@
-import type { RemoteEligibility } from '../../lib/sources/remote-eligibility.ts'
+import type { RemoteEligibility } from './domain/remote-eligibility.ts'
 
 /** One salary variant of an ad, as the source states it. */
 export type Salary = {

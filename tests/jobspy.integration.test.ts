@@ -21,7 +21,7 @@ import {
   syncQueueOptions,
   useSyncQueue,
 } from '../modules/sources/index.ts'
-import { hash } from '../lib/sources/solid.ts'
+import { hash } from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
 import { readOffers } from '../modules/offers/read-offers.ts'
 import { job, result, sourceResult } from './fixtures/jobspy/result.ts'
 import { jobspyWith, solidJobsWith } from './source-connectors.fixtures.ts'

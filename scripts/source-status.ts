@@ -1,5 +1,5 @@
 import { closePool } from '../lib/db.ts'
-import { source } from '../lib/sources/solid.ts'
+import { solidJobsSource as source } from '../modules/sources/index.ts'
 import { readSyncState } from '../modules/sources/index.ts'
 try {
   if (process.argv.length > 3) throw new Error('Expected at most one run UUID')

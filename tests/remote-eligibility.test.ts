@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   assessRemoteEligibility,
   remoteEligibilityLabel,
-} from '../lib/sources/remote-eligibility.ts'
+} from '../modules/sources/domain/remote-eligibility.ts'
 import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 
 describe('evidence for remote work from Poland', () => {

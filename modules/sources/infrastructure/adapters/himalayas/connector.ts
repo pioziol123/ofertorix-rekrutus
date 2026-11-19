@@ -5,7 +5,7 @@ import {
   parameters,
   source,
   type HimalayasPage,
-} from '../../../../../lib/sources/himalayas.ts'
+} from './api.ts'
 import {
   ConnectorAbortedError,
   throwIfAborted,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parsePolish } from '../lib/sources/polish.ts'
+import { parsePolish } from '../modules/sources/infrastructure/adapters/polish/runner.ts'
 import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 import { nfjAliasRecord } from './fixtures/polish/json-record.ts'
 import { query, record, result } from './fixtures/polish/result.ts'

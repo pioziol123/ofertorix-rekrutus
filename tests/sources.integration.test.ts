@@ -22,8 +22,15 @@ import {
   useSyncQueue,
 } from '../modules/sources/index.ts'
 import type { ConnectorProvider } from '../modules/sources/infrastructure/adapters/connector-registry.ts'
-import { source, type Offer, type Page } from '../lib/sources/solid.ts'
-import { createPageFetcher, hash } from '../lib/sources/solid.ts'
+import {
+  source,
+  type Offer,
+  type Page,
+} from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
+import {
+  createPageFetcher,
+  hash,
+} from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
 import { solidJobsWith } from './source-connectors.fixtures.ts'
 
 const integration =

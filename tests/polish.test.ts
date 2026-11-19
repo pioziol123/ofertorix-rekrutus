@@ -2,7 +2,11 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { parsePolish, polishQuery, runPolish } from '../lib/sources/polish.ts'
+import {
+  parsePolish,
+  polishQuery,
+  runPolish,
+} from '../modules/sources/infrastructure/adapters/polish/runner.ts'
 import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 import {
   query,

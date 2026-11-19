@@ -9,7 +9,7 @@ import {
   parametersFor,
   parseJobspy,
   runJobspy,
-} from '../lib/sources/jobspy.ts'
+} from '../modules/sources/infrastructure/adapters/jobspy/runner.ts'
 import { closePool, setPool } from '../lib/db.ts'
 import {
   readSyncState,
@@ -20,7 +20,7 @@ import { parseFilters } from '../modules/offers/index.ts'
 import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
 import { salaryMatch } from '../modules/offers/domain/salary-match.ts'
 import { job, result } from './fixtures/jobspy/result.ts'
-import { jobspySources } from '../lib/sources/jobspy-catalog.ts'
+import { jobspySources } from '../modules/sources/domain/jobspy-catalog.ts'
 
 afterEach(() => vi.unstubAllEnvs())
 

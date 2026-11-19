@@ -1,9 +1,4 @@
-import {
-  createPageFetcher,
-  parameters,
-  source,
-  type Page,
-} from '../../../../../lib/sources/solid.ts'
+import { createPageFetcher, parameters, source, type Page } from './api.ts'
 import {
   throwIfAborted,
   toConnectorAd,

@@ -48,3 +48,19 @@ export {
   type SourceAdContent,
   type SourceAdVersion,
 } from './source-ad.ts'
+
+// Entry points: what the CLI scripts, the routes and the worker check or
+// parse before they request a sync.
+export { source as solidJobsSource } from './infrastructure/adapters/solid-jobs/api.ts'
+export { source as himalayasSource } from './infrastructure/adapters/himalayas/api.ts'
+export { parseJobspySource } from './domain/jobspy-catalog.ts'
+export { jobspyEnabled } from './infrastructure/adapters/jobspy/runner.ts'
+export {
+  polishEnabled,
+  polishQuery,
+  sourceSchema as polishSourceSchema,
+} from './infrastructure/adapters/polish/runner.ts'
+export { scheduleDay } from './domain/schedule-day.ts'
+
+// Composition: the server builds the connector registry at start.
+export { sourceConnectors } from './infrastructure/adapters/source-connectors.ts'

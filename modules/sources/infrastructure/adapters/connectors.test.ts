@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   parsePage as parseHimalayasPage,
   type HimalayasPage,
-} from '../../../../lib/sources/himalayas.ts'
-import { createPageFetcher } from '../../../../lib/sources/solid.ts'
-import { polishSources } from '../../../../lib/sources/polish-catalog.ts'
+} from './himalayas/api.ts'
+import { createPageFetcher } from './solid-jobs/api.ts'
+import { polishSources } from '../../domain/polish-catalog.ts'
 import { hash } from '../../domain/canonical-hash.ts'
 import type { ConnectorAd, SourceConnector } from './connector.ts'
 import { createHimalayasConnector } from './himalayas/connector.ts'

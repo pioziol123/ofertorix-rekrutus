@@ -3,7 +3,7 @@ import {
   polishQuery,
   type PolishQuery,
   type PolishSource,
-} from '../../../lib/sources/polish.ts'
+} from '../../../modules/sources/infrastructure/adapters/polish/runner.ts'
 
 // Synthetic records retaining the public portals' Next.js field structure.
 export const query = (source: PolishSource = 'bulldogjob') =>

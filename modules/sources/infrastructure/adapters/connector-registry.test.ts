@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { jobspySources } from '../../../../lib/sources/jobspy-catalog.ts'
-import { polishSources } from '../../../../lib/sources/polish-catalog.ts'
+import { jobspySources } from '../../domain/jobspy-catalog.ts'
+import { polishSources } from '../../domain/polish-catalog.ts'
 import type { SourceConnector } from './connector.ts'
 import {
   createConnectorRegistry,

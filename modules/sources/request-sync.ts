@@ -1,4 +1,4 @@
-import { scheduleDay } from '../../lib/sources/solid.ts'
+import { scheduleDay } from './domain/schedule-day.ts'
 import type { ConnectorProvider } from './infrastructure/adapters/connector-registry.ts'
 import { sourceConnectors } from './infrastructure/adapters/source-connectors.ts'
 import { sendSyncJob } from './infrastructure/worker/sync-queue.ts'
