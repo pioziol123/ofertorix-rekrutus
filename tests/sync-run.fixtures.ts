@@ -1,6 +1,8 @@
 import { db } from '../lib/db.ts'
 import { recoverSyncRuns } from '../modules/sources/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { executeSyncRun } from '../modules/sources/execute-sync-run.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import type { ConnectorProvider } from '../modules/sources/infrastructure/adapters/connector-registry.ts'
 
 // The shared executor and recovery as the worker calls them.

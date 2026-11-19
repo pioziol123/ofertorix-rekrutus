@@ -2,17 +2,17 @@ import type { Pool } from 'pg'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { closePool, setPool } from '../../../lib/db.ts'
 import {
-  configuredSources,
   jobspyCatalog,
   jobspySources,
   parseJobspySource,
   remoteMarkets,
-  sourceEnabled,
 } from './jobspy-catalog.ts'
 import {
+  configuredSources,
   fingerprintFor,
   parametersFor,
   parseJobspy,
+  sourceEnabled,
 } from '../infrastructure/adapters/jobspy/runner.ts'
 import {
   readSourceCatalog,

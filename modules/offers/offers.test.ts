@@ -5,6 +5,7 @@ import { parseFilters } from './domain/filters.ts'
 import { salaryMatch } from './domain/salary-match.ts'
 // Fixtures are ads in the unified form of the Sources read, translated from
 // source content the way the read translates it.
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { projectSourceAd } from '../sources/domain/ad-projection.ts'
 import type { OfferView } from './offer-view.ts'
 

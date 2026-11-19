@@ -2,7 +2,9 @@ import { randomUUID, createHash } from 'node:crypto'
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readBatchArchive } from '../modules/matching/read-assessment-archive.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { archiveArtifact } from '../modules/ai/infrastructure/persistence/batch-archive.ts'
 import { emptyProfile } from '../modules/profile/view.ts'
 import { migrate } from './matching-ai.fixtures.ts'

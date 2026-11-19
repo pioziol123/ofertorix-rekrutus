@@ -10,24 +10,30 @@ import {
   vi,
 } from 'vitest'
 import { closePool, setPool, transaction } from '../lib/db.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import type {
   Assessment,
   MatchingInput,
 } from '../modules/matching/domain/assessment.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { currentAdVersions } from '../modules/matching/read-assessment-inputs.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   manualContext,
   publishAiRating,
   RatingConflict,
   saveManualRating,
 } from '../modules/matching/ratings.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { enqueueMatching } from '../modules/matching/request-assessment.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readMatching } from '../modules/matching/read-assessments.ts'
 import { registerResultReceiver, useAiQueue } from '../modules/ai/index.ts'
 import {
   assessmentReceiver,
   assessmentSettingsKey,
 } from '../modules/matching/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { defaultWeights } from '../modules/matching/domain/weights.ts'
 import { emptyProfile } from '../modules/profile/view.ts'
 import { usePricing } from './ai-test-configuration.ts'
@@ -38,10 +44,12 @@ import {
 } from './matching-ai.fixtures.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/client-settings.ts',
   () => import('./ai-test-configuration.ts'),
 )
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/model-catalog.ts',
   () => import('./ai-test-configuration.ts'),

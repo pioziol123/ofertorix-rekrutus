@@ -8,7 +8,6 @@ export {
   matchingGroupLabels,
   matchingPending,
   matchingStateLabels,
-  matchingStates,
   type MatchingState,
   type MatchingSummary,
 } from './domain/assessment-view.ts'

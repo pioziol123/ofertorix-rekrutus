@@ -12,7 +12,9 @@ import { PgBoss } from 'pg-boss'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
 import { emptyProfile } from '../modules/profile/view.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { digest } from '../modules/profile/domain/cv-document.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { extractImport } from '../modules/profile/extract-cv-text.ts'
 import { parseQueue } from '../modules/profile/index.ts'
 

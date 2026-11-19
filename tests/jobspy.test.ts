@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Pool } from 'pg'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   jobspyEnabled,
   jobspyParameters,
@@ -17,9 +18,12 @@ import {
   SourceDisabledError,
 } from '../modules/sources/index.ts'
 import { parseFilters } from '../modules/offers/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { salaryMatch } from '../modules/offers/domain/salary-match.ts'
 import { job, result } from './fixtures/jobspy/result.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { jobspySources } from '../modules/sources/domain/jobspy-catalog.ts'
 
 afterEach(() => vi.unstubAllEnvs())

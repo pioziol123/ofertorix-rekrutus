@@ -1,3 +1,4 @@
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   jobspyParameters,
   parametersFor,

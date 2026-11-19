@@ -119,6 +119,18 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
     expect(reached.size).toBeGreaterThan(modules.length - 1)
   })
 
+  it('keeps the rules in domain/ free of configuration and storage', () => {
+    const reads = modules
+      .flatMap((name) => files(`modules/${name}/domain`))
+      .filter((file) => !isTest(file))
+      .filter((file) =>
+        /process\.env|lib\/db(?:\.ts)?['"]/.test(
+          readFileSync(join(root, file), 'utf8'),
+        ),
+      )
+    expect(reads).toEqual([])
+  })
+
   it('leaves outside the modules only the shared infrastructure in lib', () => {
     expect(files('lib').sort()).toEqual([
       'lib/contact-details.ts',

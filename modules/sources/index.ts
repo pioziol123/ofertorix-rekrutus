@@ -60,7 +60,7 @@ export {
   polishQuery,
   sourceSchema as polishSourceSchema,
 } from './infrastructure/adapters/polish/runner.ts'
-export { scheduleDay } from './domain/schedule-day.ts'
+export { currentScheduleDay } from './schedule-settings.ts'
 
 // Composition: the server builds the connector registry at start.
 export { sourceConnectors } from './infrastructure/adapters/source-connectors.ts'

@@ -21,7 +21,9 @@ import {
   syncQueueOptions,
   useSyncQueue,
 } from '../modules/sources/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { hash } from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readOffers } from '../modules/offers/read-offers.ts'
 import { job, result, sourceResult } from './fixtures/jobspy/result.ts'
 import { jobspyWith, solidJobsWith } from './source-connectors.fixtures.ts'

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   hasSourcedFindings,
   NoResearchFindings,
@@ -6,8 +7,10 @@ import {
   type ResearchEvidence,
   type ResearchReport,
 } from '../modules/companies/domain/research-report.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { validateResearch } from '../modules/companies/domain/validate-research.ts'
 import { safeSourceUrl } from '../modules/ai/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { citedMaterials } from '../modules/ai/infrastructure/adapters/openai-agent.ts'
 import { draft, searchResponse } from './company-research.fixtures.ts'
 

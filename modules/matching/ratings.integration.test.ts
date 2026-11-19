@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
-import { closePool, setPool, transaction } from '../lib/db.ts'
+import { closePool, setPool, transaction } from '../../lib/db.ts'
 import {
   afterAll,
   beforeAll,
@@ -10,12 +10,12 @@ import {
   it,
   vi,
 } from 'vitest'
-import { emptyProfile } from '../modules/profile/view.ts'
-import { confirmProfile, saveDraft } from '../modules/profile/index.ts'
+import { emptyProfile } from '../profile/view.ts'
+import { confirmProfile, saveDraft } from '../profile/index.ts'
 import {
   activeProfileVersion,
   currentAdVersions,
-} from '../modules/matching/read-assessment-inputs.ts'
+} from './read-assessment-inputs.ts'
 import {
   manualContext,
   publishAiRating,
@@ -23,24 +23,23 @@ import {
   readWeights,
   saveManualRating,
   saveWeights,
-} from '../modules/matching/ratings.ts'
-import { defaultWeights } from '../modules/matching/domain/weights.ts'
-import type {
-  Assessment,
-  MatchingInput,
-} from '../modules/matching/domain/assessment.ts'
-import { readMatching } from '../modules/matching/read-assessments.ts'
-import { usePricing } from './ai-test-configuration.ts'
-import { insertExecution, migrate } from './matching-ai.fixtures.ts'
+} from './ratings.ts'
+import { defaultWeights } from './domain/weights.ts'
+import type { Assessment, MatchingInput } from './domain/assessment.ts'
+import { readMatching } from './read-assessments.ts'
+import { usePricing } from '../../tests/ai-test-configuration.ts'
+import { insertExecution, migrate } from '../../tests/matching-ai.fixtures.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
-  '../modules/ai/client-settings.ts',
-  () => import('./ai-test-configuration.ts'),
+  '../ai/client-settings.ts',
+  () => import('../../tests/ai-test-configuration.ts'),
 )
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
-  '../modules/ai/model-catalog.ts',
-  () => import('./ai-test-configuration.ts'),
+  '../ai/model-catalog.ts',
+  () => import('../../tests/ai-test-configuration.ts'),
 )
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip

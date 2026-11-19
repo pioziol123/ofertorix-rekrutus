@@ -9,9 +9,9 @@ import {
   validateAssessment,
   type Assessment,
   type MatchingInput,
-} from '../modules/matching/domain/assessment.ts'
-import { emptyProfile, emptySkill } from '../modules/profile/view.ts'
-import type { OfferView } from '../modules/offers/index.ts'
+} from './assessment.ts'
+import { emptyProfile, emptySkill } from '../../profile/view.ts'
+import type { OfferView } from '../../offers/index.ts'
 
 const offer = (changes: Partial<OfferView> = {}): OfferView => ({
   id: 'offer',

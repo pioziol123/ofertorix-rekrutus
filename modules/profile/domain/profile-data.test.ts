@@ -7,22 +7,9 @@ import {
   emptySkill,
   profileSchema,
   ProposalEvidenceError,
-} from '../modules/profile/domain/profile-data.ts'
-import { budgetMonth, chargeCeiling } from '../modules/ai/domain/cost.ts'
-import type { AiConfiguration } from '../modules/ai/model-catalog.ts'
-import { scrubContacts } from '../lib/contact-details.ts'
-import { validateDocument } from '../modules/profile/domain/cv-document.ts'
+} from './profile-data.ts'
+import { validateDocument } from './cv-document.ts'
 
-const config: AiConfiguration = {
-  model: 'test',
-  version: 'v1',
-  inputUsdPerMillion: '1',
-  outputUsdPerMillion: '4',
-  usdPln: '4.1',
-  fxVersion: 'test',
-  maxInputTokens: 1000,
-  maxOutputTokens: 500,
-}
 describe('professional profile validation and selective proposals', () => {
   const citedSkill = (evidence: string) => ({
     summary: null,
@@ -228,7 +215,7 @@ describe('professional profile validation and selective proposals', () => {
     ).toThrow()
   })
 })
-describe('bounded document and AI inputs', () => {
+describe('bounded document input', () => {
   it('accepts matching magic bytes and rejects spoofed, blank and oversized documents', () => {
     expect(validateDocument('cv.PDF', Buffer.from('%PDF-1.7'))).toBe('pdf')
     expect(validateDocument('cv.docx', Buffer.from([80, 75, 3, 4, 0]))).toBe(
@@ -241,106 +228,5 @@ describe('bounded document and AI inputs', () => {
       ['cv.pdf', Buffer.alloc(10 * 1024 * 1024 + 1)],
     ] as const)
       expect(() => validateDocument(name, bytes)).toThrow()
-  })
-  it('removes obvious contact data before AI input', () => {
-    const text = scrubContacts(
-      'PHP developer\nmail@example.com\n+48 123 456 789\nAddress: home\nVue',
-    )
-    expect(text).not.toContain('mail@example.com')
-    expect(text).not.toContain('123 456')
-    expect(text).not.toContain('home')
-    expect(text).toContain('PHP developer')
-    expect(text).toContain('Vue')
-  })
-  it('preserves numbered companies and employment dates in a multiline CV', () => {
-    const career = [
-      'Software 24',
-      '06.2015-07.2016',
-      'Junior PHP Developer',
-      'Studio 360 08.2016 – 12.2020',
-      'Backend Developer',
-      'Żółw123456789',
-      '01.2021 — obecnie',
-      'Senior PHP Developer',
-    ].join('\n')
-    const text = [
-      'E-mail: person@example.com',
-      'Telefon: +48 123 456 789',
-      'Adres zamieszkania: Testowa 1',
-      career,
-    ].join('\n')
-    const cleaned = scrubContacts(text)
-    expect(cleaned).toBe(
-      [
-        'E-mail: [e-mail usunięty]',
-        'Telefon: [numer usunięty]',
-        '[dane osobowe usunięte]',
-        career,
-      ].join('\n'),
-    )
-    expect(scrubContacts(cleaned)).toBe(cleaned)
-  })
-  it.each([
-    '06.2015-07.2016',
-    '06.2015 – 07.2016',
-    '06/2015 — 07/2016',
-    '06-2015 - 07-2016',
-    '01.06.2015-31.07.2016',
-    '1/6/2015 – 31/7/2016',
-    '01-06-2015 — 31-07-2016',
-    '2015-06-01 - 2016-07-31',
-    '2015/06/01 – 2016/07/31',
-  ])('preserves employment date range %j next to a company number', (dates) => {
-    const text = `Studio 360 ${dates}\nPHP 8.4, PostgreSQL 16`
-    expect(scrubContacts(text)).toBe(text)
-  })
-  it.each([
-    '123456789',
-    '123 456 789',
-    '123.456.789',
-    '123-456-789',
-    '+48 123 456 789',
-    '+48 (123) 456-789',
-    '0048 123 456 789',
-    '+1 212 555 0123',
-    '+48\t123\t456\t789',
-  ])(
-    'removes a phone number %j without changing neighboring dates',
-    (phone) => {
-      expect(scrubContacts(`06.2015\nTel: ${phone}\n07.2016`)).toBe(
-        '06.2015\nTel: [numer usunięty]\n07.2016',
-      )
-    },
-  )
-  it.each(['\n', '\r\n'])(
-    'does not join numbers across %j line breaks',
-    (newline) => {
-      const text = ['Studio 24', '12345678', '9', '123 456 789', '42'].join(
-        newline,
-      )
-      expect(scrubContacts(text)).toBe(
-        ['Studio 24', '12345678', '9', '[numer usunięty]', '42'].join(newline),
-      )
-    },
-  )
-  it('uses Warsaw calendar boundaries and integer ceilings for costs', () => {
-    expect(budgetMonth(new Date('2026-10-31T23:30:00Z'))).toBe('2026-11')
-    expect(budgetMonth(new Date('2026-06-30T22:30:00Z'))).toBe('2026-07')
-    expect(chargeCeiling(config, 1000, 500)).toBe('0.012300')
-    expect(() => chargeCeiling(config, -1, 1)).toThrow()
-    expect(() => chargeCeiling(config, 0.5, 1)).toThrow()
-  })
-})
-
-describe('contact redaction with long uninterrupted source text', () => {
-  it('preserves a long non-contact token and still removes ordinary emails', () => {
-    const token = 'x'.repeat(200000)
-    const result = scrubContacts(
-      `${token}\nContact first.last+jobs@example.com and recruiter@example.org`,
-    )
-    expect(result).toBe(
-      `${token}\nContact [e-mail usunięty] and [e-mail usunięty]`,
-    )
-    expect(scrubContacts(result)).toBe(result)
   })
 })

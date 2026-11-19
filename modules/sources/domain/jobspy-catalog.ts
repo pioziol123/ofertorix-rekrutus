@@ -87,30 +87,6 @@ export function parseJobspySource(value: string): JobspySource {
     throw new Error('Unknown JobSpy source')
   return value as JobspySource
 }
-export function configuredSources(): JobspySource[] {
-  const raw = process.env.JOBSPY_SOURCES ?? ''
-  return [
-    ...new Set(
-      raw
-        .split(',')
-        .map((v) => v.trim())
-        .filter(Boolean)
-        .map(parseJobspySource),
-    ),
-  ]
-}
-export function sourceEnabled(source: JobspySource): boolean {
-  if (source === 'indeed') return process.env.JOBSPY_ENABLED === 'true'
-  const meta = jobspyCatalog[source]
-  if (meta.restriction === 'unavailable') return false
-  if (
-    meta.restriction === 'requires_access' &&
-    process.env.JOBSPY_LINKEDIN_ACCESS_CONFIRMED !== 'true'
-  )
-    return false
-  return configuredSources().includes(source)
-}
-
 export const remoteMarkets = {
   glassdoor: 'uk',
   zip_recruiter: 'usa',

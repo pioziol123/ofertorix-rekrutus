@@ -10,12 +10,16 @@ import {
   it,
   vi,
 } from 'vitest'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   decorateMatching,
   matchingListStatus,
 } from '../modules/matching/read-offer-assessments.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { projectSourceAd } from '../modules/sources/domain/ad-projection.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { activeProfileVersion } from '../modules/matching/read-assessment-inputs.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   manualContext,
   readRatings,
@@ -29,10 +33,12 @@ import { usePricing } from './ai-test-configuration.ts'
 import { insertExecution, migrate } from './matching-ai.fixtures.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/client-settings.ts',
   () => import('./ai-test-configuration.ts'),
 )
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/model-catalog.ts',
   () => import('./ai-test-configuration.ts'),

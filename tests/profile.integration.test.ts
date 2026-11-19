@@ -14,12 +14,15 @@ import {
   it,
   vi,
 } from 'vitest'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   applyProposal,
   emptyProfile,
   emptySkill,
 } from '../modules/profile/domain/profile-data.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { digest } from '../modules/profile/domain/cv-document.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   extractImport,
   recoverImports,
@@ -47,16 +50,21 @@ import {
   runExecution,
   useAiQueue,
 } from '../modules/ai/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { openAiProvider } from '../modules/ai/infrastructure/adapters/openai.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { registerProviderAdapter } from '../modules/ai/provider-registry.ts'
 import { usePricing } from './ai-test-configuration.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/client-settings.ts',
   () => import('./ai-test-configuration.ts'),
 )
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/model-catalog.ts',
   () => import('./ai-test-configuration.ts'),

@@ -1,11 +1,11 @@
 /**
  * The schedule day of a moment: the Warsaw calendar day once the daily sync
- * time (SOURCE_SYNC_TIME, HH:mm, default 08:00) has passed, otherwise the day
- * before. Throws when the configured time is not HH:mm.
+ * time (HH:mm) has passed, otherwise the day before. Throws when the time is
+ * not HH:mm.
  */
 export function scheduleDay(
-  now = new Date(),
-  time = process.env.SOURCE_SYNC_TIME ?? '08:00',
+  now: Date,
+  time: string,
 ): string {
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))
     throw new Error('SOURCE_SYNC_TIME must be HH:mm')

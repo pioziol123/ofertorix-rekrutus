@@ -20,13 +20,16 @@ import {
   syncQueueOptions,
   useSyncQueue,
 } from '../modules/sources/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   polishCatalog,
   polishSources,
   type PolishQuery,
 } from '../modules/sources/infrastructure/adapters/polish/runner.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readOffers } from '../modules/offers/read-offers.ts'
 import { deliver, recover } from './sync-run.fixtures.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { hash } from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
 import { nfjAliasRecord } from './fixtures/polish/json-record.ts'
 import { query, record, result } from './fixtures/polish/result.ts'

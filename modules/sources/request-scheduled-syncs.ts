@@ -1,5 +1,5 @@
 import { transaction } from '../../lib/db.ts'
-import { scheduleDay } from './domain/schedule-day.ts'
+import { currentScheduleDay } from './schedule-settings.ts'
 import { hash } from './domain/canonical-hash.ts'
 import type { ConnectorProvider } from './infrastructure/adapters/connector-registry.ts'
 import { sourceConnectors } from './infrastructure/adapters/source-connectors.ts'
@@ -31,7 +31,7 @@ export async function requestScheduledSyncs(
   } = {},
 ): Promise<AdmittedRun[]> {
   const connectors = options.connectors ?? sourceConnectors
-  const day = scheduleDay(options.now)
+  const day = currentScheduleDay(options.now)
   const requested: AdmittedRun[] = []
   for (const name of connectors.names()) {
     const connector = connectors.get(name)

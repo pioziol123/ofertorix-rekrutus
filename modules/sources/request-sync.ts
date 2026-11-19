@@ -1,4 +1,4 @@
-import { scheduleDay } from './domain/schedule-day.ts'
+import { currentScheduleDay } from './schedule-settings.ts'
 import type { ConnectorProvider } from './infrastructure/adapters/connector-registry.ts'
 import { sourceConnectors } from './infrastructure/adapters/source-connectors.ts'
 import { sendSyncJob } from './infrastructure/worker/sync-queue.ts'
@@ -58,7 +58,7 @@ export async function requestSync(
     source: connector.name,
     parameters,
     trigger: request.trigger ?? 'manual',
-    scheduleDay: scheduleDay(options.now),
+    scheduleDay: currentScheduleDay(options.now),
     sendJob: (runId) => sendSyncJob({ id: runId, source: connector.name }),
   })
 }

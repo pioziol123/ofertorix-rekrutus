@@ -9,13 +9,17 @@ import {
   registerResultReceiver,
   useAiQueue,
 } from '../modules/ai/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { endedBatchGroups } from '../modules/ai/infrastructure/persistence/executions.ts'
 import {
   assessmentReceiver,
   assessmentSettingsKey,
 } from '../modules/matching/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { enqueueMatching } from '../modules/matching/request-assessment.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readMatching } from '../modules/matching/read-assessments.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {
@@ -26,10 +30,12 @@ import {
   SimulatedOpenAi,
 } from './matching-ai.fixtures.ts'
 
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/client-settings.ts',
   () => import('./ai-test-configuration.ts'),
 )
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/model-catalog.ts',
   () => import('./ai-test-configuration.ts'),

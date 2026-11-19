@@ -1,5 +1,7 @@
 import { matchingMigrations } from './matching-ai.fixtures.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import type { AiConfiguration } from '../modules/ai/model-catalog.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   researchTopics,
   type ResearchDraft,

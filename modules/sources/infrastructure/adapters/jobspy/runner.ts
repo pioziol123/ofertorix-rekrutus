@@ -6,10 +6,40 @@ import { hash, type Offer } from '../solid-jobs/api.ts'
 import { ConnectorAbortedError, ConnectorError } from '../connector.ts'
 import {
   jobspyCatalog,
+  parseJobspySource,
   remoteMarket,
-  sourceEnabled,
   type JobspySource,
 } from '../../../domain/jobspy-catalog.ts'
+
+/** The JobSpy portals JOBSPY_SOURCES names, beside Indeed. */
+export function configuredSources(): JobspySource[] {
+  const raw = process.env.JOBSPY_SOURCES ?? ''
+  return [
+    ...new Set(
+      raw
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean)
+        .map(parseJobspySource),
+    ),
+  ]
+}
+/**
+ * Whether a JobSpy portal is enabled by its configuration: Indeed by
+ * JOBSPY_ENABLED, a portal needing access also by
+ * JOBSPY_LINKEDIN_ACCESS_CONFIRMED, any other when JOBSPY_SOURCES names it.
+ */
+export function sourceEnabled(source: JobspySource): boolean {
+  if (source === 'indeed') return process.env.JOBSPY_ENABLED === 'true'
+  const meta = jobspyCatalog[source]
+  if (meta.restriction === 'unavailable') return false
+  if (
+    meta.restriction === 'requires_access' &&
+    process.env.JOBSPY_LINKEDIN_ACCESS_CONFIRMED !== 'true'
+  )
+    return false
+  return configuredSources().includes(source)
+}
 
 export const jobspySource = 'indeed'
 export const jobspyParameters = {

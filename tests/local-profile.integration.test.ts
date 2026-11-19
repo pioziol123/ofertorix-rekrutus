@@ -27,16 +27,21 @@ import {
   runExecution,
   useAiQueue,
 } from '../modules/ai/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { ollamaProvider } from '../modules/ai/infrastructure/adapters/ollama.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { registerProviderAdapter } from '../modules/ai/provider-registry.ts'
 import { useLocalModel, usePricing } from './ai-test-configuration.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/client-settings.ts',
   () => import('./ai-test-configuration.ts'),
 )
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/model-catalog.ts',
   () => import('./ai-test-configuration.ts'),

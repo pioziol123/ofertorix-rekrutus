@@ -102,3 +102,23 @@ describe('the cost of agent work with a paid tool, as research was settled (0mq.
     )
   })
 })
+
+describe('the budget month and the charge ceiling', () => {
+  const config: AiConfiguration = {
+    model: 'test',
+    version: 'v1',
+    inputUsdPerMillion: '1',
+    outputUsdPerMillion: '4',
+    usdPln: '4.1',
+    fxVersion: 'test',
+    maxInputTokens: 1000,
+    maxOutputTokens: 500,
+  }
+  it('uses Warsaw calendar boundaries and integer ceilings for costs', () => {
+    expect(budgetMonth(new Date('2026-10-31T23:30:00Z'))).toBe('2026-11')
+    expect(budgetMonth(new Date('2026-06-30T22:30:00Z'))).toBe('2026-07')
+    expect(chargeCeiling(config, 1000, 500)).toBe('0.012300')
+    expect(() => chargeCeiling(config, -1, 1)).toThrow()
+    expect(() => chargeCeiling(config, 0.5, 1)).toThrow()
+  })
+})

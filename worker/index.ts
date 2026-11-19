@@ -17,7 +17,7 @@ import { createBoss, smokeQueue } from '../lib/queue.ts'
 
 import {
   recoverSyncRuns,
-  scheduleDay,
+  currentScheduleDay,
   requestScheduledSyncs,
   useSyncQueue,
   workSyncQueue,
@@ -56,7 +56,7 @@ await boss.work<{ checkId: string }>(smokeQueue, async (jobs) => {
   }
 })
 // Validate the schedule before registering the importer.
-scheduleDay()
+currentScheduleDay()
 useSyncQueue(boss)
 await recoverSyncRuns()
 await workSyncQueue(boss)

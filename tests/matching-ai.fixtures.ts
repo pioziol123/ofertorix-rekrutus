@@ -4,6 +4,7 @@ import type { Pool } from 'pg'
 import type { PgBoss } from 'pg-boss'
 import { vi } from 'vitest'
 import { aiExecutionQueue, runExecution } from '../modules/ai/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   BatchClient,
   openAiBatch,
@@ -11,8 +12,11 @@ import {
   type BatchLine,
   type BatchRequestLine,
 } from '../modules/ai/infrastructure/adapters/openai-batch.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { openAiProvider } from '../modules/ai/infrastructure/adapters/openai.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { registerProviderAdapter } from '../modules/ai/provider-registry.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import type { MatchingInput } from '../modules/matching/domain/assessment.ts'
 
 /**

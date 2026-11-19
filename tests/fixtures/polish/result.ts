@@ -1,4 +1,5 @@
 import { jsonRecord } from './json-record.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   polishQuery,
   type PolishQuery,

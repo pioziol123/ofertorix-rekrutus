@@ -12,6 +12,7 @@ import {
   vi,
 } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { companyRoles } from '../modules/companies/domain/company.ts'
 import {
   changeCompanyLink,

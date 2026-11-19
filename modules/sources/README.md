@@ -111,11 +111,11 @@ The reads take no row locks, so reading never delays a sync. A consumer that nee
 
 ## Entries and directory layout
 
-Besides the operations above, `index.ts` exports what the CLI scripts, the routes and the worker check or parse before they request a sync: the names of SOLID.Jobs and Himalayas, the JobSpy portal parser and its enabled check, the Polish portal scope input and its enabled check, the schedule day, and the connector registry the server builds at start. Views run in the browser, so they have a separate entry `view.ts`, which does not reach into server code: the Polish portal type and the label of the remote-work qualification.
+Besides the operations above, `index.ts` exports what the CLI scripts, the routes and the worker check or parse before they request a sync: the names of SOLID.Jobs and Himalayas, the JobSpy portal parser and its enabled check, the Polish portal scope input and its enabled check, the schedule day under the configured sync time (`currentScheduleDay`, which the worker calls at start to check that time), and the connector registry the server builds at start. Views run in the browser, so they have a separate entry `view.ts`, which does not reach into server code: the Polish portal type and the label of the remote-work qualification.
 
 | Place                         | Contents                                                                                                              |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| operation files               | Requesting, executing, recovering and reading runs, saving batches and reading ads.                                   |
+| operation files               | Requesting, executing, recovering and reading runs, saving batches, reading ads; the configured sync time.                                |
 | `domain/`                     | The ad projection, the source catalogues, the remote-work qualification, the run status and the schedule day.         |
 | `infrastructure/adapters/`    | The connector contract and registry, and one directory per connector with its portal client or helper process runner. |
 | `infrastructure/persistence/` | Source ads and sync runs.                                                                                             |

@@ -12,13 +12,16 @@ import {
   it,
   vi,
 } from 'vitest'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   HimalayasHttpError,
   parsePage,
   source,
   type HimalayasPage,
 } from '../modules/sources/infrastructure/adapters/himalayas/api.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { hash } from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readOffers } from '../modules/offers/read-offers.ts'
 import {
   requestSync,
@@ -26,6 +29,7 @@ import {
   syncQueueOptions,
   useSyncQueue,
 } from '../modules/sources/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import type { ConnectorProvider } from '../modules/sources/infrastructure/adapters/connector-registry.ts'
 import { himalayasWith } from './source-connectors.fixtures.ts'
 import { deliver } from './sync-run.fixtures.ts'

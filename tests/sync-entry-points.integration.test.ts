@@ -15,7 +15,9 @@ import {
   vi,
 } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { polishSources } from '../modules/sources/infrastructure/adapters/polish/runner.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import type { Page } from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
 import {
   requestSync,
@@ -25,9 +27,13 @@ import {
   waitForSyncRun,
   workSyncQueue,
 } from '../modules/sources/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { createConnectorRegistry } from '../modules/sources/infrastructure/adapters/connector-registry.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { createHimalayasConnector } from '../modules/sources/infrastructure/adapters/himalayas/connector.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { sourceConnectors } from '../modules/sources/infrastructure/adapters/source-connectors.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { createSolidJobsConnector } from '../modules/sources/infrastructure/adapters/solid-jobs/connector.ts'
 import { query } from './fixtures/polish/result.ts'
 

@@ -19,17 +19,22 @@ import {
   registerResultReceiver,
   useAiQueue,
 } from '../modules/ai/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import {
   assessmentReceiver,
   assessmentSettingsKey,
 } from '../modules/matching/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   assessmentSchema,
   type MatchingInput,
 } from '../modules/matching/domain/assessment.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readBatchArchive } from '../modules/matching/read-assessment-archive.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { enqueueMatching } from '../modules/matching/request-assessment.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readMatching } from '../modules/matching/read-assessments.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {
@@ -42,10 +47,12 @@ import {
 } from './matching-ai.fixtures.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/client-settings.ts',
   () => import('./ai-test-configuration.ts'),
 )
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/model-catalog.ts',
   () => import('./ai-test-configuration.ts'),
