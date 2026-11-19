@@ -30,6 +30,8 @@ export {
 export type { SavedBatchBody } from './provider-adapter.ts'
 // ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the materials of agent work.
 export type { AgentMaterial, AgentSource } from './provider-adapter.ts'
+// ASSUMPTION(oferty-pracy-0mq.22/ASM-5): the one rule of a safe source URL.
+export { safeSourceUrl } from './domain/source-url.ts'
 export {
   executionCauses,
   executionStates,

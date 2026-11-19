@@ -10,6 +10,9 @@ import type {
 } from '../../provider-adapter.ts'
 import type { ExecutionEnd } from '../../domain/execution-state.ts'
 import { agentTools, type AgentTool } from '../../domain/execution-mode.ts'
+// ASSUMPTION(oferty-pracy-0mq.22/ASM-5): the materials keep only the sources
+// this rule accepts, the same rule Companies validates a report with.
+import { safeSourceUrl } from '../../domain/source-url.ts'
 
 /**
  * The agent mode of the OpenAI adapter: web search and synthesis in two
@@ -71,24 +74,6 @@ const responseSchema = z
   })
   .passthrough()
 type ProviderResponse = z.infer<typeof responseSchema>
-
-/**
- * A URL a material may cite: HTTP(S), without credentials, not too long.
- * The agent keeps no material citing another URL.
- */
-export const safeSourceUrl = (value: string) => {
-  try {
-    const url = new URL(value)
-    return (
-      ['https:', 'http:'].includes(url.protocol) &&
-      !url.username &&
-      !url.password &&
-      value.length <= 3000
-    )
-  } catch {
-    return false
-  }
-}
 
 /**
  * The materials of a completed search: each paragraph of its answer with

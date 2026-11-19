@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   hasSourcedFindings,
   NoResearchFindings,
-  safeResearchUrl,
   validateResearch,
   type ResearchDraft,
   type ResearchEvidence,
   type ResearchReport,
 } from '../lib/companies/research-model.ts'
+import { safeSourceUrl } from '../modules/ai/index.ts'
 import { citedMaterials } from '../modules/ai/infrastructure/adapters/openai-agent.ts'
 import { draft, searchResponse } from './company-research.fixtures.ts'
 
@@ -66,16 +66,41 @@ describe('company research evidence boundary', () => {
     historical.claims[0]!.kind = 'fact'
     expect(hasSourcedFindings(historical)).toBe(false)
   })
-  it('only accepts safe HTTP URLs without credentials', () => {
-    for (const url of [
+  it('takes the safe source rule from one owner: the agent keeps exactly the sources Companies accepts (0mq.22 ASM-5)', () => {
+    const unsafeUrls = [
       'javascript:alert(1)',
       'data:text/plain,x',
       'https://user:pass@example.com',
       '/relative',
       'https://example.com/' + 'a'.repeat(3000),
-    ])
-      expect(safeResearchUrl(url)).toBe(false)
-    expect(safeResearchUrl('https://example.com/path?q=1')).toBe(true)
+    ]
+    const safeUrls = [
+      'https://example.com/path?q=1',
+      'https://example.com/' + 'a'.repeat(3000 - 'https://example.com/'.length),
+    ]
+    for (const url of unsafeUrls) expect(safeSourceUrl(url)).toBe(false)
+    for (const url of safeUrls) expect(safeSourceUrl(url)).toBe(true)
+    for (const url of [...unsafeUrls, ...safeUrls]) {
+      const response = searchResponse()
+      response.output[1]!.content![0]!.annotations![0]!.url = url
+      const materials = citedEvidence(response)
+      const kept = materials.length > 0
+      expect(kept).toBe(safeSourceUrl(url))
+      const sources = [
+        { ...citedEvidence(searchResponse())[0]!.sources[0]!, url },
+      ]
+      const validated = (() => {
+        try {
+          validateResearch(draft(), [
+            { ...citedEvidence(searchResponse())[0]!, sources },
+          ])
+          return true
+        } catch {
+          return false
+        }
+      })()
+      expect(validated).toBe(kept)
+    }
   })
   it('rejects uncited facts/opinions, unknown evidence IDs, fabricated quotes and unsafe sources', () => {
     const evidence = citedEvidence(searchResponse())

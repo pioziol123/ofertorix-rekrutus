@@ -1,5 +1,9 @@
 import { z } from 'zod'
-import type { AgentMaterial, AgentSource } from '../../modules/ai/index.ts'
+import {
+  safeSourceUrl,
+  type AgentMaterial,
+  type AgentSource,
+} from '../../modules/ai/index.ts'
 export const researchCommand = z
   .object({
     commandId: z.uuid().transform((v) => v.toLowerCase()),
@@ -91,19 +95,6 @@ export const hasSourcedFindings = (report: ResearchReport) =>
     (claim) =>
       ['fact', 'opinion'].includes(claim.kind) && claim.sources.length > 0,
   )
-export const safeResearchUrl = (value: string) => {
-  try {
-    const url = new URL(value)
-    return (
-      ['https:', 'http:'].includes(url.protocol) &&
-      !url.username &&
-      !url.password &&
-      value.length <= 3000
-    )
-  } catch {
-    return false
-  }
-}
 // The agent supplies the evidence units with their URLs; the draft may only reference those units.
 export function validateResearch(
   value: unknown,
@@ -125,7 +116,9 @@ export function validateResearch(
           !unit ||
           !unit.text.includes(ref.quote) ||
           !unit.sources.length ||
-          unit.sources.some((s) => !safeResearchUrl(s.url))
+          // The safe source rule of AI's materials, read from its owner.
+          // ASSUMPTION(oferty-pracy-0mq.22/ASM-5)
+          unit.sources.some((s) => !safeSourceUrl(s.url))
         )
           throw new Error('Invalid evidence')
         return unit.sources
