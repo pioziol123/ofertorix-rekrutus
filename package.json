@@ -18,7 +18,6 @@
     "typecheck": "nuxt typecheck && tsc --project tsconfig.tools.json --noEmit",
     "test": "vitest run",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
-    "smoke": "tsx scripts/smoke.ts",
     "health:worker": "tsx scripts/worker-health.ts",
     "source:sync": "tsx scripts/source-sync.ts",
     "source:status": "tsx scripts/source-status.ts",

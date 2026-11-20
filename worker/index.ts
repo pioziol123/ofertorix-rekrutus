@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import {
   aiExecutionQueue,
   recoverExecutions,
@@ -12,8 +13,9 @@ import {
   resumeProposalPreparations,
   workCvTextQueue,
 } from '../modules/profile/index.ts'
-import { closePool, getPool } from '../lib/db.ts'
-import { createBoss, smokeQueue } from '../lib/queue.ts'
+import { closePool } from '../lib/db.ts'
+import { createBoss } from '../lib/queue.ts'
+import { poolSizeFromEnvironment, startWorker } from '../lib/workers/index.ts'
 
 import {
   recoverSyncRuns,
@@ -32,13 +34,8 @@ import {
   researchSettingsKey,
 } from '../modules/companies/index.ts'
 
-const pool = getPool()
 const boss = createBoss()
 let stopping = false
-const heartbeat = async () => {
-  await pool.query(`INSERT INTO service_heartbeats (service) VALUES ('worker')
-    ON CONFLICT (service) DO UPDATE SET last_seen = now()`)
-}
 const fatal = () => {
   console.error(
     'Worker failed; inspect service configuration and database availability',
@@ -47,14 +44,6 @@ const fatal = () => {
 }
 boss.on('error', fatal)
 await boss.start()
-await boss.work<{ checkId: string }>(smokeQueue, async (jobs) => {
-  for (const job of jobs) {
-    await pool.query(
-      'INSERT INTO system_checks (id) VALUES ($1) ON CONFLICT DO NOTHING',
-      [job.data.checkId],
-    )
-  }
-})
 // Validate the schedule before registering the importer.
 currentScheduleDay()
 useSyncQueue(boss)
@@ -89,17 +78,19 @@ await schedule()
 const scheduleTimer = setInterval(() => {
   void schedule().catch(fatal)
 }, 60_000)
-await heartbeat()
-const timer = setInterval(() => {
-  void heartbeat().catch(fatal)
-}, 10_000)
+// The worker library takes the jobs of the module plugins' job definitions
+// and writes the worker's liveness record (B1-R14). The existing path above
+// stays until each module is moved to the libraries (B1-R17, B1-D14).
+const worker = await startWorker({
+  plugins: fileURLToPath(new URL('../plugins/index.ts', import.meta.url)),
+  poolSize: poolSizeFromEnvironment(),
+})
 console.info('Worker ready')
 async function shutdown() {
   if (stopping) return
   stopping = true
-  clearInterval(timer)
   clearInterval(scheduleTimer)
-  await boss.stop()
+  await Promise.all([worker.stop(), boss.stop()])
   await closePool()
 }
 process.on('SIGTERM', () => {

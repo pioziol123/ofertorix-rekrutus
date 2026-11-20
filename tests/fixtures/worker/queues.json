@@ -1,0 +1,5 @@
+{
+  "wt-plain": { "attempts": 2 },
+  "wt-limited": { "attempts": 2, "timeLimitSeconds": 3 },
+  "wt-single": { "attempts": 1, "timeLimitSeconds": 3600 }
+}

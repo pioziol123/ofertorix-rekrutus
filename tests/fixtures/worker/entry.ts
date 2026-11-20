@@ -1,0 +1,41 @@
+/**
+ * A worker entry for tests: the worker library with the test plugins index.
+ * `TEST_ORPHAN=1` adds a queue without a registered handler to the job
+ * source; `TEST_NEVER_CONFIRM=1` makes the queue never confirm the attempts
+ * of jobs whose id starts with `unconfirmed`.
+ */
+import { fileURLToPath } from 'node:url'
+import { closePool } from '../../../lib/db.ts'
+import { openJobSource, type JobSource } from '../../../lib/queues/index.ts'
+import {
+  poolSizeFromEnvironment,
+  startWorker,
+} from '../../../lib/workers/index.ts'
+import { orphanJob } from './definitions.ts'
+
+const worker = await startWorker({
+  plugins: fileURLToPath(new URL('./plugins.ts', import.meta.url)),
+  poolSize: poolSizeFromEnvironment(),
+  jobSource: (definitions) => {
+    const source: JobSource = openJobSource(
+      process.env.TEST_ORPHAN === '1'
+        ? [...definitions, orphanJob]
+        : definitions,
+    )
+    if (process.env.TEST_NEVER_CONFIRM !== '1') return source
+    return {
+      ...source,
+      confirm: (job) =>
+        (job.data as { id: string }).id.startsWith('unconfirmed')
+          ? new Promise<boolean>(() => {})
+          : source.confirm(job),
+    }
+  },
+})
+for (const signal of ['SIGTERM', 'SIGINT'] as const)
+  process.on(signal, () => {
+    void worker
+      .stop()
+      .then(closePool)
+      .then(() => process.exit(0))
+  })
