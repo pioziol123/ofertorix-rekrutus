@@ -35,11 +35,15 @@ export {
   proposalSettingsKey,
 } from './infrastructure/adapters/proposal-ai.ts'
 
-// Composition: where the worker extracts the text of uploaded documents and
-// recovers stalled imports, and the queue schema is prepared.
-export { recoverImports } from './extract-cv-text.ts'
+// Composition: the job of reading a CV's text, with the handlers the
+// Profile module plugin registers for the worker, and the request the
+// migration step makes for the readings the former queue held (B4-R08).
 export {
-  parseQueue,
-  parseQueueOptions,
-  workCvTextQueue,
+  endFailedCvTextReading,
+  readCvText,
+  requestUnfinishedCvTextReadings,
+} from './extract-cv-text.ts'
+export {
+  cvTextReadingJob,
+  type CvTextReading,
 } from './infrastructure/worker/cv-text-queue.ts'

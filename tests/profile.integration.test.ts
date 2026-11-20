@@ -22,25 +22,22 @@ import {
 } from '../modules/profile/domain/profile-data.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { digest } from '../modules/profile/domain/cv-document.ts'
-// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
-  extractImport,
-  recoverImports,
-} from '../modules/profile/extract-cv-text.ts'
-import {
-  parseQueue,
   confirmProfile,
   importCvDocument,
   importCvText,
   prepareProposal,
   proposalReceiver,
   proposalSettingsKey,
+  readCvText,
   readImport,
   readOriginalFile,
   readProfile,
   saveDraft,
 } from '../modules/profile/index.ts'
 import { closePool, setPool } from '../lib/db.ts'
+import { stopQueues } from '../lib/queues/index.ts'
+import { prepareCvTextQueue } from './profile.fixtures.ts'
 import {
   aiExecutionJobOptions,
   aiExecutionQueue,
@@ -123,7 +120,8 @@ integration(
       })
       boss.on('error', () => {})
       await boss.start()
-      await boss.createQueue(parseQueue)
+      await prepareCvTextQueue(queueSchema)
+      process.env.PG_BOSS_SCHEMA = queueSchema
       await boss.createQueue(aiExecutionQueue, aiExecutionJobOptions)
       useAiQueue(boss)
       // The paid provider, simulated by the fetcher each test sets.
@@ -145,6 +143,8 @@ integration(
     afterAll(async () => {
       vi.unstubAllEnvs()
       await boss?.stop()
+      await stopQueues()
+      delete process.env.PG_BOSS_SCHEMA
       await closePool()
       if (admin) {
         await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
@@ -273,10 +273,10 @@ integration(
         confirmProfile(draft.revision, version.id, command),
       ).rejects.toThrow('Command already used')
     })
-    it('stores repeated originals independently, checks hashes, and rolls back failed enqueue', async () => {
+    it('stores repeated originals independently and checks hashes', async () => {
       const bytes = await fixture('text.pdf'),
-        first = await importCvDocument('../CV.pdf', bytes, boss, root),
-        second = await importCvDocument('../CV.pdf', bytes, boss, root)
+        first = await importCvDocument('../CV.pdf', bytes, root),
+        second = await importCvDocument('../CV.pdf', bytes, root)
       expect(first).not.toBe(second)
       expect((await readOriginalFile(first, root))?.bytes).toEqual(bytes)
       const rows = (
@@ -289,74 +289,13 @@ integration(
       await expect(readOriginalFile(first, root)).rejects.toThrow(
         'hash mismatch',
       )
-      const fail = vi
-        .spyOn(boss, 'send')
-        .mockRejectedValueOnce(new Error('queue failed'))
-      try {
-        await expect(
-          importCvDocument('another.pdf', bytes, boss, root),
-        ).rejects.toThrow('storage failed')
-      } finally {
-        fail.mockRestore()
-      }
-      expect(
-        (
-          await pool.query(
-            "SELECT count(*)::int n FROM profile_imports WHERE status='failed'",
-          )
-        ).rows[0].n,
-      ).toBe(1)
-    })
-    it('marks file import failed when parser queue returns no job', async () => {
-      const bytes = await fixture('text.pdf'),
-        fail = vi.spyOn(boss, 'send').mockResolvedValueOnce(null)
-      try {
-        await expect(
-          importCvDocument('cv.pdf', bytes, boss, root),
-        ).rejects.toThrow('storage failed')
-      } finally {
-        fail.mockRestore()
-      }
-      const row = (await pool.query('SELECT * FROM profile_imports')).rows[0]
-      expect(row.status).toBe('failed')
-      expect((await readOriginalFile(row.id, root))?.bytes).toEqual(bytes)
-    })
-    it('recovery queues a stale import again once, through a conditional state change, and leaves a recent one alone (0mq.18)', async () => {
-      vi.stubEnv('DOCUMENTS_DIR', root)
-      const bytes = await fixture('text.pdf'),
-        stale = await importCvDocument('stale.pdf', bytes, boss, root),
-        recent = await importCvDocument('recent.pdf', bytes, boss, root)
-      await pool.query(
-        "UPDATE profile_imports SET status='extracting',updated_at=now()-interval '10 minutes' WHERE id=$1",
-        [stale],
-      )
-      await pool.query(
-        "UPDATE profile_imports SET status='extracting',updated_at=now() WHERE id=$1",
-        [recent],
-      )
-      const send = vi.spyOn(boss, 'send')
-      try {
-        await Promise.all([recoverImports(boss), recoverImports(boss)])
-        expect(send).toHaveBeenCalledOnce()
-        expect(send.mock.calls[0]![1]).toEqual({ importId: stale })
-      } finally {
-        send.mockRestore()
-      }
-      const status = async (id: string) =>
-        (
-          await pool.query('SELECT status FROM profile_imports WHERE id=$1', [
-            id,
-          ])
-        ).rows[0].status
-      expect(await status(stale)).toBe('queued')
-      expect(await status(recent)).toBe('extracting')
     })
     it.each(['text.pdf', 'text.docx'])(
       'extracts synthetic %s locally and retains original',
       async (name) => {
         const bytes = await fixture(name),
-          id = await importCvDocument(name, bytes, boss, root)
-        await extractImport(id, root)
+          id = await importCvDocument(name, bytes, root)
+        await readCvText({ importId: id }, root)
         const row = (
           await pool.query('SELECT * FROM profile_imports WHERE id=$1', [id])
         ).rows[0]
@@ -373,8 +312,8 @@ integration(
             name === 'scan.pdf'
               ? await fixture(name)
               : Buffer.from([80, 75, 3, 4, 1, 2, 3]),
-          id = await importCvDocument(name, bytes, boss, root)
-        await extractImport(id, root)
+          id = await importCvDocument(name, bytes, root)
+        await readCvText({ importId: id }, root)
         expect(
           (
             await pool.query('SELECT status FROM profile_imports WHERE id=$1', [

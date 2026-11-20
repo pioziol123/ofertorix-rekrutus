@@ -17,8 +17,11 @@ import {
   type HandlerRegistry,
   type ModulePlugin,
 } from '../lib/workers/index.ts'
+import { registerProfileJobs } from './profile.ts'
 
-const modulePlugins: Record<string, ModulePlugin> = {}
+const modulePlugins: Record<string, ModulePlugin> = {
+  profile: registerProfileJobs,
+}
 
 export async function runModulePlugins(
   registry: HandlerRegistry,

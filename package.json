@@ -11,7 +11,7 @@
     "build": "nuxt build",
     "prepare": "nuxt prepare",
     "worker": "tsx worker/index.ts",
-    "migrate": "node-pg-migrate up --migrations-dir migrations && tsx scripts/init-queue.ts",
+    "migrate": "node-pg-migrate up --migrations-dir migrations && tsx scripts/init-queue.ts && tsx scripts/carry-over-jobs.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

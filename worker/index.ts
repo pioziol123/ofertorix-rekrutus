@@ -9,9 +9,7 @@ import {
 import {
   proposalReceiver,
   proposalSettingsKey,
-  recoverImports,
   resumeProposalPreparations,
-  workCvTextQueue,
 } from '../modules/profile/index.ts'
 import { closePool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
@@ -57,8 +55,6 @@ currentScheduleDay()
 useSyncQueue(boss)
 await recoverSyncRuns()
 await workSyncQueue(boss)
-await recoverImports(boss)
-await workCvTextQueue(boss)
 useAiQueue(boss)
 registerResultReceiver(proposalSettingsKey, proposalReceiver)
 registerResultReceiver(assessmentSettingsKey, assessmentReceiver)
@@ -75,7 +71,6 @@ async function schedule() {
   try {
     await recoverSyncRuns()
     await requestScheduledSyncs()
-    await recoverImports(boss)
     await resumeProposalPreparations()
     await recoverExecutions()
   } finally {

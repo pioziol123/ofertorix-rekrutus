@@ -8,15 +8,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Pool } from 'pg'
-import { PgBoss } from 'pg-boss'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
 import { emptyProfile } from '../modules/profile/view.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { digest } from '../modules/profile/domain/cv-document.ts'
-// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { extractImport } from '../modules/profile/extract-cv-text.ts'
-import { parseQueue } from '../modules/profile/index.ts'
+import { readCvText } from '../modules/profile/index.ts'
+import { prepareCvTextQueue } from './profile.fixtures.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -24,12 +22,7 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
   const suffix = randomUUID().replaceAll('-', ''),
     schema = `profile_http_${suffix}`,
     queueSchema = `phttp_q_${suffix}`
-  let admin: Pool,
-    pool: Pool,
-    boss: PgBoss,
-    child: ChildProcess,
-    root: string,
-    base: string
+  let admin: Pool, pool: Pool, child: ChildProcess, root: string, base: string
   beforeAll(async () => {
     await access('.output/server/index.mjs')
     admin = new Pool({ connectionString: process.env.DATABASE_URL })
@@ -43,13 +36,7 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
       '../migrations/1770000000004_profiles.cjs',
     ).up({ sql: (s: string) => sql.push(s) })
     await pool.query(sql.join('\n'))
-    boss = new PgBoss({
-      connectionString: connection.toString(),
-      schema: queueSchema,
-    })
-    boss.on('error', () => {})
-    await boss.start()
-    await boss.createQueue(parseQueue)
+    await prepareCvTextQueue(queueSchema)
     root = await mkdtemp(join(tmpdir(), 'profile-http-'))
     const probe = createServer()
     probe.listen(0, '127.0.0.1')
@@ -94,7 +81,6 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
         await once(child, 'exit')
       }
     }
-    await boss?.stop()
     await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
@@ -253,7 +239,7 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
     expect(file.headers.get('content-type')).toContain('application/pdf')
     expect(file.headers.get('content-disposition')).toContain('attachment')
     expect(digest(Buffer.from(await file.arrayBuffer()))).toBe(digest(bytes))
-    await extractImport(id, root)
+    await readCvText({ importId: id }, root)
     const detail = await fetch(`${base}/api/profile/imports/${id}`)
     expect(detail.status).toBe(200)
     const record = await detail.json()

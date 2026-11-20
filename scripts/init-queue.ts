@@ -24,7 +24,6 @@ const existingPathQueues = {
     retryLimit: 2,
     expireInSeconds: 3600,
   },
-  'profile-parse': { retryLimit: 0, expireInSeconds: 120 },
   'ai-execution': {
     retryLimit: 3,
     retryDelay: 30,

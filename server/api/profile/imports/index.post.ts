@@ -3,7 +3,7 @@ import {
   importCvDocument,
   importCvText,
 } from '../../../../modules/profile/index'
-import { jsonBody, limitedBytes, queueClient } from '../../../utils/http'
+import { jsonBody, limitedBytes } from '../../../utils/http'
 import { profileHandler } from '../../../utils/profile'
 export default profileHandler(async (event) => {
   let id: string
@@ -20,7 +20,6 @@ export default profileHandler(async (event) => {
     id = await importCvDocument(
       name,
       await limitedBytes(event, 10 * 1024 * 1024),
-      await queueClient(),
     )
   }
   setResponseStatus(event, 202)

@@ -137,6 +137,7 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
     expect(listed).toEqual(
       [
         // Startup scripts named in package.json.
+        'carry-over-jobs.ts',
         'himalayas-sync.ts',
         'init-queue.ts',
         'jobspy-status.ts',
@@ -203,7 +204,6 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
     for (const existing of [
       'await boss.start()',
       'await workSyncQueue(',
-      'await workCvTextQueue(',
       'await boss.work',
       'await schedule()',
     ])
@@ -241,5 +241,26 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
     expect(
       [...reached].filter((file) => /^(modules|plugins)\//.test(file)),
     ).toEqual([])
+  })
+
+  it("carries work over at the migration step through the modules' public operations only, without the plugins (B1-D05, B4-R08)", () => {
+    const imports = importsOf('scripts/carry-over-jobs.ts')
+    expect(imports).toContain('modules/profile/index.ts')
+    expect(
+      imports.filter(
+        (file) => /^plugins\//.test(file) || (moduleOf(file) && !isEntry(file)),
+      ),
+    ).toEqual([])
+  })
+
+  it('keeps the Profile module free of the queue implementation (B4-AC07)', () => {
+    const reaching = files('modules/profile')
+      .filter((file) => !isTest(file))
+      .filter((file) =>
+        /from\s+['"]pg-boss['"]|lib\/queue(?:\.ts)?['"]/.test(
+          readFileSync(join(root, file), 'utf8'),
+        ),
+      )
+    expect(reaching).toEqual([])
   })
 })

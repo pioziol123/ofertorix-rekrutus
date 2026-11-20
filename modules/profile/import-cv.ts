@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { PgBoss } from 'pg-boss'
 import { transaction } from '../../lib/db.ts'
+import { sendJob } from '../../lib/queues/index.ts'
 import { digest, validateDocument } from './domain/cv-document.ts'
 import { originalFile } from './extract-cv-text.ts'
 import { documentRoot } from './infrastructure/adapters/document-storage.ts'
-import { sendCvTextJob } from './infrastructure/worker/cv-text-queue.ts'
+import { cvTextReadingJob } from './infrastructure/worker/cv-text-queue.ts'
 import {
   insertFileImport,
   insertTextImport,
@@ -25,15 +25,14 @@ export async function importCvText(text: string): Promise<string> {
 
 /**
  * Imports a CV document (PDF or DOCX): keeps the original in the private
- * document storage and requests extracting its text. Storing the original,
- * marking the import queued and sending the job happen before the import
- * id is returned; when any of them fails the import is marked failed and
+ * document storage and requests reading its text (B4-R01). Storing the
+ * original, then marking the import queued and requesting the job in one
+ * transaction, happen before the import id is returned; when any of them fails the import is marked failed and
  * the error says the document was not accepted.
  */
 export async function importCvDocument(
   name: string,
   bytes: Buffer,
-  boss: PgBoss,
   root = documentRoot(),
 ): Promise<string> {
   const kind = validateDocument(name, bytes),
@@ -59,7 +58,7 @@ export async function importCvDocument(
     await rename(join(root, `${pathKey}.tmp`), join(root, pathKey))
     await transaction(async () => {
       await setImportStatus(id, 'queued')
-      await sendCvTextJob(boss, id)
+      await sendJob(cvTextReadingJob, { importId: id })
     })
   } catch {
     await markImportFailed(

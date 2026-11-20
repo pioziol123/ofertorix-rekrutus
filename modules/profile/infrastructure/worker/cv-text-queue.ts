@@ -1,26 +1,15 @@
-import type { PgBoss } from 'pg-boss'
-import { queueDatabase } from '../../../../lib/db.ts'
-import { requireQueued } from '../../../../lib/queue.ts'
-import { extractImport } from '../../extract-cv-text.ts'
+import { defineJob } from '../../../../lib/queues/index.ts'
 
-/** The queue of extracting the text of an uploaded CV document. */
-export const parseQueue = 'profile-parse'
-export const parseQueueOptions = { retryLimit: 0, expireInSeconds: 120 }
+/** The data of a request to read the text of an uploaded CV document. */
+export type CvTextReading = { importId: string }
 
-/** Requests extracting the text of an import, in the caller's transaction. */
-export async function sendCvTextJob(boss: PgBoss, importId: string) {
-  await requireQueued(
-    boss.send(
-      parseQueue,
-      { importId },
-      { db: queueDatabase, ...parseQueueOptions },
-    ),
-  )
-}
-
-/** Has this process extract the text of the queued imports. */
-export async function workCvTextQueue(boss: PgBoss) {
-  await boss.work<{ importId: string }>(parseQueue, async (jobs) => {
-    for (const job of jobs) await extractImport(job.data.importId)
-  })
-}
+/**
+ * The job of reading the text of an uploaded CV document. At most one CV is
+ * read at a time in the whole system (B4-R04), so the key is a constant in
+ * exclusivity mode. Its queue is created by its queue migration with the
+ * same key mode; its attempts and time limit are in the queue configuration.
+ */
+export const cvTextReadingJob = defineJob<CvTextReading>({
+  queue: 'profile-cv-text',
+  key: { mode: 'exclusivity', value: 'profile-cv-text' },
+})

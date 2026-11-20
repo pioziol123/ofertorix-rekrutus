@@ -37,11 +37,7 @@ export const defaultPoolSize = 2
  * the existing worker path (B1-R17); the worker leaves them out (B1-D16).
  * Transitional (B1-D14): each module's task removes its queue from here.
  */
-export const existingPathQueues = [
-  'source-sync',
-  'profile-parse',
-  'ai-execution',
-] as const
+export const existingPathQueues = ['source-sync', 'ai-execution'] as const
 
 export type WorkerOptions = {
   /** Path or URL of the plugins index that registers every module. */
