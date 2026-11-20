@@ -45,8 +45,9 @@ export function sandboxProvider(repo: string) {
   })
 }
 
-export function dockerSandboxes({ repo, model, effort }: { repo: string; model: string; effort: Effort }): Sandboxes {
+export function dockerSandboxes({ repo, model, effort, reviewEffort = effort }: { repo: string; model: string; effort: Effort; reviewEffort?: Effort }): Sandboxes {
   const agent = () => claudeCode(model, { effort })
+  const reviewer = () => claudeCode(model, { effort: reviewEffort })
   return {
     async warm(branch): Promise<WarmSandbox> {
       const sandbox = await createSandbox({ branch, cwd: repo, sandbox: sandboxProvider(repo) })
@@ -72,7 +73,7 @@ export function dockerSandboxes({ repo, model, effort }: { repo: string; model: 
         worktreePath: sandbox.worktreePath,
         exec: (command) => sandbox.exec(command),
         review: async (prompt) => {
-          await sandbox.run({ agent: agent(), prompt, idleTimeoutSeconds: AGENT_IDLE_TIMEOUT_SECONDS })
+          await sandbox.run({ agent: reviewer(), prompt, idleTimeoutSeconds: AGENT_IDLE_TIMEOUT_SECONDS })
         },
         close: () => sandbox[Symbol.asyncDispose](),
       }

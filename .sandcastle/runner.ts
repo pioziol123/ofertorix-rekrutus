@@ -5,7 +5,7 @@
  * Runs from the runner's copy, a clone of GitHub prepared by `node .sandcastle/setup.ts`
  * in the owner's copy:
  *   node .sandcastle/runner.ts [--once] [--dry-run] [--task <id>] [--model <id>]
- *        [--effort <level>] [--interval <minutes>] [--slots <n>] [--rebuild-image]
+ *        [--effort <level>] [--review-effort <level>] [--interval <minutes>] [--slots <n>] [--rebuild-image]
  */
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
@@ -24,6 +24,7 @@ const { values: opts } = parseArgs({
     task: { type: 'string' },
     model: { type: 'string', default: 'claude-opus-5-5' },
     effort: { type: 'string', default: 'medium' },
+    'review-effort': { type: 'string', default: 'high' },
     interval: { type: 'string', default: '5' },
     slots: { type: 'string', default: '1' },
     'rebuild-image': { type: 'boolean', default: false },
@@ -62,7 +63,7 @@ function log(message: string): void {
 const runner: Runner = {
   repo,
   db: bdTaskDb({ repo, beadsDir: settings.beadsDir, assignee: git(repo, ['config', 'user.name']) }),
-  sandboxes: dockerSandboxes({ repo, model: opts.model!, effort: opts.effort as Effort }),
+  sandboxes: dockerSandboxes({ repo, model: opts.model!, effort: opts.effort as Effort, reviewEffort: opts['review-effort'] as Effort }),
   images: dockerImages({ repo, rebuild: opts['rebuild-image']! }),
   notifier: { notify },
   log,
@@ -81,7 +82,7 @@ const runner: Runner = {
 async function main(): Promise<void> {
   if (opts['dry-run']) {
     preview(runner)
-    console.log(`Agent: ${opts.model} (effort ${opts.effort}) in docker sandbox; gate: ${GATE}; ${slots} task(s) at a time`)
+    console.log(`Agent: ${opts.model} (effort ${opts.effort}, review effort ${opts['review-effort']}) in docker sandbox; gate: ${GATE}; ${slots} task(s) at a time`)
     return
   }
   mkdirSync(logDir, { recursive: true })
