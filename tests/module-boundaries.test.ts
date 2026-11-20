@@ -203,7 +203,6 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
     expect(library).toBeGreaterThan(-1)
     for (const existing of [
       'await boss.start()',
-      'await workSyncQueue(',
       'await boss.work',
       'await schedule()',
     ])
@@ -243,9 +242,10 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
     ).toEqual([])
   })
 
-  it("carries work over at the migration step through the modules' public operations only, without the plugins (B1-D05, B4-R08)", () => {
+  it("carries work over at the migration step through the modules' public operations only, without the plugins (B1-D05, B4-R08, B5-R08)", () => {
     const imports = importsOf('scripts/carry-over-jobs.ts')
     expect(imports).toContain('modules/profile/index.ts')
+    expect(imports).toContain('modules/sources/index.ts')
     expect(
       imports.filter(
         (file) => /^plugins\//.test(file) || (moduleOf(file) && !isEntry(file)),
@@ -262,5 +262,58 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
         ),
       )
     expect(reaching).toEqual([])
+  })
+
+  it('keeps the Sources module, the web application and the command-line scripts free of the queue implementation for syncs (B5-AC08)', () => {
+    const queueImplementation = /from\s+['"]pg-boss['"]|lib\/queue(?:\.ts)?['"]/
+    const syncQueue =
+      /\b(?:useSyncQueue|workSyncQueue|recoverSyncRuns|syncQueue)\b/
+    const read = (file: string) => readFileSync(join(root, file), 'utf8')
+    const reachSources = (file: string) =>
+      importsOf(file).includes('modules/sources/index.ts')
+    // The module itself.
+    expect(
+      files('modules/sources')
+        .filter((file) => !isTest(file))
+        .filter((file) => queueImplementation.test(read(file))),
+    ).toEqual([])
+    // The scripts that request or read syncs; the carry-over script still
+    // reads the former queue to remove it (B5-R08).
+    const scripts = files('scripts').filter(
+      (file) => reachSources(file) && file !== 'scripts/carry-over-jobs.ts',
+    )
+    expect(scripts).toEqual(
+      expect.arrayContaining([
+        'scripts/himalayas-sync.ts',
+        'scripts/jobspy-sync.ts',
+        'scripts/polish-sync.ts',
+        'scripts/source-sync.ts',
+      ]),
+    )
+    expect(
+      scripts.filter((file) => queueImplementation.test(read(file))),
+    ).toEqual([])
+    // The web application: no route connects a queue client for a sync, and
+    // nothing connects the former sync queue. The shared HTTP helpers still
+    // hold the existing path's client of the AI module (B1-D14).
+    const web = files('server')
+    expect(web.filter(reachSources)).not.toEqual([])
+    expect(
+      web
+        .filter(reachSources)
+        .filter((file) => /queueClient\(/.test(read(file))),
+    ).toEqual([])
+    expect(web.filter((file) => syncQueue.test(read(file)))).toEqual([])
+  })
+
+  it('carries sync jobs out through the worker library and the Sources module plugin, not the existing path of the worker entry (B5-AC08)', () => {
+    expect(importsOf('plugins/index.ts')).toContain('plugins/sources.ts')
+    expect(importsOf('plugins/sources.ts')).toContain(
+      'modules/sources/index.ts',
+    )
+    const entry = readFileSync(join(root, 'worker/index.ts'), 'utf8')
+    expect(entry).not.toMatch(
+      /\b(?:useSyncQueue|workSyncQueue|recoverSyncRuns|syncQueue)\b|['"]source-sync['"]/,
+    )
   })
 })

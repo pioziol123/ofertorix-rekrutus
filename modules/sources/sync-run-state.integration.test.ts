@@ -1,20 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
-import { PgBoss } from 'pg-boss'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { closePool, setPool } from '../../lib/db.ts'
+import { sendJob, stopQueues } from '../../lib/queues/index.ts'
 import {
-  afterAll,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest'
-import { closePool, queueDatabase, setPool } from '../../lib/db.ts'
-import { requireQueued } from '../../lib/queue.ts'
+  prepareSyncRunQueue,
+  sourcesMigrations,
+} from '../../tests/sync-run.fixtures.ts'
+import { syncJob } from './index.ts'
 import {
-  AdmittedRunFinishedError,
   admitRun,
   finishRun,
   listUnfinishedRuns,
@@ -22,25 +17,6 @@ import {
   startRun,
   type RunAdmission,
 } from './sync-run-state.ts'
-import * as repository from './infrastructure/persistence/sync-runs.ts'
-
-// The repository stays real; single tests interleave other work between its
-// calls to reproduce races deterministically.
-vi.mock('./infrastructure/persistence/sync-runs.ts', async (importOriginal) => {
-  const actual =
-    await importOriginal<
-      typeof import('./infrastructure/persistence/sync-runs.ts')
-    >()
-  return {
-    ...actual,
-    insertQueuedRun: vi.fn(actual.insertQueuedRun),
-    findBlockingRunId: vi.fn(actual.findBlockingRunId),
-  }
-})
-
-const { findBlockingRunId: actualFindBlockingRunId } = await vi.importActual<
-  typeof import('./infrastructure/persistence/sync-runs.ts')
->('./infrastructure/persistence/sync-runs.ts')
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -49,10 +25,9 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
   const suffix = randomUUID().replaceAll('-', '')
   const schema = `run_state_${suffix}`
   const queueSchema = `run_queue_${suffix}`
-  const queue = 'sync-run-state-test'
+  const previousQueueSchema = process.env.PG_BOSS_SCHEMA
   let admin: Pool
   let pool: Pool
-  let boss: PgBoss
 
   beforeAll(async () => {
     admin = new Pool({ connectionString: process.env.DATABASE_URL })
@@ -62,12 +37,7 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
       options: `-c search_path=${schema}`,
       max: 12,
     })
-    for (const migration of [
-      '1770000000001_sources',
-      '1770000000005_jobspy',
-      '1770000000014_sync_run_state',
-      '1770000000015_sync_run_attempt',
-    ]) {
+    for (const migration of sourcesMigrations) {
       const sql: string[] = []
       createRequire(import.meta.url)(`../../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),
@@ -75,25 +45,23 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
       await pool.query(sql.join('\n'))
     }
     setPool(pool)
-    boss = new PgBoss({
-      connectionString: process.env.DATABASE_URL,
-      schema: queueSchema,
-    })
-    boss.on('error', () => {})
-    await boss.start()
-    await boss.createQueue(queue)
+    await prepareSyncRunQueue(queueSchema)
+    process.env.PG_BOSS_SCHEMA = queueSchema
   }, 30_000)
 
   beforeEach(async () => {
-    vi.clearAllMocks()
     await pool.query(
       'TRUNCATE source_run_seen, source_ad_revisions, source_ads, source_sync_runs, source_scopes CASCADE',
     )
-    await admin.query(`DELETE FROM ${queueSchema}.job WHERE name=$1`, [queue])
+    await admin.query(`DELETE FROM ${queueSchema}.job WHERE name=$1`, [
+      syncJob.queue,
+    ])
   })
 
   afterAll(async () => {
-    await boss?.stop()
+    await stopQueues()
+    if (previousQueueSchema === undefined) delete process.env.PG_BOSS_SCHEMA
+    else process.env.PG_BOSS_SCHEMA = previousQueueSchema
     await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
@@ -102,132 +70,100 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
     }
   })
 
-  const admission = (overrides: Partial<RunAdmission> = {}): RunAdmission => ({
-    source: 'test-source',
-    parameters: { source: 'test-source', keyword: 'php', limit: 100 },
-    trigger: 'manual',
-    scheduleDay: '2026-11-16',
-    sendJob: (runId) =>
-      requireQueued(boss.send(queue, { runId }, { db: queueDatabase })),
-    ...overrides,
-  })
+  const admission = (overrides: Partial<RunAdmission> = {}): RunAdmission => {
+    const source = overrides.source ?? 'test-source'
+    return {
+      source,
+      parameters: { source, keyword: 'php', limit: 100 },
+      trigger: 'manual',
+      scheduleDay: '2026-11-16',
+      sendJob: (runId) => sendJob(syncJob, { runId, source }),
+      ...overrides,
+    }
+  }
   const runs = async () =>
     (
-      await pool.query<{ id: string; status: string; job_id: string | null }>(
-        'SELECT id,status,job_id FROM source_sync_runs ORDER BY created_at,id',
+      await pool.query<{ id: string; status: string }>(
+        'SELECT id,status FROM source_sync_runs ORDER BY created_at,id',
       )
     ).rows
   const jobs = async () =>
     (
-      await admin.query<{ id: string; data: { runId: string } }>(
-        `SELECT id,data FROM ${queueSchema}.job WHERE name=$1`,
-        [queue],
+      await admin.query<{
+        data: { runId: string; source: string }
+        singleton_key: string
+      }>(
+        `SELECT data,singleton_key FROM ${queueSchema}.job WHERE name=$1 ORDER BY created_on`,
+        [syncJob.queue],
       )
     ).rows
   const rawRow = async (id: string) =>
     (await pool.query('SELECT * FROM source_sync_runs WHERE id=$1', [id]))
       .rows[0]
 
-  it('admits ten concurrent requests as one queued run with one queue job (A3-AC01)', async () => {
+  it('admits ten concurrent requests of one source as one queued run with one queue job (A3-AC01, B5-AC02)', async () => {
     const admitted = await Promise.all(
-      Array.from({ length: 10 }, () => admitRun(admission())),
+      Array.from({ length: 10 }, (_, i) =>
+        admitRun(
+          admission({
+            // Half of them for another scope of the same source.
+            parameters: {
+              source: 'test-source',
+              keyword: i % 2 ? 'php' : 'java',
+            },
+          }),
+        ),
+      ),
     )
     const ids = new Set(admitted.map((result) => result.id))
     expect(ids.size).toBe(1)
     expect(admitted.filter((result) => !result.existing)).toHaveLength(1)
-    const [run] = await runs()
-    expect(await runs()).toEqual([
-      { id: [...ids][0], status: 'queued', job_id: expect.any(String) },
-    ])
+    const [id] = [...ids]
+    expect(await runs()).toEqual([{ id, status: 'queued' }])
     expect(await jobs()).toEqual([
-      { id: run!.job_id, data: { runId: run!.id } },
+      {
+        data: { runId: id, source: 'test-source' },
+        singleton_key: 'test-source',
+      },
     ])
   })
 
-  // Runs `race` between the admission's rejected insert and its read of the
-  // blocking run, as another worker would.
-  const raceBeforeRead = (race: (scopeId: string) => Promise<unknown>) =>
-    vi
-      .mocked(repository.findBlockingRunId)
-      .mockImplementationOnce(async (scopeId, runningBefore) => {
-        await race(scopeId)
-        return actualFindBlockingRunId(scopeId, runningBefore)
-      })
+  it.each(['queued', 'running'] as const)(
+    'returns the source’s %s run for the same and another scope and creates no run or job (A3-AC02, B5-AC02)',
+    async (status) => {
+      const first = await admitRun(admission())
+      if (status === 'running') await startRun(first.id)
+      const before = {
+        runs: await runs(),
+        jobs: await jobs(),
+        scopes: (await pool.query('SELECT * FROM source_scopes')).rows,
+      }
+      for (const parameters of [
+        { source: 'test-source', keyword: 'php', limit: 100 },
+        { source: 'test-source', keyword: 'java', limit: 100 },
+      ])
+        expect(await admitRun(admission({ parameters }))).toEqual({
+          id: first.id,
+          existing: true,
+        })
+      expect(await runs()).toEqual(before.runs)
+      expect(await runs()).toEqual([{ id: first.id, status }])
+      expect(await jobs()).toEqual(before.jobs)
+      expect((await pool.query('SELECT * FROM source_scopes')).rows).toEqual(
+        before.scopes,
+      )
+    },
+  )
 
-  it('points at the blocking run that starts before it is read, without inserting again (A19-AC01, A19-AC03)', async () => {
+  it('admits runs of two sources independently (B5-AC02)', async () => {
     const first = await admitRun(admission())
-    raceBeforeRead((scopeId) =>
-      pool.query(
-        `UPDATE source_sync_runs SET status='running', started_at=now()
-        WHERE scope_id=$1 AND status='queued'`,
-        [scopeId],
-      ),
-    )
-    vi.clearAllMocks()
-    expect(await admitRun(admission())).toEqual({
-      id: first.id,
-      existing: true,
-    })
-    expect(repository.insertQueuedRun).toHaveBeenCalledTimes(1)
-    expect(repository.findBlockingRunId).toHaveBeenCalledTimes(1)
-    expect(await runs()).toEqual([
-      { id: first.id, status: 'running', job_id: expect.any(String) },
+    const other = await admitRun(admission({ source: 'other-source' }))
+    expect(other).toEqual({ id: expect.any(String), existing: false })
+    expect(other.id).not.toBe(first.id)
+    expect((await jobs()).map((job) => job.singleton_key)).toEqual([
+      'test-source',
+      'other-source',
     ])
-    expect((await jobs()).map((job) => job.data.runId)).toEqual([first.id])
-  })
-
-  it('fails without changes when the blocking run finishes before it is read (A19-AC02, A19-AC03)', async () => {
-    const first = await admitRun(admission())
-    const before = {
-      runs: await runs(),
-      jobs: await jobs(),
-      scopes: (await pool.query('SELECT * FROM source_scopes')).rows,
-    }
-    raceBeforeRead((scopeId) =>
-      pool.query(
-        `UPDATE source_sync_runs SET status='complete', started_at=now(),
-          finished_at=now() WHERE scope_id=$1 AND status='queued'`,
-        [scopeId],
-      ),
-    )
-    vi.clearAllMocks()
-    await expect(admitRun(admission())).rejects.toBeInstanceOf(
-      AdmittedRunFinishedError,
-    )
-    expect(repository.insertQueuedRun).toHaveBeenCalledTimes(1)
-    expect(repository.findBlockingRunId).toHaveBeenCalledTimes(1)
-    expect(await runs()).toEqual([
-      { id: first.id, status: 'complete', job_id: before.runs[0]!.job_id },
-    ])
-    expect(await jobs()).toEqual(before.jobs)
-    expect((await pool.query('SELECT * FROM source_scopes')).rows).toEqual(
-      before.scopes,
-    )
-    // The caller may request again.
-    expect(await admitRun(admission())).toMatchObject({ existing: false })
-  })
-
-  it('does not point at the run already running when the blocking queued run finishes (A19-R02, 0mq.19 ASM-1)', async () => {
-    const running = await admitRun(admission())
-    await startRun(running.id)
-    const blocking = await admitRun(admission())
-    raceBeforeRead((scopeId) =>
-      pool.query(
-        `UPDATE source_sync_runs SET status='failed', finished_at=now()
-        WHERE scope_id=$1 AND status='queued'`,
-        [scopeId],
-      ),
-    )
-    vi.clearAllMocks()
-    await expect(admitRun(admission())).rejects.toBeInstanceOf(
-      AdmittedRunFinishedError,
-    )
-    expect(repository.insertQueuedRun).toHaveBeenCalledTimes(1)
-    expect((await runs()).map((run) => [run.id, run.status])).toEqual([
-      [running.id, 'running'],
-      [blocking.id, 'failed'],
-    ])
-    expect(await jobs()).toHaveLength(2)
   })
 
   it('creates neither the run nor the job when sending the job fails (A3-R02)', async () => {
@@ -235,7 +171,7 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
       admitRun(
         admission({
           sendJob: async (runId) => {
-            await boss.send(queue, { runId }, { db: queueDatabase })
+            await sendJob(syncJob, { runId, source: 'test-source' })
             throw new Error('queue rejected the job')
           },
         }),
@@ -246,27 +182,7 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
     expect((await pool.query('SELECT * FROM source_scopes')).rowCount).toBe(0)
   })
 
-  it('admits one queued run next to a running one and points later requests at it (A3-AC02)', async () => {
-    const first = await admitRun(admission())
-    expect(await startRun(first.id)).toMatchObject({
-      id: first.id,
-      status: 'running',
-    })
-    const queued = await admitRun(admission())
-    expect(queued).toEqual({ id: expect.any(String), existing: false })
-    expect(queued.id).not.toBe(first.id)
-    expect(await admitRun(admission())).toEqual({
-      id: queued.id,
-      existing: true,
-    })
-    expect(await admitRun(admission())).toEqual({
-      id: queued.id,
-      existing: true,
-    })
-    expect(await jobs()).toHaveLength(2)
-  })
-
-  it('ignores finished runs of the scope when admitting (A3-AC02)', async () => {
+  it('ignores finished runs of the source when admitting (A3-AC02)', async () => {
     for (const status of ['complete', 'partial', 'failed'] as const) {
       const run = await admitRun(admission())
       await startRun(run.id)
@@ -282,7 +198,7 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
     ])
   })
 
-  it('does not start a run twice or start a finished run (A3-AC03)', async () => {
+  it('takes a running run over without restarting it, and never starts a finished run (A3-AC03, B5-AC04)', async () => {
     const { id } = await admitRun(admission())
     const started = await startRun(id)
     expect(started).toMatchObject({
@@ -291,7 +207,8 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
     })
     const afterStart = await rawRow(id)
 
-    expect(await startRun(id)).toBeNull()
+    // A later attempt finds the run running and continues it.
+    expect(await startRun(id)).toEqual(started)
     expect(await rawRow(id)).toEqual(afterStart)
 
     expect(
@@ -312,6 +229,20 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
     expect(await startRun(id)).toBeNull()
     expect(await finishRun(id, { status: 'complete', error: null })).toBe(false)
     expect(await rawRow(id)).toEqual(afterFinish)
+    expect(await startRun(randomUUID())).toBeNull()
+  })
+
+  it('finishes a run only from the given states', async () => {
+    const { id } = await admitRun(admission())
+    expect(
+      await finishRun(id, { status: 'failed', error: null }, ['running']),
+    ).toBe(false)
+    expect((await readRun(id))!.status).toBe('queued')
+    await startRun(id)
+    expect(
+      await finishRun(id, { status: 'failed', error: null }, ['running']),
+    ).toBe(true)
+    expect((await readRun(id))!.status).toBe('failed')
   })
 
   it('finishes a queued run that never started (A3-R05)', async () => {
@@ -330,39 +261,48 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
   })
 
   it('admits other settings as a separate scope and keeps the admitted settings (A3-AC04)', async () => {
-    const php = await admitRun(admission())
-    const java = await admitRun(
-      admission({
-        parameters: { source: 'test-source', keyword: 'java', limit: 100 },
-      }),
-    )
-    const larger = await admitRun(
-      admission({
-        parameters: { source: 'test-source', keyword: 'php', limit: 200 },
-      }),
-    )
-    const reordered = await admitRun(
-      admission({
-        parameters: { limit: 100, keyword: 'php', source: 'test-source' },
-      }),
-    )
-    expect(java.existing).toBe(false)
-    expect(larger.existing).toBe(false)
-    expect(reordered).toEqual({ id: php.id, existing: true })
-    expect(new Set([php.id, java.id, larger.id]).size).toBe(3)
+    /** Admits the parameters and finishes the run, so the next one is admitted. */
+    const admitFinished = async (parameters: Record<string, unknown>) => {
+      const admitted = await admitRun(admission({ parameters }))
+      await finishRun(admitted.id, { status: 'complete', error: null })
+      return admitted
+    }
+    const php = await admitFinished({
+      source: 'test-source',
+      keyword: 'php',
+      limit: 100,
+    })
+    const java = await admitFinished({
+      source: 'test-source',
+      keyword: 'java',
+      limit: 100,
+    })
+    const larger = await admitFinished({
+      source: 'test-source',
+      keyword: 'php',
+      limit: 200,
+    })
+    const reordered = await admitFinished({
+      limit: 100,
+      keyword: 'php',
+      source: 'test-source',
+    })
+    for (const admitted of [php, java, larger, reordered])
+      expect(admitted.existing).toBe(false)
 
     const runPhp = await readRun(php.id)
     const runJava = await readRun(java.id)
     const runLarger = await readRun(larger.id)
+    const runReordered = await readRun(reordered.id)
     expect(
       new Set([runPhp, runJava, runLarger].map((r) => r!.scopeId)).size,
     ).toBe(3)
+    expect(runReordered!.scopeId).toBe(runPhp!.scopeId)
     expect(runPhp).toMatchObject({
       source: 'test-source',
       parameters: { source: 'test-source', keyword: 'php', limit: 100 },
       trigger: 'manual',
       scheduleDay: '2026-11-16',
-      status: 'queued',
     })
     expect(runJava!.parameters).toEqual({
       source: 'test-source',
@@ -376,40 +316,26 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
     })
   })
 
-  it('allows one running and one queued run per scope, never two of either (A3-AC05)', async () => {
+  it('never allows two queued or two running runs of one scope (A3-AC05)', async () => {
     const running = await admitRun(admission())
     await startRun(running.id)
-    const queued = await admitRun(admission())
-    expect((await runs()).map((run) => [run.id, run.status])).toEqual([
-      [running.id, 'running'],
-      [queued.id, 'queued'],
-    ])
     const { scope_id: scopeId } = await rawRow(running.id)
-    for (const status of ['queued', 'running']) {
-      await expect(
-        pool.query(
-          `INSERT INTO source_sync_runs(id,scope_id,trigger,status,schedule_day)
-          VALUES ($1,$2,'manual',$3,'2026-11-16')`,
-          [randomUUID(), scopeId, status],
-        ),
-      ).rejects.toMatchObject({ code: '23505' })
-    }
-  })
-
-  it('refuses to start a queued run while another run of its scope is running (A3-AC05, ASM-1)', async () => {
-    const running = await admitRun(admission())
-    await startRun(running.id)
-    const queued = await admitRun(admission())
-    const before = await rawRow(queued.id)
-    await expect(startRun(queued.id)).rejects.toMatchObject({ code: '23505' })
-    expect(await rawRow(queued.id)).toEqual(before)
-    expect(
-      await finishRun(running.id, { status: 'complete', error: null }),
-    ).toBe(true)
-    expect(await startRun(queued.id)).toMatchObject({ status: 'running' })
+    const insert = (status: string) =>
+      pool.query(
+        `INSERT INTO source_sync_runs(id,scope_id,trigger,status,schedule_day)
+        VALUES ($1,$2,'manual',$3,'2026-11-16')`,
+        [randomUUID(), scopeId, status],
+      )
+    await insert('queued')
+    for (const status of ['queued', 'running'])
+      await expect(insert(status)).rejects.toMatchObject({ code: '23505' })
   })
 
   it('reads a run with its scope and lists unfinished runs oldest first', async () => {
+    const finished = await admitRun(
+      admission({ parameters: { source: 'test-source', keyword: 'go' } }),
+    )
+    await finishRun(finished.id, { status: 'failed', error: 'stopped' })
     const first = await admitRun(admission())
     const other = await admitRun(
       admission({
@@ -418,23 +344,22 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
         trigger: 'scheduled',
       }),
     )
-    const finished = await admitRun(
-      admission({ parameters: { source: 'test-source', keyword: 'go' } }),
-    )
-    await finishRun(finished.id, { status: 'failed', error: 'stopped' })
     await startRun(first.id)
-    const second = await admitRun(admission())
 
     const firstRun = await readRun(first.id)
-    expect(firstRun).toMatchObject({
+    expect(firstRun).toEqual({
       id: first.id,
+      scopeId: expect.any(String),
       source: 'test-source',
+      parameters: { source: 'test-source', keyword: 'php', limit: 100 },
+      trigger: 'manual',
+      scheduleDay: '2026-11-16',
       status: 'running',
-      jobId: expect.any(String),
       pages: 0,
       uniqueAds: 0,
       revisions: 0,
       error: null,
+      diagnostics: null,
       createdAt: expect.any(Date),
       startedAt: expect.any(Date),
       finishedAt: null,
@@ -443,11 +368,10 @@ integration('sync run state in isolated PostgreSQL schemas', () => {
     expect((await listUnfinishedRuns()).map((run) => run.id)).toEqual([
       first.id,
       other.id,
-      second.id,
     ])
     expect(
       (await listUnfinishedRuns('test-source')).map((run) => run.id),
-    ).toEqual([first.id, second.id])
+    ).toEqual([first.id])
     expect(await listUnfinishedRuns('other-source')).toMatchObject([
       { id: other.id, trigger: 'scheduled', status: 'queued' },
     ])

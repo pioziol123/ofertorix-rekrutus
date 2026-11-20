@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
 import { setPool } from '../lib/db.ts'
-import { PgBoss } from 'pg-boss'
+import { stopQueues } from '../lib/queues/index.ts'
 import {
   afterAll,
   afterEach,
@@ -16,9 +16,7 @@ import {
 import {
   readSyncState,
   requestSync,
-  syncQueue,
-  syncQueueOptions,
-  useSyncQueue,
+  syncJob,
 } from '../modules/sources/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
@@ -28,7 +26,11 @@ import {
 } from '../modules/sources/infrastructure/adapters/polish/runner.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readOffers } from '../modules/offers/read-offers.ts'
-import { deliver, recover } from './sync-run.fixtures.ts'
+import {
+  deliver,
+  prepareSyncRunQueue,
+  sourcesMigrations,
+} from './sync-run.fixtures.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { hash } from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
 import { nfjAliasRecord } from './fixtures/polish/json-record.ts'
@@ -41,7 +43,8 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
   const suffix = randomUUID().replaceAll('-', '')
   const schema = `polish_test_${suffix}`,
     queueSchema = `polish_queue_${suffix}`
-  let admin: Pool, pool: Pool, boss: PgBoss
+  const previousQueueSchema = process.env.PG_BOSS_SCHEMA
+  let admin: Pool, pool: Pool
   beforeAll(async () => {
     admin = new Pool({ connectionString: process.env.DATABASE_URL })
     await admin.query(`CREATE SCHEMA ${schema}`)
@@ -52,26 +55,16 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
     })
     // The batch save uses the shared database access (T-03).
     setPool(pool)
-    for (const migration of [
-      '1770000000001_sources',
-      '1770000000005_jobspy',
-      '1770000000014_sync_run_state',
-      '1770000000015_sync_run_attempt',
-    ]) {
+    for (const migration of sourcesMigrations) {
       const sql: string[] = []
       createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),
       })
       await pool.query(sql.join('\n'))
     }
-    boss = new PgBoss({
-      connectionString: process.env.DATABASE_URL,
-      schema: queueSchema,
-    })
-    boss.on('error', () => {})
-    await boss.start()
-    await boss.createQueue(syncQueue, syncQueueOptions)
-    useSyncQueue(boss)
+    await prepareSyncRunQueue(queueSchema)
+    // Requests send their jobs on the queue library's client of this schema.
+    process.env.PG_BOSS_SCHEMA = queueSchema
   }, 30_000)
   beforeEach(async () => {
     vi.stubEnv('POLISH_SOURCES', polishSources.join(','))
@@ -81,7 +74,9 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
   })
   afterEach(() => vi.unstubAllEnvs())
   afterAll(async () => {
-    await boss?.stop()
+    await stopQueues()
+    if (previousQueueSchema === undefined) delete process.env.PG_BOSS_SCHEMA
+    else process.env.PG_BOSS_SCHEMA = previousQueueSchema
     await pool?.end()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
@@ -109,7 +104,7 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
       ])
     ).rows[0]
   }
-  it('deduplicates concurrent requests per source and independently queues the other source', async () => {
+  it('creates one run and one job for concurrent requests of a source and queues the other source independently (B5-R02)', async () => {
     const requests = await Promise.all(
       Array.from({ length: 4 }, () => enqueuePolish(query())),
     )
@@ -117,12 +112,25 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
     expect(requests.filter((r) => !r.existing)).toHaveLength(1)
     const other = await enqueuePolish(query('theprotocol'))
     expect(other.id).not.toBe(requests[0]!.id)
-    const run = (
-      await pool.query('SELECT * FROM source_sync_runs WHERE id=$1', [other.id])
-    ).rows[0]
-    expect((await boss.getJobById(syncQueue, run.job_id))?.data).toEqual({
-      runId: other.id,
-    })
+    expect(
+      (
+        await admin.query(
+          `SELECT data, singleton_key FROM ${queueSchema}.job
+          WHERE name=$1 AND data->>'runId' = ANY($2::text[])
+          ORDER BY created_on`,
+          [syncJob.queue, [requests[0]!.id, other.id]],
+        )
+      ).rows,
+    ).toEqual([
+      {
+        data: { runId: requests[0]!.id, source: 'bulldogjob' },
+        singleton_key: 'bulldogjob',
+      },
+      {
+        data: { runId: other.id, source: 'theprotocol' },
+        singleton_key: 'theprotocol',
+      },
+    ])
   })
   it.each(polishSources)(
     'persists raw %s fields and idempotently records content changes',
@@ -282,59 +290,6 @@ integration('Polish sources in isolated PostgreSQL schemas', () => {
     expect((await polishStatus(queued.id, 'theprotocol')).run?.status).toBe(
       'queued',
     )
-  })
-  // Since 0mq.5 one recovery serves every source and ends only runs whose
-  // queue job has ended (A5-R06).
-  it('recovers orphaned running imports only where the queue job has ended', async () => {
-    const first = await enqueuePolish(query()),
-      second = await enqueuePolish(query('theprotocol'))
-    await pool.query("UPDATE source_sync_runs SET status='running'")
-    const { job_id } = (
-      await pool.query('SELECT job_id FROM source_sync_runs WHERE id=$1', [
-        first.id,
-      ])
-    ).rows[0]
-    await boss.cancel(syncQueue, job_id)
-    await recover()
-    expect((await polishStatus(first.id, 'bulldogjob')).run?.status).toBe(
-      'failed',
-    )
-    expect((await polishStatus(second.id, 'theprotocol')).run?.status).toBe(
-      'running',
-    )
-    const collect = vi.fn()
-    await deliver(first.id, polishWith(collect, 'bulldogjob'))
-    expect(collect).not.toHaveBeenCalled()
-  })
-  it('protects an active execution from recovery and duplicate delivery', async () => {
-    const queued = await enqueuePolish(query())
-    let release!: () => void, entered!: () => void
-    const started = new Promise<void>((resolve) => {
-        entered = resolve
-      }),
-      gate = new Promise<void>((resolve) => {
-        release = resolve
-      })
-    const execution = deliver(
-      queued.id,
-      polishWith(async () => {
-        entered()
-        await gate
-        return result()
-      }, 'bulldogjob'),
-    )
-    await started
-    try {
-      await recover()
-      const duplicate = vi.fn()
-      await deliver(queued.id, polishWith(duplicate, 'bulldogjob'))
-      expect(duplicate).not.toHaveBeenCalled()
-      expect((await polishStatus(queued.id)).run?.status).toBe('running')
-    } finally {
-      release()
-      await execution
-    }
-    expect((await polishStatus(queued.id)).run?.status).toBe('complete')
   })
   it('redacts arbitrary subprocess failures and permits a later import', async () => {
     const queued = await enqueuePolish(query())

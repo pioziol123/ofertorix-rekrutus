@@ -52,7 +52,7 @@ integration('worker library: taking and carrying out jobs', () => {
   beforeAll(async () => {
     scenario = await createScenario('wk_main')
     // A queue of the existing path, which the worker leaves to it (B1-D16).
-    await scenario.boss.createQueue('source-sync')
+    await scenario.boss.createQueue('ai-execution')
     // No pool size set: the worker uses 2 (B1-AC07).
     worker = scenario.startWorker()
     await waitForReady(worker)
@@ -209,7 +209,7 @@ integration('worker library: taking and carrying out jobs', () => {
 
   it('takes a job of an existing queue without a registered handler from the list of queues it read at start, cancels it without retry and logs its name (B1-AC12)', async () => {
     await scenario.send('wt-orphan', { id: 'orphan', action: 'ok' })
-    await scenario.send('source-sync', { id: 'existing-path', action: 'ok' })
+    await scenario.send('ai-execution', { id: 'existing-path', action: 'ok' })
     const job = await waitFor(
       async () => {
         const row = await scenario.job('orphan')
@@ -670,8 +670,8 @@ integration('worker library: fatal errors (B1-AC03, B1-AC14)', () => {
     })
     boss.on('error', () => {})
     await boss.start()
-    await boss.createQueue('source-sync')
-    const id = await boss.send('source-sync', { runId: 'r', source: 's' })
+    await boss.createQueue('ai-execution')
+    const id = await boss.send('ai-execution', { executionId: 'e' })
     await boss.stop({ graceful: false })
     let output = ''
     const child = spawn(

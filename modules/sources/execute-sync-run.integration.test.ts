@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
-import { PgBoss } from 'pg-boss'
 import {
   afterAll,
   beforeAll,
@@ -11,10 +10,9 @@ import {
   it,
   vi,
 } from 'vitest'
-import { closePool, queueDatabase, setPool } from '../../lib/db.ts'
-import { requireQueued } from '../../lib/queue.ts'
-import { executeSyncRun } from './execute-sync-run.ts'
-import { recoverSyncRuns, SyncRunLostError } from './index.ts'
+import { closePool, setPool } from '../../lib/db.ts'
+import { deliver, sourcesMigrations } from '../../tests/sync-run.fixtures.ts'
+import { endFailedSyncRun } from './index.ts'
 import {
   ConnectorError,
   toConnectorAd,
@@ -25,14 +23,13 @@ import {
   type SourceConnector,
 } from './infrastructure/adapters/connector.ts'
 import { createConnectorRegistry } from './infrastructure/adapters/connector-registry.ts'
-import { syncJobOptions } from './infrastructure/worker/sync-queue.ts'
-import { admitRun } from './sync-run-state.ts'
-
-// The shortest heartbeat pg-boss allows, so a lost worker is noticed fast.
-const jobOptions = { ...syncJobOptions, heartbeatSeconds: 10 }
+import { saveBatch } from './save-batch.ts'
+import { admitRun, finishRun, readRun, startRun } from './sync-run-state.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
+
+const interrupted = 'Worker interrupted; request a new import'
 
 const ad = (id: string, title = `Offer ${id}`): ConnectorAd =>
   toConnectorAd({ jobOfferKey: id, title })
@@ -69,13 +66,9 @@ const batches =
   }
 
 integration('shared sync run executor in isolated PostgreSQL schemas', () => {
-  const suffix = randomUUID().replaceAll('-', '')
-  const schema = `run_exec_${suffix}`
-  const queueSchema = `run_exec_queue_${suffix}`
-  const queue = 'sync-run-executor-test'
+  const schema = `run_exec_${randomUUID().replaceAll('-', '')}`
   let admin: Pool
   let pool: Pool
-  let boss: PgBoss
 
   beforeAll(async () => {
     admin = new Pool({ connectionString: process.env.DATABASE_URL })
@@ -85,12 +78,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
       options: `-c search_path=${schema}`,
       max: 12,
     })
-    for (const migration of [
-      '1770000000001_sources',
-      '1770000000005_jobspy',
-      '1770000000014_sync_run_state',
-      '1770000000015_sync_run_attempt',
-    ]) {
+    for (const migration of sourcesMigrations) {
       const sql: string[] = []
       createRequire(import.meta.url)(`../../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),
@@ -98,39 +86,26 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
       await pool.query(sql.join('\n'))
     }
     setPool(pool)
-    boss = new PgBoss({
-      connectionString: process.env.DATABASE_URL,
-      schema: queueSchema,
-      superviseIntervalSeconds: 1,
-      monitorIntervalSeconds: 1,
-    })
-    boss.on('error', () => {})
-    await boss.start()
-    await boss.createQueue(queue, jobOptions)
   }, 30_000)
 
   beforeEach(async () => {
     await pool.query(
       'TRUNCATE source_run_seen, source_ad_revisions, source_ads, source_sync_runs, source_scopes CASCADE',
     )
-    await admin.query(`DELETE FROM ${queueSchema}.job WHERE name=$1`, [queue])
   })
 
   afterAll(async () => {
-    await boss?.stop()
     await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
-      await admin.query(`DROP SCHEMA IF EXISTS ${queueSchema} CASCADE`)
       await admin.end()
     }
   })
 
-  /** The jobs of runs ahead, looked up in this test's queue. */
-  const findJob = ({ jobId }: { jobId: string }) =>
-    boss.getJobById(queue, jobId)
-
-  /** Admits a run of the connector's current scope with a real queue job. */
+  /**
+   * Admits a run of the connector's current scope. Its job is not sent: the
+   * tests deliver it themselves; request-sync tests cover the queue job.
+   */
   async function admit(connector: SourceConnector | string): Promise<string> {
     const source = typeof connector === 'string' ? connector : connector.name
     const parameters =
@@ -142,31 +117,14 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
       parameters,
       trigger: 'manual',
       scheduleDay: '2026-11-16',
-      sendJob: (runId) =>
-        requireQueued(
-          boss.send(queue, { runId }, { db: queueDatabase, ...jobOptions }),
-        ),
+      sendJob: async () => {},
     })
     return run.id
   }
 
-  /** Claims the next queue job and executes it as the worker does. */
-  async function executeNext(...connectors: SourceConnector[]) {
-    const [job] = await boss.fetch<{ runId: string }>(queue)
-    if (!job) throw new Error('No queued job')
-    await executeSyncRun(
-      {
-        runId: job.data.runId,
-        jobId: job.id,
-        attempt: job.retryCount,
-        signal: new AbortController().signal,
-      },
-      createConnectorRegistry(connectors),
-      findJob,
-    )
-    await boss.complete(queue, job.id)
-    return job
-  }
+  /** Delivers the run's job to the handler as the worker does. */
+  const executeRun = (runId: string, ...connectors: SourceConnector[]) =>
+    deliver(runId, createConnectorRegistry(connectors))
 
   const stored = async (runId: string) =>
     (await pool.query('SELECT * FROM source_sync_runs WHERE id=$1', [runId]))
@@ -191,25 +149,24 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
     it('saves one batch and completes (A5-AC01)', async () => {
       const connector = simulated(name, batches([[ad('one'), ad('two')]]))
       const runId = await admit(connector)
-      await executeNext(connector)
+      await executeRun(runId, connector)
       expect(await stored(runId)).toMatchObject({
         status: 'complete',
         pages: 1,
         seen: 2,
         revisions: 2,
         error: null,
-        attempt: 0,
       })
       expect(await observed(runId)).toEqual(['one', 'two'])
     })
 
-    it('saves many batches incrementally and completes (A5-AC01)', async () => {
+    it('saves many batches incrementally and completes (A5-AC01, B5-AC03)', async () => {
       const connector = simulated(
         name,
         batches([[ad('one')], [ad('two'), ad('one')], [ad('three')]]),
       )
       const runId = await admit(connector)
-      await executeNext(connector)
+      await executeRun(runId, connector)
       expect(await stored(runId)).toMatchObject({
         status: 'complete',
         pages: 3,
@@ -228,7 +185,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
         }),
       )
       const runId = await admit(connector)
-      await executeNext(connector)
+      await executeRun(runId, connector)
       expect(await stored(runId)).toMatchObject({
         status: 'partial',
         seen: 1,
@@ -243,7 +200,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
         batches([[]], { complete: false, reason: 'Invalid page' }),
       )
       const runId = await admit(connector)
-      await executeNext(connector)
+      await executeRun(runId, connector)
       expect(await stored(runId)).toMatchObject({
         status: 'failed',
         pages: 1,
@@ -255,7 +212,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
     it('completes a complete result without ads (A5-AC01)', async () => {
       const connector = simulated(name, batches([]))
       const runId = await admit(connector)
-      await executeNext(connector)
+      await executeRun(runId, connector)
       expect(await stored(runId)).toMatchObject({ status: 'complete', seen: 0 })
     })
 
@@ -269,18 +226,18 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
         source: name,
         keyword: 'java',
       })
-      await executeNext(connector)
+      await executeRun(runId, connector)
       expect(fetch.mock.calls[0]![0]).toEqual({ source: name, keyword: 'php' })
       expect(await stored(runId)).toMatchObject({ status: 'complete' })
     })
 
-    it('keeps the saved batch and its observations after a later fetch error (A5-AC04)', async () => {
+    it('keeps the saved batch and its observations after a later fetch error (A5-AC04, B5-AC03)', async () => {
       const connector = simulated(name, async (_, onBatch) => {
         await onBatch([ad('one')])
         throw new ConnectorError('Source HTTP 503')
       })
       const runId = await admit(connector)
-      await executeNext(connector)
+      await executeRun(runId, connector)
       expect(await stored(runId)).toMatchObject({
         status: 'partial',
         seen: 1,
@@ -302,7 +259,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
           return { complete: true }
         })
         const partial = await admit(swallowing)
-        await executeNext(swallowing)
+        await executeRun(partial, swallowing)
         expect(await stored(partial)).toMatchObject({
           status: 'partial',
           seen: 1,
@@ -315,7 +272,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
           batches([[ad('three', 'Rejected')], [ad('four')]]),
         )
         const failed = await admit(first)
-        await executeNext(first)
+        await executeRun(failed, first)
         expect(await stored(failed)).toMatchObject({
           status: 'failed',
           seen: 0,
@@ -330,7 +287,10 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
 
     it('fails the run of an unknown source with the name only (A5-AC05)', async () => {
       const runId = await admit(name)
-      await executeNext(simulated('another-source', batches([[ad('one')]])))
+      await executeRun(
+        runId,
+        simulated('another-source', batches([[ad('one')]])),
+      )
       expect(await stored(runId)).toMatchObject({
         status: 'failed',
         error: `Unknown source: ${name}`,
@@ -343,7 +303,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
         throw new ConnectorError('Invalid source settings')
       })
       const first = await admit(invalid)
-      await executeNext(invalid)
+      await executeRun(first, invalid)
       expect(await stored(first)).toMatchObject({
         status: 'failed',
         error: 'Invalid source settings',
@@ -352,7 +312,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
         throw new Error('password=SECRET in postgres://user:SECRET@host')
       })
       const second = await admit(leaking)
-      await executeNext(leaking)
+      await executeRun(second, leaking)
       const run = await stored(second)
       expect(run).toMatchObject({
         status: 'failed',
@@ -361,29 +321,22 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
       expect(JSON.stringify(run)).not.toContain('SECRET')
     })
 
-    it('leaves a finished run unchanged on redelivery (A5-AC08)', async () => {
+    it('leaves a finished run unchanged on redelivery, and an unknown run changes nothing (A5-AC08, B5-AC04)', async () => {
       const connector = simulated(name, batches([[ad('one')]]))
       const runId = await admit(connector)
-      const job = await executeNext(connector)
+      await executeRun(runId, connector)
       const before = await stored(runId)
       const late = vi.fn(batches([[ad('late')]]))
-      for (const attempt of [0, 1])
-        await executeSyncRun(
-          {
-            runId,
-            jobId: job.id,
-            attempt,
-            signal: new AbortController().signal,
-          },
-          createConnectorRegistry([simulated(name, late)]),
-          findJob,
-        )
+      for (let delivery = 0; delivery < 2; delivery++)
+        await executeRun(runId, simulated(name, late))
+      await executeRun(randomUUID(), simulated(name, late))
       expect(late).not.toHaveBeenCalled()
       expect(await stored(runId)).toEqual(before)
+      expect(await adIds()).toEqual(['one'])
     })
   })
 
-  it('marks unseen ads of the scope unavailable together with completion only for a connector inferring from absence (A5-AC10)', async () => {
+  it('marks unseen ads of the scope unavailable together with completion only for a connector inferring from absence (A5-AC10, B5-AC03)', async () => {
     for (const [name, infers] of [
       ['simulated-infers', true],
       ['simulated-keeps', false],
@@ -391,18 +344,15 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
       const first = simulated(name, batches([[ad('one'), ad('two')]]), {
         infers,
       })
-      await admit(first)
-      await executeNext(first)
+      await executeRun(await admit(first), first)
       const partial = simulated(
         name,
         batches([[ad('one')]], { complete: false, reason: 'Incomplete' }),
         { infers },
       )
-      await admit(partial)
-      await executeNext(partial)
+      await executeRun(await admit(partial), partial)
       const complete = simulated(name, batches([[ad('one')]]), { infers })
-      await admit(complete)
-      await executeNext(complete)
+      await executeRun(await admit(complete), complete)
     }
     expect(
       (
@@ -452,7 +402,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
     /** Admits and executes one run of the connector; returns the run id. */
     const run = async (connector: SourceConnector) => {
       const runId = await admit(connector)
-      await executeNext(connector)
+      await executeRun(runId, connector)
       return runId
     }
     const availability = async (name = source) =>
@@ -521,7 +471,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
       try {
         const connector = scope('php', [[ad('kept')]])
         const runId = await admit(connector)
-        await expect(executeNext(connector)).rejects.toThrow(
+        await expect(executeRun(runId, connector)).rejects.toThrow(
           'forced marking failure',
         )
         expect((await stored(runId)).status).not.toBe('complete')
@@ -567,7 +517,8 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
     const alpha = vi.fn(batches([[ad('alpha')]]))
     const beta = vi.fn(batches([[ad('beta')]]))
     const runId = await admit(simulated('simulated-beta', beta))
-    await executeNext(
+    await executeRun(
+      runId,
       simulated('simulated-alpha', alpha),
       simulated('simulated-beta', beta),
     )
@@ -576,144 +527,139 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
     expect(await adIds()).toEqual(['beta'])
   })
 
-  it('stops an attempt whose signal is aborted without finishing the run', async () => {
-    const stop = new AbortController()
-    const connector = simulated('simulated-alpha', async (_, onBatch) => {
-      await onBatch([ad('one')])
-      stop.abort()
-      throw new Error('aborted fetch')
-    })
-    const runId = await admit(connector)
-    const [job] = await boss.fetch<{ runId: string }>(queue)
-    await expect(
-      executeSyncRun(
-        { runId, jobId: job!.id, attempt: 0, signal: stop.signal },
-        createConnectorRegistry([connector]),
-        findJob,
-      ),
-    ).rejects.toThrow('aborted fetch')
-    expect(await stored(runId)).toMatchObject({
-      status: 'running',
-      seen: 1,
-      attempt: 0,
-    })
-  })
-
-  it('continues a run after losing its worker; the lost attempt writes nothing more (A5-AC06, A5-AC07)', async () => {
+  it('takes a running run over in a later attempt, keeping the ads saved before; the earlier attempt writes nothing more (B5-AC04, B5-AC03)', async () => {
     const name = 'simulated-alpha'
-    let lostAttemptSaved!: () => void
+    let firstSaved!: () => void
     const saved = new Promise<void>((resolve) => {
-      lostAttemptSaved = resolve
+      firstSaved = resolve
     })
-    let resumeLostAttempt!: () => void
+    let resumeFirst!: () => void
     const resume = new Promise<void>((resolve) => {
-      resumeLostAttempt = resolve
+      resumeFirst = resolve
     })
-    const lostConnector = simulated(name, async (_, onBatch) => {
+    const firstConnector = simulated(name, async (_, onBatch) => {
       await onBatch([ad('one'), ad('two')])
-      lostAttemptSaved()
+      firstSaved()
       await resume
-      await onBatch([ad('from-lost-attempt')])
+      await onBatch([ad('from-earlier-attempt')])
       return { complete: true }
     })
-    const runId = await admit(lostConnector)
-    // Worker A claims the job and stops sending heartbeats: it was lost.
-    const [job] = await boss.fetch<{ runId: string }>(queue)
-    const lost = executeSyncRun(
-      {
-        runId,
-        jobId: job!.id,
-        attempt: job!.retryCount,
-        signal: new AbortController().signal,
-      },
-      createConnectorRegistry([lostConnector]),
-      findJob,
-    )
+    const runId = await admit(firstConnector)
+    // The first attempt saves a batch, then stops answering, as in a worker
+    // that died.
+    const first = executeRun(runId, firstConnector)
     await saved
-    // Worker B receives the retried job once the heartbeat expires.
-    const retried = new Promise<number>((resolve, reject) => {
-      void boss
-        .work<{ runId: string }>(
-          queue,
-          { pollingIntervalSeconds: 0.5 },
-          async ([next]) => {
-            await executeSyncRun(
-              {
-                runId: next!.data.runId,
-                jobId: next!.id,
-                attempt: next!.retryCount,
-                signal: next!.signal,
-              },
-              createConnectorRegistry([
-                simulated(name, batches([[ad('one'), ad('two'), ad('three')]])),
-              ]),
-              findJob,
-            )
-            resolve(next!.retryCount)
-          },
-        )
-        .catch(reject)
-    })
-    expect(await retried).toBe(1)
-    await boss.offWork(queue)
-    expect(await stored(runId)).toMatchObject({
-      status: 'complete',
-      attempt: 1,
-      seen: 3,
-    })
+    const taken = await stored(runId)
+    expect(taken).toMatchObject({ status: 'running', pages: 1, seen: 2 })
+
+    await executeRun(
+      runId,
+      simulated(name, batches([[ad('one'), ad('two'), ad('three')]])),
+    )
     const finished = await stored(runId)
-    resumeLostAttempt()
-    await expect(lost).rejects.toBeInstanceOf(SyncRunLostError)
+    expect(finished).toMatchObject({
+      status: 'complete',
+      pages: 2,
+      seen: 3,
+      error: null,
+      started_at: taken.started_at,
+    })
+    expect(await observed(runId)).toEqual(['one', 'three', 'two'])
+
+    resumeFirst()
+    await expect(first).resolves.toBeUndefined()
     expect(await stored(runId)).toEqual(finished)
     expect(await adIds()).toEqual(['one', 'three', 'two'])
     expect(
       (await pool.query('SELECT count(*)::int AS n FROM source_sync_runs'))
         .rows[0].n,
     ).toBe(1)
-    expect(
-      (await pool.query('SELECT count(*)::int AS n FROM source_run_seen'))
-        .rows[0].n,
-    ).toBe(3)
-  }, 60_000)
+  })
 
-  it('ends unfinished runs without active queue work with an interruption message (A5-AC09)', async () => {
-    const connector = simulated('simulated-alpha', batches([]))
-    // Running with saved ads, its job has failed for good.
-    const withAds = await admit(connector)
-    await pool.query(
-      "UPDATE source_sync_runs SET status='running',attempt=0,seen=2 WHERE id=$1",
-      [withAds],
-    )
-    await boss.cancel(queue, (await stored(withAds)).job_id)
-    // Running without ads, its job is gone.
-    const gone = await admit(simulated('simulated-beta', batches([])))
-    await pool.query(
-      "UPDATE source_sync_runs SET status='running',attempt=0 WHERE id=$1",
-      [gone],
-    )
-    await admin.query(`DELETE FROM ${queueSchema}.job WHERE id=$1`, [
-      (await stored(gone)).job_id,
-    ])
-    // Running with its job active, and queued with its job waiting.
-    const active = await admit(simulated('simulated-gamma', batches([])))
-    const [activeJob] = await boss.fetch<{ runId: string }>(queue)
-    await pool.query(
-      "UPDATE source_sync_runs SET status='running',attempt=0 WHERE id=$1",
-      [activeJob!.data.runId],
-    )
-    const waiting = await admit(simulated('simulated-delta', batches([])))
+  it.each([
+    ['returns its result', false],
+    ['swallows the refused save', true],
+  ])(
+    'saves no further batch of a run finished between batches and ends the job normally, when the connector %s (B5-AC03)',
+    async (_, swallows) => {
+      let runId = ''
+      const connector = simulated('simulated-alpha', async (__, onBatch) => {
+        await onBatch([ad('one')])
+        // The failure handler ends the run meanwhile, e.g. after the time
+        // limit of the attempt.
+        await endFailedSyncRun({ runId })
+        const next = onBatch([ad('two')])
+        await (swallows ? next.catch(() => {}) : next)
+        return { complete: true }
+      })
+      runId = await admit(connector)
+      await expect(executeRun(runId, connector)).resolves.toBeUndefined()
+      expect(await stored(runId)).toMatchObject({
+        status: 'partial',
+        pages: 1,
+        seen: 1,
+        error: interrupted,
+      })
+      expect(await adIds()).toEqual(['one'])
+    },
+  )
 
-    await Promise.all([recoverSyncRuns(findJob), recoverSyncRuns(findJob)])
+  describe('the failure handler (B5-AC05)', () => {
+    it('ends a run with saved ads partial and one without failed, both with the interruption message (B5-AC05)', async () => {
+      const withAds = await admit('simulated-alpha')
+      const run = await startRun(withAds)
+      await saveBatch(
+        { id: withAds, scopeId: run!.scopeId, source: run!.source },
+        [ad('one'), ad('two')],
+      )
+      const withoutAds = await admit('simulated-beta')
+      await startRun(withoutAds)
+      const queued = await admit('simulated-gamma')
 
-    expect(await stored(withAds)).toMatchObject({
-      status: 'partial',
-      error: 'Worker interrupted; request a new import',
+      for (const runId of [withAds, withoutAds, queued])
+        await endFailedSyncRun({ runId })
+
+      expect(await stored(withAds)).toMatchObject({
+        status: 'partial',
+        seen: 2,
+        error: interrupted,
+        finished_at: expect.any(Date),
+      })
+      for (const runId of [withoutAds, queued])
+        expect(await stored(runId)).toMatchObject({
+          status: 'failed',
+          seen: 0,
+          error: interrupted,
+          finished_at: expect.any(Date),
+        })
+      expect(await adIds()).toEqual(['one', 'two'])
     })
-    expect(await stored(gone)).toMatchObject({
-      status: 'failed',
-      error: 'Worker interrupted; request a new import',
+
+    it('does not change a run finished in between, and a repeat has no further effect (B5-AC05)', async () => {
+      const connector = simulated('simulated-alpha', batches([[ad('one')]]))
+      const complete = await admit(connector)
+      await executeRun(complete, connector)
+      const ended = await admit('simulated-beta')
+      await startRun(ended)
+      await finishRun(ended, { status: 'failed', error: 'Source down' })
+      const interruptedRun = await admit('simulated-gamma')
+      await endFailedSyncRun({ runId: interruptedRun })
+      const before = await Promise.all(
+        [complete, ended, interruptedRun].map(stored),
+      )
+
+      for (const runId of [complete, ended, interruptedRun, randomUUID()])
+        await endFailedSyncRun({ runId })
+
+      expect(
+        await Promise.all([complete, ended, interruptedRun].map(stored)),
+      ).toEqual(before)
+      expect(before.map((run) => [run.status, run.error])).toEqual([
+        ['complete', null],
+        ['failed', 'Source down'],
+        ['failed', interrupted],
+      ])
+      expect(await readRun(complete)).toMatchObject({ uniqueAds: 1 })
     })
-    expect((await stored(active)).status).toBe('running')
-    expect((await stored(waiting)).status).toBe('queued')
   })
 })

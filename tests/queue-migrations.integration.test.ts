@@ -6,7 +6,7 @@ import { existingPathQueues } from '../lib/workers/worker.ts'
 import { runModulePlugins } from '../plugins/index.ts'
 import { aiExecutionJobOptions, aiExecutionQueue } from '../modules/ai/index.ts'
 import { cvTextReadingJob } from '../modules/profile/index.ts'
-import { syncQueue, syncQueueOptions } from '../modules/sources/index.ts'
+import { syncJob } from '../modules/sources/index.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -50,15 +50,24 @@ integration('queues of the migrated database', () => {
     expect(await boss.getQueue('profile-parse')).toBeFalsy()
   })
 
+  it('creates the queue of carrying out a sync run with its failure queue, exclusivity and the configured 3 attempts of an hour, and removes the queue of the former path (B5-AC08, B5-D02, B5-D03)', async () => {
+    expect(syncJob.queue).toBe('source-sync-run')
+    expect(await boss.getQueue(syncJob.queue)).toMatchObject({
+      policy: 'singleton',
+      retryLimit: 2,
+      expireInSeconds: 3600,
+      deadLetter: `${syncJob.queue}.failed`,
+    })
+    expect(await boss.getQueue(`${syncJob.queue}.failed`)).toBeTruthy()
+    expect(await boss.getQueue('source-sync')).toBeFalsy()
+  })
+
   it('creates the queues of the modules not yet moved with the settings the modules send their jobs with, and no system check queue (B1-AC15)', async () => {
-    expect(await boss.getQueue(syncQueue)).toMatchObject(syncQueueOptions)
     expect(await boss.getQueue(aiExecutionQueue)).toMatchObject(
       aiExecutionJobOptions,
     )
     expect(await boss.getQueue('system-smoke')).toBeFalsy()
     // The worker library leaves exactly these queues to the existing path.
-    expect([...existingPathQueues].sort()).toEqual(
-      [syncQueue, aiExecutionQueue].sort(),
-    )
+    expect([...existingPathQueues]).toEqual([aiExecutionQueue])
   })
 })

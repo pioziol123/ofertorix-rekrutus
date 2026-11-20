@@ -12,6 +12,7 @@ import {
 } from './infrastructure/adapters/connector.ts'
 import { BatchSaveError, saveBatch, type BatchRun } from './save-batch.ts'
 import { admitRun, finishRun, readRun, startRun } from './sync-run-state.ts'
+import { sourcesMigrations } from '../../tests/sync-run.fixtures.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -30,12 +31,7 @@ integration('batch save in an isolated PostgreSQL schema', () => {
       options: `-c search_path=${schema}`,
       max: 4,
     })
-    for (const migration of [
-      '1770000000001_sources',
-      '1770000000005_jobspy',
-      '1770000000014_sync_run_state',
-      '1770000000015_sync_run_attempt',
-    ]) {
+    for (const migration of sourcesMigrations) {
       const sql: string[] = []
       createRequire(import.meta.url)(`../../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),

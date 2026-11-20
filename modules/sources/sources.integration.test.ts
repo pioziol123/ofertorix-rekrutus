@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
-import { setPool } from '../../lib/db.ts'
 import { PgBoss } from 'pg-boss'
 import {
   afterAll,
@@ -12,14 +11,18 @@ import {
   it,
   vi,
 } from 'vitest'
-import { executeSyncRun } from './execute-sync-run.ts'
+import { closePool, setPool } from '../../lib/db.ts'
+import { stopQueues } from '../../lib/queues/index.ts'
 import {
-  recoverSyncRuns,
+  deliver,
+  prepareSyncRunQueue,
+  sourcesMigrations,
+} from '../../tests/sync-run.fixtures.ts'
+import {
+  endFailedSyncRun,
   requestScheduledSyncs,
   requestSync,
-  syncQueue,
-  syncQueueOptions,
-  useSyncQueue,
+  syncJob,
 } from './index.ts'
 import type { ConnectorProvider } from './infrastructure/adapters/connector-registry.ts'
 import {
@@ -47,9 +50,9 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
   const suffix = randomUUID().replaceAll('-', '')
   const schema = `source_test_${suffix}`
   const queueSchema = `queue_test_${suffix}`
+  const previousQueueSchema = process.env.PG_BOSS_SCHEMA
   let admin: Pool
   let pool: Pool
-  let boss: PgBoss
 
   beforeAll(async () => {
     admin = new Pool({ connectionString: process.env.DATABASE_URL })
@@ -61,36 +64,29 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     })
     // The batch save uses the shared database access (T-03).
     setPool(pool)
-    const sql: string[] = []
-    for (const migration of [
-      '1770000000001_sources',
-      '1770000000005_jobspy',
-      '1770000000014_sync_run_state',
-      '1770000000015_sync_run_attempt',
-    ])
+    for (const migration of sourcesMigrations) {
+      const sql: string[] = []
       createRequire(import.meta.url)(`../../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),
       })
-    await pool.query(sql.join(';\n'))
-    boss = new PgBoss({
-      connectionString: process.env.DATABASE_URL,
-      schema: queueSchema,
-    })
-    boss.on('error', () => {})
-    await boss.start()
-    await boss.createQueue(syncQueue, syncQueueOptions)
-    useSyncQueue(boss)
+      await pool.query(sql.join('\n'))
+    }
+    await prepareSyncRunQueue(queueSchema)
+    process.env.PG_BOSS_SCHEMA = queueSchema
   }, 30_000)
 
   beforeEach(async () => {
     await pool.query(
       'TRUNCATE source_run_seen, source_ad_revisions, source_ads, source_sync_runs, source_scopes CASCADE',
     )
+    await admin.query(`DELETE FROM ${queueSchema}.job`)
   })
 
   afterAll(async () => {
-    await boss?.stop()
-    await pool?.end()
+    await stopQueues()
+    if (previousQueueSchema === undefined) delete process.env.PG_BOSS_SCHEMA
+    else process.env.PG_BOSS_SCHEMA = previousQueueSchema
+    await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
       await admin.query(`DROP SCHEMA IF EXISTS ${queueSchema} CASCADE`)
@@ -98,25 +94,17 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     }
   })
 
-  // A queue delivery of the run's job, first attempt, to the shared executor.
-  async function executeSync(runId: string, connectors: ConnectorProvider) {
-    const { job_id } = (
-      await pool.query('SELECT job_id FROM source_sync_runs WHERE id=$1', [
-        runId,
-      ])
-    ).rows[0]
-    await executeSyncRun(
-      {
-        runId,
-        jobId: job_id,
-        attempt: 0,
-        signal: new AbortController().signal,
-      },
-      connectors,
-    )
-  }
-  const recoverSync = () => recoverSyncRuns()
+  /** Delivers the run's job to the handler as the worker does. */
+  const executeSync = (runId: string, connectors: ConnectorProvider) =>
+    deliver(runId, connectors)
   const enqueueSync = () => requestSync({ source })
+  const queueJobs = async () =>
+    (
+      await admin.query(
+        `SELECT data, singleton_key FROM ${queueSchema}.job WHERE name=$1`,
+        [syncJob.queue],
+      )
+    ).rows
 
   async function run(jobs: Offer[], overrides: Partial<Page> = {}) {
     const queued = await enqueueSync()
@@ -132,14 +120,13 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
   }
 
   it('atomically rolls back the run and queue insert when enqueue fails', async () => {
-    const jobsBefore = await admin.query(
-      `SELECT count(*)::int AS n FROM ${queueSchema}.job`,
-    )
-    const originalSend = boss.send.bind(boss)
+    // The queue library's client inserts the job, then the send fails.
+    const originalSend = PgBoss.prototype.send
+    let inserted: unknown
     const send = vi
-      .spyOn(boss, 'send')
-      .mockImplementationOnce(async (name, data, options) => {
-        await originalSend(name, data, options)
+      .spyOn(PgBoss.prototype, 'send')
+      .mockImplementationOnce(async function (this: PgBoss, ...args) {
+        inserted = await originalSend.apply(this, args)
         throw new Error('queue insert failed')
       })
     try {
@@ -147,17 +134,15 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     } finally {
       send.mockRestore()
     }
+    expect(inserted).toEqual(expect.any(String))
     expect((await pool.query('SELECT * FROM source_sync_runs')).rowCount).toBe(
       0,
     )
     expect((await pool.query('SELECT * FROM source_scopes')).rowCount).toBe(0)
-    expect(
-      (await admin.query(`SELECT count(*)::int AS n FROM ${queueSchema}.job`))
-        .rows,
-    ).toEqual(jobsBefore.rows)
+    expect(await queueJobs()).toEqual([])
   })
 
-  it('deduplicates concurrent enqueue requests and creates only one real queue job', async () => {
+  it('deduplicates concurrent enqueue requests and creates only one real queue job (B5-AC02)', async () => {
     const results = await Promise.all(
       Array.from({ length: 5 }, () => enqueueSync()),
     )
@@ -165,8 +150,9 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     expect(results.filter((r) => !r!.existing)).toHaveLength(1)
     const stored = (await pool.query('SELECT * FROM source_sync_runs')).rows
     expect(stored).toHaveLength(1)
-    const job = await boss.getJobById(syncQueue, stored[0].job_id)
-    expect(job?.data).toEqual({ runId: stored[0].id })
+    expect(await queueJobs()).toEqual([
+      { data: { runId: stored[0].id, source }, singleton_key: source },
+    ])
   })
 
   it('keeps unchanged snapshots once and records changes including reversion', async () => {
@@ -314,74 +300,26 @@ integration('source ingestion in isolated PostgreSQL schemas', () => {
     ).toBe('available')
   })
 
-  it('keeps an actively locked run intact during recovery and duplicate delivery', async () => {
+  // A run its last attempt left running ends partial by its saved ads
+  // (A5-R03, B5-R05); a late delivery of its job changes nothing.
+  it('ends an interrupted running import partial and ignores late delivery (B5-AC05, B5-AC04)', async () => {
     const queued = await enqueueSync()
-    let release!: () => void
-    let entered!: () => void
-    const started = new Promise<void>((resolve) => {
-      entered = resolve
-    })
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const execution = executeSync(
-      queued!.id,
-      solidJobsWith(async () => {
-        entered()
-        await gate
-        return page([{ jobOfferKey: 'active' }])
-      }),
-    )
-    await started
-    try {
-      await recoverSync()
-      expect(
-        (
-          await pool.query('SELECT status FROM source_sync_runs WHERE id=$1', [
-            queued!.id,
-          ])
-        ).rows[0].status,
-      ).toBe('running')
-      const duplicateFetch = vi.fn()
-      await executeSync(queued!.id, solidJobsWith(duplicateFetch))
-      expect(duplicateFetch).not.toHaveBeenCalled()
-      expect(
-        (
-          await pool.query('SELECT status FROM source_sync_runs WHERE id=$1', [
-            queued!.id,
-          ])
-        ).rows[0].status,
-      ).toBe('running')
-    } finally {
-      release()
-      await execution
-    }
-    expect(
-      (
-        await pool.query('SELECT status FROM source_sync_runs WHERE id=$1', [
-          queued!.id,
-        ])
-      ).rows[0].status,
-    ).toBe('complete')
-  })
-
-  // Since 0mq.5 a running run is orphaned when its queue job has ended, and
-  // it ends partial by its saved ads (A5-R03, A5-R06).
-  it('recovers orphaned running imports and ignores late delivery', async () => {
-    const queued = await enqueueSync()
-    const { rows } = await pool.query(
-      "UPDATE source_sync_runs SET status='running',attempt=0,pages=1,seen=1 WHERE id=$1 RETURNING job_id",
+    await pool.query(
+      "UPDATE source_sync_runs SET status='running',pages=1,seen=1 WHERE id=$1",
       [queued!.id],
     )
-    await boss.cancel(syncQueue, rows[0].job_id)
-    await recoverSync()
+    await endFailedSyncRun({ runId: queued!.id })
     expect(
       (
-        await pool.query('SELECT status FROM source_sync_runs WHERE id=$1', [
-          queued!.id,
-        ])
-      ).rows[0].status,
-    ).toBe('partial')
+        await pool.query(
+          'SELECT status, error FROM source_sync_runs WHERE id=$1',
+          [queued!.id],
+        )
+      ).rows[0],
+    ).toEqual({
+      status: 'partial',
+      error: 'Worker interrupted; request a new import',
+    })
     const fetcher = vi.fn()
     await executeSync(queued!.id, solidJobsWith(fetcher))
     expect(fetcher).not.toHaveBeenCalled()

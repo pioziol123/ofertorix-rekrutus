@@ -108,6 +108,8 @@ export async function endFailedSyncRun({
  * exists. Running runs first, then the oldest first, each in its own
  * transaction, so the queue hands the jobs of one source out in that order
  * and a run left pending next to a running run of its scope waits for it.
+ * ASSUMPTION(oferty-pracy-2ba.5/ASM-1): the running run of a source with
+ * several unfinished runs requested before B5 goes first.
  * Returns how many.
  */
 export async function requestUnfinishedSyncRuns(): Promise<number> {

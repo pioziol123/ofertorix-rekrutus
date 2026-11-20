@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
-import { PgBoss } from 'pg-boss'
 import {
   afterAll,
   afterEach,
@@ -13,20 +12,22 @@ import {
   vi,
 } from 'vitest'
 import { closePool, setPool } from '../../lib/db.ts'
+import { stopQueues } from '../../lib/queues/index.ts'
+import {
+  deliver,
+  prepareSyncRunQueue,
+  sourcesMigrations,
+} from '../../tests/sync-run.fixtures.ts'
 import { createPolishConnector } from './infrastructure/adapters/polish/connector.ts'
 import {
   readSourceCatalog,
   readSyncState,
-  recoverSyncRuns,
   requestScheduledSyncs,
   requestSync,
   SourceDisabledError,
-  syncQueue,
-  syncQueueOptions,
+  syncJob,
   UnknownConnectorError,
-  useSyncQueue,
   waitForSyncRun,
-  workSyncQueue,
 } from './index.ts'
 import type {
   BatchReceiver,
@@ -81,14 +82,13 @@ function simulated(
   }
 }
 
-integration('shared sync requesting and queue (0mq.16)', () => {
+integration('shared sync requesting through the queue library', () => {
   const suffix = randomUUID().replaceAll('-', '')
   const schema = `sync_request_${suffix}`
   const queueSchema = `sync_req_q_${suffix}`
+  const previousQueueSchema = process.env.PG_BOSS_SCHEMA
   let admin: Pool
   let pool: Pool
-  let boss: PgBoss
-  const workers: PgBoss[] = []
 
   beforeAll(async () => {
     admin = new Pool({ connectionString: process.env.DATABASE_URL })
@@ -98,12 +98,7 @@ integration('shared sync requesting and queue (0mq.16)', () => {
       options: `-c search_path=${schema}`,
       max: 16,
     })
-    for (const migration of [
-      '1770000000001_sources',
-      '1770000000005_jobspy',
-      '1770000000014_sync_run_state',
-      '1770000000015_sync_run_attempt',
-    ]) {
+    for (const migration of sourcesMigrations) {
       const sql: string[] = []
       createRequire(import.meta.url)(`../../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),
@@ -111,14 +106,8 @@ integration('shared sync requesting and queue (0mq.16)', () => {
       await pool.query(sql.join('\n'))
     }
     setPool(pool)
-    boss = new PgBoss({
-      connectionString: process.env.DATABASE_URL,
-      schema: queueSchema,
-    })
-    boss.on('error', () => {})
-    await boss.start()
-    await boss.createQueue(syncQueue, syncQueueOptions)
-    useSyncQueue(boss)
+    await prepareSyncRunQueue(queueSchema)
+    process.env.PG_BOSS_SCHEMA = queueSchema
   }, 30_000)
 
   beforeEach(async () => {
@@ -128,13 +117,14 @@ integration('shared sync requesting and queue (0mq.16)', () => {
     await admin.query(`DELETE FROM ${queueSchema}.job`)
   })
 
-  afterEach(async () => {
+  afterEach(() => {
     vi.unstubAllEnvs()
-    await Promise.all(workers.splice(0).map((worker) => worker.stop()))
   })
 
   afterAll(async () => {
-    await boss?.stop()
+    await stopQueues()
+    if (previousQueueSchema === undefined) delete process.env.PG_BOSS_SCHEMA
+    else process.env.PG_BOSS_SCHEMA = previousQueueSchema
     await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
@@ -146,7 +136,7 @@ integration('shared sync requesting and queue (0mq.16)', () => {
   const runs = async () =>
     (
       await pool.query(
-        `SELECT r.id, r.status, r.trigger, r.job_id, r.schedule_day::text AS day,
+        `SELECT r.id, r.status, r.trigger, r.schedule_day::text AS day,
           s.source, s.parameters FROM source_sync_runs r
         JOIN source_scopes s ON s.id=r.scope_id ORDER BY r.created_at, r.id`,
       )
@@ -154,31 +144,27 @@ integration('shared sync requesting and queue (0mq.16)', () => {
   const jobs = async () =>
     (
       await admin.query(
-        `SELECT id, data, group_id FROM ${queueSchema}.job WHERE name=$1`,
-        [syncQueue],
+        `SELECT data, singleton_key FROM ${queueSchema}.job WHERE name=$1
+        ORDER BY created_on`,
+        [syncJob.queue],
       )
     ).rows
-
-  /** A worker process: its own pg-boss client working the sync queue. */
-  async function startWorker(connectors: ReturnType<typeof registry>) {
-    const worker = new PgBoss({
-      connectionString: process.env.DATABASE_URL,
-      schema: queueSchema,
-    })
-    worker.on('error', () => {})
-    await worker.start()
-    workers.push(worker)
-    await workSyncQueue(worker, connectors)
-  }
   const registry = (...connectors: SourceConnector[]) =>
     createConnectorRegistry(connectors)
 
   describe('the request operation', () => {
-    it('creates one pending run and one job for concurrent requests of a scope, all pointing at it (A16-AC01)', async () => {
+    it('creates one pending run and one job for concurrent requests of a source, all pointing at it (A16-AC01, B5-AC02)', async () => {
       const connectors = registry(simulated('sim-a'))
       const requests = await Promise.all(
-        Array.from({ length: 10 }, () =>
-          requestSync({ source: 'sim-a' }, { connectors }),
+        Array.from({ length: 10 }, (_, i) =>
+          requestSync(
+            // Some of them for another scope of the same source.
+            {
+              source: 'sim-a',
+              scopeRequest: { keyword: i % 3 ? 'PHP' : 'Go' },
+            },
+            { connectors },
+          ),
         ),
       )
       expect(new Set(requests.map((r) => r.id)).size).toBe(1)
@@ -188,33 +174,58 @@ integration('shared sync requesting and queue (0mq.16)', () => {
       expect(run).toMatchObject({ status: 'queued', trigger: 'manual' })
       // No run without a job and no job without a run.
       expect(await jobs()).toEqual([
-        { id: run.job_id, data: { runId: run.id }, group_id: 'sim-a' },
+        { data: { runId: run.id, source: 'sim-a' }, singleton_key: 'sim-a' },
       ])
     })
 
-    it('creates one pending run next to a run in progress and points later requests at it, without interrupting the run (A16-AC02)', async () => {
-      const connectors = registry(simulated('sim-a'))
-      const first = await requestSync({ source: 'sim-a' }, { connectors })
-      const running = await startRun(first.id, { jobId: null, attempt: 0 })
-      const [pending, ...later] = await Promise.all(
-        Array.from({ length: 5 }, () =>
-          requestSync({ source: 'sim-a' }, { connectors }),
-        ),
-      )
-      const created = [pending!, ...later].filter((r) => !r.existing)
-      expect(created).toHaveLength(1)
-      for (const request of later) expect(request.id).toBe(created[0]!.id)
-      expect(pending!.id).toBe(created[0]!.id)
-      expect(await readRun(first.id)).toEqual(running)
-      expect((await runs()).map((r) => r.status)).toEqual(['running', 'queued'])
-      expect(await jobs()).toHaveLength(2)
+    it.each(['queued', 'running'] as const)(
+      'returns the source’s %s run for a request of the same and of another scope and creates no run or job (B5-AC02)',
+      async (status) => {
+        const connectors = registry(simulated('sim-a'))
+        const first = await requestSync({ source: 'sim-a' }, { connectors })
+        const running = status === 'running' ? await startRun(first.id) : null
+        const before = { runs: await runs(), jobs: await jobs() }
+        for (const keyword of ['PHP', 'Java'])
+          expect(
+            await requestSync(
+              { source: 'sim-a', scopeRequest: { keyword } },
+              { connectors },
+            ),
+          ).toEqual({ id: first.id, existing: true })
+        expect(await runs()).toEqual(before.runs)
+        expect((await runs()).map((r) => r.status)).toEqual([status])
+        expect(await jobs()).toEqual(before.jobs)
+        expect(await jobs()).toHaveLength(1)
+        // A request does not interrupt the run in progress.
+        if (running) expect(await readRun(first.id)).toEqual(running)
+      },
+    )
+
+    it('creates a run and a job for each of two sources (B5-AC02)', async () => {
+      const connectors = registry(simulated('sim-a'), simulated('sim-b'))
+      const [a, b] = await Promise.all([
+        requestSync({ source: 'sim-a' }, { connectors }),
+        requestSync({ source: 'sim-b' }, { connectors }),
+      ])
+      expect(a!.existing || b!.existing).toBe(false)
+      expect(a!.id).not.toBe(b!.id)
+      expect((await jobs()).map((job) => job.singleton_key).sort()).toEqual([
+        'sim-a',
+        'sim-b',
+      ])
     })
 
-    it('returns the run id at once, before any worker executes it (A16-AC05)', async () => {
+    it('returns the run id at once, before any worker executes it (A16-AC05, B5-AC01)', async () => {
       const connectors = registry(simulated('sim-a'))
       const request = await requestSync({ source: 'sim-a' }, { connectors })
       expect(request).toEqual({ id: expect.any(String), existing: false })
       expect((await readRun(request.id))!.status).toBe('queued')
+      expect(await jobs()).toEqual([
+        {
+          data: { runId: request.id, source: 'sim-a' },
+          singleton_key: 'sim-a',
+        },
+      ])
     })
 
     it('fixes the settings at the request and puts equivalent requests of the CLI and the application in one scope (A16-AC06)', async () => {
@@ -222,14 +233,19 @@ integration('shared sync requesting and queue (0mq.16)', () => {
       const connectors = registry(simulated('sim-a', { settings }))
       const requested = await requestSync({ source: 'sim-a' }, { connectors })
       settings.limit = 100
-      expect((await readRun(requested.id))!.parameters).toEqual({
+      const fixed = await readRun(requested.id)
+      expect(fixed!.parameters).toEqual({
         source: 'sim-a',
         keyword: 'PHP',
         limit: 50,
       })
+      await finishRun(requested.id, { status: 'complete', error: null })
       // A different result limit is a different scope (F2-08).
       const larger = await requestSync({ source: 'sim-a' }, { connectors })
       expect(larger.existing).toBe(false)
+      const largerRun = await readRun(larger.id)
+      expect(largerRun!.parameters).toMatchObject({ limit: 100 })
+      expect(largerRun!.scopeId).not.toBe(fixed!.scopeId)
 
       // The Polish portal CLI passes every option; the application sends
       // only some, in another order. Both are the same scope.
@@ -250,6 +266,7 @@ integration('shared sync requesting and queue (0mq.16)', () => {
         },
         { connectors: polish },
       )
+      await finishRun(cli.id, { status: 'complete', error: null })
       const application = await requestSync(
         {
           source: 'bulldogjob',
@@ -257,10 +274,13 @@ integration('shared sync requesting and queue (0mq.16)', () => {
         },
         { connectors: polish },
       )
-      expect(application).toEqual({ id: cli.id, existing: true })
+      expect(application.existing).toBe(false)
+      expect((await readRun(application.id))!.scopeId).toBe(
+        (await readRun(cli.id))!.scopeId,
+      )
     })
 
-    it('refuses an unknown or disabled source and creates nothing', async () => {
+    it('refuses an unknown or disabled source and creates nothing (B5-AC01)', async () => {
       const connectors = registry(simulated('sim-a', { enabled: () => false }))
       await expect(
         requestSync({ source: 'sim-unknown' }, { connectors }),
@@ -282,7 +302,7 @@ integration('shared sync requesting and queue (0mq.16)', () => {
         simulated('sim-a'),
       )
 
-    it('creates one request per occurrence however many times and however parallel it is checked (A16-AC04)', async () => {
+    it('creates one request per occurrence however many times and however parallel it is checked (A16-AC04, B5-AC06)', async () => {
       const connectors = scheduled()
       const cycles = await Promise.all(
         Array.from({ length: 5 }, () =>
@@ -291,6 +311,12 @@ integration('shared sync requesting and queue (0mq.16)', () => {
       )
       expect(cycles.flat()).toHaveLength(1)
       const [run] = await runs()
+      expect(await jobs()).toEqual([
+        {
+          data: { runId: run.id, source: 'sim-scheduled' },
+          singleton_key: 'sim-scheduled',
+        },
+      ])
       await finishRun(run.id, { status: 'complete', error: null })
       expect(await requestScheduledSyncs({ connectors, now })).toEqual([])
       expect(
@@ -315,7 +341,7 @@ integration('shared sync requesting and queue (0mq.16)', () => {
       ).toHaveLength(1)
     })
 
-    it('is not held back by a manual request of the same day, and a second manual request that day follows F2-07 (A16-AC04)', async () => {
+    it('is not held back by a finished manual request of the same day, and a manual request meets the scheduled run (A16-AC04, B5-R02)', async () => {
       const connectors = scheduled()
       const manual = await requestSync(
         { source: 'sim-scheduled' },
@@ -342,85 +368,36 @@ integration('shared sync requesting and queue (0mq.16)', () => {
       ])
     })
 
-    it('creates the occurrence run only after a pending manual run it met has started (0mq.16 ASM-1)', async () => {
-      const connectors = scheduled()
-      const manual = await requestSync(
-        { source: 'sim-scheduled' },
-        { connectors, now },
-      )
-      // The occurrence's request is pointed at the pending manual run and
-      // creates nothing, however often it is checked.
-      expect(await requestScheduledSyncs({ connectors, now })).toEqual([
-        { id: manual.id, existing: true },
-      ])
-      await requestScheduledSyncs({ connectors, now })
-      expect(await runs()).toHaveLength(1)
-      // Once that run has started, the occurrence gets its own run, once.
-      await startRun(manual.id, { jobId: null, attempt: 0 })
-      const [own] = await requestScheduledSyncs({ connectors, now })
-      expect(own).toEqual({ id: expect.any(String), existing: false })
-      expect(await requestScheduledSyncs({ connectors, now })).toEqual([])
-      expect((await runs()).map((r) => [r.trigger, r.status])).toEqual([
-        ['manual', 'running'],
-        ['scheduled', 'queued'],
-      ])
-    })
+    it.each(['queued', 'running'] as const)(
+      'requests no run for a source with a %s manual run, and requests the occurrence once after it has finished (B5-AC06, 0mq.16 ASM-1)',
+      async (status) => {
+        const connectors = scheduled()
+        const manual = await requestSync(
+          { source: 'sim-scheduled' },
+          { connectors, now },
+        )
+        if (status === 'running') await startRun(manual.id)
+        // The occurrence's request meets the unfinished manual run and
+        // creates nothing, however often it is checked.
+        expect(await requestScheduledSyncs({ connectors, now })).toEqual([])
+        expect(await requestScheduledSyncs({ connectors, now })).toEqual([])
+        expect(await runs()).toHaveLength(1)
+        expect(await jobs()).toHaveLength(1)
+        // Once that run has finished, the occurrence gets its own run, once.
+        await finishRun(manual.id, { status: 'complete', error: null })
+        const [own] = await requestScheduledSyncs({ connectors, now })
+        expect(own).toEqual({ id: expect.any(String), existing: false })
+        expect(await requestScheduledSyncs({ connectors, now })).toEqual([])
+        expect((await runs()).map((r) => [r.trigger, r.status])).toEqual([
+          ['manual', 'complete'],
+          ['scheduled', 'queued'],
+        ])
+        expect(await jobs()).toHaveLength(2)
+      },
+    )
   })
 
-  it('executes runs of one source one at a time in request order, also in different scopes, and different sources in parallel, with two workers (A16-AC03, 0mq.16 ASM-3)', async () => {
-    const spans: {
-      source: string
-      keyword: unknown
-      start: number
-      end: number
-    }[] = []
-    const recording = (source: string) =>
-      simulated(source, {
-        fetch: async (parameters) => {
-          const start = Date.now()
-          await new Promise((resolve) => setTimeout(resolve, 700))
-          spans.push({
-            source,
-            keyword: parameters.keyword,
-            start,
-            end: Date.now(),
-          })
-          return { complete: true }
-        },
-      })
-    const connectors = registry(recording('sim-a'), recording('sim-b'))
-    const order = ['PHP', 'Java', 'Go', 'Rust']
-    const requested: string[] = []
-    for (const keyword of order) {
-      requested.push(
-        (
-          await requestSync(
-            { source: 'sim-a', scopeRequest: { keyword } },
-            { connectors },
-          )
-        ).id,
-      )
-      // Distinct creation times keep the request order unambiguous.
-      await new Promise((resolve) => setTimeout(resolve, 20))
-    }
-    const other = await requestSync({ source: 'sim-b' }, { connectors })
-    await startWorker(connectors)
-    await startWorker(connectors)
-
-    for (const id of [...requested, other.id])
-      expect((await waitForSyncRun(id, { intervalMs: 100 })).status).toBe(
-        'complete',
-      )
-
-    const a = spans.filter((s) => s.source === 'sim-a')
-    expect(a.map((s) => s.keyword)).toEqual(order)
-    for (let i = 1; i < a.length; i++)
-      expect(a[i]!.start).toBeGreaterThanOrEqual(a[i - 1]!.end)
-    const b = spans.find((s) => s.source === 'sim-b')!
-    expect(a.some((s) => s.start < b.end && b.start < s.end)).toBe(true)
-  }, 60_000)
-
-  it('requests Himalayas to the queue and has a worker execute it (A16-AC07)', async () => {
+  it('requests Himalayas to the queue and carries its job out (A16-AC07, B5-AC01)', async () => {
     const connectors = registry(
       createHimalayasConnector(async () => ({
         jobs: [],
@@ -432,66 +409,14 @@ integration('shared sync requesting and queue (0mq.16)', () => {
     )
     const request = await requestSync({ source: 'himalayas' }, { connectors })
     const [job] = await jobs()
-    expect(job).toMatchObject({
-      data: { runId: request.id },
-      group_id: 'himalayas',
+    expect(job).toEqual({
+      data: { runId: request.id, source: 'himalayas' },
+      singleton_key: 'himalayas',
     })
-    await startWorker(connectors)
+    await deliver(job.data.runId, connectors)
     expect(await waitForSyncRun(request.id, { intervalMs: 100 })).toMatchObject(
-      { status: 'complete', jobId: job.id, attempt: 0 },
+      { status: 'complete' },
     )
-  }, 30_000)
-
-  it('keeps a pending run queued, using no attempt, while a run of its scope still runs after its job failed, then executes it (F2-07, 0mq.16 ASM-3)', async () => {
-    const connectors = registry(simulated('sim-a'))
-    const a = await requestSync({ source: 'sim-a' }, { connectors })
-    const aJob = (await readRun(a.id))!.jobId!
-    await startRun(a.id, { jobId: aJob, attempt: 0 })
-    // A's job used up its attempts; recovery has not ended A yet.
-    await admin.query(
-      `UPDATE ${queueSchema}.job SET state='failed' WHERE id=$1`,
-      [aJob],
-    )
-    const b = await requestSync({ source: 'sim-a' }, { connectors })
-    expect(b.existing).toBe(false)
-    const bJob = (await readRun(b.id))!.jobId!
-    await startWorker(connectors)
-
-    await new Promise((resolve) => setTimeout(resolve, 4000))
-    expect((await readRun(b.id))!.status).toBe('queued')
-    const { rows } = await admin.query(
-      `SELECT state, retry_count FROM ${queueSchema}.job WHERE id=$1`,
-      [bJob],
-    )
-    expect(rows[0]).toEqual({ state: 'active', retry_count: 0 })
-
-    await recoverSyncRuns()
-    expect((await readRun(a.id))!.status).toBe('failed')
-    expect(await waitForSyncRun(b.id, { intervalMs: 100 })).toMatchObject({
-      status: 'complete',
-      jobId: bJob,
-      attempt: 0,
-    })
-  }, 30_000)
-
-  it('ends a run pending in a per-source queue of before 0mq.16 with a message about the interruption (A16-AC09)', async () => {
-    const legacyQueue = 'source-solid-jobs'
-    await boss.createQueue(legacyQueue)
-    const legacyJob = await boss.send(legacyQueue, { runId: 'unused' })
-    const { rows } = await pool.query(
-      `WITH scope AS (
-        INSERT INTO source_scopes(id,source,fingerprint,parameters)
-        VALUES (gen_random_uuid(),'solid-jobs','legacy','{}') RETURNING id
-      ) INSERT INTO source_sync_runs(id,scope_id,trigger,schedule_day,job_id)
-        SELECT gen_random_uuid(), id, 'manual', '2026-11-18', $1 FROM scope
-        RETURNING id`,
-      [legacyJob],
-    )
-    await recoverSyncRuns()
-    expect(await readRun(rows[0].id)).toMatchObject({
-      status: 'failed',
-      error: 'Queue delivery ended; request a new import',
-    })
   })
 
   it('waits for a run with no time limit, longer than the earlier 120 s (A16-AC05)', async () => {
@@ -522,6 +447,9 @@ integration('shared sync requesting and queue (0mq.16)', () => {
       (await pool.query('SELECT * FROM source_sync_runs WHERE id=$1', [id]))
         .rows[0],
     )
+    // A run no longer records its queue job or attempt.
+    expect(columns).not.toContain('job_id')
+    expect(columns).not.toContain('attempt')
     const catalog = await readSourceCatalog()
     expect(Object.keys(catalog.polish)).toEqual(['scheduled', 'sources'])
     expect(Object.keys(catalog.jobspy)).toEqual([

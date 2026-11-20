@@ -11,7 +11,9 @@ const integration =
 
 // A16-R06: with the database and the queue unreachable, requesting a
 // disabled source still answers as before 0mq.16, because the entry points
-// check the source before they connect the queue.
+// check the source before they request the sync. Since 2ba.5 the request
+// itself reaches the queue through the queue library; its failure there
+// still answers 503 (B5-R01).
 const unreachable = 'postgresql://nobody@127.0.0.1:1/none'
 
 async function freePort(): Promise<number> {

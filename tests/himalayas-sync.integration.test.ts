@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
-import { PgBoss } from 'pg-boss'
 import { setPool } from '../lib/db.ts'
+import { stopQueues } from '../lib/queues/index.ts'
 import {
   afterAll,
   beforeAll,
@@ -23,16 +23,15 @@ import {
 import { hash } from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readOffers } from '../modules/offers/read-offers.ts'
-import {
-  requestSync,
-  syncQueue,
-  syncQueueOptions,
-  useSyncQueue,
-} from '../modules/sources/index.ts'
+import { requestSync } from '../modules/sources/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import type { ConnectorProvider } from '../modules/sources/infrastructure/adapters/connector-registry.ts'
 import { himalayasWith } from './source-connectors.fixtures.ts'
-import { deliver } from './sync-run.fixtures.ts'
+import {
+  deliver,
+  prepareSyncRunQueue,
+  sourcesMigrations,
+} from './sync-run.fixtures.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -68,7 +67,8 @@ integration(
     const suffix = randomUUID().replaceAll('-', '')
     const schema = `himalayas_test_${suffix}`
     const queueSchema = `himalayas_queue_${suffix}`
-    let admin: Pool, pool: Pool, boss: PgBoss
+    const previousQueueSchema = process.env.PG_BOSS_SCHEMA
+    let admin: Pool, pool: Pool
     beforeAll(async () => {
       admin = new Pool({ connectionString: process.env.DATABASE_URL })
       await admin.query(`CREATE SCHEMA ${schema}`)
@@ -79,26 +79,16 @@ integration(
       })
       // The batch save uses the shared database access (T-03).
       setPool(pool)
-      for (const migration of [
-        '1770000000001_sources',
-        '1770000000005_jobspy',
-        '1770000000014_sync_run_state',
-        '1770000000015_sync_run_attempt',
-      ]) {
+      for (const migration of sourcesMigrations) {
         const sql: string[] = []
         createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
           sql: (statement: string) => sql.push(statement),
         })
         await pool.query(sql.join('\n'))
       }
-      boss = new PgBoss({
-        connectionString: process.env.DATABASE_URL,
-        schema: queueSchema,
-      })
-      boss.on('error', () => {})
-      await boss.start()
-      await boss.createQueue(syncQueue, syncQueueOptions)
-      useSyncQueue(boss)
+      await prepareSyncRunQueue(queueSchema)
+      // Requests send their jobs on the queue library's client of this schema.
+      process.env.PG_BOSS_SCHEMA = queueSchema
     }, 30_000)
     beforeEach(async () => {
       await pool.query(
@@ -106,7 +96,9 @@ integration(
       )
     })
     afterAll(async () => {
-      await boss?.stop()
+      await stopQueues()
+      if (previousQueueSchema === undefined) delete process.env.PG_BOSS_SCHEMA
+      else process.env.PG_BOSS_SCHEMA = previousQueueSchema
       await pool?.end()
       if (admin) {
         await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
@@ -114,8 +106,8 @@ integration(
         await admin.end()
       }
     })
-    // Since 0mq.16 the pilot is requested to the sync queue like every
-    // source and executed by the worker (A16-R05); here the queue delivery.
+    // Since 0mq.16 the pilot is requested like every source and carried out
+    // by the worker (A16-R05); here the job handler in the test process.
     async function syncHimalayas(connectors: ConnectorProvider) {
       const requested = await requestSync({ source }, { connectors })
       await deliver(requested.id, connectors)
@@ -384,9 +376,9 @@ integration(
       })
     })
 
-    // Since 0mq.16 a request during a run queues one pending run instead of
-    // being refused (F2-07), and nothing interrupts the active run.
-    it('queues one pending run next to the active one and keeps the active run intact', async () => {
+    // Since 2ba.5 a request during a run returns the running run and
+    // creates nothing (B5-R02), and nothing interrupts the active run.
+    it('returns the active run to a request during it and keeps the active run intact (B5-R02)', async () => {
       let release!: () => void
       let entered!: () => void
       const gate = new Promise<void>((resolve) => {
@@ -403,31 +395,27 @@ integration(
         }),
       )
       await started
+      const running = (
+        await pool.query<{ id: string }>(
+          "SELECT id FROM source_sync_runs WHERE status='running'",
+        )
+      ).rows[0]?.id
       try {
-        const pending = await requestSync({ source })
-        expect(pending.existing).toBe(false)
+        expect(running).toBeDefined()
         expect(await requestSync({ source })).toEqual({
-          id: pending.id,
+          id: running,
           existing: true,
         })
         expect(
-          (
-            await pool.query(
-              'SELECT status FROM source_sync_runs ORDER BY created_at',
-            )
-          ).rows,
-        ).toEqual([{ status: 'running' }, { status: 'queued' }])
+          (await pool.query('SELECT status FROM source_sync_runs')).rows,
+        ).toEqual([{ status: 'running' }])
       } finally {
         release()
         await active
       }
       expect(
-        (
-          await pool.query(
-            'SELECT status FROM source_sync_runs ORDER BY created_at',
-          )
-        ).rows,
-      ).toEqual([{ status: 'complete' }, { status: 'queued' }])
+        (await pool.query('SELECT id, status FROM source_sync_runs')).rows,
+      ).toEqual([{ id: running, status: 'complete' }])
     })
   },
 )

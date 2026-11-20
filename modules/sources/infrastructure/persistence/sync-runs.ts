@@ -84,6 +84,10 @@ export async function lockSourceRequests(source: string): Promise<void> {
 /**
  * The source's unfinished run, of any scope: a running one first, then the
  * oldest queued one. Null when the source has none.
+ *
+ * ASSUMPTION(oferty-pracy-2ba.5/ASM-1): a source may still hold several
+ * unfinished runs requested before B5; a request returns the running one,
+ * else the oldest queued one.
  */
 export async function findUnfinishedRunId(
   source: string,
