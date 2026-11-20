@@ -5,4 +5,4 @@
  * Design: docs/specs/2ba-praca-w-tle/solution-design.md#b1.
  */
 export { HandlerRegistry, runPlugins, type ModulePlugin } from './registry.ts'
-export { poolSizeFromEnvironment, startWorker } from './worker.ts'
+export { startWorker } from './worker.ts'

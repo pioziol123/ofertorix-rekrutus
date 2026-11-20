@@ -36,6 +36,7 @@ export const defaultPoolSize = 2
 export type WorkerOptions = {
   /** Path or URL of the plugins index that registers every module. */
   plugins: string
+  /** `WORKER_POOL_SIZE` when not given, 2 when that is not set. */
   poolSize?: number
   /** The queue side; the queue library's job source by default. */
   jobSource?: (definitions: readonly AnyJobDefinition[]) => JobSource
@@ -68,9 +69,10 @@ export function fatal(message: string): never {
  * failure to start ends the process with a message.
  */
 export async function startWorker(options: WorkerOptions): Promise<Worker> {
-  const poolSize = options.poolSize ?? defaultPoolSize
+  let poolSize = options.poolSize
   try {
     readQueueConfiguration()
+    poolSize ??= poolSizeFromEnvironment()
   } catch (error) {
     fatal((error as Error).message)
   }

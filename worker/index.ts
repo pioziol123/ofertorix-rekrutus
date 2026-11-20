@@ -15,7 +15,7 @@ import {
 } from '../modules/profile/index.ts'
 import { closePool } from '../lib/db.ts'
 import { createBoss } from '../lib/queue.ts'
-import { poolSizeFromEnvironment, startWorker } from '../lib/workers/index.ts'
+import { startWorker } from '../lib/workers/index.ts'
 
 import {
   recoverSyncRuns,
@@ -34,6 +34,14 @@ import {
   researchSettingsKey,
 } from '../modules/companies/index.ts'
 
+// The worker library starts first: an invalid queue configuration, pool
+// size (WORKER_POOL_SIZE) or module plugin ends the worker before the
+// existing path takes any job (B1-R04, B1-R14). It then takes the jobs of the module plugins' job
+// definitions and writes the worker's liveness record. The existing path
+// below stays until each module is moved to the libraries (B1-R17, B1-D14).
+const worker = await startWorker({
+  plugins: fileURLToPath(new URL('../plugins/index.ts', import.meta.url)),
+})
 const boss = createBoss()
 let stopping = false
 const fatal = () => {
@@ -78,14 +86,8 @@ await schedule()
 const scheduleTimer = setInterval(() => {
   void schedule().catch(fatal)
 }, 60_000)
-// The worker library takes the jobs of the module plugins' job definitions
-// and writes the worker's liveness record (B1-R14). The existing path above
-// stays until each module is moved to the libraries (B1-R17, B1-D14).
-const worker = await startWorker({
-  plugins: fileURLToPath(new URL('../plugins/index.ts', import.meta.url)),
-  poolSize: poolSizeFromEnvironment(),
-})
 console.info('Worker ready')
+
 async function shutdown() {
   if (stopping) return
   stopping = true

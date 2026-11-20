@@ -10,17 +10,13 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { closePool } from '../../../lib/db.ts'
 import { openJobSource, type JobSource } from '../../../lib/queues/index.ts'
-import {
-  poolSizeFromEnvironment,
-  startWorker,
-} from '../../../lib/workers/index.ts'
+import { startWorker } from '../../../lib/workers/index.ts'
 import { orphanJob } from './definitions.ts'
 
 // ASSUMPTION(oferty-pracy-2ba.1/ASM-2): a queue without a handler reaches
 // the worker only through a job source given more queues.
 const worker = await startWorker({
   plugins: fileURLToPath(new URL('./plugins.ts', import.meta.url)),
-  poolSize: poolSizeFromEnvironment(),
   jobSource: (definitions) => {
     const source: JobSource = openJobSource(
       process.env.TEST_ORPHAN === '1'

@@ -196,6 +196,20 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
     )
   })
 
+  it('starts the worker library before the existing path in the worker entry (B1-R04, B1-R14)', () => {
+    const entry = readFileSync(join(root, 'worker/index.ts'), 'utf8')
+    const library = entry.indexOf('await startWorker(')
+    expect(library).toBeGreaterThan(-1)
+    for (const existing of [
+      'await boss.start()',
+      'await workSyncQueue(',
+      'await workCvTextQueue(',
+      'await boss.work',
+      'await schedule()',
+    ])
+      expect(library, existing).toBeLessThan(entry.indexOf(existing))
+  })
+
   // ASSUMPTION(oferty-pracy-2ba.1/ASM-1): the migration step is not one of
   // the command-line scripts that must not run the module plugins.
   it('runs the module plugins only in the worker, its pool processes and the migration step (B1-AC15)', () => {

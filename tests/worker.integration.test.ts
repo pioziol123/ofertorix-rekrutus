@@ -647,6 +647,55 @@ integration('worker library: fatal errors (B1-AC03, B1-AC14)', () => {
     )
   }, 40_000)
 
+  it('ends the production worker on an invalid configuration before the existing path takes a job (B1-AC03, B1-R17)', async () => {
+    const { mkdtemp, writeFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const { spawn } = await import('node:child_process')
+    const { once } = await import('node:events')
+    const file = join(await mkdtemp(join(tmpdir(), 'queues-')), 'queues.json')
+    await writeFile(file, JSON.stringify({ 'some-queue': { attempts: -1 } }))
+    // A waiting job of an existing-path queue.
+    await scenario.sql(`CREATE SCHEMA IF NOT EXISTS ${scenario.queueSchema}`)
+    const { PgBoss } = await import('pg-boss')
+    const boss = new PgBoss({
+      connectionString: process.env.DATABASE_URL,
+      schema: scenario.queueSchema,
+      supervise: false,
+      schedule: false,
+    })
+    boss.on('error', () => {})
+    await boss.start()
+    await boss.createQueue('source-sync')
+    const id = await boss.send('source-sync', { runId: 'r', source: 's' })
+    await boss.stop({ graceful: false })
+    let output = ''
+    const child = spawn(
+      process.execPath,
+      ['--import', 'tsx', 'worker/index.ts'],
+      {
+        env: {
+          ...process.env,
+          DATABASE_URL: scenario.url,
+          PG_BOSS_SCHEMA: scenario.queueSchema,
+          QUEUE_CONFIGURATION: file,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
+    child.stdout.on('data', (chunk) => (output += chunk))
+    child.stderr.on('data', (chunk) => (output += chunk))
+    const [code] = await once(child, 'exit')
+    expect(code).toBe(1)
+    expect(output).toContain('Worker failed: Queue configuration')
+    expect(output).toContain('queue "some-queue", field "attempts"')
+    const { rows } = await scenario.sql(
+      `SELECT state FROM ${scenario.queueSchema}.job WHERE id = $1`,
+      [id],
+    )
+    expect(rows).toEqual([{ state: 'created' }])
+  }, 60_000)
+
   it('ends naming the queue and the field when the queue configuration is invalid (B1-AC03)', async () => {
     const { mkdtemp, writeFile } = await import('node:fs/promises')
     const { join } = await import('node:path')
