@@ -4,7 +4,7 @@ The Offers module lets the owner browse job offers: search the list, filter it, 
 
 ## Responsibility
 
-A **source ad** is an entry on one portal with its own content and change history; the [Offer sources](../sources/README.md) module fetches and stores it. A **job offer** is a shared employment opportunity, to which several ads of the same recruitment may be linked. The Offers module is responsible for:
+A **source ad** is an entry on one portal with its own content and change history; the [Sources](../sources/README.md) module fetches and stores it. A **job offer** is a shared employment opportunity, to which several ads of the same recruitment may be linked. The Offers module is responsible for:
 
 - **grouping ads into job offers**: establishing which ads concern the same recruitment, merging offers and splitting them at the owner's command;
 - **browsing offers**: a list with view filters, sorting and pagination, offer details with the content change history, and the presentation of salaries, including whether a salary range meets the salary filter.
@@ -14,7 +14,7 @@ The module does not assess how well an offer fits the professional profile; that
 ## Implementation state
 
 - **Grouping is not implemented** and does not belong to the epic `oferty-pracy-0mq` (Code architecture fixes). Until then each source ad is shown as a separate offer, and the offer ID is the ad ID.
-- **Ads come from the Sources read.** The module reads ads, their content and their versions only through the public read of the [Offer sources](../sources/README.md#public-read-of-ads) module, which gives the content in a unified form. The module does not interpret the content saved from the source.
+- **Ads come from the Sources read.** The module reads ads, their content and their versions only through the public read of the [Sources](../sources/README.md#public-read-of-ads) module, which gives the content in a unified form. The module does not interpret the content saved from the source.
 - **The match assessment result** in the list comes from the existing Matching read, until task `oferty-pracy-0mq.18`. It reads the current ad versions through the Sources read, and the list makes the same number of database reads whatever the number of offers.
 - **Filtering happens in memory** on the whole catalogue, which can have at most 10 000 ads; a larger catalogue ends the list read with an error.
 
@@ -46,7 +46,7 @@ Unit tests of the rules and a read test on an isolated database live in the modu
 
 ## Dependencies
 
-- **Offer sources**: the public read of current ads and of the list of an ad's versions. The ad comes with its content in the unified form, including the source name and the assessment of remote work qualification.
+- **Sources**: the public read of current ads and of the list of an ad's versions. The ad comes with its content in the unified form, including the source name and the assessment of remote work qualification.
 - **Matching**: a bulk read of assessment summaries for the list and the list of states awaiting assessment.
 - **Shared infrastructure**: database access through the shared accessor.
 

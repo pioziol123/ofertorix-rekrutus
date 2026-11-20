@@ -1,6 +1,6 @@
 # Module architecture — Requirements
 
-Basis: [PRD](PRD.md). Technical solution: [solution-design.md](solution-design.md). Concepts: [domain glossary](../../../GLOSSARY.md), [Offer sources](../../../modules/sources/README.md), [module map](../../architecture/moduly.md).
+Basis: [PRD](PRD.md). Technical solution: [solution-design.md](solution-design.md). Concepts: [domain glossary](../../../GLOSSARY.md), [Sources](../../../modules/sources/README.md), [module map](../../architecture/moduly.md).
 
 Section `A<n>` describes the Beads task `oferty-pracy-0mq.<n>`. Requirement IDs (`A<n>-R..`) and criterion IDs (`A<n>-AC..`) are stable, and the Beads task cites criteria by ID. The *Check* column says how the implementer proves that a criterion is met.
 
@@ -22,6 +22,8 @@ They apply to every task of the epic and are cited in each of them.
 
 The owner's decisions for the sync process. Tasks 0mq.1–0mq.5, 0mq.16 and 0mq.7 implement parts of them; each task names its rules.
 
+Superseded by the [background work epic](../2ba-praca-w-tle/requirements.md#b5): F2-06, F2-07, A5-R06, A16-R02 and A16-R07.
+
 | Rule | Content |
 | --- | --- |
 | F2-01 | **Connector.** Each source is handled by a connector with a shared contract. The connector is responsible for communication with the source, for splitting results into batches and for judging whether it checked the whole scope. The shared sync process does not depend on the details of any source. |
@@ -42,6 +44,8 @@ The owner's decisions for the sync process. Tasks 0mq.1–0mq.5, 0mq.16 and 0mq.
 <a id="f4"></a>
 
 ## Scope of AI job handling (F4)
+
+The sharing of the local model is superseded by the [background work epic](../2ba-praca-w-tle/requirements.md#b6).
 
 Applies to tasks 0mq.14, 0mq.9, 0mq.11 and 0mq.17.
 
@@ -506,6 +510,8 @@ Covers A17-R02, and A17-R03 and A17-R04 for Companies. Depends on task 0mq.21, w
 <a id="a15"></a>
 
 ## Task 0mq.15 — Interrupted paid AI work
+
+Superseded by the [background work epic](../2ba-praca-w-tle/requirements.md#b6): A15-R01 to A15-R09 and A15-AC01 to A15-AC08.
 
 A paid AI execution whose worker is lost while the work runs no longer stays running for ever: it ends as uncertain, its cost stays reserved, and nothing is sent to the provider again. Depends on tasks 0mq.21 and 0mq.22, which add assessment groups and company research as AI executions.
 

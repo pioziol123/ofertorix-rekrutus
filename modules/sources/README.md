@@ -1,6 +1,6 @@
-# Offer sources
+# Sources
 
-The Offer sources module is responsible for obtaining ads from external sources and keeping their content, origin, change history and availability information. It provides the other parts of the system with data for browsing and assessing offers. The description below sets out the module's responsibilities and the rules for interpreting fetched results.
+The Sources module is responsible for obtaining ads from external sources and keeping their content, origin, change history and availability information. It provides the other parts of the system with data for browsing and assessing offers. The description below sets out the module's responsibilities and the rules for interpreting fetched results.
 
 ## What the module covers
 
@@ -8,7 +8,7 @@ The basic object is the **source ad**, i.e. a specific entry published in one so
 
 The module provides a catalogue of supported sources, lets you request a fetch of ads and check its progress and result. It stores the ads found and allows reading their current content and earlier versions.
 
-Linking several ads to one job offer and presenting that offer belong to the Offers module. The Matching module uses the ad content when assessing the fit with the professional profile, and the Companies module when linking ads with organisations. Offer sources provide them with information about publications; it does not decide for them the assessment of an offer or the identity of the employer.
+Linking several ads to one job offer and presenting that offer belong to the Offers module. The Matching module uses the ad content when assessing the fit with the professional profile, and the Companies module when linking ads with organisations. The Sources module provides them with information about publications; it does not decide for them the assessment of an offer or the identity of the employer.
 
 ## How fetching works
 

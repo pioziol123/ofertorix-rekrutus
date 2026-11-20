@@ -264,33 +264,57 @@ One entry in a queue, made from a job definition, that tells the worker to take 
 _Avoid_: task, job (alone)
 
 **Job definition** (definicja zadania kolejki):
-A module's description of one kind of queue job: its name, the shape of the data the job carries and its job settings.
+A module's description of one kind of queue job: the name of its queue, the shape of the data the job carries, and whether it has a deduplication or an exclusivity key and what its value comes from.
 _Avoid_: job class, job type, queue (a definition is not a queue)
 
-**Job setting** (ustawienie zadania):
-A property of handling a queue job that its definition may set, such as the highest number of attempts or the time limit. It is all a module knows about how its jobs are handled: a setting states what will hold.
-_Avoid_: option (the queue implementation's own parameters); queue setting, worker setting (how a queue or the worker is configured is internal to the libraries)
+**Queue configuration** (konfiguracja kolejek):
+The editable file that gives the queue settings of each queue.
+
+**Queue setting** (ustawienie kolejki):
+A property of handling the jobs of one queue, written in the queue configuration, such as the highest number of attempts or the time limit of an attempt.
+_Avoid_: job setting, option (the queue implementation's own parameters)
+
+**Deduplication key** (klucz deduplikacji):
+A value from a queue job's data such that a second job with the same value does not enter the queue while the first one waits or runs.
+
+**Exclusivity key** (klucz wyłączności):
+A value from a queue job's data such that jobs with the same value are not carried out at the same time.
+_Avoid_: group, lock
 
 **Job handler** (obsługa zadania):
 The module's function that the worker calls for a queue job of a given definition.
 
+**Failure handler** (obsługa niepowodzenia):
+The module's function that the worker calls when a queue job has failed finally, also when its worker died during the last attempt.
+
+**Failure queue** (kolejka nieudanych zadań):
+The queue that receives a copy of each job of its queue that failed finally; the worker carries out such a copy by calling the failure handler.
+_Avoid_: dead letter queue (the queue implementation's own name)
+
 **Handler registry** (rejestr obsługi):
 The list, by job definition name, of the handlers the worker may call.
+
+**Process pool** (pula procesów):
+The fixed number of processes in which the worker carries out queue jobs, one job per process at a time.
 
 ### Scheduler
 
 **Periodic operation** (operacja okresowa):
-A module's operation that is to run at a set time or at a set interval, such as requesting the daily ad sync or checking whether the module's work has stalled.
+A module's operation that is to run at a set time or at a set interval, such as funding AI assignments that wait for budget.
 
 **Scheduler** (proces harmonogramu):
 The process that calls periodic operations when they are due. It is separate from the worker.
-_Avoid_: worker, cron; harmonogram alone (in Offer sources it means the plan of the daily ad sync)
+_Avoid_: worker, cron; harmonogram alone (in Sources it means the plan of the daily ad sync)
 
 ### Assembly
 
 **Application assembly** (składanie aplikacji):
-The code that, when a process starts, calls every module's registration of its job handlers and periodic operations.
+The code that, when a process starts, calls every module's registration of its job handlers.
 _Avoid_: bootstrap, wiring
+
+**Module plugin** (wtyczka modułu):
+A module's file in the plugins directory that registers the handlers of its queue jobs.
+_Avoid_: Nitro plugin (a file in server/plugins that the web server loads by itself)
 
 ### AI module structure
 

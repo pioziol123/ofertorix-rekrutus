@@ -8,7 +8,7 @@ Target architecture of the `modules/profile/` module. The module is responsible 
 - **Career direction** sets the roles sought, the position level, the technologies to develop in and the expected kind of work.
 - **Expectations and exclusions** describe the conditions of a future job, e.g. work mode, minimum salary or excluded industries. A given expectation can be a must-have requirement or a preference. Missing information stays an unknown. The owner can also explicitly state that there is no preference.
 
-Matching fetches the active profile version together with its ID and applies its own assessment rules. The scope of fetching ads is set by the Offer sources module, and the filters for browsing saved offers belong to the Offers module.
+Matching fetches the active profile version together with its ID and applies its own assessment rules. The scope of fetching ads is set by the Sources module, and the filters for browsing saved offers belong to the Offers module.
 
 ## Public operations
 
