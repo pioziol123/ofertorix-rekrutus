@@ -14,16 +14,17 @@ Requirements: [B1](requirements.md#b1). Code observed at commit `350bb51`.
 
 | Part | Owns |
 | --- | --- |
-| Queue library (shared, in the shared library directory) | The only code that imports pg-boss. Reads and validates the queue configuration; creates and updates the queue and failure queue of each job definition; sends a job in the caller's transaction; hands the worker the next job of any of these queues; heartbeats, completes, fails and cancels a job attempt. |
+| Queue library (shared, in the shared library directory) | The only code that imports pg-boss. Reads and validates the queue configuration; gives the queue migrations the way to create a queue with its failure queue; updates the settings of the existing queues; sends a job in the caller's transaction; hands the worker the next job of any queue the worker takes from (B1-D16); heartbeats, completes, fails and cancels a job attempt. |
 | Worker library (shared) | The handler registry (job definition, job handler and failure handler per job definition name), the process pool, the channel to pool processes, the rules for ending a process, the worker's liveness record and stopping. A job of a failure queue is carried out like any job, by the failure handler. |
 | Queue configuration | One JSON file in the repository: the operational queue settings per queue name. It does not own the list of queues. |
-| Job definition (in a module) | The queue name, the shape of the job's data and the key: none, or a key mode (exclusivity or deduplication) with the rule that gives its value from the data (a field of the data, or a constant). The job definitions are the only owner of the list of queues. |
-| Module plugin (in the plugins directory at the repository root) | Registers the module's job definitions with their job handlers and failure handlers. A plugins index runs every module plugin; the worker, the pool processes and the migration step run it. |
+| Job definition (in a module) | The queue name, the shape of the job's data and the key: none, or a key mode (exclusivity or deduplication) with the rule that gives its value from the data (a field of the data, or a constant). Its key mode must equal the one its queue's migration names (B1-D15). |
+| Queue migration | A database migration written once per queue: it creates the queue and its failure queue with the queue name and key mode written in it, and imports no module. The queue migrations own the list of queues (B1-D05). |
+| Module plugin (in the plugins directory at the repository root) | Registers the module's job definitions with their job handlers and failure handlers. A plugins index runs every module plugin; only the worker and the pool processes run it. |
 | Worker entry | Starts the worker library with the plugins index and the pool size. It knows no module. |
 | Pool process entry | Runs the plugins index once, then carries out the jobs the worker passes to it. |
 | Web application | A Nitro plugin starts the queue library's connection at server start. It does not run the plugins index. |
 
-In this task no module has a job definition on the libraries. The existing path keeps working (B1-R17): the existing queue creation of the three module queues, the existing pg-boss client of the web server and the existing `work()` registrations and minute cycle in the worker entry. The new worker loop runs in the same worker process beside them and takes only the queues of the configuration.
+In this task no module has a job definition on the libraries. The existing path keeps working (B1-R17): the existing queue creation of the three module queues, the existing pg-boss client of the web server and the existing `work()` registrations and minute cycle in the worker entry. The new worker loop runs in the same worker process beside them and takes every queue in the database except these three (B1-D16).
 
 ### Decisions
 
@@ -44,10 +45,11 @@ Discarded: a group with a group concurrency of 1: not strict when two workers fe
 **B1-D04. Withdrawn by B1-D01 (2026-11-20).**
 It compared the definition with the file's key mode at every send. With the key mode in the definition there is nothing to compare.
 
-**B1-D05. Queues are created at the migration step; a change of key mode stops it.**
-The migration step runs the plugins index to collect the job definitions and reads the file. For each definition it creates the failure queue, then the queue with that failure queue as its dead letter queue, both with a 30 s heartbeat; it updates the settings pg-boss can update (attempts, retry delay and backoff, time limit, retention) from the file; it stops with an error naming the queue when an existing queue's policy differs from the definition's key mode, and when a file entry names no definition's queue.
-Reason: a send is part of the module's transaction and must find its queue; the migration step surely runs before the web application and the worker, and stops the deployment on a configuration error ([ADR 0002](../../adr/0002-kolejki-zakladane-przy-migracji.md)).
-Discarded: creating a queue at its first send: a schema change while a request is handled, a race of two first sends, and a configuration error found only in the running application.
+**B1-D05. Queues are created by queue migrations written once, with the queue name and key mode in the migration; the migration step then applies the file.**
+A queue migration, written once when a job definition is added, creates the failure queue, then the queue with that failure queue as its dead letter queue, both with a 30 s heartbeat, with the queue name and key mode written in the migration; it imports no module. After the migrations, the migration step reads the file and updates the settings pg-boss can update (attempts, retry delay and backoff, time limit, retention) of the existing queues; it stops with an error naming the queue when a file entry names no existing queue. The step does not run the plugins index. The three queues of the existing path (B1-R17) are created with their names and settings written in the migration step, not imported from the modules.
+Reason: a send is part of the module's transaction and must find its queue; the migration step surely runs before the web application and the worker, and stops the deployment on a configuration error ([ADR 0002](../../adr/0002-kolejki-zakladane-przy-migracji.md)). A queue migration does not depend on domain code, so a later change of a module cannot change or break it (owner, 2026-11-20; a good practice for migrations in general, not a rule: [architecture rules](../../architecture/moduly-i-zasady-kodu.md#costs-of-design-decisions), cost 7). Carrying unfinished work over at deployment in B4–B6 still calls module operations from the migration step, because it needs the modules' rules.
+Discarded: creating a queue at its first send: a schema change while a request is handled, a race of two first sends, and a configuration error found only in the running application. Also discarded: the migration step runs the plugins index to collect the job definitions and stops on a key mode change (the design before 2026-11-20, taken by the first attempt as assumption `oferty-pracy-2ba.1/ASM-1`): the migration depended on the modules' code.
+Consequence: the key mode is written twice, in the queue migration and in the job definition, which is a second owner of the same fact (architecture rules, costs); B1-D15 keeps the two equal.
 
 **B1-D06. One worker takes from every queue of the job definitions, in turn.**
 Reason: one installation with one user; the pool size sets the load, and a list of queues per worker at start can be added later.
@@ -72,8 +74,8 @@ pg-boss inserts a copy of the job with its data into the queue's dead letter que
 Reason (review of 2026-11-20): it covers the worker that died in the last attempt, so no module's work stays in progress, with no periodic check; a failing failure handler is retried.
 Discarded: the worker calls the failure handler after a failure it recorded itself (the decision before the review): work stayed in progress when the worker died in the last attempt (collection task `oferty-pracy-sz5` item 20). Also discarded: the failure handler in the job definition (senders would load handling code); a periodic scan of failed jobs (a second mechanism).
 
-**B1-D11. A job without a registered handler is cancelled and logged.**
-Reason: the worker cannot know the list of jobs it should handle (verified: no source of truth besides the registry); handling jobs is not the queue's responsibility.
+**B1-D11. A job without a registered handler is taken, cancelled and logged.**
+Reason: the worker learns which jobs it handles only from the registry; handling jobs is not the queue's responsibility. Because the worker takes every queue in the database (B1-D16), such a job is taken and reaches the log instead of waiting unnoticed until pg-boss deletes it (owner's points 8 and 11).
 Discarded: a check of handlers at worker start; validation of job data by the queue library.
 
 **B1-D12. Module plugins in a plugins directory at the repository root, run by the worker and the pool processes.**
@@ -88,6 +90,25 @@ Discarded: writing it in the worker entry (it only shows that the process exists
 Reason: the epic is released as a whole.
 Consequence: a second mechanism for the same thing (architecture rules, costs), accepted as transitional; task `oferty-pracy-2ba.6` removes the old one.
 
+**B1-D15. An automated test keeps each job definition's key mode equal to its queue's.**
+The test applies the migrations to a database, runs the plugins index and, for every registered job definition, compares its key mode with the policy of its queue; it fails naming the queue on a difference and when the queue does not exist (B1-R18).
+Reason: the migration step no longer sees the definitions (B1-D05), and the worker checks nothing at start (owner's point 7); a test finds the difference before release.
+Discarded: a check at worker start (against point 7); a check in the migration step (it would need the modules' code).
+
+**B1-D16. The worker takes from every queue in the database except the queues of the existing path.**
+At start the worker reads the list of queues in the pg-boss schema, failure queues included, and leaves out the three queues of the existing path (a fixed list in the worker library, transitional per B1-D14; each module task removes its queue from it). A queue added later is taken after the worker's next start, which every deployment does. Reading the list checks nothing (owner's point 7).
+Reason: a job without a handler must be taken to be cancelled and logged (B1-D11).
+Discarded: taking only the queues of registered job definitions (assumption `oferty-pracy-2ba.1/ASM-2` of the first attempt): a job without a handler was never taken and pg-boss deleted it silently after the waiting retention.
+
+### Confirmed assumptions
+
+Owner's decision of 2026-11-20 on the assumptions of the first attempt:
+
+- `oferty-pracy-2ba.1/ASM-1` (the migration step runs the module plugins): reversed by B1-D05.
+- `oferty-pracy-2ba.1/ASM-2` (the worker takes only the queues of registered job definitions): reversed by B1-D16.
+- `oferty-pracy-2ba.1/ASM-3` confirmed: when a newer attempt has taken a job over, the old attempt's failure reason goes only to the worker's log, not onto the job, so the newer attempt's state is not overwritten.
+- `oferty-pracy-2ba.1/ASM-4` confirmed: a pool process that exits by itself fails its attempt with the reason `exited` and is replaced, like any failed attempt.
+
 ### Contract: queue configuration
 
 A JSON object with one entry per queue, keyed by the queue name. Every field except the name is optional.
@@ -101,7 +122,7 @@ A JSON object with one entry per queue, keyed by the queue name. Every field exc
 | waitingRetentionSeconds | How long a job may wait to be taken before it is deleted | integer ≥ 1 | pg-boss default (14 days) |
 | finishedRetentionSeconds | How long a finished job is kept | integer ≥ 0 | pg-boss default (7 days) |
 
-`attempts` maps to `retryLimit = attempts − 1`. Unknown fields are an error, and so is an entry whose name is not the queue of a job definition. The file has no entries for failure queues. The file is read and validated once per process start (B1-R04).
+`attempts` maps to `retryLimit = attempts − 1`. Unknown fields are an error, and so is an entry whose name is not an existing queue. The file has no entries for failure queues. The file is read and validated once per process start (B1-R04).
 
 ### Contract: job definition and send
 
@@ -112,7 +133,7 @@ A JSON object with one entry per queue, keyed by the queue name. Every field exc
 ### Contract: worker, registry and pool processes
 
 - The registry maps a job definition name to the definition, a job handler and an optional failure handler. A second registration of the same name throws at plugin run.
-- The worker loop: while a pool process is free and the worker is not stopping, ask the queue library for the next job, starting each time at the next queue of the file; pass the job to a free process.
+- The worker loop: while a pool process is free and the worker is not stopping, ask the queue library for the next job, starting each time at the next queue of the list read at start (B1-D16); pass the job to a free process.
 - Messages between the worker and a pool process: run (definition name, data), alive (every 5 s while a job runs), done, failed (error message). The process runs one job at a time and is reused. A process that exits or is ended is replaced by a new one.
 - While a job runs, the worker sends a heartbeat for the attempt every 10 s, fenced to the attempt (pg-boss `touch` with the job id and retry count); a fenced heartbeat that touches no row means the job no longer belongs to the attempt.
 - The worker ends the process (B1-R09) and fails the attempt with a reason: `silent`, `time-limit`, `taken-over` or `unconfirmed`. A handler's error fails it with the error's message. pg-boss's own expiry and heartbeat supervision stay on as a safety net.
@@ -128,7 +149,7 @@ A JSON object with one entry per queue, keyed by the queue name. Every field exc
 | Operation | Concurrent call | Resource limit | Repeated call | Malformed input |
 | --- | --- | --- | --- | --- |
 | Send | Same key at once: pg-boss's unique index lets one in (B1-R06) | Database unavailable: throws, caller rolls back | Mode none: a new job; deduplication: `duplicate`; exclusivity: a new job that waits | Missing queue or key mismatch: throws (B1-R05); data not validated (B1-D11) |
-| Migration step | pg-boss serialises queue creation with its own lock | Database unavailable: the step fails | Running it again creates nothing new and updates settings | Invalid file: stops (B1-R04); key mode change: stops (B1-D05) |
+| Migration step | pg-boss serialises queue creation with its own lock | Database unavailable: the step fails | A queue migration runs once; applying the file again updates settings | Invalid file: stops (B1-R04); entry naming no existing queue: stops (B1-D05); key mode difference: found by the test (B1-D15) |
 | Take and run a job | Two workers: pg-boss claims a job once; exclusivity per B1-D03 | Pool full: no fetch; time limit: process ended (B1-R09) | A retried attempt runs the handler again; handlers must tolerate it | No handler: cancelled (B1-R12); data shape is the handler's concern |
 | Failure handler | One copy per final failure, carried out like any job | Its error fails the copy's attempt and is retried (B1-R11) | A retried copy calls it again; failure handlers must tolerate it | — |
 
@@ -140,7 +161,7 @@ A JSON object with one entry per queue, keyed by the queue name. Every field exc
 
 ### Verification
 
-Integration tests on an isolated pg-boss schema with a test configuration file and test plugins cover B1-AC01–AC13 and B1-AC15. Ending a process (B1-AC09) uses test handlers that block reporting, that outlast a short time limit, whose job is given to another attempt by failing it in the database, and a queue stub that never confirms. The lost worker (B1-AC10) kills a worker process during a job and observes the retry, and during a last attempt and observes the failure handler. B1-AC14 is checked by a test of the liveness record and of the fatal paths, and by inspection of the container health check.
+Integration tests on an isolated pg-boss schema with a test configuration file and test plugins cover B1-AC01–AC13, B1-AC15 and B1-AC16. B1-AC12 uses a queue created in the database with no registered handler and a worker that reads its list of queues as in production, not a job source given extra queues. Ending a process (B1-AC09) uses test handlers that block reporting, that outlast a short time limit, whose job is given to another attempt by failing it in the database, and a queue stub that never confirms. The lost worker (B1-AC10) kills a worker process during a job and observes the retry, and during a last attempt and observes the failure handler. B1-AC14 is checked by a test of the liveness record and of the fatal paths, and by inspection of the container health check.
 
 <a id="b4"></a>
 
