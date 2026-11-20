@@ -297,14 +297,14 @@ The list, by job definition name, of the handlers the worker may call.
 **Process pool** (pula procesów):
 The fixed number of processes in which the worker carries out queue jobs, one job per process at a time.
 
-### Scheduler
+### Periodic work
 
 **Periodic operation** (operacja okresowa):
-A module's operation that is to run at a set time or at a set interval, such as funding AI assignments that wait for budget.
+A module's public operation that the periodic process calls in each pass, such as funding AI assignments that wait for budget.
 
-**Scheduler** (proces harmonogramu):
-The process that calls periodic operations when they are due. It is separate from the worker.
-_Avoid_: worker, cron; harmonogram alone (in Sources it means the plan of the daily ad sync)
+**Periodic process** (proces okresowy):
+The process that repeats a pass of periodic operations, 60 seconds after the previous pass ended. It is separate from the worker, which does no periodic work. It names the operations it calls itself; modules do not register them.
+_Avoid_: worker, cron, scheduler; harmonogram alone (in Sources it means the plan of the daily ad sync)
 
 ### Assembly
 
