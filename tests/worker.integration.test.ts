@@ -51,8 +51,6 @@ integration('worker library: taking and carrying out jobs', () => {
 
   beforeAll(async () => {
     scenario = await createScenario('wk_main')
-    // A queue of the existing path, which the worker leaves to it (B1-D16).
-    await scenario.boss.createQueue('ai-execution')
     // No pool size set: the worker uses 2 (B1-AC07).
     worker = scenario.startWorker()
     await waitForReady(worker)
@@ -209,7 +207,6 @@ integration('worker library: taking and carrying out jobs', () => {
 
   it('takes a job of an existing queue without a registered handler from the list of queues it read at start, cancels it without retry and logs its name (B1-AC12)', async () => {
     await scenario.send('wt-orphan', { id: 'orphan', action: 'ok' })
-    await scenario.send('ai-execution', { id: 'existing-path', action: 'ok' })
     const job = await waitFor(
       async () => {
         const row = await scenario.job('orphan')
@@ -224,8 +221,6 @@ integration('worker library: taking and carrying out jobs', () => {
     )
     expect(await scenario.events('orphan')).toEqual([])
     expect(await scenario.failureCopy('orphan')).toBeUndefined()
-    // The existing path's queue is left to the existing path (B1-R17).
-    expect((await scenario.job('existing-path'))?.state).toBe('created')
   }, 20_000)
 
   it('renews the liveness record every 10 s, and the container health check fails when it is older than 30 s (B1-AC14)', async () => {
@@ -651,7 +646,7 @@ integration('worker library: fatal errors (B1-AC03, B1-AC14)', () => {
     )
   }, 40_000)
 
-  it('ends the production worker on an invalid configuration before the existing path takes a job (B1-AC03, B1-R17)', async () => {
+  it('ends the production worker on an invalid configuration before it takes a job (B1-AC03)', async () => {
     const { mkdtemp, writeFile } = await import('node:fs/promises')
     const { join } = await import('node:path')
     const { tmpdir } = await import('node:os')
@@ -659,7 +654,7 @@ integration('worker library: fatal errors (B1-AC03, B1-AC14)', () => {
     const { once } = await import('node:events')
     const file = join(await mkdtemp(join(tmpdir(), 'queues-')), 'queues.json')
     await writeFile(file, JSON.stringify({ 'some-queue': { attempts: -1 } }))
-    // A waiting job of an existing-path queue.
+    // A waiting job of a queue without a handler.
     await scenario.sql(`CREATE SCHEMA IF NOT EXISTS ${scenario.queueSchema}`)
     const { PgBoss } = await import('pg-boss')
     const boss = new PgBoss({
@@ -670,8 +665,8 @@ integration('worker library: fatal errors (B1-AC03, B1-AC14)', () => {
     })
     boss.on('error', () => {})
     await boss.start()
-    await boss.createQueue('ai-execution')
-    const id = await boss.send('ai-execution', { executionId: 'e' })
+    await boss.createQueue('wt-waiting')
+    const id = await boss.send('wt-waiting', { id: 'e' })
     await boss.stop({ graceful: false })
     let output = ''
     const child = spawn(

@@ -211,12 +211,10 @@ export async function carryOutBatchItem(groupId: string): Promise<void> {
   const items = await runningGroupRows(groupId)
   if (!items.length) return
   const found = runnerOf(items[0]!)
-  if (claimed) {
-    if (found) await advance(groupId, items, found, true)
-    else await endUnavailable(items)
-    return
-  }
-  if (!found || found.runner.sending(items[0]!.adapterState))
+  // No adapter can carry the batch any more: its items end as before.
+  if (!found) return endUnavailable(items)
+  if (claimed) return advance(groupId, items, found, true)
+  if (found.runner.sending(items[0]!.adapterState))
     await transaction(async () => {
       for (const execution of items) await endAsUnknown(execution)
     })

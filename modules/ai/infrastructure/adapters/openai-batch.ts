@@ -599,7 +599,7 @@ export function openAiBatch(
       api.archive = context.archive
       if (state === null) {
         // Only the run that took the queued items sends them; a group in
-        // sending belongs to that run, and recovery ends it when that run
+        // sending belongs to that run, and a later job of an item ends it
         // is lost.
         if (!context.claimed || context.state !== null) return { kind: 'wait' }
         const sent = await send(
@@ -626,7 +626,8 @@ export function openAiBatch(
         ))
           await api.remove(file)
       } catch {
-        // Recovery retries the cleanup, never the paid submission.
+        // A later periodic pass retries the cleanup, never the paid
+        // submission.
         return
       }
       await context.save({ ...state, cleaned: true })
