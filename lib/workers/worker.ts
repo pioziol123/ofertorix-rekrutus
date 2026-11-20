@@ -84,6 +84,8 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
   onQueueError((error) =>
     fatal(`the queue reported an error: ${error.message}`),
   )
+  // ASSUMPTION(oferty-pracy-2ba.1/ASM-2): the worker takes the queues of the
+  // registered job definitions, not those named in the queue configuration.
   const source = (options.jobSource ?? openJobSource)(registry.definitions())
 
   const startProcess = () =>

@@ -55,6 +55,8 @@ export function openJobSource(
   definitions: readonly AnyJobDefinition[],
   client: () => Promise<PgBoss> = queueClient,
 ): JobSource {
+  // ASSUMPTION(oferty-pracy-2ba.1/ASM-2): the queues come from the job
+  // definitions (B1-R07, B1-D01), not from the queue configuration.
   const queues = definitions.flatMap((definition) => [
     definition.queue,
     failureQueueOf(definition.queue),

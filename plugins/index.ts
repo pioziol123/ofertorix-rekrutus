@@ -3,6 +3,8 @@
  * registry. Only the worker, the processes of its pool and the migration
  * step run it; the web application and the command-line scripts send jobs
  * without loading handling code (B1-R15).
+ * ASSUMPTION(oferty-pracy-2ba.1/ASM-1): the migration step is not one of the
+ * command-line scripts of B1-R15.
  *
  * A module that handles queue jobs adds its plugin file to this directory,
  * registering its job definitions with their job handlers and failure
