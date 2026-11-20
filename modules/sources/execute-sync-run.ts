@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises'
 import { transaction } from '../../lib/db.ts'
 import { sendJob } from '../../lib/queues/index.ts'
 import { finishedRunStatus } from './domain/run-status.ts'
@@ -63,7 +64,16 @@ export async function executeSyncRun(
   /** Tests replace the application's connectors. */
   connectors: ConnectorProvider = sourceConnectors,
 ): Promise<void> {
-  const run = await startRun(runId)
+  let run = await startRun(runId)
+  // ASSUMPTION(oferty-pracy-2ba.5/ASM-1): a queued run carried over next to
+  // a running run of its scope waits, without using up its attempt, until
+  // that run has ended: its own later attempt or its failure handler ends
+  // it. Exclusivity by source keeps every other job of the source out
+  // meanwhile, so nothing else of the source runs.
+  while (run === 'scope-running') {
+    await sleep(1_000)
+    run = await startRun(runId)
+  }
   if (!run) return
   try {
     await executeStartedRun(run, connectors)

@@ -87,10 +87,27 @@ export function admitRun(admission: RunAdmission): Promise<AdmittedRun> {
 /**
  * Starts a queued run, or takes a running run over for a later attempt: the
  * run continues instead of a new one (B5-R04). Returns null, without
- * changes, for a finished run or an unknown id.
+ * changes, for a finished run or an unknown id, and `'scope-running'`,
+ * without changes, for a queued run while another run of its scope is
+ * running, which the per-scope running-run index refuses.
+ *
+ * ASSUMPTION(oferty-pracy-2ba.5/ASM-1): only runs requested before B5 can
+ * meet another unfinished run of their scope.
  */
-export function startRun(runId: string): Promise<SyncRun | null> {
-  return markRunStarted(runId)
+export async function startRun(
+  runId: string,
+): Promise<SyncRun | null | 'scope-running'> {
+  try {
+    return await markRunStarted(runId)
+  } catch (error) {
+    const violation = error as { code?: unknown; constraint?: unknown }
+    if (
+      violation.code === '23505' &&
+      violation.constraint === 'source_one_running_run'
+    )
+      return 'scope-running'
+    throw error
+  }
 }
 
 /**

@@ -645,5 +645,88 @@ integration('ad syncs through the queue and worker libraries', () => {
       // The former queue is gone, so a second run carries nothing over.
       expect((await carryOver()).stdout).not.toContain('Carried')
     }, 180_000)
+
+    // ASSUMPTION(oferty-pracy-2ba.5/ASM-1): a waiting sync carried over next
+    // to a running sync of its scope is carried out after it, without using
+    // up its attempts, also when the running sync's last attempt fails.
+    it('carries a running and a waiting sync of one scope over: the running one is taken over first and the waiting one carried out after it, also when the running one ends through its failure handler (B5-AC07, ASM-1)', async () => {
+      await kill(worker)
+      /** A running sync with one saved ad and a waiting sync, one scope. */
+      async function legacyPair(source: string, scope: string) {
+        const running = await request(source, scope)
+        await admin.query(
+          `DELETE FROM ${queueSchema}.job WHERE name=$1 AND data->>'runId'=$2`,
+          [queue, running.id],
+        )
+        await pool.query(
+          "UPDATE source_sync_runs SET status='running',started_at=now()-interval '1 hour' WHERE id=$1",
+          [running.id],
+        )
+        const scopeId = (
+          await pool.query(
+            'SELECT scope_id FROM source_sync_runs WHERE id=$1',
+            [running.id],
+          )
+        ).rows[0].scope_id
+        await saveBatch({ id: running.id, scopeId, source }, [
+          toConnectorAd({ jobOfferKey: `${scope}-before`, url: null }),
+        ])
+        const waiting = randomUUID()
+        await pool.query(
+          `INSERT INTO source_sync_runs(id,scope_id,trigger,schedule_day)
+           VALUES ($1,$2,'manual','2026-11-18')`,
+          [waiting, scopeId],
+        )
+        return { running: running.id, waiting }
+      }
+      const taken = await legacyPair('test-3', 'pair-taken')
+      await planFetches(
+        'pair-taken',
+        { batches: [['taken-after']], pauseMs: 2_000, end: 'complete' },
+        { batches: [['waited']], end: 'complete' },
+      )
+      const failed = await legacyPair('test-4', 'pair-failed')
+      const throwing = { batches: [], end: 'throw' } as const
+      await planFetches('pair-failed', throwing, throwing, throwing, {
+        batches: [['waited-after-failure']],
+        end: 'complete',
+      })
+      await boss.createQueue('source-sync', { retryLimit: 2 })
+      const carried = await promisify(execFile)(
+        process.execPath,
+        ['--import', 'tsx', 'scripts/carry-over-jobs.ts'],
+        {
+          env: {
+            ...process.env,
+            DATABASE_URL: url,
+            PG_BOSS_SCHEMA: queueSchema,
+          },
+        },
+      )
+      expect(carried.stdout).toContain(
+        'Carried 4 jobs over from queue "source-sync"',
+      )
+      worker = await startWorker()
+
+      const takenRunning = await statusBecomes(taken.running, 'complete')
+      expect(takenRunning).toMatchObject({ seen: 2 })
+      const takenWaiting = await statusBecomes(taken.waiting, 'complete')
+      expect(takenWaiting.started_at!.getTime()).toBeGreaterThanOrEqual(
+        takenRunning.finished_at!.getTime(),
+      )
+
+      const failedRunning = await statusBecomes(failed.running, 'partial')
+      expect(failedRunning).toMatchObject({ seen: 1, error: interrupted })
+      const failedWaiting = await statusBecomes(failed.waiting, 'complete')
+      expect(failedWaiting).toMatchObject({ seen: 1, error: null })
+      expect(failedWaiting.started_at!.getTime()).toBeGreaterThanOrEqual(
+        failedRunning.finished_at!.getTime(),
+      )
+      // The waiting sync used one attempt: it waited instead of failing.
+      for (const id of [taken.waiting, failed.waiting])
+        expect(await jobsOf(id)).toMatchObject([
+          { state: 'completed', retry_count: 0 },
+        ])
+    }, 180_000)
   })
 })

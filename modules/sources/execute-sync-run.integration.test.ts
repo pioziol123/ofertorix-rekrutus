@@ -24,7 +24,13 @@ import {
 } from './infrastructure/adapters/connector.ts'
 import { createConnectorRegistry } from './infrastructure/adapters/connector-registry.ts'
 import { saveBatch } from './save-batch.ts'
-import { admitRun, finishRun, readRun, startRun } from './sync-run-state.ts'
+import {
+  admitRun,
+  finishRun,
+  readRun,
+  startRun,
+  type SyncRun,
+} from './sync-run-state.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -607,7 +613,7 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
   describe('the failure handler (B5-AC05)', () => {
     it('ends a run with saved ads partial and one without failed, both with the interruption message (B5-AC05)', async () => {
       const withAds = await admit('simulated-alpha')
-      const run = await startRun(withAds)
+      const run = (await startRun(withAds)) as SyncRun
       await saveBatch(
         { id: withAds, scopeId: run!.scopeId, source: run!.source },
         [ad('one'), ad('two')],

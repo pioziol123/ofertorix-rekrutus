@@ -11,7 +11,13 @@ import {
   type ConnectorAd,
 } from './infrastructure/adapters/connector.ts'
 import { BatchSaveError, saveBatch, type BatchRun } from './save-batch.ts'
-import { admitRun, finishRun, readRun, startRun } from './sync-run-state.ts'
+import {
+  admitRun,
+  finishRun,
+  readRun,
+  startRun,
+  type SyncRun,
+} from './sync-run-state.ts'
 import { sourcesMigrations } from '../../tests/sync-run.fixtures.ts'
 
 const integration =
@@ -64,7 +70,7 @@ integration('batch save in an isolated PostgreSQL schema', () => {
       scheduleDay: '2026-11-16',
       sendJob: async () => randomUUID(),
     })
-    const run = await startRun(id)
+    const run = (await startRun(id)) as SyncRun
     return { id, scopeId: run!.scopeId, source }
   }
 
