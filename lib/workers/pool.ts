@@ -2,7 +2,11 @@ import { fork, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import type { ProcessMessage, RunMessage } from './messages.ts'
 
-/** How a job's run in a pool process ended, as the process saw it. */
+/**
+ * How a job's run in a pool process ended, as the process saw it.
+ * ASSUMPTION(oferty-pracy-2ba.1/ASM-4): `exited` when the process exits by
+ * itself while it runs a job.
+ */
 export type RunOutcome =
   | { kind: 'done' }
   | { kind: 'failed'; message: string }
@@ -37,6 +41,7 @@ export class PoolProcess {
       else if (message.type === 'failed')
         this.#settle({ kind: 'failed', message: message.message })
     })
+    // ASSUMPTION(oferty-pracy-2ba.1/ASM-4)
     child.on('exit', (code, signal) => {
       this.#exited = true
       this.#settle({

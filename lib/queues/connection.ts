@@ -24,6 +24,13 @@ export function createQueueClient(options: { migrate?: boolean } = {}) {
     connectionString,
     migrate: options.migrate ?? false,
     schema: process.env.PG_BOSS_SCHEMA ?? 'pgboss',
+    // A worker that died leaves its job active with a heartbeat older than
+    // 30 s; supervision passes every 10 s, each queue checked at most every
+    // 10 s, find it within about 30-50 s, and the next worker fetch within
+    // 1 s takes the retry: well within the 90 s of B1-R10. pg-boss's default
+    // of 60 s for both could reach just over 90 s.
+    superviseIntervalSeconds: 10,
+    monitorIntervalSeconds: 10,
   })
 }
 

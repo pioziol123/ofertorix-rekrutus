@@ -8,22 +8,15 @@
 export {
   defineJob,
   type AnyJobDefinition,
-  failureQueueOf,
   type JobDefinition,
-  type KeyMode,
-  type KeyRule,
 } from './definition.ts'
-export { sendJob, type SendResult } from './send.ts'
+export { sendJob } from './send.ts'
 export {
-  QueueConfigurationError,
-  queueConfigurationPath,
   readQueueConfiguration,
-  validateQueueConfiguration,
   type QueueConfiguration,
-  type QueueSettings,
 } from './configuration.ts'
 export { onQueueError, startQueues, stopQueues } from './connection.ts'
-export { prepareQueues, QueuePreparationError } from './prepare.ts'
+export { prepareQueues } from './prepare.ts'
 export {
   openJobSource,
   type FailureReason,

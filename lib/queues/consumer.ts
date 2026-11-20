@@ -30,6 +30,7 @@ export type FailureReason = {
     | 'taken-over'
     | 'unconfirmed'
     | 'shutdown'
+    // ASSUMPTION(oferty-pracy-2ba.1/ASM-4): a process that exits by itself.
     | 'exited'
   message: string
 }

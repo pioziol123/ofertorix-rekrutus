@@ -1,7 +1,5 @@
 import { PgBoss } from 'pg-boss'
 
-export const smokeQueue = 'system-smoke'
-
 export function createBoss(migrate = false): PgBoss {
   const connectionString = process.env.DATABASE_URL
   if (!connectionString) throw new Error('DATABASE_URL is required')

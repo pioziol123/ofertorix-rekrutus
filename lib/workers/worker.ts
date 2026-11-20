@@ -115,11 +115,23 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
         (error: Error) =>
           fatal(`the liveness record cannot be written: ${error.message}`),
       )
+  // The loop writes the record itself, so a loop that hangs stops renewing
+  // it and the container restarts the worker (B1-D13). Every wait in the
+  // loop is bounded, so an idle or full loop still writes it on time.
+  let livenessWritten = Date.now()
   await writeLiveness()
-  const liveness = setInterval(
-    () => void writeLiveness(),
-    workerTimings.livenessIntervalMs,
-  )
+  const renewLiveness = async () => {
+    if (Date.now() - livenessWritten < workerTimings.livenessIntervalMs) return
+    livenessWritten = Date.now()
+    await writeLiveness()
+  }
+  const pause = () =>
+    Promise.race([
+      sleep(workerTimings.idlePollMs),
+      new Promise<void>((resolve) => {
+        wake = resolve
+      }),
+    ])
 
   const dispatch = async (job: TakenJob, member: PoolProcess) => {
     const registration = registry.get(job.definition)
@@ -170,11 +182,10 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
 
   const loop = async () => {
     while (!stopping) {
+      await renewLiveness()
       const free = processes.find((member) => !reserved.has(member))
       if (!free) {
-        await new Promise<void>((resolve) => {
-          wake = resolve
-        })
+        await pause()
         continue
       }
       if (free.exited) {
@@ -187,20 +198,12 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
       } catch (error) {
         fatal(`the queue reported an error: ${(error as Error).message}`)
       }
-      if (stopping) {
-        // Taken while stopping: give it back for another attempt.
-        if (job) await settle(() => source.fail(job, shutdownReason))
-        break
-      }
       if (!job) {
-        await Promise.race([
-          sleep(workerTimings.idlePollMs),
-          new Promise<void>((resolve) => {
-            wake = resolve
-          }),
-        ])
+        await pause()
         continue
       }
+      // A job taken just as the stop signal came is carried out like the
+      // others: the loop ends after it, and the stop waits for it (B1-R13).
       reserved.add(free)
       const pending = dispatch(job, free).finally(() => {
         reserved.delete(free)
@@ -225,7 +228,6 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
         for (const run of running.values()) run.end(shutdownReason)
       await Promise.all([...dispatches])
       for (const member of processes) member.end()
-      clearInterval(liveness)
       await stopQueues()
     },
   }

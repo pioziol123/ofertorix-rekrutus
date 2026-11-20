@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
@@ -417,18 +418,8 @@ integration('worker library: a killed worker (B1-AC10, B1-AC11)', () => {
     )
     const second = scenario.startWorker()
     await waitForReady(second)
-    // The queue's supervision fails the attempts whose heartbeat stopped.
-    // Any instance supervises; this one checks every second, so the bound
-    // tested is the heartbeat, not the default 60 s supervision interval.
-    const { PgBoss } = await import('pg-boss')
-    const supervisor = new PgBoss({
-      connectionString: process.env.DATABASE_URL,
-      schema: scenario.queueSchema,
-      superviseIntervalSeconds: 1,
-      monitorIntervalSeconds: 1,
-    })
-    supervisor.on('error', () => {})
-    await supervisor.start()
+    // Only the system's own processes supervise: the second worker's queue
+    // client fails the attempts whose heartbeat stopped.
     try {
       await waitFor(
         async () => {
@@ -439,6 +430,7 @@ integration('worker library: a killed worker (B1-AC10, B1-AC11)', () => {
         'the lost job to be retried and completed',
       )
       expect(Date.now() - killed).toBeLessThan(90_000)
+      // No later than the job heartbeat (30 s) plus the supervision passes.
       const events = await scenario.events('lost')
       expect(events.map((event) => event.kind)).toEqual([
         'start',
@@ -460,7 +452,7 @@ integration('worker library: a killed worker (B1-AC10, B1-AC11)', () => {
         ms: 600_000,
       })
     } finally {
-      await supervisor.stop({ graceful: false })
+      second.child.kill('SIGKILL')
     }
   }, 150_000)
 })
@@ -508,6 +500,43 @@ integration('worker library: stopping (B1-AC13)', () => {
     expect(await scenario.events('after')).toEqual([])
   }, 60_000)
 })
+
+integration(
+  'worker library: a job taken as the stop signal arrives (B1-AC13)',
+  () => {
+    let scenario: Scenario
+
+    beforeAll(async () => {
+      scenario = await createScenario('wk_race')
+    }, 60_000)
+
+    afterAll(async () => {
+      await scenario?.drop()
+    }, 30_000)
+
+    it('carries out a job the queue handed over after the signal, instead of failing it', async () => {
+      // The job source holds each taken job for 3 s before handing it over.
+      const worker = scenario.startWorker({ TEST_DELAY_NEXT_MS: '3000' })
+      await waitForReady(worker)
+      await scenario.send('wt-single', { id: 'raced', action: 'ok', ms: 500 })
+      await waitFor(
+        async () => (await scenario.job('raced'))?.state === 'active',
+        10_000,
+        'the job to be taken',
+      )
+      worker.child.kill('SIGTERM')
+      expect(await worker.exited).toBe(0)
+      expect(await scenario.job('raced')).toMatchObject({
+        state: 'completed',
+        retry_count: 0,
+      })
+      expect(
+        (await scenario.events('raced')).map((event) => event.kind),
+      ).toEqual(['start', 'end'])
+      expect(await scenario.failureCopy('raced')).toBeUndefined()
+    }, 30_000)
+  },
+)
 
 integration('worker library: exclusivity with two workers (B1-AC05)', () => {
   let scenario: Scenario
@@ -572,6 +601,31 @@ integration('worker library: fatal errors (B1-AC03, B1-AC14)', () => {
   afterAll(async () => {
     await scenario?.drop()
   }, 30_000)
+
+  it('stops renewing the liveness record when the worker loop hangs, so the health check fails (B1-AC14)', async () => {
+    const worker = scenario.startWorker({ TEST_HANG_NEXT: '1' })
+    await waitForReady(worker)
+    const seen = async () =>
+      +(
+        await scenario.pool.query(
+          "SELECT last_seen FROM service_heartbeats WHERE service = 'worker'",
+        )
+      ).rows[0].last_seen
+    const first = await seen()
+    await sleep(31_000)
+    expect(await seen()).toBe(first)
+    const health = await run(
+      process.execPath,
+      ['--import', 'tsx', 'scripts/worker-health.ts'],
+      { env: { ...process.env, DATABASE_URL: scenario.url } },
+    ).then(
+      () => 0,
+      (error: { code: number }) => error.code,
+    )
+    expect(health).toBe(1)
+    worker.child.kill('SIGKILL')
+    await worker.exited
+  }, 60_000)
 
   it('ends with a message naming the module when its registration fails, in the worker and in a pool process', async () => {
     for (const where of ['always', 'pool']) {
