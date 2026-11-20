@@ -1,7 +1,8 @@
 import { currentScheduleDay } from './schedule-settings.ts'
 import type { ConnectorProvider } from './infrastructure/adapters/connector-registry.ts'
 import { sourceConnectors } from './infrastructure/adapters/source-connectors.ts'
-import { sendSyncJob } from './infrastructure/worker/sync-queue.ts'
+import { sendJob } from '../../lib/queues/index.ts'
+import { syncJob } from './infrastructure/worker/sync-queue.ts'
 import {
   admitRun,
   type AdmittedRun,
@@ -30,17 +31,16 @@ export type SyncRequest = {
 
 /**
  * Requests a sync of the source's scope, the one way every entry point
- * starts a sync (F2-10): the CLI, the application and the schedule. The run
- * and its job in the sync queue are created together (F2-07): the scope's
- * pending run is pointed at instead of creating another one, and a run in
- * progress is never interrupted. The scope's settings are fixed now (F2-08).
+ * starts a sync (B5-R01): the CLI, the application and the schedule. When
+ * the source has a queued or running run, of any scope, it creates nothing
+ * and returns that run as existing (B5-R02). Otherwise it creates a queued
+ * run and requests its job in the queue library in one transaction. The
+ * scope's settings are fixed now (F2-08).
  *
  * Returns the run id at once, without waiting for the run, and whether an
- * existing run was pointed at. Throws `UnknownConnectorError` for an
- * unknown source, `SourceDisabledError` for a disabled one and the
- * connector's error for an invalid scope request, creating nothing. Throws
- * `AdmittedRunFinishedError` when the run it met finished meanwhile; the
- * caller may request again.
+ * existing run was returned. Throws `UnknownConnectorError` for an unknown
+ * source, `SourceDisabledError` for a disabled one and the connector's
+ * error for invalid sync settings, creating nothing.
  */
 export async function requestSync(
   request: SyncRequest,
@@ -59,6 +59,6 @@ export async function requestSync(
     parameters,
     trigger: request.trigger ?? 'manual',
     scheduleDay: currentScheduleDay(options.now),
-    sendJob: (runId) => sendSyncJob({ id: runId, source: connector.name }),
+    sendJob: (runId) => sendJob(syncJob, { runId, source: connector.name }),
   })
 }

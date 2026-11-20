@@ -16,11 +16,8 @@ import { createBoss } from '../lib/queue.ts'
 import { startWorker } from '../lib/workers/index.ts'
 
 import {
-  recoverSyncRuns,
   currentScheduleDay,
   requestScheduledSyncs,
-  useSyncQueue,
-  workSyncQueue,
 } from '../modules/sources/index.ts'
 
 import {
@@ -50,11 +47,8 @@ const fatal = () => {
 }
 boss.on('error', fatal)
 await boss.start()
-// Validate the schedule before registering the importer.
+// Validate the schedule before the daily sync request runs.
 currentScheduleDay()
-useSyncQueue(boss)
-await recoverSyncRuns()
-await workSyncQueue(boss)
 useAiQueue(boss)
 registerResultReceiver(proposalSettingsKey, proposalReceiver)
 registerResultReceiver(assessmentSettingsKey, assessmentReceiver)
@@ -69,7 +63,7 @@ async function schedule() {
   if (scheduling || stopping) return
   scheduling = true
   try {
-    await recoverSyncRuns()
+    // Until the periodic process of oferty-pracy-2ba.6 (B5-R07).
     await requestScheduledSyncs()
     await resumeProposalPreparations()
     await recoverExecutions()

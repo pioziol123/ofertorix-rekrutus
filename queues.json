@@ -1,3 +1,10 @@
 {
-  "profile-cv-text": { "attempts": 2, "timeLimitSeconds": 120 }
+  "profile-cv-text": {
+    "attempts": 2,
+    "timeLimitSeconds": 120
+  },
+  "source-sync-run": {
+    "attempts": 3,
+    "timeLimitSeconds": 3600
+  }
 }

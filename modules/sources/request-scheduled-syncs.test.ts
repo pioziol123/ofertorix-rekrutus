@@ -3,7 +3,6 @@ import { createConnectorRegistry } from './infrastructure/adapters/connector-reg
 import type { SourceConnector } from './infrastructure/adapters/connector.ts'
 import { requestScheduledSyncs } from './request-scheduled-syncs.ts'
 import { requestSync } from './request-sync.ts'
-import { AdmittedRunFinishedError } from './sync-run-state.ts'
 
 vi.mock('../../lib/db.ts', () => ({
   transaction: (work: () => Promise<unknown>) => work(),
@@ -24,9 +23,9 @@ const scheduled = (name: string): SourceConnector => ({
 })
 
 describe('schedule requests', () => {
-  it('leaves an occurrence whose request met a finishing run to the next check, and requests the other sources', async () => {
+  it('returns only the runs created now, not an unfinished run a request met (B5-R07)', async () => {
     vi.mocked(requestSync)
-      .mockRejectedValueOnce(new AdmittedRunFinishedError())
+      .mockResolvedValueOnce({ id: 'unfinished-run', existing: true })
       .mockResolvedValueOnce({ id: 'other-run', existing: false })
     const connectors = createConnectorRegistry([
       scheduled('first'),
@@ -40,7 +39,7 @@ describe('schedule requests', () => {
     ).toEqual([{ id: 'other-run', existing: false }])
   })
 
-  it('passes any other error on', async () => {
+  it('passes any error on', async () => {
     vi.mocked(requestSync).mockRejectedValueOnce(new Error('queue down'))
     await expect(
       requestScheduledSyncs({

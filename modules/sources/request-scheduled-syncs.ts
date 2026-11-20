@@ -8,7 +8,7 @@ import {
   lockScheduleOccurrence,
 } from './infrastructure/persistence/sync-runs.ts'
 import { requestSync } from './request-sync.ts'
-import { AdmittedRunFinishedError, type AdmittedRun } from './sync-run-state.ts'
+import type { AdmittedRun } from './sync-run-state.ts'
 
 /**
  * Requests the sync of every enabled scheduled source once per schedule
@@ -20,8 +20,9 @@ import { AdmittedRunFinishedError, type AdmittedRun } from './sync-run-state.ts'
  * schedule back. Runs do not expire and fetching again on the same day is
  * allowed (F2-09).
  *
- * Returns the request of each source that was requested now. A request
- * that met a run finishing at that moment is left to the next check.
+ * Each source is requested through the request of B5-R01 and B5-R02, so a
+ * source with an unfinished run, manual or scheduled, gets no second one
+ * (B5-R07). Returns the run of each source that was created now.
  */
 export async function requestScheduledSyncs(
   options: {
@@ -41,21 +42,16 @@ export async function requestScheduledSyncs(
       await lockScheduleOccurrence(name, day)
       const fingerprint = hash(connector.scopeParameters())
       if (await hasScheduledRun(fingerprint, day)) return null
-      // ASSUMPTION(oferty-pracy-0mq.16/ASM-1): a request pointed at the
-      // scope's pending manual run (F2-07) leaves no scheduled run, so a
-      // later check of the occurrence requests again; it creates a run only
-      // once that pending run has started.
+      // ASSUMPTION(oferty-pracy-0mq.16/ASM-1): a request that met the
+      // source's unfinished manual run (B5-R02) leaves no scheduled run, so
+      // a later check of the occurrence requests again; it creates a run
+      // only once that run has finished.
       return requestSync(
         { source: name, trigger: 'scheduled' },
         { connectors, now: options.now },
       )
-    }).catch((error: unknown) => {
-      // The run the request met finished meanwhile and nothing was created;
-      // the next cycle checks the occurrence again.
-      if (error instanceof AdmittedRunFinishedError) return null
-      throw error
     })
-    if (run) requested.push(run)
+    if (run && !run.existing) requested.push(run)
   }
   return requested
 }

@@ -18,12 +18,6 @@ const configuration = readQueueConfiguration()
 // with the settings their modules send their jobs with. Transitional
 // (B1-D14): each module's task moves its queue to a queue migration.
 const existingPathQueues = {
-  'source-sync': {
-    policy: 'standard',
-    heartbeatSeconds: 30,
-    retryLimit: 2,
-    expireInSeconds: 3600,
-  },
   'ai-execution': {
     retryLimit: 3,
     retryDelay: 30,

@@ -1,15 +1,12 @@
 import { parseArgs } from 'node:util'
 import { closePool } from '../lib/db.ts'
-import { createBoss } from '../lib/queue.ts'
+import { stopQueues } from '../lib/queues/index.ts'
 import {
   polishQuery,
   readSyncState,
   requestSync,
-  useSyncQueue,
   waitForSyncRun,
 } from '../modules/sources/index.ts'
-const boss = createBoss()
-boss.on('error', () => console.error('Source queue unavailable'))
 try {
   const { values } = parseArgs({
     options: {
@@ -34,8 +31,6 @@ try {
       ? { maxRequests: Number(values['max-requests']) }
       : {}),
   })
-  await boss.start()
-  useSyncQueue(boss)
   const run = await requestSync({ source: query.source, scopeRequest: query })
   console.info(JSON.stringify({ id: run.id, reused: run.existing }))
   if (values.wait) {
@@ -58,6 +53,6 @@ try {
   )
   process.exitCode = 1
 } finally {
-  await boss.stop()
+  await stopQueues()
   await closePool()
 }

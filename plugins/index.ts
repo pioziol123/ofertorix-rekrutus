@@ -18,9 +18,11 @@ import {
   type ModulePlugin,
 } from '../lib/workers/index.ts'
 import { registerProfileJobs } from './profile.ts'
+import { registerSourcesJobs } from './sources.ts'
 
 const modulePlugins: Record<string, ModulePlugin> = {
   profile: registerProfileJobs,
+  sources: registerSourcesJobs,
 }
 
 export async function runModulePlugins(

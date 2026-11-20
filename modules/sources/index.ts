@@ -4,22 +4,13 @@
  * Entry points (worker, CLI scripts, API routes) and other modules use only
  * these.
  */
-export { SyncRunLostError, type SyncRunWork } from './execute-sync-run.ts'
 export { UnknownConnectorError } from './infrastructure/adapters/connector-registry.ts'
-export {
-  syncQueue,
-  syncQueueOptions,
-  useSyncQueue,
-  workSyncQueue,
-  type SyncJobLookup,
-} from './infrastructure/worker/sync-queue.ts'
 export {
   readSourceCatalog,
   readSyncState,
   type SourceSyncState,
   type SyncRunRecord,
 } from './read-sync-state.ts'
-export { recoverSyncRuns } from './recover-sync-runs.ts'
 export { requestScheduledSyncs } from './request-scheduled-syncs.ts'
 export {
   requestSync,
@@ -27,7 +18,6 @@ export {
   type SyncRequest,
 } from './request-sync.ts'
 export {
-  AdmittedRunFinishedError,
   type AdmittedRun,
   type SyncRun,
   type SyncRunStatus,
@@ -64,3 +54,16 @@ export { currentScheduleDay } from './schedule-settings.ts'
 
 // Composition: the server builds the connector registry at start.
 export { sourceConnectors } from './infrastructure/adapters/source-connectors.ts'
+
+// Composition: the job of carrying out a sync run, with the handlers the
+// Sources module plugin registers for the worker, and the request the
+// migration step makes for the runs the former queue held (B5-R08).
+export {
+  endFailedSyncRun,
+  executeSyncRun,
+  requestUnfinishedSyncRuns,
+} from './execute-sync-run.ts'
+export {
+  syncJob,
+  type SyncJobData,
+} from './infrastructure/worker/sync-queue.ts'

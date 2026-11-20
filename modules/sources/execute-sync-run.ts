@@ -1,7 +1,7 @@
 import { transaction } from '../../lib/db.ts'
+import { sendJob } from '../../lib/queues/index.ts'
 import { finishedRunStatus } from './domain/run-status.ts'
 import {
-  ConnectorAbortedError,
   ConnectorError,
   type ConnectorDiagnostics,
   type ConnectorResult,
@@ -12,81 +12,128 @@ import {
   type ConnectorProvider,
 } from './infrastructure/adapters/connector-registry.ts'
 import { sourceConnectors } from './infrastructure/adapters/source-connectors.ts'
+import {
+  syncJob,
+  type SyncJobData,
+} from './infrastructure/worker/sync-queue.ts'
 import { markAbsentAdsUnavailable } from './mark-absent-ads-unavailable.ts'
 import { saveBatch } from './save-batch.ts'
 import {
-  findSyncJob,
-  type SyncJobLookup,
-} from './infrastructure/worker/sync-queue.ts'
-import { startInSourceTurn } from './start-in-source-turn.ts'
-import {
   finishRun,
   holdRun,
-  type RunAttempt,
+  listUnfinishedRuns,
+  readRun,
+  startRun,
   type SyncRun,
 } from './sync-run-state.ts'
 
-/** The work of one queue attempt on a run. */
-export type SyncRunWork = RunAttempt & {
-  runId: string
-  /** Aborted when the attempt must stop: lost claim, expiry, shutdown. */
-  signal: AbortSignal
-}
-
 /**
- * The attempt no longer holds the run: a later attempt took it over or the
- * run was finished, e.g. by recovery. The attempt stops without writing.
+ * The run is no longer running: it was finished meanwhile. The attempt
+ * stops without writing.
  */
 export class SyncRunLostError extends Error {
   override name = 'SyncRunLostError'
   constructor(runId: string) {
-    super(`Sync run ${runId} is no longer held by this attempt`)
+    super(`Sync run ${runId} is no longer running`)
   }
 }
 
 // Stored when an error's message may hold secrets or raw source responses.
 const genericFailure = 'Import interrupted by a storage or processing error'
 
+/** What a run whose last attempt failed is finished with (B5-R05). */
+export const interruptedMessage = 'Worker interrupted; request a new import'
+
 /**
- * Executes a sync run of any source (F2-01): takes the run over for the
- * attempt, fetches the scope saved at admission through the source's
- * connector, saves each batch and finishes the run with the status A5-R03
- * gives. Nothing here depends on a concrete source.
+ * The job handler of a sync run (B5-R03, B5-R04), for every source (F2-01):
+ * moves the run from queued, or from running left by an ended or lost
+ * attempt, to running in one conditional write, fetches the scope saved at
+ * admission through the source's connector, saves each batch and finishes
+ * the run with the status A5-R03 gives. A run taken over keeps the ads saved
+ * before. Exclusivity by source lets no other attempt of the source run
+ * meanwhile (B5-D02), so taking over cannot overlap the previous attempt.
  *
- * Returns without changes when the attempt cannot take the run: a
- * redelivered attempt or a finished run. Throws, without writing further,
- * when the signal is aborted or the attempt lost the run, so the queue
- * decides whether to retry; a retry continues the same run (F2-13).
- *
- * The one way a run is started: the sync queue's handler calls it for every
- * job. Internal to the module.
+ * A finished run or an unknown id changes nothing. Each batch save and the
+ * finish happen only while the run is still running; a run finished
+ * meanwhile saves nothing more and the job ends. Any other error fails the
+ * attempt, and the next attempt continues the same run.
  */
 export async function executeSyncRun(
-  work: SyncRunWork,
+  { runId }: Pick<SyncJobData, 'runId'>,
+  /** Tests replace the application's connectors. */
   connectors: ConnectorProvider = sourceConnectors,
-  /** Where the jobs of runs ahead are looked up; tests use their own queue. */
-  findJob: SyncJobLookup = findSyncJob,
 ): Promise<void> {
-  // ASSUMPTION(oferty-pracy-0mq.16/ASM-3): the run starts, or a later
-  // attempt takes it over, only in its source's turn.
-  const run = await startInSourceTurn(work, findJob)
+  const run = await startRun(runId)
   if (!run) return
-  await executeStartedRun(run, work, connectors)
+  try {
+    await executeStartedRun(run, connectors)
+  } catch (error) {
+    if (error instanceof SyncRunLostError) return
+    throw error
+  }
+}
+
+/**
+ * The failure handler of a sync run, called after the last attempt failed,
+ * whatever ended it, also when the worker died in it (B5-R05, B1-D10):
+ * finishes a queued or running run as partial when it saved at least one
+ * ad and as failed otherwise, with `interruptedMessage`. A finished run is
+ * not changed, so a repeat has no further effect.
+ */
+export async function endFailedSyncRun({
+  runId,
+}: Pick<SyncJobData, 'runId'>): Promise<void> {
+  const run = await readRun(runId)
+  if (!run || (run.status !== 'queued' && run.status !== 'running')) return
+  // Nothing else carries the run out once its job failed finally, so its
+  // count of saved ads no longer changes.
+  await finishRun(
+    run.id,
+    {
+      status: finishedRunStatus({
+        sourceComplete: false,
+        saveFailed: false,
+        uniqueAds: run.uniqueAds,
+      }),
+      error: interruptedMessage,
+    },
+    ['queued', 'running'],
+  )
+}
+
+/**
+ * Requests one sync job in the queue library for every queued or running
+ * run (B5-R08): a queued one is carried out, a running one taken over. The
+ * migration step calls it once, while the queue of the former path still
+ * exists. Running runs first, then the oldest first, each in its own
+ * transaction, so the queue hands the jobs of one source out in that order
+ * and a run left pending next to a running run of its scope waits for it.
+ * Returns how many.
+ */
+export async function requestUnfinishedSyncRuns(): Promise<number> {
+  const runs = await listUnfinishedRuns()
+  const ordered = [
+    ...runs.filter((run) => run.status === 'running'),
+    ...runs.filter((run) => run.status !== 'running'),
+  ]
+  for (const run of ordered)
+    await transaction(() =>
+      sendJob(syncJob, { runId: run.id, source: run.source }),
+    )
+  return ordered.length
 }
 
 /** Executes a run its attempt has just started or taken over. */
 async function executeStartedRun(
   run: SyncRun,
-  work: Pick<SyncRunWork, 'attempt' | 'signal'>,
   connectors: ConnectorProvider,
 ): Promise<void> {
-  const held = { runId: run.id, attempt: work.attempt }
   let connector: SourceConnector
   try {
     connector = connectors.get(run.source)
   } catch (error) {
     if (!(error instanceof UnknownConnectorError)) throw error
-    await finish(held, run, null, {
+    await finish(run, null, {
       sourceComplete: false,
       error: error.message,
     })
@@ -100,7 +147,7 @@ async function executeStartedRun(
       async (ads) => {
         try {
           await transaction(async () => {
-            await requireHeld(held)
+            await requireRunning(run.id)
             await saveBatch(
               { id: run.id, scopeId: run.scopeId, source: run.source },
               ads,
@@ -111,25 +158,22 @@ async function executeStartedRun(
           throw error
         }
       },
-      work.signal,
+      // The fetch is not aborted from here: the worker ends the process
+      // carrying out the attempt instead (B1-D09).
+      new AbortController().signal,
     )
   } catch (error) {
-    if (
-      error instanceof SyncRunLostError ||
-      error instanceof ConnectorAbortedError ||
-      work.signal.aborted
-    )
-      throw error
+    if (error instanceof SyncRunLostError) throw error
     // Only connector errors are safe to store; never credentials or raw
     // responses (A5-R04).
-    await finish(held, run, connector, {
+    await finish(run, connector, {
       sourceComplete: false,
       saveFailed,
       error: error instanceof ConnectorError ? error.message : genericFailure,
     })
     return
   }
-  await finish(held, run, connector, {
+  await finish(run, connector, {
     sourceComplete: result.complete,
     saveFailed,
     error: result.complete ? genericFailure : result.reason,
@@ -137,21 +181,18 @@ async function executeStartedRun(
   })
 }
 
-type HeldRun = { runId: string; attempt: number }
-
-async function requireHeld(held: HeldRun): Promise<SyncRun> {
-  const run = await holdRun(held.runId, held.attempt)
-  if (!run) throw new SyncRunLostError(held.runId)
+async function requireRunning(runId: string): Promise<SyncRun> {
+  const run = await holdRun(runId)
+  if (!run) throw new SyncRunLostError(runId)
   return run
 }
 
 /**
- * Finishes the run while the attempt holds it, with the status A5-R03
+ * Finishes the run while it is still running, with the status A5-R03
  * gives. A complete run marks unavailability in the same transaction, so
  * both commit together or not at all.
  */
 async function finish(
-  held: HeldRun,
   run: SyncRun,
   connector: SourceConnector | null,
   outcome: {
@@ -163,7 +204,7 @@ async function finish(
   },
 ): Promise<void> {
   await transaction(async () => {
-    const current = await requireHeld(held)
+    const current = await requireRunning(run.id)
     const status = finishedRunStatus({
       sourceComplete: outcome.sourceComplete,
       saveFailed: outcome.saveFailed ?? false,
@@ -177,15 +218,14 @@ async function finish(
         infersUnavailabilityFromAbsence:
           connector.infersUnavailabilityFromAbsence,
       })
-    const finished = await finishRun(
-      held.runId,
+    await finishRun(
+      run.id,
       {
         status,
         error: status === 'complete' ? null : outcome.error,
         diagnostics: outcome.diagnostics,
       },
-      held.attempt,
+      ['running'],
     )
-    if (!finished) throw new SyncRunLostError(held.runId)
   })
 }
