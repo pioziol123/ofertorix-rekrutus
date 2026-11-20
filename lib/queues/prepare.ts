@@ -103,6 +103,8 @@ export async function applyQueueConfiguration(
   })
 }
 
+// ASSUMPTION(oferty-pracy-2ba.1/ASM-5): only these queues take file entries;
+// a failure queue or a queue of the existing path does not.
 /** The queues a queue migration created: those with their failure queue. */
 async function queueMigrationQueues(boss: PgBoss): Promise<string[]> {
   return (await boss.getQueues())

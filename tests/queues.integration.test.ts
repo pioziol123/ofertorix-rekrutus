@@ -202,6 +202,7 @@ integration('queue library on an isolated queue schema', () => {
     await applyQueueConfiguration(readQueueConfiguration(testConfiguration))
   }, 30_000)
 
+  // ASSUMPTION(oferty-pracy-2ba.1/ASM-5)
   it('stops the migration step with an error naming the queue when an entry names no queue a queue migration created (B1-AC02)', async () => {
     await boss.createQueue('wt-existing-path')
     for (const name of ['wt-unknown', 'wt-plain.failed', 'wt-existing-path'])
