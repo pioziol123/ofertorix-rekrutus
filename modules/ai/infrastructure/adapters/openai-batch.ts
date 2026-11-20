@@ -600,7 +600,7 @@ export function openAiBatch(
       if (state === null) {
         // Only the run that took the queued items sends them; a group in
         // sending belongs to that run, and a later job of an item ends it
-        // is lost.
+        // when that run is lost.
         if (!context.claimed || context.state !== null) return { kind: 'wait' }
         const sent = await send(
           api,
