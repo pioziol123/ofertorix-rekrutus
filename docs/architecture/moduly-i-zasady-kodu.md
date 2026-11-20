@@ -42,8 +42,6 @@ Some solutions work correctly and still leave a cost that only shows up in later
 4. **A fixed list with two owners.** The same closed set of values defined in two places, e.g. in a module and in an instruction for an AI model. A change in one place without the other gives silent inconsistencies. Every shared fact has one owner, and the other places read from it; this is the same rule that [a module applies to its data](#dependency-rules).
 5. **A stored copy instead of a reference.** A value copied from elsewhere where an ID read at the time of use would be enough. The copy goes out of date and needs synchronisation. The justification is a need to keep the state from a given moment, e.g. the ad content that a stale match assessment refers to.
 6. **A rule carried over without its reason.** A restriction copied from another place, module or old code, whose reason does not hold in the new place. It looks agreed, although nobody decided it for this case. We carry a rule over together with its reason, which we have checked in the new place.
-7. **A migration that depends on a module's code.** A database migration that imports a module's code, e.g. its definitions or constants, can change or break when the module later changes, although the migration has already run. When in doubt, a migration writes the values it needs in itself. This is a good practice, not a rule: a migration may call a module's operation when the change needs the module's rules, e.g. carrying unfinished work over to a new queue at deployment.
-
 Accepting each of these costs, like accepting the effects of concurrent changes, is a design decision with an explicit justification.
 
 ## Code structure rules
