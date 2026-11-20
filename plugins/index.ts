@@ -1,14 +1,16 @@
 /**
  * The plugins index: runs every module plugin once against the handler
- * registry. Only the worker, the processes of its pool and the migration
- * step run it; the web application and the command-line scripts send jobs
+ * registry. Only the worker and the processes of its pool run it; the web
+ * application, the migration step and the command-line scripts send jobs
  * without loading handling code (B1-R15).
- * ASSUMPTION(oferty-pracy-2ba.1/ASM-1): the migration step is not one of the
- * command-line scripts of B1-R15.
  *
  * A module that handles queue jobs adds its plugin file to this directory,
  * registering its job definitions with their job handlers and failure
- * handlers, and lists it below under the module's name.
+ * handlers, and lists it below under the module's name. Each job
+ * definition's queue is created by a queue migration in the migrations
+ * directory, written once, that calls the queue library's `createQueue`
+ * with the queue name and key mode written in it and imports no module
+ * (B1-D05); an automated test keeps the two key modes equal (B1-D15).
  */
 import {
   runPlugins,

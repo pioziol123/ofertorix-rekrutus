@@ -30,7 +30,7 @@ const policies: Record<KeyMode | 'none', QueuePolicy> = {
   deduplication: 'exclusive',
 }
 
-/** A definition or file entry the existing queues cannot take. */
+/** A file entry or job definition the existing queues do not agree with. */
 export class QueuePreparationError extends Error {
   constructor(message: string) {
     super(message)
@@ -38,69 +38,106 @@ export class QueuePreparationError extends Error {
   }
 }
 
-/**
- * The migration step's part (B1-R03, B1-D05): creates the failure queue and
- * the queue of every job definition, updates their changeable settings from
- * the file, and stops with an error naming the queue when a file entry names
- * no definition's queue or an existing queue's key mode differs. Repeating
- * it creates nothing new.
- */
-export async function prepareQueues(
-  definitions: readonly AnyJobDefinition[],
-  configuration: QueueConfiguration,
-): Promise<void> {
-  const queues = new Set(definitions.map((definition) => definition.queue))
-  for (const name of Object.keys(configuration))
-    if (!queues.has(name))
-      throw new QueuePreparationError(
-        `Queue configuration names queue "${name}", which no job definition has`,
-      )
+/** Runs `use` with a started pg-boss client that installs its schema. */
+async function withClient<T>(use: (boss: PgBoss) => Promise<T>): Promise<T> {
   const boss = createQueueClient({ migrate: true })
   try {
     await boss.start()
-    for (const definition of definitions) await checkKeyMode(boss, definition)
-    for (const definition of definitions)
-      await prepareQueue(
-        boss,
-        definition,
-        configuration[definition.queue] ?? {},
-      )
+    return await use(boss)
   } finally {
     await boss.stop({ graceful: false })
   }
 }
 
-async function checkKeyMode(boss: PgBoss, definition: AnyJobDefinition) {
-  const existing = await boss.getQueue(definition.queue)
-  const policy = policies[keyModeOf(definition)]
-  if (existing && existing.policy !== policy)
-    throw new QueuePreparationError(
-      `Queue "${definition.queue}" exists with policy "${existing.policy}", but its job definition asks for key mode "${keyModeOf(definition)}" (policy "${policy}"); a key mode cannot change on an existing queue, so give the definition a new queue`,
-    )
+/**
+ * What a queue migration calls (B1-R03, B1-D05): creates the failure queue,
+ * then the queue with that failure queue as its dead letter queue and the
+ * key mode the migration names, both with the mechanism's defaults and the
+ * job heartbeat. The migration writes the name and key mode in itself and
+ * imports no module. A queue that already exists is left as it is.
+ */
+export async function createQueue(
+  name: string,
+  keyMode: KeyMode | 'none',
+): Promise<void> {
+  await withClient(async (boss) => {
+    const failureQueue = failureQueueOf(name)
+    if (!(await boss.getQueue(failureQueue)))
+      await boss.createQueue(failureQueue, {
+        ...defaults,
+        heartbeatSeconds: jobHeartbeatSeconds,
+      })
+    if (!(await boss.getQueue(name)))
+      await boss.createQueue(name, {
+        ...defaults,
+        heartbeatSeconds: jobHeartbeatSeconds,
+        deadLetter: failureQueue,
+        policy: policies[keyMode],
+      })
+  })
 }
 
-async function prepareQueue(
-  boss: PgBoss,
-  definition: AnyJobDefinition,
-  settings: QueueSettings,
-) {
-  const failureQueue = failureQueueOf(definition.queue)
-  const failureOptions = { ...defaults, heartbeatSeconds: jobHeartbeatSeconds }
-  if (await boss.getQueue(failureQueue))
-    await boss.updateQueue(failureQueue, failureOptions)
-  else await boss.createQueue(failureQueue, failureOptions)
-  const options = {
-    ...queueOptions(settings),
-    heartbeatSeconds: jobHeartbeatSeconds,
-    deadLetter: failureQueue,
-  }
-  if (await boss.getQueue(definition.queue))
-    await boss.updateQueue(definition.queue, options)
-  else
-    await boss.createQueue(definition.queue, {
-      ...options,
-      policy: policies[keyModeOf(definition)],
-    })
+/**
+ * The migration step's part after the migrations (B1-R03, B1-D05): updates
+ * the changeable settings of every queue a queue migration created from
+ * its file entry, a queue without an entry to the mechanism's defaults. It
+ * stops with an error naming the queue when an entry names no such queue.
+ * It needs no job definition.
+ */
+export async function applyQueueConfiguration(
+  configuration: QueueConfiguration,
+): Promise<void> {
+  await withClient(async (boss) => {
+    const queues = await queueMigrationQueues(boss)
+    for (const name of Object.keys(configuration))
+      if (!queues.includes(name))
+        throw new QueuePreparationError(
+          `Queue configuration names queue "${name}", which no queue migration has created`,
+        )
+    for (const name of queues)
+      await boss.updateQueue(name, {
+        ...queueOptions(configuration[name] ?? {}),
+        heartbeatSeconds: jobHeartbeatSeconds,
+        deadLetter: failureQueueOf(name),
+      })
+  })
+}
+
+/** The queues a queue migration created: those with their failure queue. */
+async function queueMigrationQueues(boss: PgBoss): Promise<string[]> {
+  return (await boss.getQueues())
+    .filter((queue) => queue.deadLetter === failureQueueOf(queue.name))
+    .map((queue) => queue.name)
+}
+
+/**
+ * The automated check of B1-R18 (B1-D15): the queue of every definition
+ * exists with the key mode the definition names. Throws naming each queue
+ * that does not agree.
+ */
+export async function checkKeyModes(
+  definitions: readonly AnyJobDefinition[],
+): Promise<void> {
+  const problems = await withClient(async (boss) => {
+    const found: string[] = []
+    for (const definition of definitions) {
+      const queue = await boss.getQueue(definition.queue)
+      const mode = keyModeOf(definition)
+      if (!queue)
+        found.push(
+          `queue "${definition.queue}" of a job definition is created by no queue migration`,
+        )
+      else if (queue.policy !== policies[mode])
+        found.push(
+          `queue "${definition.queue}" was created with policy "${queue.policy}", but its job definition names key mode "${mode}" (policy "${policies[mode]}")`,
+        )
+    }
+    return found
+  })
+  if (problems.length > 0)
+    throw new QueuePreparationError(
+      `Job definitions disagree with their queues: ${problems.join('; ')}`,
+    )
 }
 
 /** The pg-boss options of the file's settings, defaults for the rest. */

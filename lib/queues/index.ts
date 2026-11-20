@@ -1,8 +1,9 @@
 /**
  * The queue library: the only code that talks to pg-boss for the job
  * definitions of the modules. Modules define jobs and send them in their
- * operation's transaction; the migration step prepares the queues; the
- * worker takes jobs through a job source. Design: docs/specs/2ba-praca-w-tle/
+ * operation's transaction; queue migrations create the queues and the
+ * migration step applies the queue configuration; the worker takes jobs
+ * through a job source. Design: docs/specs/2ba-praca-w-tle/
  * solution-design.md#b1.
  */
 export {
@@ -16,7 +17,11 @@ export {
   type QueueConfiguration,
 } from './configuration.ts'
 export { onQueueError, startQueues, stopQueues } from './connection.ts'
-export { prepareQueues } from './prepare.ts'
+export {
+  applyQueueConfiguration,
+  checkKeyModes,
+  createQueue,
+} from './prepare.ts'
 export {
   openJobSource,
   type FailureReason,

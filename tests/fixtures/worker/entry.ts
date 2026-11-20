@@ -1,7 +1,8 @@
 /**
- * A worker entry for tests: the worker library with the test plugins index.
- * `TEST_ORPHAN=1` adds a queue without a registered handler to the job
- * source; `TEST_NEVER_CONFIRM=1` makes the queue never confirm the attempts
+ * A worker entry for tests: the worker library with the test plugins index,
+ * taking every queue of the queue schema as in production (B1-D16). Unless
+ * one of these is set, the job source is the queue library's own:
+ * `TEST_NEVER_CONFIRM=1` makes the queue never confirm the attempts
  * of jobs whose id starts with `unconfirmed`; `TEST_DELAY_NEXT_MS` holds each
  * taken job that long before handing it to the worker; `TEST_HANG_NEXT=1`
  * makes taking a job never end, as a stuck fetch would.
@@ -9,20 +10,12 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { closePool } from '../../../lib/db.ts'
-import { openJobSource, type JobSource } from '../../../lib/queues/index.ts'
+import type { JobSource } from '../../../lib/queues/index.ts'
 import { startWorker } from '../../../lib/workers/index.ts'
-import { orphanJob } from './definitions.ts'
 
-// ASSUMPTION(oferty-pracy-2ba.1/ASM-2): a queue without a handler reaches
-// the worker only through a job source given more queues.
 const worker = await startWorker({
   plugins: fileURLToPath(new URL('./plugins.ts', import.meta.url)),
-  jobSource: (definitions) => {
-    const source: JobSource = openJobSource(
-      process.env.TEST_ORPHAN === '1'
-        ? [...definitions, orphanJob]
-        : definitions,
-    )
+  jobSource: (source: JobSource): JobSource => {
     const delay = Number(process.env.TEST_DELAY_NEXT_MS ?? 0)
     return {
       ...source,

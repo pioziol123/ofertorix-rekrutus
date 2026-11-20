@@ -6,7 +6,6 @@ import {
   readQueueConfiguration,
   stopQueues,
   type FailureReason,
-  type AnyJobDefinition,
   type JobSource,
   type TakenJob,
 } from '../queues/index.ts'
@@ -33,13 +32,24 @@ export const workerTimings = {
 
 export const defaultPoolSize = 2
 
+/**
+ * The queues of the modules not yet moved to the libraries, carried out by
+ * the existing worker path (B1-R17); the worker leaves them out (B1-D16).
+ * Transitional (B1-D14): each module's task removes its queue from here.
+ */
+export const existingPathQueues = [
+  'source-sync',
+  'profile-parse',
+  'ai-execution',
+] as const
+
 export type WorkerOptions = {
   /** Path or URL of the plugins index that registers every module. */
   plugins: string
   /** `WORKER_POOL_SIZE` when not given, 2 when that is not set. */
   poolSize?: number
-  /** The queue side; the queue library's job source by default. */
-  jobSource?: (definitions: readonly AnyJobDefinition[]) => JobSource
+  /** Wraps the queue library's job source; tests use it to stub the queue. */
+  jobSource?: (source: JobSource) => JobSource
 }
 
 export type Worker = {
@@ -86,9 +96,12 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
   onQueueError((error) =>
     fatal(`the queue reported an error: ${error.message}`),
   )
-  // ASSUMPTION(oferty-pracy-2ba.1/ASM-2): the worker takes the queues of the
-  // registered job definitions, not those named in the queue configuration.
-  const source = (options.jobSource ?? openJobSource)(registry.definitions())
+  // Every queue in the database except those of the existing path, so a
+  // job without a handler is taken, cancelled and logged (B1-D16, B1-R12).
+  const opened = await openJobSource({ excluding: existingPathQueues }).catch(
+    (error: Error) => fatal(`the queues could not be read: ${error.message}`),
+  )
+  const source = options.jobSource?.(opened) ?? opened
 
   const startProcess = () =>
     PoolProcess.start(options.plugins).catch((error: unknown) =>
@@ -139,9 +152,7 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
 
   const dispatch = async (job: TakenJob, member: PoolProcess) => {
     const registration = registry.get(job.definition)
-    // ASSUMPTION(oferty-pracy-2ba.1/ASM-2): the worker takes only the queues
-    // of registered definitions, so a job without a handler comes only from a
-    // job source given more queues; it is cancelled all the same (B1-R12).
+    // A job without a registered handler is cancelled, not retried (B1-R12).
     if (!registration) {
       console.error(
         `No handler is registered for job "${job.definition}"; job ${job.id} is cancelled`,

@@ -210,13 +210,11 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
       expect(library, existing).toBeLessThan(entry.indexOf(existing))
   })
 
-  // ASSUMPTION(oferty-pracy-2ba.1/ASM-1): the migration step is not one of
-  // the command-line scripts that must not run the module plugins.
-  it('runs the module plugins only in the worker, its pool processes and the migration step (B1-AC15)', () => {
+  it('runs the module plugins only in the worker and its pool processes (B1-AC15)', () => {
     const runners = application.filter((file) =>
       importsOf(file).includes('plugins/index.ts'),
     )
-    expect(runners).toEqual(['scripts/init-queue.ts'])
+    expect(runners).toEqual([])
     // The worker entry passes the plugins index by path to the worker
     // library, which runs it and passes it to its pool processes.
     expect(readFileSync(join(root, 'worker/index.ts'), 'utf8')).toContain(
@@ -229,5 +227,19 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
       ),
     )
     expect(web).toEqual([])
+  })
+
+  it('runs no module code in the migration step: neither the database migrations nor the queue step import a module or the plugins (B1-AC02, B1-D05)', () => {
+    const step = [...files('migrations'), 'scripts/init-queue.ts']
+    const reached = new Set<string>()
+    const visit = (file: string) => {
+      if (reached.has(file)) return
+      reached.add(file)
+      importsOf(file).forEach(visit)
+    }
+    step.forEach(visit)
+    expect(
+      [...reached].filter((file) => /^(modules|plugins)\//.test(file)),
+    ).toEqual([])
   })
 })

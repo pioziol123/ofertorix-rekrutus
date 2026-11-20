@@ -6,8 +6,11 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { Pool } from 'pg'
 import { PgBoss } from 'pg-boss'
-import { prepareQueues, readQueueConfiguration } from '../lib/queues/index.ts'
-import { allDefinitions } from './fixtures/worker/definitions.ts'
+import { runner } from 'node-pg-migrate'
+import {
+  applyQueueConfiguration,
+  readQueueConfiguration,
+} from '../lib/queues/index.ts'
 
 export const testConfiguration = fileURLToPath(
   new URL('./fixtures/worker/queues.json', import.meta.url),
@@ -15,6 +18,32 @@ export const testConfiguration = fileURLToPath(
 const entry = fileURLToPath(
   new URL('./fixtures/worker/entry.ts', import.meta.url),
 )
+
+/** The test queue migrations, run by the migration tool as in production. */
+export const testQueueMigrations = fileURLToPath(
+  new URL('./fixtures/worker/queue-migrations', import.meta.url),
+)
+
+/**
+ * Runs the test queue migrations with the migration tool, recording them in
+ * `migrationsSchema`, then applies the test configuration as the migration
+ * step does; in the queue schema `PG_BOSS_SCHEMA` names.
+ */
+export async function prepareTestQueues(
+  migrationsSchema: string,
+  configuration = testConfiguration,
+) {
+  await runner({
+    databaseUrl: process.env.DATABASE_URL!,
+    dir: testQueueMigrations,
+    direction: 'up',
+    migrationsTable: 'queue_migrations',
+    migrationsSchema,
+    count: Infinity,
+    log: () => {},
+  })
+  await applyQueueConfiguration(readQueueConfiguration(configuration))
+}
 
 export type WorkerEvent = {
   job_id: string | null
@@ -68,10 +97,7 @@ export async function createScenario(prefix: string) {
   const previous = process.env.PG_BOSS_SCHEMA
   process.env.PG_BOSS_SCHEMA = queueSchema
   try {
-    await prepareQueues(
-      allDefinitions,
-      readQueueConfiguration(testConfiguration),
-    )
+    await prepareTestQueues(schema)
   } finally {
     if (previous === undefined) delete process.env.PG_BOSS_SCHEMA
     else process.env.PG_BOSS_SCHEMA = previous

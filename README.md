@@ -79,7 +79,7 @@ docker compose down
 
 Health: `/api/health/live` checks that HTTP works, `/api/health/ready` checks that the database answers and the newest migration is applied. The worker's health checks its liveness record, renewed every 10 s by the worker's loop.
 
-Queue settings (attempts, retry delay, time limit, retention) are in [`queues.json`](queues.json), one entry per queue; an absent setting takes pg-boss's default, and `pnpm migrate` applies a change. `WORKER_POOL_SIZE` sets how many jobs of the queue library the worker carries out at once (default 2).
+A queue of the queue library is created by a migration in `migrations/` written once for it, which calls `createQueue` from `lib/queues` with the queue name and key mode written in it and imports no module. Queue settings (attempts, retry delay, time limit, retention) are in [`queues.json`](queues.json), one entry per existing queue; an absent setting takes pg-boss's default, and `pnpm migrate` applies a change. `WORKER_POOL_SIZE` sets how many jobs of the queue library the worker carries out at once (default 2).
 
 Formatting: `docker compose run --rm tools pnpm format`. Design documentation and agent tool files are excluded from the application's formatting/linting.
 

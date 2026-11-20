@@ -1,8 +1,8 @@
 /**
  * A job definition: a module's description of one kind of queue job. It
  * names the job's queue, types the data the job carries and gives the key
- * (B1-R02, B1-D03). The job definitions are the only owner of the list of
- * queues.
+ * (B1-R02, B1-D03). Its queue is created by a queue migration that names
+ * the same key mode; an automated check keeps the two equal (B1-D15).
  */
 
 /**

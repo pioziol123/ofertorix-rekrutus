@@ -87,6 +87,10 @@ services:
       JOBSPY_RUNNER_PATH: /app/scripts/jobspy-runner.py
       WORKER_POOL_SIZE: ${WORKER_POOL_SIZE:-2}
     command: pnpm worker
+    # The worker waits up to 30 s for running jobs on a stop signal, then
+    # fails the rest and stops the queue (B1-R13); Docker kills it after 10 s
+    # by default.
+    stop_grace_period: 45s
     depends_on:
       migrate:
         condition: service_completed_successfully

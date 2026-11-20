@@ -1,23 +1,43 @@
+/**
+ * The migration step's queue part, run after the database migrations, which
+ * include the queue migrations that create each queue of the queue library
+ * (B1-R03, B1-D05). It runs no module's code: the queues of the existing
+ * path have their names and settings written here, and the queue
+ * configuration is applied to the queues the queue migrations created.
+ */
 import { createBoss } from '../lib/queue.ts'
-import { prepareQueues, readQueueConfiguration } from '../lib/queues/index.ts'
-import { HandlerRegistry } from '../lib/workers/index.ts'
-import { runModulePlugins } from '../plugins/index.ts'
-import { aiExecutionJobOptions, aiExecutionQueue } from '../modules/ai/index.ts'
-
-import { syncQueue, syncQueueOptions } from '../modules/sources/index.ts'
-
-import { parseQueue, parseQueueOptions } from '../modules/profile/index.ts'
+import {
+  applyQueueConfiguration,
+  readQueueConfiguration,
+} from '../lib/queues/index.ts'
 
 // An invalid queue configuration stops the step before any change (B1-R04).
 const configuration = readQueueConfiguration()
 
-// The queues of the modules not yet moved to the queue library (B1-R17).
+// The queues of the modules not yet moved to the queue library (B1-R17),
+// with the settings their modules send their jobs with. Transitional
+// (B1-D14): each module's task moves its queue to a queue migration.
+const existingPathQueues = {
+  'source-sync': {
+    policy: 'standard',
+    heartbeatSeconds: 30,
+    retryLimit: 2,
+    expireInSeconds: 3600,
+  },
+  'profile-parse': { retryLimit: 0, expireInSeconds: 120 },
+  'ai-execution': {
+    retryLimit: 3,
+    retryDelay: 30,
+    retryBackoff: true,
+    expireInSeconds: 300,
+  },
+} as const
+
 const boss = createBoss(true)
 try {
   await boss.start()
-  await boss.createQueue(syncQueue, syncQueueOptions)
-  await boss.createQueue(parseQueue, parseQueueOptions)
-  await boss.createQueue(aiExecutionQueue, aiExecutionJobOptions)
+  for (const [name, options] of Object.entries(existingPathQueues))
+    await boss.createQueue(name, options)
   // The system check job is gone (B1-R16); its queue goes with its jobs.
   if (await boss.getQueue('system-smoke'))
     await boss.deleteQueue('system-smoke')
@@ -25,10 +45,5 @@ try {
   await boss.stop()
 }
 
-// The queues of the job definitions the module plugins register (B1-R03).
-// ASSUMPTION(oferty-pracy-2ba.1/ASM-1): the migration step runs the module
-// plugins; it is not one of the command-line scripts of B1-R15.
-const registry = new HandlerRegistry()
-await runModulePlugins(registry)
-await prepareQueues(registry.definitions(), configuration)
+await applyQueueConfiguration(configuration)
 console.info('Queue schema ready')

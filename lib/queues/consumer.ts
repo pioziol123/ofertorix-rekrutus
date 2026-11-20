@@ -1,10 +1,6 @@
 import type { PgBoss } from 'pg-boss'
 import { queueClient } from './connection.ts'
-import {
-  failureQueueOf,
-  failureQueueSuffix,
-  type AnyJobDefinition,
-} from './definition.ts'
+import { failureQueueSuffix } from './definition.ts'
 
 /** One attempt of a job, as the worker carries it out. */
 export type TakenJob = {
@@ -37,7 +33,7 @@ export type FailureReason = {
 
 /** What the worker needs from the queue to carry out jobs. */
 export type JobSource = {
-  /** The next job of the definitions' queues, each time from the next queue. */
+  /** The next job of any of its queues, each time from the next queue. */
   next(): Promise<TakenJob | null>
   /** Sends the job heartbeat; false when the job no longer belongs to the attempt. */
   confirm(job: TakenJob): Promise<boolean>
@@ -47,20 +43,26 @@ export type JobSource = {
   cancel(job: TakenJob): Promise<void>
 }
 
+/** pg-boss's own queues, such as the one its scheduler sends through. */
+const internalPrefix = '__pgboss__'
+
 /**
- * A job source over the queue and failure queue of every definition, taken
- * in turn so that no queue starves the others (B1-R07).
+ * A job source over every queue in the queue schema, failure queues
+ * included, except pg-boss's own queues and the queues it is told to leave
+ * out, taken in turn so
+ * that no queue starves the others (B1-R07, B1-D16). The list is read once,
+ * here; reading it checks nothing. A job's definition name is its queue's
+ * name, for a failure copy the name of the queue it failed in.
  */
-export function openJobSource(
-  definitions: readonly AnyJobDefinition[],
+export async function openJobSource(
+  options: { excluding?: readonly string[] } = {},
   client: () => Promise<PgBoss> = queueClient,
-): JobSource {
-  // ASSUMPTION(oferty-pracy-2ba.1/ASM-2): the queues come from the job
-  // definitions (B1-R07, B1-D01), not from the queue configuration.
-  const queues = definitions.flatMap((definition) => [
-    definition.queue,
-    failureQueueOf(definition.queue),
-  ])
+): Promise<JobSource> {
+  const excluded = new Set(options.excluding ?? [])
+  const queues = (await (await client()).getQueues())
+    .map((queue) => queue.name)
+    .filter((name) => !excluded.has(name) && !name.startsWith(internalPrefix))
+    .sort()
   let cursor = 0
   const attempt = (job: TakenJob) => ({
     id: job.id,

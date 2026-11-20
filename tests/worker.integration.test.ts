@@ -51,8 +51,10 @@ integration('worker library: taking and carrying out jobs', () => {
 
   beforeAll(async () => {
     scenario = await createScenario('wk_main')
+    // A queue of the existing path, which the worker leaves to it (B1-D16).
+    await scenario.boss.createQueue('source-sync')
     // No pool size set: the worker uses 2 (B1-AC07).
-    worker = scenario.startWorker({ TEST_ORPHAN: '1' })
+    worker = scenario.startWorker()
     await waitForReady(worker)
   }, 60_000)
 
@@ -205,9 +207,9 @@ integration('worker library: taking and carrying out jobs', () => {
       )
   }, 40_000)
 
-  // ASSUMPTION(oferty-pracy-2ba.1/ASM-2)
-  it('cancels a job without a registered handler when taken, without retry, and logs its name (B1-AC12)', async () => {
+  it('takes a job of an existing queue without a registered handler from the list of queues it read at start, cancels it without retry and logs its name (B1-AC12)', async () => {
     await scenario.send('wt-orphan', { id: 'orphan', action: 'ok' })
+    await scenario.send('source-sync', { id: 'existing-path', action: 'ok' })
     const job = await waitFor(
       async () => {
         const row = await scenario.job('orphan')
@@ -222,6 +224,8 @@ integration('worker library: taking and carrying out jobs', () => {
     )
     expect(await scenario.events('orphan')).toEqual([])
     expect(await scenario.failureCopy('orphan')).toBeUndefined()
+    // The existing path's queue is left to the existing path (B1-R17).
+    expect((await scenario.job('existing-path'))?.state).toBe('created')
   }, 20_000)
 
   it('renews the liveness record every 10 s, and the container health check fails when it is older than 30 s (B1-AC14)', async () => {

@@ -9,8 +9,9 @@ import { PgBoss } from 'pg-boss'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { closePool, db, setPool, transaction } from '../lib/db.ts'
 import {
+  applyQueueConfiguration,
+  checkKeyModes,
   defineJob,
-  prepareQueues,
   readQueueConfiguration,
   sendJob,
   stopQueues,
@@ -19,9 +20,10 @@ import {
 import {
   allDefinitions,
   deduplicatedJob,
+  exclusiveJob,
   plainJob,
 } from './fixtures/worker/definitions.ts'
-import { testConfiguration } from './worker.fixtures.ts'
+import { prepareTestQueues, testConfiguration } from './worker.fixtures.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -45,10 +47,7 @@ integration('queue library on an isolated queue schema', () => {
       }),
     )
     vi.stubEnv('PG_BOSS_SCHEMA', queueSchema)
-    await prepareQueues(
-      allDefinitions,
-      readQueueConfiguration(testConfiguration),
-    )
+    await prepareTestQueues(schema)
     boss = new PgBoss({
       connectionString: process.env.DATABASE_URL,
       schema: queueSchema,
@@ -138,7 +137,7 @@ integration('queue library on an isolated queue schema', () => {
     ])
   })
 
-  it('creates each queue with its failure queue, its definition key mode and the mechanism defaults or the given settings (B1-AC02)', async () => {
+  it('creates each queue with its failure queue, the key mode its migration names and the mechanism defaults or the given settings (B1-AC02)', async () => {
     const queue = async (name: string) => (await boss.getQueue(name))!
     expect(await queue('wt-second')).toMatchObject({
       policy: 'standard',
@@ -163,7 +162,14 @@ integration('queue library on an isolated queue schema', () => {
         policy: 'standard',
         heartbeatSeconds: 30,
       })
-  })
+    // Running the migrations and the step again creates nothing new.
+    const count = async () =>
+      (await admin.query(`SELECT count(*)::int AS n FROM ${queueSchema}.queue`))
+        .rows[0].n
+    const before = await count()
+    await prepareTestQueues(schema)
+    expect(await count()).toBe(before)
+  }, 30_000)
 
   it('changes a queue when a changeable setting changes, and returns it to the default when the setting is removed (B1-AC02)', async () => {
     const changed: QueueConfiguration = {
@@ -176,7 +182,7 @@ integration('queue library on an isolated queue schema', () => {
         finishedRetentionSeconds: 0,
       },
     }
-    await prepareQueues(allDefinitions, changed)
+    await applyQueueConfiguration(changed)
     expect(await boss.getQueue('wt-second')).toMatchObject({
       retryLimit: 4,
       retryDelay: 7,
@@ -186,35 +192,49 @@ integration('queue library on an isolated queue schema', () => {
       deleteAfterSeconds: 0,
       deadLetter: 'wt-second.failed',
     })
-    await prepareQueues(allDefinitions, {})
+    await applyQueueConfiguration({})
     expect(await boss.getQueue('wt-second')).toMatchObject({
       retryLimit: 2,
       retryDelay: 0,
       retryBackoff: false,
       expireInSeconds: 900,
     })
-    await prepareQueues(
-      allDefinitions,
-      readQueueConfiguration(testConfiguration),
-    )
+    await applyQueueConfiguration(readQueueConfiguration(testConfiguration))
   }, 30_000)
 
-  it('stops with an error naming the queue when a key mode changes or an entry names no definition’s queue (B1-AC02)', async () => {
-    const changedMode = allDefinitions.map((definition) =>
-      definition.queue === 'wt-plain'
-        ? defineJob({
-            queue: 'wt-plain',
-            key: { mode: 'exclusivity', value: 'one' },
-          })
-        : definition,
+  it('stops the migration step with an error naming the queue when an entry names no queue a queue migration created (B1-AC02)', async () => {
+    await boss.createQueue('wt-existing-path')
+    for (const name of ['wt-unknown', 'wt-plain.failed', 'wt-existing-path'])
+      await expect(
+        applyQueueConfiguration({ [name]: { attempts: 1 } }),
+      ).rejects.toThrow(
+        `Queue configuration names queue "${name}", which no queue migration has created`,
+      )
+    // Nothing was changed.
+    expect((await boss.getQueue('wt-plain'))!.retryLimit).toBe(1)
+  }, 30_000)
+
+  it('fails the key mode check naming the queue for a definition whose key mode differs from its queue migration or whose queue no migration creates, and passes when all agree (B1-AC16)', async () => {
+    await checkKeyModes(allDefinitions)
+    const changedMode = defineJob({
+      queue: 'wt-plain',
+      key: { mode: 'exclusivity', value: 'one' },
+    })
+    await expect(checkKeyModes([exclusiveJob, changedMode])).rejects.toThrow(
+      /queue "wt-plain" was created with policy "standard", but its job definition names key mode "exclusivity"/,
     )
-    await expect(prepareQueues(changedMode, {})).rejects.toThrow(
-      /Queue "wt-plain" exists with policy "standard".*key mode "exclusivity"/,
+    const dropped = defineJob({
+      queue: 'wt-exclusive',
+      key: { mode: 'deduplication', field: 'id' },
+    })
+    await expect(checkKeyModes([dropped])).rejects.toThrow(
+      /queue "wt-exclusive" was created with policy "singleton"/,
     )
     await expect(
-      prepareQueues(allDefinitions, { 'wt-unknown': { attempts: 1 } }),
-    ).rejects.toThrow(/queue "wt-unknown", which no job definition has/)
-    expect((await boss.getQueue('wt-plain'))!.policy).toBe('standard')
+      checkKeyModes([defineJob({ queue: 'wt-unmigrated' })]),
+    ).rejects.toThrow(
+      'queue "wt-unmigrated" of a job definition is created by no queue migration',
+    )
   }, 30_000)
 
   it('stops the migration step on an invalid configuration, naming the queue and the field (B1-AC03)', async () => {
