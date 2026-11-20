@@ -13,11 +13,12 @@ import {
 import { emptyProfile } from '../modules/profile/view.ts'
 import { confirmProfile, saveDraft } from '../modules/profile/index.ts'
 import {
+  advanceSentBatches,
+  cleanUpEndedBatches,
+  fundWaitingExecutions,
   readExecutionHistory,
-  recoverExecutions,
   registerResultReceiver,
   runExecution,
-  useAiQueue,
 } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
@@ -35,13 +36,9 @@ import { readMatching } from '../modules/matching/read-assessments.ts'
 import { enqueueMatchingGroup } from '../modules/matching/request-assessment-group.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readBatchArchive } from '../modules/matching/read-assessment-archive.ts'
+import { aiQueue } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
-import {
-  migrate,
-  pricing,
-  recordingQueue,
-  SimulatedOpenAi,
-} from './matching-ai.fixtures.ts'
+import { migrate, pricing, SimulatedOpenAi } from './matching-ai.fixtures.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
@@ -67,7 +64,7 @@ integration(
       revision: string,
       profileVersion: string,
       openAi: SimulatedOpenAi
-    const queue = recordingQueue()
+    const queue = aiQueue()
     beforeAll(async () => {
       admin = new Pool({ connectionString: process.env.DATABASE_URL })
       await admin.query(`CREATE SCHEMA ${schema}`)
@@ -77,7 +74,7 @@ integration(
       })
       await migrate(pool)
       setPool(pool)
-      useAiQueue(queue.boss)
+      await queue.start()
       registerResultReceiver(assessmentSettingsKey, assessmentReceiver)
     })
     beforeEach(async () => {
@@ -85,7 +82,7 @@ integration(
       vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
       usePricing('matching', pricing, ['single', 'batch'])
       openAi = new SimulatedOpenAi()
-      queue.reset()
+      await queue.reset()
       await pool.query(
         'TRUNCATE matching_requests,matching_rating_heads,matching_rating_revisions,matching_batch_artifacts,ai_executions,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
       )
@@ -129,6 +126,7 @@ integration(
     })
     afterAll(async () => {
       vi.unstubAllEnvs()
+      await queue.stop()
       await closePool()
       if (admin) {
         await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
@@ -231,8 +229,11 @@ integration(
       expect(await revisions(first)).toBe(1)
       expect(await revisions(second)).toBe(0)
       expect((await row(second)).result).toBeNull()
+      // A pass of the periodic process removes the files of the ended batch.
+      await cleanUpEndedBatches()
       expect(openAi.batch.removed).toEqual(['file_input', 'file_output'])
-      await recoverExecutions()
+      await advanceSentBatches()
+      await cleanUpEndedBatches()
       await queue.work()
       expect(openAi.batch.uploads).toBe(1)
       expect(openAi.batch.removed).toHaveLength(2)
@@ -249,7 +250,7 @@ integration(
       ])
     })
 
-    it('polls a batch still in progress in the next recovery cycle without sending it again', async () => {
+    it('B6-AC03: a sent batch still in progress is completed by a later pass of the periodic process, without sending it again', async () => {
       openAi.batch.status = 'in_progress'
       const group = await enqueue([ad, await anotherAd()])
       await queue.work()
@@ -257,7 +258,7 @@ integration(
         expect((await latest(item.id)).state).toBe('running')
       expect((await readMatching(ad)).history[0]!.state).toBe('running')
       openAi.batch.status = 'completed'
-      await recoverExecutions()
+      await advanceSentBatches()
       await queue.work()
       for (const item of group.items)
         expect((await latest(item.id)).state).toBe('completed')
@@ -281,7 +282,7 @@ integration(
           'Ocena nie została wykonana. Poprzednie wyniki pozostały bez zmian. [AI: http]',
         )
       }
-      await recoverExecutions()
+      await advanceSentBatches()
       await queue.work()
       expect(openAi.batch.creates).toBe(0)
     })
@@ -293,7 +294,8 @@ integration(
         throw new BatchError('network')
       }
       await queue.work()
-      await recoverExecutions()
+      await advanceSentBatches()
+      await cleanUpEndedBatches()
       await queue.work()
       expect(openAi.batch.creates).toBe(1)
       for (const item of group.items) {
@@ -345,12 +347,13 @@ integration(
         })
       expect(openAi.batch.removed).toEqual([])
       openAi.batch.results = original
-      await recoverExecutions()
+      await advanceSentBatches()
       await queue.work()
       for (const item of group.items)
         expect((await latest(item.id)).state).toBe('completed')
       expect(openAi.batch.uploads).toBe(1)
       expect(openAi.batch.creates).toBe(1)
+      await cleanUpEndedBatches()
       expect(openAi.batch.removed).toEqual(['file_input', 'file_output'])
     })
 
@@ -363,7 +366,7 @@ integration(
         'UPDATE source_ads SET current_revision_id=NULL WHERE id=$1',
         [other],
       )
-      // The blocked item's delivery fails; the queue would retry its job.
+      // The blocked item's delivery fails; the queue retries its job later.
       await expect(queue.work()).rejects.toThrow('Nie znaleziono oferty.')
       expect(await latest(free.id)).toMatchObject({ state: 'completed' })
       expect(await latest(blocked.id)).toMatchObject({
@@ -375,7 +378,10 @@ integration(
         [other],
       )
       const execution = (await latest(blocked.id)).id
-      await Promise.all([runExecution(execution), runExecution(execution)])
+      await Promise.all([
+        runExecution({ executionId: execution }),
+        runExecution({ executionId: execution }),
+      ])
       expect(await latest(blocked.id)).toMatchObject({
         state: 'completed',
         cost: { actual: '0.000120' },
@@ -492,7 +498,7 @@ integration(
       expect(again).toMatchObject({ groupId: commandId, reused: false })
       expect(await count('matching_requests')).toBe(2)
       expect(await count('ai_executions')).toBe(0)
-      expect(queue.send).not.toHaveBeenCalled()
+      expect(await queue.executionJobs()).toEqual([])
     })
 
     it('does not recognise a repeated command whose every offer reused an assessment in progress: once that assessment has ended, the repeat requests new paid AI work (FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {
@@ -628,14 +634,14 @@ integration(
       )
       const group = await enqueue([ad, await anotherAd()])
       expect(group.state).toBe('waiting_budget')
-      expect(queue.executionJobs()).toEqual([])
+      expect(await queue.executionJobs()).toEqual([])
       for (const item of group.items)
         expect(await latest(item.id)).toMatchObject({
           state: 'waiting_budget',
           cost: { reserved: '0.000000' },
         })
       await pool.query('UPDATE ai_budget_months SET limit_pln=1')
-      await recoverExecutions()
+      await fundWaitingExecutions()
       for (const item of group.items)
         expect(await latest(item.id)).toMatchObject({
           state: 'queued',
@@ -645,11 +651,11 @@ integration(
       expect(openAi.batch.uploads).toBe(1)
     })
 
-    it('leaves a group another live run is sending alone, without sending it again (A15-AC03)', async () => {
+    it('leaves a group being sent to the job sending it: a pass of the periodic process neither sends nor ends it (B6-R09)', async () => {
       const group = await enqueue([ad, await anotherAd()])
-      // Another run took the group, holds its lease and is sending it.
+      // A job took the group and is sending it.
       await pool.query(
-        "UPDATE ai_executions SET state='running',adapter_state=$1,lease_owner=$3,lease_expires_at=now()+interval '2 minutes' WHERE group_id=$2",
+        "UPDATE ai_executions SET state='running',adapter_state=$1 WHERE group_id=$2",
         [
           {
             stage: 'sending',
@@ -661,11 +667,9 @@ integration(
             cleaned: false,
           },
           group.groupId,
-          randomUUID(),
         ],
       )
-      await recoverExecutions()
-      await queue.work()
+      await advanceSentBatches()
       expect(openAi.batch.uploads + openAi.batch.creates).toBe(0)
       for (const item of group.items)
         expect(await latest(item.id)).toMatchObject({
@@ -674,7 +678,7 @@ integration(
         })
     })
 
-    it('A15-AC02: ends a group whose sending run was lost as uncertain and interrupted, keeps the whole reservation and sends nothing more', async () => {
+    it('B6-AC05 a batch being sent: a later job of an item ends every running item as uncertain with the cause unknown, keeps the whole reservation, delivers that end and sends nothing more', async () => {
       const group = await enqueue([ad, await anotherAd()])
       const reserved = (await latest(group.items[0]!.id)).cost.reserved
       let release!: () => void, entered!: () => void
@@ -686,33 +690,37 @@ integration(
         await gate
         return upload(lines)
       }
-      // The run that took the group stops in the upload, and its lease
-      // lapses.
-      const sending = runExecution(queue.executionJobs()[0]!)
+      // The job that took the group stops in the upload.
+      const [first, second] = await queue.executionJobs()
+      const sending = runExecution({ executionId: first! })
       await uploading
-      await pool.query(
-        "UPDATE ai_executions SET lease_expires_at=now()-interval '1 second' WHERE group_id=$1",
-        [group.groupId],
-      )
-      await Promise.all([recoverExecutions(), recoverExecutions()])
+      // A later job of an item finds the group still being sent.
+      await runExecution({ executionId: second! })
+      // The jobs that deliver the end of every item.
       await queue.work()
-      for (const item of group.items)
+      for (const item of group.items) {
         expect(await latest(item.id)).toMatchObject({
           state: 'uncertain',
-          cause: 'interrupted',
+          cause: 'unknown',
           cost: { reserved, actual: null },
         })
-      // The lost run returns: it saves nothing and creates no batch.
+        expect((await readMatching(item.offerId)).history[0]).toMatchObject({
+          state: 'unknown',
+          cost: { actual: null },
+          error: expect.stringContaining('Koszt pozostaje zarezerwowany'),
+        })
+      }
+      // The stopped job returns: it saves nothing and creates no batch.
       release()
       await sending
-      await recoverExecutions()
+      await advanceSentBatches()
       await queue.work()
       expect(openAi.batch.uploads).toBe(1)
       expect(openAi.batch.creates).toBe(0)
       for (const item of group.items) {
         expect(await latest(item.id)).toMatchObject({
           state: 'uncertain',
-          cause: 'interrupted',
+          cause: 'unknown',
         })
         expect(await readExecutionHistory(item.id)).toHaveLength(1)
       }
@@ -726,45 +734,29 @@ integration(
       ).toEqual([{ file: null }])
     })
 
-    it('A15-AC06: a sent group whose run was lost while checking the batch is not interrupted, and the next run completes it', async () => {
+    it('B6-AC05 a sent batch is not ended, B6-AC03 a sent batch is completed by later passes: a later job of an item leaves a sent group running, and later passes of the periodic process complete it', async () => {
       openAi.batch.status = 'in_progress'
       const group = await enqueue([ad, await anotherAd()])
       await queue.work()
       expect(openAi.batch.creates).toBe(1)
-      // A later run stops while it checks the batch, and every lease lapsed.
-      let release!: () => void, entered!: () => void
-      const gate = new Promise<void>((resolve) => (release = resolve))
-      const checking = new Promise<void>((resolve) => (entered = resolve))
-      const retrieve = openAi.batch.retrieve.bind(openAi.batch)
-      openAi.batch.retrieve = async () => {
-        entered()
-        await gate
-        return retrieve()
-      }
-      const lost = runExecution(queue.executionJobs()[0]!)
-      await checking
-      await pool.query(
-        "UPDATE ai_executions SET lease_expires_at=now()-interval '1 second' WHERE group_id=$1",
-        [group.groupId],
-      )
-      await recoverExecutions()
+      // A later job of an item, as after an attempt that ended.
+      const [job] = await queue.executionJobs()
+      await runExecution({ executionId: job! })
       for (const item of group.items)
         expect((await latest(item.id)).state).toBe('running')
-      // The next run completes the batch.
-      openAi.batch.retrieve = retrieve
+      // A pass while the batch is still in progress changes nothing.
+      await advanceSentBatches()
+      for (const item of group.items)
+        expect((await latest(item.id)).state).toBe('running')
+      // A later pass completes it, and the items' jobs deliver it.
       openAi.batch.status = 'completed'
-      queue.reset()
-      await recoverExecutions()
+      await advanceSentBatches()
       await queue.work()
       for (const item of group.items)
         expect(await latest(item.id)).toMatchObject({
           state: 'completed',
           cost: { actual: '0.000120' },
         })
-      release()
-      await lost
-      for (const item of group.items)
-        expect((await latest(item.id)).state).toBe('completed')
       expect(openAi.batch.uploads).toBe(1)
       expect(openAi.batch.creates).toBe(1)
     })
@@ -775,7 +767,7 @@ integration(
         enqueue(Array.from({ length: 101 }, () => randomUUID())),
       ).rejects.toThrow()
       expect(await count('matching_requests')).toBe(0)
-      expect(queue.send).not.toHaveBeenCalled()
+      expect(await queue.executionJobs()).toEqual([])
     })
 
     it('refuses a group without the Batch price list with the old group message, before any change (0mq.21 ASM-3)', async () => {
@@ -784,7 +776,7 @@ integration(
         'Skonfiguruj model i cennik Batch przed oceną ofert.',
       )
       expect(await count('matching_requests')).toBe(0)
-      expect(queue.send).not.toHaveBeenCalled()
+      expect(await queue.executionJobs()).toEqual([])
     })
 
     it('rolls back a group too large for one batch file without reserving or queueing', async () => {
@@ -801,7 +793,7 @@ integration(
       expect(await count('matching_requests')).toBe(0)
       expect(await count('ai_executions')).toBe(0)
       expect(await count('ai_attempts')).toBe(0)
-      expect(queue.send).not.toHaveBeenCalled()
+      expect(await queue.executionJobs()).toEqual([])
     })
   },
 )

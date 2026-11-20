@@ -3,11 +3,7 @@ import { createRequire } from 'node:module'
 import { Pool } from 'pg'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
-import {
-  readBudget,
-  readExecutionHistory,
-  useAiQueue,
-} from '../modules/ai/index.ts'
+import { readBudget, readExecutionHistory } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import {
@@ -15,7 +11,7 @@ import {
   requestResearch,
 } from '../modules/companies/index.ts'
 import { pricing, researchMigrations } from './company-research.fixtures.ts'
-import { recordingQueue } from './matching-ai.fixtures.ts'
+import { aiQueue } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
 
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
@@ -48,6 +44,7 @@ async function migrate(pool: Pool, names: string[]) {
 integration('migration of the research history to AI executions', () => {
   const schema = `research_ai_migration_${randomUUID().replaceAll('-', '')}`
   let admin: Pool, pool: Pool
+  const queue = aiQueue()
   const month = budgetMonth()
   const companies = [randomUUID(), randomUUID(), randomUUID()]
   const report = { identity: 'Firma', claims: [] }
@@ -199,6 +196,7 @@ integration('migration of the research history to AI executions', () => {
   })
   afterAll(async () => {
     vi.unstubAllEnvs()
+    await queue.stop()
     await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
@@ -316,7 +314,12 @@ integration('migration of the research history to AI executions', () => {
   it('lets a company whose research was in progress at the deploy request it again, and reuses the published report of another', async () => {
     vi.stubEnv('OPENAI_API_KEY', 'mock-key-never-send')
     usePricing('research', pricing, 'agent')
-    useAiQueue(recordingQueue().boss)
+    // The later AI migrations run before current AI code does.
+    await migrate(pool, [
+      '1770000000020_ai_execution_lease',
+      '1770000000026_ai_without_local_slot_and_lease',
+    ])
+    await queue.start()
     const again = await requestResearch(companies[1]!, {
       commandId: randomUUID(),
       refresh: false,

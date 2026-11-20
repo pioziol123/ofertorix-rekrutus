@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
-import { PgBoss } from 'pg-boss'
 import {
   afterAll,
   afterEach,
@@ -13,28 +12,30 @@ import {
   vi,
 } from 'vitest'
 import { closePool, db, setPool, transaction } from '../../lib/db.ts'
+import { readQueueConfiguration } from '../../lib/queues/index.ts'
+import { aiQueue } from '../../tests/ai-queue.fixtures.ts'
 import {
+  advanceSentBatches,
   AiRequestError,
-  aiExecutionJobOptions,
-  aiExecutionQueue,
+  cleanUpEndedBatches,
+  endFailedExecution,
   executionCauses,
+  fundWaitingExecutions,
+  paidExecutionJob,
   readBudget,
   readExecution,
   readExecutionArchive,
   readExecutionHistory,
-  recoverExecutions,
   registerResultReceiver,
   requestExecution,
   requestExecutionGroup,
   runExecution,
-  useAiQueue,
   type ExecutionFailureDelivery,
   type ExecutionRequest,
   type ExecutionResultDelivery,
   type ReceiverDecision,
 } from './index.ts'
 import { budgetMonth } from './domain/cost.ts'
-import { executionLease } from './domain/execution-lease.ts'
 import { admitExecutions } from './admit-executions.ts'
 import { executionSettings } from './execution-settings.ts'
 import {
@@ -97,10 +98,13 @@ const ceiling = '0.008000'
 integration('AI execution coordination with a real database and queue', () => {
   const suffix = randomUUID().replaceAll('-', '')
   const schema = `ai_exec_${suffix}`
-  const queueSchema = `ai_exec_queue_${suffix}`
+  const queue = aiQueue()
+  // The retries of a job after its first attempt, from the queue
+  // configuration (B6-R03, B6-R04).
+  const jobRetries =
+    readQueueConfiguration()[paidExecutionJob.queue]!.attempts! - 1
   let admin: Pool
   let pool: Pool
-  let boss: PgBoss
 
   /** What the simulated provider answers next; one entry per call. */
   let answers: Array<() => Promise<ModelResult>>
@@ -141,36 +145,23 @@ integration('AI execution coordination with a real database and queue', () => {
     ...overrides,
   })
 
+  /** The executions of the AI jobs waiting to be carried out. */
   const jobs = async () =>
-    (
-      await admin.query(
-        `SELECT data->>'executionId' AS id FROM ${queueSchema}.job WHERE name=$1 AND state='created' ORDER BY created_on`,
-        [aiExecutionQueue],
-      )
-    ).rows.map((r) => r.id as string)
+    (await queue.jobs())
+      .filter((job) => job.state === 'created')
+      .map((job) => job.executionId)
 
   /**
-   * Takes the next job from the queue and handles it like the worker: an
-   * error fails the job, so the queue retries it.
+   * Carries out every waiting AI job as the worker would; a failing job
+   * waits for its retry and the first failure is raised.
    */
-  async function work() {
-    const [job] = await boss.fetch<{ executionId: string }>(aiExecutionQueue)
-    if (!job) throw new Error('Expected a queued AI job')
-    try {
-      await runExecution(job.data.executionId)
-    } catch (error) {
-      await boss.fail(aiExecutionQueue, job.id, { message: String(error) })
-      throw error
-    }
-    await boss.complete(aiExecutionQueue, job.id)
-    return job.data.executionId
-  }
+  const work = () => queue.work()
 
   const jobState = async (executionId: string) =>
     (
       await admin.query(
-        `SELECT state, retry_count FROM ${queueSchema}.job WHERE name=$1 AND data->>'executionId'=$2`,
-        [aiExecutionQueue, executionId],
+        `SELECT state, retry_count FROM ${queue.queueSchema}.job WHERE data->>'executionId'=$1`,
+        [executionId],
       )
     ).rows
 
@@ -199,6 +190,7 @@ integration('AI execution coordination with a real database and queue', () => {
       '1770000000012_matching_batch_archives',
       '1770000000018_matching_ai_executions',
       '1770000000020_ai_execution_lease',
+      '1770000000026_ai_without_local_slot_and_lease',
     ])
       createRequire(import.meta.url)(`../../migrations/${migration}.cjs`).up({
         sql: (statement: string) => sql.push(statement),
@@ -209,14 +201,7 @@ integration('AI execution coordination with a real database and queue', () => {
       'CREATE TABLE client_publications(operation_id uuid PRIMARY KEY, content jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT clock_timestamp())',
     )
     setPool(pool)
-    boss = new PgBoss({
-      connectionString: process.env.DATABASE_URL,
-      schema: queueSchema,
-    })
-    boss.on('error', () => {})
-    await boss.start()
-    await boss.createQueue(aiExecutionQueue, aiExecutionJobOptions)
-    useAiQueue(boss)
+    await queue.start()
     // Like the OpenAI adapter, it keeps what it sends and receives when
     // the archive was asked for.
     const single: NonNullable<ProviderAdapter['modes']['single']> = (
@@ -248,8 +233,6 @@ integration('AI execution coordination with a real database and queue', () => {
       endOf(observation) {
         if (observation.kind === 'outcome')
           return { state: 'failed', cause: observation.outcome }
-        if (observation.kind === 'lost_lease')
-          return { state: 'uncertain', cause: 'interrupted' }
         const error = observation.error
         if (!(error instanceof ModelError))
           return { state: 'failed', cause: 'unknown' }
@@ -287,19 +270,16 @@ integration('AI execution coordination with a real database and queue', () => {
     await pool.query(
       'TRUNCATE client_publications, ai_attempts, ai_executions, ai_budget_months CASCADE',
     )
-    await admin.query(`DELETE FROM ${queueSchema}.job WHERE name=$1`, [
-      aiExecutionQueue,
-    ])
+    await queue.reset()
   })
 
   afterEach(() => vi.unstubAllEnvs())
 
   afterAll(async () => {
-    await boss?.stop()
+    await queue.stop()
     await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
-      await admin.query(`DROP SCHEMA IF EXISTS ${queueSchema} CASCADE`)
       await admin.end()
     }
   })
@@ -318,7 +298,10 @@ integration('AI execution coordination with a real database and queue', () => {
     expect((await readBudget()).reserved).toBe(ceiling)
 
     answers.push(completed({ text: 'summary' }))
-    expect(await work()).toBe(admitted.executionId)
+    await work()
+    expect(await queue.jobs()).toMatchObject([
+      { executionId: admitted.executionId, state: 'completed' },
+    ])
 
     expect(calls).toEqual([
       {
@@ -358,7 +341,7 @@ integration('AI execution coordination with a real database and queue', () => {
     })
   })
 
-  it('A14-AC03: rolling back the client operation rolls back the request and the reservation', async () => {
+  it('A14-AC03, B6-AC01: rolling back the client operation leaves no execution, reservation or job', async () => {
     const operationId = randomUUID()
     await expect(
       transaction(async () => {
@@ -376,7 +359,12 @@ integration('AI execution coordination with a real database and queue', () => {
       (await pool.query('SELECT count(*)::int AS n FROM ai_attempts')).rows[0]
         .n,
     ).toBe(0)
-    expect(await jobs()).toEqual([])
+    expect(
+      (await pool.query('SELECT count(*)::int AS n FROM ai_executions')).rows[0]
+        .n,
+    ).toBe(0)
+    // No job in any state of either AI queue.
+    expect(await queue.jobs()).toEqual([])
     expect((await readBudget()).reserved).toBe('0.000000')
   })
 
@@ -441,7 +429,7 @@ integration('AI execution coordination with a real database and queue', () => {
     })
   })
 
-  it('A14-AC09: a receiver error keeps the result for another delivery, which settles once without calling the provider again', async () => {
+  it('A14-AC09, B6-AC03: a receiver that fails once and then accepts ends the execution completed, settled once, with the provider called once', async () => {
     let deliveries = 0
     decide = async () => {
       deliveries++
@@ -471,10 +459,10 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(await jobState(admitted.executionId)).toEqual([
       { state: 'retry', retry_count: 0 },
     ])
-    expect(aiExecutionJobOptions.retryLimit).toBeGreaterThan(0)
+    expect(jobRetries).toBe(3)
 
     // The queue's retry runs the same job again.
-    await runExecution(admitted.executionId)
+    await runExecution({ executionId: admitted.executionId })
     expect(calls).toHaveLength(1)
     expect(results).toHaveLength(2)
     expect(await clientRows()).toHaveLength(1)
@@ -496,12 +484,12 @@ integration('AI execution coordination with a real database and queue', () => {
     ).toBe(1)
 
     // Another copy of the job finds the execution delivered.
-    await runExecution(admitted.executionId)
+    await runExecution({ executionId: admitted.executionId })
     expect(results).toHaveLength(2)
     expect(calls).toHaveLength(1)
   })
 
-  it('A14-AC09: a receiver that keeps failing leaves the execution waiting for delivery with the cost reserved', async () => {
+  it('A14-AC09, B6-AC03, B6-AC07: a receiver that keeps failing leaves the execution waiting for delivery with the cost reserved, also after the failure handler', async () => {
     decide = async () => {
       throw new Error('still broken')
     }
@@ -509,11 +497,15 @@ integration('AI execution coordination with a real database and queue', () => {
     const admitted = await requestExecution(requested)
     answers.push(completed({ text: 'summary' }))
     await expect(work()).rejects.toThrow('still broken')
-    // The first run and every retry of the queue.
-    for (let retry = 0; retry < aiExecutionJobOptions.retryLimit; retry++)
-      await expect(runExecution(admitted.executionId)).rejects.toThrow(
-        'still broken',
-      )
+    // Every retry of the queue after the first attempt.
+    for (let retry = 0; retry < jobRetries; retry++)
+      await expect(
+        runExecution({ executionId: admitted.executionId }),
+      ).rejects.toThrow('still broken')
+    // The job failed finally: its failure handler leaves the execution
+    // waiting for delivery.
+    await endFailedExecution({ executionId: admitted.executionId })
+    expect(await jobs()).toEqual([])
     expect(calls).toHaveLength(1)
     expect(await clientRows()).toEqual([])
     expect(await readExecution(admitted.executionId)).toMatchObject({
@@ -521,7 +513,7 @@ integration('AI execution coordination with a real database and queue', () => {
       result: { text: 'summary' },
       cost: { reserved: ceiling, actual: null },
       delivery: {
-        attempts: aiExecutionJobOptions.retryLimit + 1,
+        attempts: jobRetries + 1,
         lastError: 'Error: still broken',
       },
     })
@@ -551,7 +543,7 @@ integration('AI execution coordination with a real database and queue', () => {
       cause: 'http',
       cost: { actual: null },
     })
-    await runExecution(admitted.executionId)
+    await runExecution({ executionId: admitted.executionId })
     expect(await readExecution(admitted.executionId)).toMatchObject({
       state: 'failed',
       cause: 'http',
@@ -588,26 +580,58 @@ integration('AI execution coordination with a real database and queue', () => {
     })
   })
 
-  it('retries an error the adapter judges transient as a second attempt', async () => {
+  it('B6-AC03: a transient error gives one new attempt after the provider asked wait, through its own job', async () => {
     const requested = request()
     const first = await requestExecution(requested)
     answers.push(async () => {
-      throw new ModelError('network', { requestSent: true, transient: true })
+      throw new ModelError('network', {
+        requestSent: true,
+        transient: true,
+        retryAfterMs: 300,
+      })
     })
     answers.push(completed({ text: 'second' }))
+    const started = Date.now()
     await work()
+    expect(Date.now() - started).toBeGreaterThanOrEqual(300)
     expect(await readExecution(first.executionId)).toMatchObject({
       state: 'retried',
       cause: 'network',
       cost: { actual: null },
     })
-    await work()
     const history = await readExecutionHistory(requested.operationId)
     expect(history.map((e) => [e.attempt, e.state])).toEqual([
       [1, 'retried'],
       [2, 'completed'],
     ])
+    expect(await queue.executionJobs()).toEqual(history.map((e) => e.id))
+    expect(calls).toHaveLength(2)
     expect(results.map((r) => r.result)).toEqual([{ text: 'second' }])
+  }, 10_000)
+
+  it('B6-AC03: a second transient error ends the operation without a third attempt', async () => {
+    const requested = request()
+    await requestExecution(requested)
+    for (let call = 0; call < 2; call++)
+      answers.push(async () => {
+        throw new ModelError('network', {
+          requestSent: true,
+          transient: true,
+          retryAfterMs: 0,
+        })
+      })
+    await work()
+    expect(calls).toHaveLength(2)
+    expect(
+      (await readExecutionHistory(requested.operationId)).map((e) => [
+        e.attempt,
+        e.state,
+      ]),
+    ).toEqual([
+      [1, 'retried'],
+      [2, 'failed'],
+    ])
+    expect(failures).toMatchObject([{ cause: 'network' }])
   }, 10_000)
 
   it('ends an error the adapter does not judge transient without a retry, whatever its protocol details', async () => {
@@ -696,7 +720,6 @@ integration('AI execution coordination with a real database and queue', () => {
     )
     const notKept = await requestExecution(request({ input: 'Profile text' }))
     await work()
-    await work()
     const archive = await readExecutionArchive(kept.executionId)
     expect(archive!.archiveId).toBe(kept.executionId)
     expect(
@@ -782,7 +805,7 @@ integration('AI execution coordination with a real database and queue', () => {
     expect((await readBudget()).reserved).toBe('0.000000')
   })
 
-  it('waits for budget and is queued by recovery when funds appear', async () => {
+  it('B6-AC01: waits for budget and gets its job from the periodic funding step when funds appear', async () => {
     await pool.query('INSERT INTO ai_budget_months VALUES($1,0)', [
       budgetMonth(),
     ])
@@ -790,12 +813,12 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(admitted.state).toBe('waiting_budget')
     expect(await jobs()).toEqual([])
     expect((await readBudget()).reserved).toBe('0.000000')
-    await recoverExecutions()
+    await fundWaitingExecutions()
     expect((await readExecution(admitted.executionId))!.state).toBe(
       'waiting_budget',
     )
     await pool.query('UPDATE ai_budget_months SET limit_pln=1')
-    await recoverExecutions()
+    await fundWaitingExecutions()
     expect(await readExecution(admitted.executionId)).toMatchObject({
       state: 'queued',
       cost: { reserved: ceiling },
@@ -803,7 +826,7 @@ integration('AI execution coordination with a real database and queue', () => {
     expect(await jobs()).toEqual([admitted.executionId])
   })
 
-  it('reserves a group as a whole or not at all, at request and in recovery', async () => {
+  it('B6-AC01: reserves a group as a whole or not at all, at request and in the periodic funding step', async () => {
     // The shared admission, as a group request will use it once an adapter
     // runs batch mode (task oferty-pracy-0mq.17).
     await pool.query('INSERT INTO ai_budget_months VALUES($1,0.01)', [
@@ -839,14 +862,14 @@ integration('AI execution coordination with a real database and queue', () => {
     expect((await readBudget()).reserved).toBe('0.000000')
     // Funds for one item only: the group still waits.
     await pool.query('UPDATE ai_budget_months SET limit_pln=0.009')
-    await recoverExecutions()
+    await fundWaitingExecutions()
     expect(
       (await Promise.all(waiting.map((e) => readExecution(e.executionId)))).map(
         (e) => e!.state,
       ),
     ).toEqual(['waiting_budget', 'waiting_budget'])
     await pool.query('UPDATE ai_budget_months SET limit_pln=0.016')
-    await recoverExecutions()
+    await fundWaitingExecutions()
     const funded = await Promise.all(
       waiting.map(async (e) => (await readExecution(e.executionId))!),
     )
@@ -854,6 +877,9 @@ integration('AI execution coordination with a real database and queue', () => {
       ['queued', groupId, ceiling],
       ['queued', groupId, ceiling],
     ])
+    expect((await jobs()).sort()).toEqual(
+      waiting.map((e) => e.executionId).sort(),
+    )
   })
 
   it('ends an execution whose adapter disappeared before it ran as an AI failure, with nothing charged', async () => {
@@ -916,18 +942,18 @@ integration('AI execution coordination with a real database and queue', () => {
     ])
   })
 
-  it('leaves an execution waiting for delivery alone in recovery', async () => {
+  it('B6-AC08: the periodic steps send no job for an execution waiting for delivery', async () => {
     decide = async () => {
       throw new Error('client bug')
     }
     const admitted = await requestExecution(request())
     answers.push(completed({ text: 'summary' }))
     await expect(work()).rejects.toThrow('client bug')
-    await admin.query(`DELETE FROM ${queueSchema}.job WHERE name=$1`, [
-      aiExecutionQueue,
-    ])
-    await recoverExecutions()
-    expect(await jobs()).toEqual([])
+    await queue.reset()
+    await fundWaitingExecutions()
+    await advanceSentBatches()
+    await cleanUpEndedBatches()
+    expect(await queue.jobs()).toEqual([])
     expect(await readExecution(admitted.executionId)).toMatchObject({
       state: 'delivering',
       delivery: { attempts: 1 },
@@ -996,7 +1022,7 @@ integration('AI execution coordination with a real database and queue', () => {
       cause: 'network',
       end_state: 'uncertain',
     })
-    await runExecution(admitted.executionId)
+    await runExecution({ executionId: admitted.executionId })
     expect(await columns()).toEqual({
       state: 'uncertain',
       cause: 'network',
@@ -1029,12 +1055,12 @@ integration('AI execution coordination with a real database and queue', () => {
     )
     expect(await attempt()).toEqual({ state: 'open', error: null })
     decide = async () => ({ accepted: false, reason: 'quote not found' })
-    await runExecution(admitted.executionId)
+    await runExecution({ executionId: admitted.executionId })
     expect(await attempt()).toEqual({ state: 'settled', error: null })
     expect(
       (
         await pool.query(
-          'SELECT state, cause, rejection_reason, result_status, error_code, disposition, publication_allowed, runtime_state FROM ai_executions WHERE id=$1',
+          'SELECT state, cause, rejection_reason, result_status, error_code, disposition, publication_allowed FROM ai_executions WHERE id=$1',
           [admitted.executionId],
         )
       ).rows[0],
@@ -1046,7 +1072,6 @@ integration('AI execution coordination with a real database and queue', () => {
       error_code: null,
       disposition: 'active',
       publication_allowed: true,
-      runtime_state: 'not_started',
     })
   })
 
@@ -1067,7 +1092,7 @@ integration('AI execution coordination with a real database and queue', () => {
     })
   })
 
-  describe('interrupted paid work (task oferty-pracy-0mq.15)', () => {
+  describe('interrupted and late work (B6-R05, B6-R06, B6-R07)', () => {
     /** A provider call that waits until the test lets it answer. */
     function heldAnswer(answer: () => Promise<ModelResult>) {
       let release!: () => void, entered!: () => void
@@ -1080,61 +1105,90 @@ integration('AI execution coordination with a real database and queue', () => {
       })
       return { release, started }
     }
-    const expireLease = (executionId: string) =>
-      pool.query(
-        "UPDATE ai_executions SET lease_expires_at=now()-interval '1 second' WHERE id=$1",
-        [executionId],
-      )
-    /** Handles every job left in the queue, as the worker would. */
-    async function drain() {
-      while ((await jobs()).length) await work()
+
+    /**
+     * Requests an execution and starts an attempt of its job whose provider
+     * call waits for the test; the request's job is forgotten, as that
+     * attempt took it. The attempt is left running, as one the queue no
+     * longer counts on (its time limit passed or its worker was lost).
+     */
+    async function runningExecution(
+      answer: () => Promise<ModelResult>,
+      overrides: Partial<ExecutionRequest> = {},
+    ) {
+      const requested = request(overrides)
+      const admitted = await requestExecution(requested)
+      await queue.reset()
+      const held = heldAnswer(answer)
+      const attempt = runExecution({ executionId: admitted.executionId })
+      await held.started
+      expect((await readExecution(admitted.executionId))!.state).toBe('running')
+      return { requested, admitted, held, attempt }
     }
 
-    it('A15-AC01, A15-AC04: a lost worker ends as uncertain and interrupted, delivered once with its reservation; when it returns it publishes nothing and its raw response is archived', async () => {
-      const admitted = await requestExecution(request())
-      const held = heldAnswer(completed({ text: 'late summary' }))
-      const lost = work()
-      await held.started
-      expect(
-        (
-          await pool.query(
-            'SELECT lease_owner IS NOT NULL AS leased, lease_expires_at>now() AS live FROM ai_executions WHERE id=$1',
-            [admitted.executionId],
-          )
-        ).rows[0],
-      ).toEqual({ leased: true, live: true })
-      await expireLease(admitted.executionId)
-      // Two recoveries at once end it once and queue one delivery.
-      await Promise.all([recoverExecutions(), recoverExecutions()])
+    const unknownEnd = {
+      state: 'uncertain',
+      cause: 'unknown',
+      result: null,
+      cost: { reserved: ceiling, actual: null },
+    }
+
+    it('B6-AC05: an attempt that finds the execution running ends it as uncertain with the cause unknown, calls no provider, keeps the reservation, and the end reaches the receiver when its delivery job runs', async () => {
+      const { requested, admitted, held, attempt } = await runningExecution(
+        completed({ text: 'late summary' }),
+      )
+      // The next attempt of the job.
+      await runExecution({ executionId: admitted.executionId })
+      expect(calls).toHaveLength(1)
+      expect(await readExecution(admitted.executionId)).toMatchObject({
+        state: 'delivering',
+        cause: 'unknown',
+      })
+      // The end waits for its own delivery job.
+      expect(failures).toEqual([])
       expect(await jobs()).toEqual([admitted.executionId])
-      await drain()
-      const ended = {
-        state: 'uncertain',
-        cause: 'interrupted',
-        result: null,
-        cost: { reserved: ceiling, actual: null },
-      }
-      expect(await readExecution(admitted.executionId)).toMatchObject(ended)
-      expect(failures).toMatchObject([
+      await work()
+      expect(await readExecution(admitted.executionId)).toMatchObject(
+        unknownEnd,
+      )
+      expect(failures).toEqual([
         {
           executionId: admitted.executionId,
+          operationId: requested.operationId,
+          inputVersion: '3',
           state: 'uncertain',
-          cause: 'interrupted',
+          cause: 'unknown',
+          cost: { reserved: ceiling, actual: null },
         },
       ])
       expect((await readBudget()).reserved).toBe(ceiling)
-      // The worker returns with a correct result.
+      expect(executionCauses).toContain('unknown')
+      // A third copy of the job changes nothing.
+      await runExecution({ executionId: admitted.executionId })
+      expect(failures).toHaveLength(1)
       held.release()
-      await lost
-      await recoverExecutions()
+      await attempt
+      expect(calls).toHaveLength(1)
+    })
+
+    it('B6-AC06: a save after the execution ended changes nothing, publishes nothing, and keeps the raw response in the archive the client did not ask for', async () => {
+      const { admitted, held, attempt } = await runningExecution(
+        completed({ text: 'late summary' }),
+      )
+      await runExecution({ executionId: admitted.executionId })
+      await work()
+      // The first attempt returns with a correct result.
+      held.release()
+      await attempt
       expect(await jobs()).toEqual([])
       expect(calls).toHaveLength(1)
       expect(results).toEqual([])
       expect(failures).toHaveLength(1)
       expect(await clientRows()).toEqual([])
-      expect(await readExecution(admitted.executionId)).toMatchObject(ended)
+      expect(await readExecution(admitted.executionId)).toMatchObject(
+        unknownEnd,
+      )
       expect((await readBudget()).reserved).toBe(ceiling)
-      // The client did not ask for an archive; the late response is kept.
       const archive = await readExecutionArchive(admitted.executionId)
       expect(
         archive!.artifacts.map((a) => [a.kind, a.artifact_key, a.content]),
@@ -1143,72 +1197,64 @@ integration('AI execution coordination with a real database and queue', () => {
       ])
     })
 
-    it('A15-AC04: a worker returning after the end does not retry a transient error and archives nothing it did not receive', async () => {
-      const requested = request()
-      const admitted = await requestExecution(requested)
-      const held = heldAnswer(async () => {
-        throw new ModelError('network', { requestSent: true, transient: true })
-      })
-      const lost = work()
-      await held.started
-      await expireLease(admitted.executionId)
-      await recoverExecutions()
-      await drain()
+    it('B6-AC06: a late run of a client that asked for the archive keeps the raw response there once', async () => {
+      const { admitted, held, attempt } = await runningExecution(
+        completed({ text: 'late summary' }),
+        { input: 'Archived text', keepArchive: true },
+      )
+      await runExecution({ executionId: admitted.executionId })
+      await work()
       held.release()
-      await lost
+      await attempt
+      expect(results).toEqual([])
+      const archive = await readExecutionArchive(admitted.executionId)
+      expect(
+        archive!.artifacts
+          .map((a) => [a.kind, a.artifact_key, a.content])
+          .sort(),
+      ).toEqual([
+        ['input', 'request', 'Archived text'],
+        ['output', 'response', JSON.stringify({ text: 'late summary' })],
+      ])
+    })
+
+    it('B6-R06: a late run does not retry a transient error and archives nothing it did not receive', async () => {
+      const { requested, admitted, held, attempt } = await runningExecution(
+        async () => {
+          throw new ModelError('network', {
+            requestSent: true,
+            transient: true,
+            retryAfterMs: 0,
+          })
+        },
+      )
+      await runExecution({ executionId: admitted.executionId })
+      await work()
+      held.release()
+      await attempt
       expect(await jobs()).toEqual([])
       expect(await readExecutionHistory(requested.operationId)).toMatchObject([
-        { state: 'uncertain', cause: 'interrupted' },
+        { state: 'uncertain', cause: 'unknown' },
       ])
       expect(
         (await readExecutionArchive(admitted.executionId))!.artifacts,
       ).toEqual([])
     })
 
-    it('A15-AC03: a worker that renews its lease is not ended by recovery during a call longer than the lease', async () => {
-      const timing = { ...executionLease }
-      executionLease.renewEveryMs = 100
-      executionLease.durationSeconds = 1
-      try {
-        const admitted = await requestExecution(request())
-        const held = heldAnswer(completed({ text: 'summary' }))
-        const running = work()
-        await held.started
-        // The call lasts 2.5 leases; recovery runs throughout.
-        const until = Date.now() + 2500
-        while (Date.now() < until) {
-          await recoverExecutions()
-          await new Promise((resolve) => setTimeout(resolve, 100))
-        }
-        expect((await readExecution(admitted.executionId))!.state).toBe(
-          'running',
-        )
-        held.release()
-        await running
-        expect(await readExecution(admitted.executionId)).toMatchObject({
-          state: 'completed',
-          result: { text: 'summary' },
-        })
-        expect(failures).toEqual([])
-        expect(results).toHaveLength(1)
-      } finally {
-        Object.assign(executionLease, timing)
-      }
-    })
-
-    it('A15-AC05: when the worker saves its outcome as recovery ends the execution, exactly one end is kept and delivered once', async () => {
+    it('B6-R05, B6-R06: when a run saves its outcome as the next attempt ends the execution, exactly one end is kept and delivered once', async () => {
       let completedRounds = 0
       for (let round = 0; round < 6; round++) {
         results = []
         failures = []
-        const admitted = await requestExecution(request())
-        const held = heldAnswer(completed({ text: `summary ${round}` }))
-        const running = work()
-        await held.started
-        await expireLease(admitted.executionId)
+        const { admitted, held, attempt } = await runningExecution(
+          completed({ text: `summary ${round}` }),
+        )
         held.release()
-        await Promise.all([running, recoverExecutions(), recoverExecutions()])
-        await drain()
+        await Promise.all([
+          attempt,
+          runExecution({ executionId: admitted.executionId }),
+        ])
+        await work()
         const execution = await readExecution(admitted.executionId)
         expect(results.length + failures.length).toBe(1)
         if (results.length) {
@@ -1217,15 +1263,76 @@ integration('AI execution coordination with a real database and queue', () => {
             state: 'completed',
             result: { text: `summary ${round}` },
           })
-        } else
-          expect(execution).toMatchObject({
-            state: 'uncertain',
-            cause: 'interrupted',
-            result: null,
-          })
+        } else expect(execution).toMatchObject(unknownEnd)
         expect(await clientRows()).toHaveLength(completedRounds)
       }
       expect(calls).toHaveLength(6)
+    })
+
+    it('B6-AC07: after the last attempt failed, a queued execution ends as uncertain with the cause unknown, with its reservation, and the end reaches the receiver', async () => {
+      const requested = request()
+      const admitted = await requestExecution(requested)
+      await queue.reset()
+      await endFailedExecution({ executionId: admitted.executionId })
+      // A repeated call has no further effect.
+      await endFailedExecution({ executionId: admitted.executionId })
+      expect(await jobs()).toEqual([admitted.executionId])
+      await work()
+      expect(calls).toEqual([])
+      expect(await readExecution(admitted.executionId)).toMatchObject(
+        unknownEnd,
+      )
+      expect(failures).toMatchObject([
+        {
+          executionId: admitted.executionId,
+          state: 'uncertain',
+          cause: 'unknown',
+        },
+      ])
+      expect((await readBudget()).reserved).toBe(ceiling)
+    })
+
+    it('B6-AC07: after the last attempt failed, a running execution ends as uncertain with the cause unknown, and its run returning later changes nothing', async () => {
+      const { admitted, held, attempt } = await runningExecution(
+        completed({ text: 'late summary' }),
+      )
+      await endFailedExecution({ executionId: admitted.executionId })
+      expect(await jobs()).toEqual([admitted.executionId])
+      await work()
+      expect(failures).toMatchObject([{ state: 'uncertain', cause: 'unknown' }])
+      held.release()
+      await attempt
+      expect(results).toEqual([])
+      expect(calls).toHaveLength(1)
+      expect(await readExecution(admitted.executionId)).toMatchObject(
+        unknownEnd,
+      )
+      expect((await readBudget()).reserved).toBe(ceiling)
+    })
+
+    it('B6-AC07: the failure handler leaves an execution waiting for delivery and an ended one unchanged', async () => {
+      decide = async () => {
+        throw new Error('client bug')
+      }
+      const delivering = await requestExecution(request())
+      answers.push(completed({ text: 'summary' }))
+      await expect(work()).rejects.toThrow('client bug')
+      await queue.reset()
+      await endFailedExecution({ executionId: delivering.executionId })
+      expect(await readExecution(delivering.executionId)).toMatchObject({
+        state: 'delivering',
+        result: { text: 'summary' },
+        cost: { reserved: ceiling, actual: null },
+        delivery: { attempts: 1 },
+      })
+
+      decide = async () => ({ accepted: true })
+      await runExecution({ executionId: delivering.executionId })
+      const ended = await readExecution(delivering.executionId)
+      expect(ended).toMatchObject({ state: 'completed' })
+      await endFailedExecution({ executionId: delivering.executionId })
+      expect(await readExecution(delivering.executionId)).toEqual(ended)
+      expect(await queue.jobs()).toEqual([])
     })
   })
 })

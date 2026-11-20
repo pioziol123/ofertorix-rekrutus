@@ -16,10 +16,9 @@ import { closePool, setPool } from '../lib/db.ts'
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import {
   readExecutionHistory,
-  recoverExecutions,
+  fundWaitingExecutions,
   registerResultReceiver,
   runExecution,
-  useAiQueue,
 } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { openAiProvider } from '../modules/ai/infrastructure/adapters/openai.ts'
@@ -41,7 +40,7 @@ import {
   searchResponse,
   synthesisResponse,
 } from './company-research.fixtures.ts'
-import { recordingQueue } from './matching-ai.fixtures.ts'
+import { aiQueue } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
@@ -68,7 +67,7 @@ integration(
   () => {
     const schema = `research_test_${randomUUID().replaceAll('-', '')}`
     let admin: Pool, pool: Pool, companyId: string
-    const queue = recordingQueue()
+    const queue = aiQueue()
     /** The simulated transport of OpenAI; each test sets its answers. */
     let fetcher = vi.fn<typeof fetch>()
     const command = (refresh = false) => ({ commandId: randomUUID(), refresh })
@@ -89,7 +88,7 @@ integration(
     /** Runs the queued AI work of the research with the given transport. */
     async function execute(researchId: string, transport: typeof fetch) {
       fetcher = transport as ReturnType<typeof vi.fn<typeof fetch>>
-      await runExecution(await executionOf(researchId))
+      await runExecution({ executionId: await executionOf(researchId) })
     }
     const operation = async (id: string) =>
       (await readCompanyResearch(companyId)).operations.find((o) => o.id === id)
@@ -108,12 +107,13 @@ integration(
         ...researchMigrations,
         '1770000000019_research_ai_executions',
         '1770000000020_ai_execution_lease',
+        '1770000000026_ai_without_local_slot_and_lease',
       ])
         createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
           sql: (s: string) => sql.push(s),
         })
       await pool.query(sql.join('\n'))
-      useAiQueue(queue.boss)
+      await queue.start()
       registerProviderAdapter(
         openAiProvider((input, init) => fetcher(input, init)),
       )
@@ -122,7 +122,7 @@ integration(
     beforeEach(async () => {
       vi.stubEnv('OPENAI_API_KEY', 'mock-key-never-send')
       usePricing('research', pricing, 'agent')
-      queue.reset()
+      await queue.reset()
       fetcher = vi.fn<typeof fetch>()
       await pool.query(
         'TRUNCATE company_research_commands,company_research,ai_attempts,ai_executions,ai_budget_months,company_commands,companies CASCADE',
@@ -139,6 +139,7 @@ integration(
     })
     afterAll(async () => {
       vi.unstubAllEnvs()
+      await queue.stop()
       await closePool()
       if (admin) {
         await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
@@ -164,7 +165,7 @@ integration(
       await expect(
         requestResearch(companyId, { ...value, refresh: true }),
       ).rejects.toBeInstanceOf(CompanyConflict)
-      expect(queue.executionJobs()).toHaveLength(1)
+      expect(await queue.executionJobs()).toHaveLength(1)
       expect(await count('SELECT count(*)::int AS n FROM ai_attempts')).toBe(1)
     })
 
@@ -172,8 +173,9 @@ integration(
       const op = await requestResearch(companyId, command())
       const executionId = await executionOf(op.id)
       fetcher = mockedProvider()
-      await Promise.all([runExecution(executionId), runExecution(executionId)])
-      await runExecution(executionId)
+      await queue.work()
+      // Another job of the ended research calls the provider no more.
+      await runExecution({ executionId })
       expect(fetcher).toHaveBeenCalledTimes(2)
       expect(await operation(op.id)).toMatchObject({
         state: 'completed',
@@ -211,7 +213,7 @@ integration(
         id: op.id,
         reused: true,
       })
-      expect(queue.executionJobs()).toHaveLength(1)
+      expect(await queue.executionJobs()).toHaveLength(1)
       expect(await count('SELECT count(*)::int AS n FROM ai_attempts')).toBe(1)
     })
 
@@ -248,7 +250,7 @@ integration(
         id: second.id,
         reused: true,
       })
-      expect(queue.executionJobs()).toHaveLength(2)
+      expect(await queue.executionJobs()).toHaveLength(2)
       expect(await count('SELECT count(*)::int AS n FROM ai_attempts')).toBe(2)
     })
 
@@ -266,7 +268,6 @@ integration(
         .mockRejectedValue(new Error('Ambiguous transport failure'))
       await execute(refreshed.id, failing)
       await execute(refreshed.id, failing)
-      await recoverExecutions()
       await queue.work()
       expect(failing).toHaveBeenCalledTimes(1)
       const operations = (await readCompanyResearch(companyId)).operations
@@ -337,7 +338,7 @@ integration(
           id: original.id,
           reused: true,
         })
-        expect(queue.executionJobs()).toHaveLength(2)
+        expect(await queue.executionJobs()).toHaveLength(2)
       },
     )
 
@@ -427,14 +428,14 @@ integration(
         state: 'waiting_budget',
         reserved: null,
       })
-      expect(queue.executionJobs()).toHaveLength(0)
-      await recoverExecutions()
-      expect(queue.executionJobs()).toHaveLength(0)
+      expect(await queue.executionJobs()).toHaveLength(0)
+      await fundWaitingExecutions()
+      expect(await queue.executionJobs()).toHaveLength(0)
       await pool.query(
         'UPDATE ai_budget_months SET limit_pln=2 WHERE month=$1',
         [month],
       )
-      await recoverExecutions()
+      await fundWaitingExecutions()
       expect(await operation(op.id)).toMatchObject({
         state: 'queued',
         reserved: '0.536000',
@@ -444,14 +445,14 @@ integration(
           "SELECT count(*)::int AS n FROM ai_attempts WHERE operation_type='execution'",
         ),
       ).toBe(1)
-      expect(queue.executionJobs()).toHaveLength(1)
+      expect(await queue.executionJobs()).toHaveLength(1)
     })
 
-    it('E04-AC04, A15-AC02: ends research interrupted between its steps as uncertain with its whole reservation, and never starts a new search', async () => {
+    it('E04-AC04, B6-AC05, B6-AC06: a new attempt that finds research running between its steps ends it as uncertain with the cause unknown and its whole reservation, and never starts a new search; the returning process changes nothing', async () => {
       const op = await requestResearch(companyId, command())
       const executionId = await executionOf(op.id)
-      // The worker finishes the search and stops before the synthesis
-      // comes back; its lease lapses.
+      // The attempt finishes the search and stops before the synthesis
+      // comes back; its job's attempt ends meanwhile.
       let release!: () => void, entered!: () => void
       const gate = new Promise<void>((resolve) => (release = resolve))
       const between = new Promise<void>((resolve) => (entered = resolve))
@@ -465,13 +466,12 @@ integration(
         })
       const lost = execute(op.id, transport)
       await between
-      await pool.query(
-        "UPDATE ai_executions SET lease_expires_at=now()-interval '1 second' WHERE id=$1",
-        [executionId],
-      )
-      queue.reset()
-      await Promise.all([recoverExecutions(), recoverExecutions()])
-      expect(queue.executionJobs()).toEqual([executionId])
+      // The next attempt of the job finds the research running.
+      await queue.reset()
+      await runExecution({ executionId })
+      expect(transport).toHaveBeenCalledTimes(2)
+      // The end reaches Companies through the delivery job it sent.
+      expect(await queue.executionJobs()).toEqual([executionId])
       await queue.work()
       const ended = {
         state: 'unknown',
@@ -483,18 +483,17 @@ integration(
       }
       expect(await operation(op.id)).toMatchObject(ended)
       expect(await readExecutionHistory(op.id)).toMatchObject([
-        { state: 'uncertain', cause: 'interrupted' },
+        { state: 'uncertain', cause: 'unknown' },
       ])
-      // The lost worker returns: it publishes nothing and changes nothing,
-      // and the responses it received are in the execution's archive.
+      // The returning process publishes nothing and changes nothing, and
+      // the responses it received are in the execution's archive.
       release()
       await lost
-      await recoverExecutions()
       await queue.work()
       expect(transport).toHaveBeenCalledTimes(2)
       expect(await operation(op.id)).toMatchObject(ended)
       expect(await readExecutionHistory(op.id)).toMatchObject([
-        { state: 'uncertain', cause: 'interrupted' },
+        { state: 'uncertain', cause: 'unknown' },
       ])
       expect(
         (

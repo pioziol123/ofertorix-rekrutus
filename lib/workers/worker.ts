@@ -87,8 +87,8 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
   )
   // Every queue in the database, so a job without a handler is taken,
   // cancelled and logged (B1-D16, B1-R12).
-  const opened = await openJobSource().catch(
-    (error: Error) => fatal(`the queues could not be read: ${error.message}`),
+  const opened = await openJobSource().catch((error: Error) =>
+    fatal(`the queues could not be read: ${error.message}`),
   )
   const source = options.jobSource?.(opened) ?? opened
 

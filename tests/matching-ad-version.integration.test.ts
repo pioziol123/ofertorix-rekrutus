@@ -28,7 +28,7 @@ import {
 import { enqueueMatching } from '../modules/matching/request-assessment.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readMatching } from '../modules/matching/read-assessments.ts'
-import { registerResultReceiver, useAiQueue } from '../modules/ai/index.ts'
+import { registerResultReceiver } from '../modules/ai/index.ts'
 import {
   assessmentReceiver,
   assessmentSettingsKey,
@@ -36,12 +36,9 @@ import {
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { defaultWeights } from '../modules/matching/domain/weights.ts'
 import { emptyProfile } from '../modules/profile/view.ts'
+import { aiQueue } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
-import {
-  migrate,
-  recordingQueue,
-  SimulatedOpenAi,
-} from './matching-ai.fixtures.ts'
+import { migrate, SimulatedOpenAi } from './matching-ai.fixtures.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
@@ -102,7 +99,7 @@ integration(
       maxInputTokens: 20000,
       maxOutputTokens: 500,
     }
-    const queue = recordingQueue()
+    const queue = aiQueue()
 
     beforeAll(async () => {
       admin = new Pool({ connectionString: process.env.DATABASE_URL })
@@ -113,7 +110,7 @@ integration(
       })
       await migrate(pool)
       setPool(pool)
-      useAiQueue(queue.boss)
+      await queue.start()
       registerResultReceiver(assessmentSettingsKey, assessmentReceiver)
     })
 
@@ -121,7 +118,7 @@ integration(
       vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
       usePricing('matching', pricing, ['single', 'batch'])
       new SimulatedOpenAi()
-      queue.reset()
+      await queue.reset()
       injected.change = null
       await pool.query(
         'TRUNCATE matching_rating_heads,matching_rating_revisions,matching_weight_head,matching_weight_versions,matching_requests,ai_executions,ai_attempts,ai_budget_months,profile_head,profile_versions,source_ads,source_scopes CASCADE',
@@ -168,6 +165,7 @@ integration(
 
     afterAll(async () => {
       vi.unstubAllEnvs()
+      await queue.stop()
       await closePool()
       if (admin) {
         await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)

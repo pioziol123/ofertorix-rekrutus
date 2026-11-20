@@ -2,9 +2,8 @@ import { PgBoss } from 'pg-boss'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { checkKeyModes } from '../lib/queues/index.ts'
 import { HandlerRegistry } from '../lib/workers/index.ts'
-import { existingPathQueues } from '../lib/workers/worker.ts'
 import { runModulePlugins } from '../plugins/index.ts'
-import { aiExecutionJobOptions, aiExecutionQueue } from '../modules/ai/index.ts'
+import { localExecutionJob, paidExecutionJob } from '../modules/ai/index.ts'
 import { cvTextReadingJob } from '../modules/profile/index.ts'
 import { syncJob } from '../modules/sources/index.ts'
 
@@ -62,12 +61,24 @@ integration('queues of the migrated database', () => {
     expect(await boss.getQueue('source-sync')).toBeFalsy()
   })
 
-  it('creates the queues of the modules not yet moved with the settings the modules send their jobs with, and no system check queue (B1-AC15)', async () => {
-    expect(await boss.getQueue(aiExecutionQueue)).toMatchObject(
-      aiExecutionJobOptions,
-    )
+  it('creates the paid and the local AI queue with their failure queues, exclusivity on a constant key and the configured 4 attempts of 60 minutes, and removes the queue of the former path and the system check queue (B6-AC04, B6-AC10, B6-D01)', async () => {
+    expect([paidExecutionJob.queue, localExecutionJob.queue]).toEqual([
+      'ai-execution-paid',
+      'ai-execution-local',
+    ])
+    for (const job of [paidExecutionJob, localExecutionJob]) {
+      expect(job.key).toEqual({ mode: 'exclusivity', value: job.queue })
+      expect(await boss.getQueue(job.queue)).toMatchObject({
+        policy: 'singleton',
+        retryLimit: 3,
+        retryDelay: 30,
+        retryBackoff: true,
+        expireInSeconds: 3600,
+        deadLetter: `${job.queue}.failed`,
+      })
+      expect(await boss.getQueue(`${job.queue}.failed`)).toBeTruthy()
+    }
+    expect(await boss.getQueue('ai-execution')).toBeFalsy()
     expect(await boss.getQueue('system-smoke')).toBeFalsy()
-    // The worker library leaves exactly these queues to the existing path.
-    expect([...existingPathQueues]).toEqual([aiExecutionQueue])
   })
 })

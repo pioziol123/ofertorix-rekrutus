@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import type { Pool } from 'pg'
-import { vi } from 'vitest'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   BatchClient,
@@ -43,9 +42,16 @@ export const matchingMigrations = [
 /** The lease of running paid AI work (task oferty-pracy-0mq.15). */
 export const aiLeaseMigration = '1770000000020_ai_execution_lease'
 
+/**
+ * AI work without the lease and the shared local slot (task
+ * oferty-pracy-2ba.6); it follows the lease migration.
+ */
+export const aiWithoutLeaseMigration =
+  '1770000000026_ai_without_local_slot_and_lease'
+
 export async function migrate(
   pool: Pool,
-  names = [...matchingMigrations, aiLeaseMigration],
+  names = [...matchingMigrations, aiLeaseMigration, aiWithoutLeaseMigration],
 ) {
   const statements: string[] = []
   for (const name of names)

@@ -15,9 +15,9 @@ import { emptyProfile } from '../modules/profile/view.ts'
 import {
   readExecution,
   readExecutionHistory,
-  recoverExecutions,
+  fundWaitingExecutions,
   registerResultReceiver,
-  useAiQueue,
+  runExecution,
 } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
@@ -36,11 +36,11 @@ import { readBatchArchive } from '../modules/matching/read-assessment-archive.ts
 import { enqueueMatching } from '../modules/matching/request-assessment.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readMatching } from '../modules/matching/read-assessments.ts'
+import { aiQueue } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {
   migrate,
   pricing,
-  recordingQueue,
   responseBody,
   SimulatedOpenAi,
   unknownAssessment,
@@ -70,7 +70,7 @@ integration(
       revision: string,
       profileVersion: string,
       openAi: SimulatedOpenAi
-    const queue = recordingQueue()
+    const queue = aiQueue()
     beforeAll(async () => {
       admin = new Pool({ connectionString: process.env.DATABASE_URL })
       await admin.query(`CREATE SCHEMA ${schema}`)
@@ -80,7 +80,7 @@ integration(
       })
       await migrate(pool)
       setPool(pool)
-      useAiQueue(queue.boss)
+      await queue.start()
       registerResultReceiver(assessmentSettingsKey, assessmentReceiver)
     })
     beforeEach(async () => {
@@ -88,7 +88,7 @@ integration(
       vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
       usePricing('matching', pricing, ['single', 'batch'])
       openAi = new SimulatedOpenAi()
-      queue.reset()
+      await queue.reset()
       await pool.query(
         'TRUNCATE matching_requests,matching_rating_heads,matching_rating_revisions,ai_executions,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
       )
@@ -132,6 +132,7 @@ integration(
     })
     afterAll(async () => {
       vi.unstubAllEnvs()
+      await queue.stop()
       await closePool()
       if (admin) {
         await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
@@ -183,7 +184,7 @@ integration(
       ])
       expect(a.id).toBe(b.id)
       expect([a.reused, b.reused].sort()).toEqual([false, true])
-      expect(queue.executionJobs()).toHaveLength(1)
+      expect(await queue.executionJobs()).toHaveLength(1)
       const stored = await row(a.id)
       expect(stored).toMatchObject({
         state: 'requested',
@@ -259,9 +260,11 @@ integration(
 
     it('calls the provider and publishes once when the job of an execution runs twice at the same time (E03-AC04)', async () => {
       const request = await enqueueMatching(ad)
-      const [job] = queue.executionJobs()
-      const { runExecution } = await import('../modules/ai/index.ts')
-      await Promise.all([runExecution(job!), runExecution(job!)])
+      const [executionId] = await queue.executionJobs()
+      await Promise.all([
+        runExecution({ executionId: executionId! }),
+        runExecution({ executionId: executionId! }),
+      ])
       expect(openAi.singleCalls).toHaveLength(1)
       expect(await revisions(request.id)).toBe(1)
       expect((await latest(request.id)).cost.actual).toBe('0.000120')
@@ -285,9 +288,9 @@ integration(
         'UPDATE source_ads SET current_revision_id=$2 WHERE id=$1',
         [ad, revision],
       )
-      const { runExecution } = await import('../modules/ai/index.ts')
-      await runExecution((await latest(request.id)).id)
-      await runExecution((await latest(request.id)).id)
+      // The queue retries the job of the delivery.
+      await runExecution({ executionId: (await latest(request.id)).id })
+      await runExecution({ executionId: (await latest(request.id)).id })
       expect(await latest(request.id)).toMatchObject({
         state: 'completed',
         cost: { actual: '0.000120' },
@@ -449,7 +452,7 @@ integration(
       await expect(enqueueMatching(ad)).rejects.toThrow(
         'Wejście przekracza skonfigurowany limit tokenów. Zwiększ limit lub skróć profil.',
       )
-      expect(queue.send).not.toHaveBeenCalled()
+      expect(await queue.executionJobs()).toEqual([])
       for (const table of ['matching_requests', 'ai_executions', 'ai_attempts'])
         expect(
           (await pool.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0]
@@ -462,7 +465,7 @@ integration(
       await expect(enqueueMatching(ad)).rejects.toThrow('zatwierdź profil')
       usePricing('matching', null)
       await expect(enqueueMatching(ad)).rejects.toThrow('cennik')
-      expect(queue.send).not.toHaveBeenCalled()
+      expect(await queue.executionJobs()).toEqual([])
       expect(
         (await pool.query('SELECT count(*)::int AS n FROM ai_attempts')).rows[0]
           .n,
@@ -491,7 +494,7 @@ integration(
         execution_id: null,
       })
       expect(await readExecutionHistory(request.id)).toEqual([])
-      expect(queue.send).not.toHaveBeenCalled()
+      expect(await queue.executionJobs()).toEqual([])
       expect((await readMatching(ad)).history[0]).toMatchObject({
         state: 'excluded',
         cost: null,
@@ -529,14 +532,14 @@ integration(
       const request = await enqueueMatching(ad)
       expect(request.state).toBe('waiting_budget')
       expect((await readMatching(ad)).history[0]!.state).toBe('waiting_budget')
-      expect(queue.executionJobs()).toEqual([])
+      expect(await queue.executionJobs()).toEqual([])
       // A second request of the offer meets the waiting one.
       expect(await enqueueMatching(ad)).toMatchObject({
         id: request.id,
         reused: true,
       })
       await pool.query('UPDATE ai_budget_months SET limit_pln=1')
-      await recoverExecutions()
+      await fundWaitingExecutions()
       expect((await latest(request.id)).state).toBe('queued')
       await queue.work()
       expect((await latest(request.id)).state).toBe('completed')

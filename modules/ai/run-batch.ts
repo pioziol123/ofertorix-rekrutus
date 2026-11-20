@@ -105,9 +105,7 @@ async function saveOutcomes(
   claimed: boolean,
 ) {
   await transaction(async () => {
-    if (
-      !(await saveGroupAdapterState(groupId, expected, ended.state, claimed))
-    )
+    if (!(await saveGroupAdapterState(groupId, expected, ended.state, claimed)))
       return
     for (const execution of items) {
       const outcome = itemOutcome(

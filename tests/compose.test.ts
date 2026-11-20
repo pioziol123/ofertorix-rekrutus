@@ -40,3 +40,13 @@ describe('worker container configuration', () => {
     expect(service('worker')).toMatch(/test: \[CMD, pnpm, health:worker\]/)
   })
 })
+
+describe('periodic process container configuration', () => {
+  it('runs the periodic process as its own service, restarted when it exits and without a health check (B6-R09)', () => {
+    const periodic = service('periodic')
+    expect(periodic).toMatch(/^ {4}command: pnpm periodic\s*$/m)
+    expect(periodic).toMatch(/^ {4}restart: unless-stopped\s*$/m)
+    expect(periodic).not.toMatch(/healthcheck/)
+    expect(service('worker')).not.toMatch(/periodic/)
+  })
+})

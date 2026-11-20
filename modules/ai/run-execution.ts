@@ -91,8 +91,7 @@ export async function endAsUnknown(
     settlementOf(execution, outcome),
     from,
   )
-  if (saved)
-    await sendExecutionJob(execution.id, execution.snapshot.settings)
+  if (saved) await sendExecutionJob(execution.id, execution.snapshot.settings)
   return saved
 }
 

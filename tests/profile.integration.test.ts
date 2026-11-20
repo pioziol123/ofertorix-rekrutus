@@ -36,17 +36,14 @@ import {
   saveDraft,
 } from '../modules/profile/index.ts'
 import { closePool, setPool } from '../lib/db.ts'
-import { stopQueues } from '../lib/queues/index.ts'
 import { prepareCvTextQueue } from './profile.fixtures.ts'
+import { aiQueue } from './ai-queue.fixtures.ts'
 import {
-  aiExecutionJobOptions,
-  aiExecutionQueue,
+  fundWaitingExecutions,
   readExecutionArchive,
   readLatestExecution,
-  recoverExecutions,
   registerResultReceiver,
   runExecution,
-  useAiQueue,
 } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
@@ -73,10 +70,9 @@ const integration =
 integration(
   'profiles in isolated PostgreSQL and private document storage',
   () => {
-    const suffix = randomUUID().replaceAll('-', ''),
-      schema = `profile_test_${suffix}`,
-      queueSchema = `profile_queue_${suffix}`
-    let admin: Pool, pool: Pool, boss: PgBoss, root: string
+    const schema = `profile_test_${randomUUID().replaceAll('-', '')}`
+    const queue = aiQueue()
+    let admin: Pool, pool: Pool, root: string
     const pricing = {
       model: 'test-only',
       version: 'test',
@@ -108,22 +104,17 @@ integration(
         '1770000000012_matching_batch_archives',
         '1770000000018_matching_ai_executions',
         '1770000000020_ai_execution_lease',
+        '1770000000026_ai_without_local_slot_and_lease',
       ])
         createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
           sql: (s: string) => sql.push(s),
         })
       await pool.query(sql.join('\n'))
       setPool(pool)
-      boss = new PgBoss({
-        connectionString: process.env.DATABASE_URL,
-        schema: queueSchema,
-      })
-      boss.on('error', () => {})
-      await boss.start()
-      await prepareCvTextQueue(queueSchema)
-      process.env.PG_BOSS_SCHEMA = queueSchema
-      await boss.createQueue(aiExecutionQueue, aiExecutionJobOptions)
-      useAiQueue(boss)
+      // The AI queues and the queue of reading a CV share the test's
+      // queue schema.
+      await queue.start()
+      await prepareCvTextQueue(queue.queueSchema)
       // The paid provider, simulated by the fetcher each test sets.
       registerProviderAdapter(
         openAiProvider((input, init) => provider(input, init)),
@@ -139,16 +130,14 @@ integration(
         'TRUNCATE profile_import_texts,ai_attempts,ai_executions,ai_budget_months,profile_imports,profile_drafts,profile_head,profile_versions CASCADE',
       )
       await pool.query('INSERT INTO profile_head(singleton) VALUES(true)')
+      await queue.reset()
     })
     afterAll(async () => {
       vi.unstubAllEnvs()
-      await boss?.stop()
-      await stopQueues()
-      delete process.env.PG_BOSS_SCHEMA
+      await queue.stop()
       await closePool()
       if (admin) {
         await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
-        await admin.query(`DROP SCHEMA IF EXISTS ${queueSchema} CASCADE`)
         await admin.end()
       }
       if (root) await rm(root, { recursive: true, force: true })
@@ -161,7 +150,7 @@ integration(
     /** Runs the AI job of an execution with the simulated provider. */
     async function executeAi(executionId: string, fetcher: typeof fetch) {
       provider = fetcher
-      await runExecution(executionId)
+      await runExecution({ executionId })
     }
     async function readyAttempt(text = 'PHP professional') {
       const id = await importCvText(text)
@@ -618,7 +607,7 @@ integration(
     it('rolls back paid reservation and reviewed text when queue submission fails', async () => {
       const id = await importCvText('PHP')
       const fail = vi
-        .spyOn(boss, 'send')
+        .spyOn(PgBoss.prototype, 'send')
         .mockRejectedValueOnce(new Error('queue failure'))
       try {
         await expect(prepareProposal(id, 'PHP', 0)).rejects.toThrow(
@@ -645,7 +634,7 @@ integration(
     })
     it('does not reserve or accept a paid operation if queue submission returns null', async () => {
       const id = await importCvText('PHP'),
-        fail = vi.spyOn(boss, 'send').mockResolvedValueOnce(null)
+        fail = vi.spyOn(PgBoss.prototype, 'send').mockResolvedValueOnce(null)
       try {
         await expect(prepareProposal(id, 'PHP', 0)).rejects.toThrow()
       } finally {
@@ -661,37 +650,7 @@ integration(
         ).rows[0].text_revision,
       ).toBe(0)
     })
-    it('A9-AC03: prevents recovery and duplicate delivery from interrupting an active AI request', async () => {
-      const { id, executionId } = await readyAttempt()
-      let release!: () => void, entered!: () => void
-      const gate = new Promise<void>((resolve) => {
-          release = resolve
-        }),
-        started = new Promise<void>((resolve) => {
-          entered = resolve
-        })
-      const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => {
-        entered()
-        await gate
-        return response({ summary: null, skills: [], experience: [] })
-      })
-      const execution = executeAi(executionId, fetcher)
-      await started
-      try {
-        await recoverExecutions()
-        const duplicate = vi.fn<typeof fetch>()
-        await executeAi(executionId, duplicate)
-        expect(duplicate).not.toHaveBeenCalled()
-        expect((await readLatestExecution(id))!.state).toBe('running')
-        expect((await readImport(id))!.status).toBe('ai_running')
-      } finally {
-        release()
-        await execution
-      }
-      expect(fetcher).toHaveBeenCalledTimes(1)
-      expect((await importOf(id)).status).toBe('proposal')
-    })
-    it('A9-AC03: recovery queues a request that waited for budget once funds appear', async () => {
+    it('A9-AC03, B6-AC01: a pass of the periodic process queues a request that waited for budget once funds appear', async () => {
       await pool.query('INSERT INTO ai_budget_months VALUES ($1,0)', [
         budgetMonth(),
       ])
@@ -699,11 +658,16 @@ integration(
       const prepared = await prepareProposal(id, 'PHP', 0)
       expect(prepared.state).toBe('waiting_budget')
       expect((await readImport(id))!.status).toBe('waiting_budget')
-      await recoverExecutions()
+      expect(await queue.executionJobs()).toEqual([])
+      await fundWaitingExecutions()
       expect((await readImport(id))!.status).toBe('waiting_budget')
+      expect(await queue.executionJobs()).toEqual([])
       await pool.query('UPDATE ai_budget_months SET limit_pln=100')
-      await recoverExecutions()
+      await fundWaitingExecutions()
       expect((await readImport(id))!.status).toBe('ai_queued')
+      expect(await queue.executionJobs()).toEqual([
+        (await readLatestExecution(id))!.id,
+      ])
     })
     it.each([
       null,
@@ -750,17 +714,23 @@ integration(
         cost: { actual: '0.000150' },
       })
     })
-    it('A9-AC03, A15-AC08: ends a paid request running without a lease as interrupted, with the uncertain message and its cost reserved', async () => {
+    it('B6-AC05: an attempt that finds a paid proposal preparation running ends it as uncertain with the cause unknown, its cost reserved and the uncertain message shown, without calling the provider', async () => {
       const { id, executionId } = await readyAttempt()
-      // Running as before leases existed: no sign of life.
+      // The previous attempt of its job ended while it ran.
       await pool.query("UPDATE ai_executions SET state='running' WHERE id=$1", [
         executionId,
       ])
-      await recoverExecutions()
-      await executeAi(executionId, vi.fn<typeof fetch>())
+      await queue.reset()
+      const fetcher = vi.fn<typeof fetch>()
+      await executeAi(executionId, fetcher)
+      expect(fetcher).not.toHaveBeenCalled()
+      // The end reaches the Profile through the delivery job it sent.
+      expect(await queue.executionJobs()).toEqual([executionId])
+      await queue.work()
+      expect(fetcher).not.toHaveBeenCalled()
       expect(await readLatestExecution(id)).toMatchObject({
         state: 'uncertain',
-        cause: 'interrupted',
+        cause: 'unknown',
         cost: { actual: null },
       })
       expect(await attemptOf(executionId)).toMatchObject({
@@ -777,7 +747,7 @@ integration(
           'Nie wiadomo, jak zakończyło się przygotowanie propozycji. Profil pozostaje bez zmian. Sprawdź stan wykonania przed ponowieniem.',
       })
     })
-    it('A15-AC04: a worker returning after its proposal preparation ended as interrupted publishes nothing and keeps its raw response in the archive', async () => {
+    it('B6-AC05, B6-AC06: a process returning after a new attempt ended its proposal preparation publishes nothing and keeps its raw response in the archive', async () => {
       const { id, executionId } = await readyAttempt()
       let release!: () => void, entered!: () => void
       const gate = new Promise<void>((resolve) => (release = resolve)),
@@ -790,12 +760,9 @@ integration(
       })
       const lost = executeAi(executionId, fetcher)
       await started
-      await pool.query(
-        "UPDATE ai_executions SET lease_expires_at=now()-interval '1 second' WHERE id=$1",
-        [executionId],
-      )
-      await recoverExecutions()
-      await runExecution(executionId)
+      // The next attempt of the job finds the preparation running.
+      await runExecution({ executionId })
+      await queue.work()
       const ended = await importOf(id)
       expect(ended).toMatchObject({ status: 'needs_attention', proposal: null })
       release()
@@ -804,7 +771,7 @@ integration(
       expect(await importOf(id)).toEqual(ended)
       expect(await readLatestExecution(id)).toMatchObject({
         state: 'uncertain',
-        cause: 'interrupted',
+        cause: 'unknown',
         result: null,
         cost: { actual: null },
       })

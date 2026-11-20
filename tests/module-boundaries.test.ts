@@ -54,6 +54,7 @@ const application = [
   'app',
   'server',
   'worker',
+  'periodic',
   'scripts',
   'lib',
   'modules',
@@ -176,8 +177,6 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
       [
         'lib/contact-details.ts',
         'lib/db.ts',
-        // The existing way to the queue, until oferty-pracy-2ba.6 (B1-D14).
-        'lib/queue.ts',
         // The queue library (oferty-pracy-2ba.1).
         'lib/queues/configuration.ts',
         'lib/queues/connection.ts',
@@ -197,16 +196,60 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
     )
   })
 
-  it('starts the worker library before the existing path in the worker entry (B1-R04, B1-R14)', () => {
+  it('leaves the worker entry only the worker library: no module, no queue client, no timer (B6-AC08, B6-AC10)', () => {
     const entry = readFileSync(join(root, 'worker/index.ts'), 'utf8')
-    const library = entry.indexOf('await startWorker(')
-    expect(library).toBeGreaterThan(-1)
-    for (const existing of [
-      'await boss.start()',
-      'await boss.work',
-      'await schedule()',
-    ])
-      expect(library, existing).toBeLessThan(entry.indexOf(existing))
+    expect(entry).toContain('await startWorker(')
+    expect(
+      importsOf('worker/index.ts').filter((file) => moduleOf(file)),
+    ).toEqual([])
+    expect(entry).not.toMatch(/pg-boss|lib\/queue\b|setInterval|setTimeout/)
+  })
+
+  it('runs the periodic work in its own process through public operations of the modules, without the plugins (B6-R09)', () => {
+    const imports = [
+      ...importsOf('periodic/index.ts'),
+      ...importsOf('periodic/steps.ts'),
+    ]
+    expect(imports).toEqual(
+      expect.arrayContaining([
+        'modules/ai/index.ts',
+        'modules/profile/index.ts',
+        'modules/sources/index.ts',
+      ]),
+    )
+    expect(
+      imports.filter(
+        (file) =>
+          /^(plugins|lib\/workers)\//.test(file) ||
+          (moduleOf(file) && !isEntry(file)),
+      ),
+    ).toEqual([])
+  })
+
+  it('keeps the AI module, the worker, the periodic process, the web application and the command-line scripts free of the existing way to the queue (B6-AC10)', () => {
+    const existingWay =
+      /from\s+['"]pg-boss['"]|lib\/queue(?:\.ts)?['"]|\b(?:useAiQueue|aiExecutionQueue|recoverExecutions|createBoss|queueClient)\b/
+    const read = (file: string) => readFileSync(join(root, file), 'utf8')
+    const reaching = [
+      ...files('modules/ai'),
+      ...files('worker'),
+      ...files('periodic'),
+      ...files('server'),
+      ...files('app'),
+      ...files('scripts').filter(
+        // The carry-over names the former queue to remove it (B6-R10).
+        (file) => file !== 'scripts/carry-over-jobs.ts',
+      ),
+    ]
+      .filter((file) => !isTest(file) && /\.(ts|vue)$/.test(file))
+      .filter((file) => existingWay.test(read(file)))
+    expect(reaching).toEqual([])
+    expect(existsSync(join(root, 'lib/queue.ts'))).toBe(false)
+  })
+
+  it('carries AI jobs out through the worker library and the AI module plugin (B6-AC10)', () => {
+    expect(importsOf('plugins/index.ts')).toContain('plugins/ai.ts')
+    expect(importsOf('plugins/ai.ts')).toContain('modules/ai/index.ts')
   })
 
   it('runs the module plugins only in the worker and its pool processes (B1-AC15)', () => {
@@ -246,6 +289,7 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
     const imports = importsOf('scripts/carry-over-jobs.ts')
     expect(imports).toContain('modules/profile/index.ts')
     expect(imports).toContain('modules/sources/index.ts')
+    expect(imports).toContain('modules/ai/index.ts')
     expect(
       imports.filter(
         (file) => /^plugins\//.test(file) || (moduleOf(file) && !isEntry(file)),
@@ -294,8 +338,7 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
       scripts.filter((file) => queueImplementation.test(read(file))),
     ).toEqual([])
     // The web application: no route connects a queue client for a sync, and
-    // nothing connects the former sync queue. The shared HTTP helpers still
-    // hold the existing path's client of the AI module (B1-D14).
+    // nothing connects the former sync queue.
     const web = files('server')
     expect(web.filter(reachSources)).not.toEqual([])
     expect(

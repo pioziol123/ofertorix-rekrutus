@@ -7,7 +7,6 @@ import {
   readBudget,
   readExecutionHistory,
   registerResultReceiver,
-  useAiQueue,
 } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
@@ -21,13 +20,14 @@ import {
 import { enqueueMatching } from '../modules/matching/request-assessment.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readMatching } from '../modules/matching/read-assessments.ts'
+import { aiQueue } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {
   aiLeaseMigration,
+  aiWithoutLeaseMigration,
   matchingMigrations,
   migrate,
   pricing,
-  recordingQueue,
   SimulatedOpenAi,
 } from './matching-ai.fixtures.ts'
 
@@ -53,7 +53,7 @@ const integration =
 integration('migration of the assessment history to AI executions', () => {
   const schema = `matching_ai_migration_${randomUUID().replaceAll('-', '')}`
   let admin: Pool, pool: Pool
-  const queue = recordingQueue()
+  const queue = aiQueue()
   // Two ads: an ad had at most one request in progress before the migration.
   const ad = randomUUID(),
     otherAd = randomUUID(),
@@ -142,7 +142,7 @@ integration('migration of the assessment history to AI executions', () => {
     })
     await migrate(pool, matchingMigrations.slice(0, -1))
     setPool(pool)
-    useAiQueue(queue.boss)
+    await queue.start()
     registerResultReceiver(assessmentSettingsKey, assessmentReceiver)
     const scope = randomUUID()
     await pool.query(
@@ -245,9 +245,11 @@ integration('migration of the assessment history to AI executions', () => {
     await migrate(pool, [
       '1770000000018_matching_ai_executions',
       aiLeaseMigration,
+      aiWithoutLeaseMigration,
     ])
   })
   afterAll(async () => {
+    await queue.stop()
     await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
