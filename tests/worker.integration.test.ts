@@ -172,6 +172,39 @@ integration('worker library: taking and carrying out jobs', () => {
     expect(copy).toMatchObject({ state: 'completed', retry_count: 1 })
   }, 40_000)
 
+  // ASSUMPTION(oferty-pracy-2ba.1/ASM-4): a pool process that exits by
+  // itself fails the attempt with the reason `exited` and is replaced.
+  it('fails the attempt of a process that exits by itself, calls the failure handler after the last attempt and replaces the process (B1-AC11)', async () => {
+    await scenario.send('wt-single', { id: 'exits', action: 'exit' })
+    const job = await waitFor(
+      async () => {
+        const row = await scenario.job('exits')
+        return row?.state === 'failed' && row
+      },
+      15_000,
+      'the job to fail',
+    )
+    expect(job.output).toMatchObject({ reason: 'exited' })
+    expect(job.output?.message).toContain('code 3')
+    await waitFor(
+      async () =>
+        (await scenario.events('exits')).some(
+          (event) => event.kind === 'failure',
+        ),
+      15_000,
+      'the failure handler',
+    )
+    for (const id of ['after-exit-1', 'after-exit-2'])
+      await scenario.send('wt-plain', { id, action: 'ok', ms: 500 })
+    for (const id of ['after-exit-1', 'after-exit-2'])
+      await waitFor(
+        async () => (await scenario.job(id))?.state === 'completed',
+        15_000,
+        `${id} to complete`,
+      )
+  }, 40_000)
+
+  // ASSUMPTION(oferty-pracy-2ba.1/ASM-2)
   it('cancels a job without a registered handler when taken, without retry, and logs its name (B1-AC12)', async () => {
     await scenario.send('wt-orphan', { id: 'orphan', action: 'ok' })
     const job = await waitFor(
@@ -270,6 +303,7 @@ integration('worker library: ending a process (B1-AC09, B1-AC11)', () => {
       ['silent', 'limited', 'taken', 'unconfirmed'].map(startOf),
     )
     // Another attempt takes the job over, as after a lost heartbeat.
+    // ASSUMPTION(oferty-pracy-2ba.1/ASM-3): its reason is in the log.
     await scenario.sql(
       `UPDATE ${scenario.queueSchema}.job SET retry_count = retry_count + 1 WHERE data->>'id' = 'taken' AND name = 'wt-single'`,
     )

@@ -60,7 +60,7 @@ Package scripts:
 - `pnpm source:sync` — validates the scope, enqueues a run and prints its id; optionally waits for the result up to a bounded time.
 - `pnpm source:status [run-id]` — state, counters, error and the last complete sync.
 
-Example execution through `docker compose run --rm tools ...`. After a worker restart the new modules must be started; the existing smoke test still works.
+Example execution through `docker compose run --rm tools ...`. After a worker restart the new modules must be started; the web application's readiness check still passes.
 
 The schedule is once a day in Europe/Warsaw, the time in the configuration. At startup and periodically we check for an overdue run; after a break we create one run, without replaying every day. One source and a small volume allow us not to add a new scheduling service. A missing valid configuration does not quietly start a full IT import; the status explains what is missing.
 

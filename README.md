@@ -70,15 +70,16 @@ The minimum pay filter requires a currency and a period; it checks the upper bou
 docker compose run --rm tools pnpm check
 docker compose run --rm tools pnpm format:check
 docker compose run --rm tools pnpm build
-docker compose run --rm tools pnpm smoke
 docker compose run --rm -e RUN_INTEGRATION=1 tools pnpm test
 docker compose logs --tail=100 web worker migrate
 docker compose down
 ```
 
-`check` runs ESLint, the Nuxt and worker type checks and Vitest. Integration tests require running `web` and `worker` (`up --wait` first); `smoke` requests a job that the separate worker writes to PostgreSQL. The resulting `system_checks` records are technical confirmation, not offer data.
+`check` runs ESLint, the Nuxt and worker type checks and Vitest. Integration tests require running `web` and `worker` (`up --wait` first).
 
-Health: `/api/health/live` checks that HTTP works, `/api/health/ready` checks access to the migrated database. The worker's health checks its saved heartbeat; the queue job test also checks that work gets done.
+Health: `/api/health/live` checks that HTTP works, `/api/health/ready` checks that the database answers and the newest migration is applied. The worker's health checks its liveness record, renewed every 10 s by the worker's loop.
+
+Queue settings (attempts, retry delay, time limit, retention) are in [`queues.json`](queues.json), one entry per queue; an absent setting takes pg-boss's default, and `pnpm migrate` applies a change. `WORKER_POOL_SIZE` sets how many jobs of the queue library the worker carries out at once (default 2).
 
 Formatting: `docker compose run --rm tools pnpm format`. Design documentation and agent tool files are excluded from the application's formatting/linting.
 

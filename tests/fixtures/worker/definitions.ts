@@ -5,11 +5,12 @@ import { defineJob } from '../../../lib/queues/index.ts'
  * - `ok`: waits `ms` and ends normally;
  * - `throw`: throws `boom <id>`;
  * - `busy`: blocks its process for `ms`, so it stops reporting;
- * - `resume`: waits `ms` on its first attempt and ends at once on a later one.
+ * - `resume`: waits `ms` on its first attempt and ends at once on a later one;
+ * - `exit`: ends its process.
  */
 export type TestJob = {
   id: string
-  action: 'ok' | 'throw' | 'busy' | 'resume'
+  action: 'ok' | 'throw' | 'busy' | 'resume' | 'exit'
   ms?: number
   group?: string
   /** The failure handler throws on its first call. */

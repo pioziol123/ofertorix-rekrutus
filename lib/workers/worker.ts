@@ -123,6 +123,9 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
 
   const dispatch = async (job: TakenJob, member: PoolProcess) => {
     const registration = registry.get(job.definition)
+    // ASSUMPTION(oferty-pracy-2ba.1/ASM-2): the worker takes only the queues
+    // of registered definitions, so a job without a handler comes only from a
+    // job source given more queues; it is cancelled all the same (B1-R12).
     if (!registration) {
       console.error(
         `No handler is registered for job "${job.definition}"; job ${job.id} is cancelled`,
@@ -311,6 +314,9 @@ class Run {
     this.#confirming = true
     try {
       if (await this.source.confirm(this.job)) this.#confirmed = Date.now()
+      // ASSUMPTION(oferty-pracy-2ba.1/ASM-3): the attempt that lost its job
+      // cannot record its reason with the job (the fenced fail leaves the
+      // newer attempt alone); the worker's log carries it.
       else
         this.end({
           reason: 'taken-over',
@@ -333,6 +339,8 @@ class Run {
   }
 }
 
+// ASSUMPTION(oferty-pracy-2ba.1/ASM-4): a process that exits by itself
+// fails its attempt with the reason `exited` and is replaced.
 function fromOutcome(outcome: RunOutcome): Ending {
   if (outcome.kind === 'done') return outcome
   return {

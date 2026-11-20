@@ -26,6 +26,8 @@ try {
 }
 
 // The queues of the job definitions the module plugins register (B1-R03).
+// ASSUMPTION(oferty-pracy-2ba.1/ASM-1): the migration step runs the module
+// plugins; it is not one of the command-line scripts of B1-R15.
 const registry = new HandlerRegistry()
 await runModulePlugins(registry)
 await prepareQueues(registry.definitions(), configuration)

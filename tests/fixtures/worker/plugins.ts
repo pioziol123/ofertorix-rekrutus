@@ -27,6 +27,7 @@ async function handle(job: TestJob) {
   const earlier = await count(job, 'start')
   await record(job, 'start')
   if (job.action === 'throw') throw new Error(`boom ${job.id}`)
+  if (job.action === 'exit') process.exit(3)
   if (job.action === 'busy') {
     const until = Date.now() + (job.ms ?? 0)
     while (Date.now() < until) {

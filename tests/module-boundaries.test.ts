@@ -58,6 +58,7 @@ const application = [
   'lib',
   'modules',
   'migrations',
+  'plugins',
 ]
   .flatMap(files)
   .filter((file) => !isTest(file))
@@ -142,7 +143,6 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
         'jobspy-sync.ts',
         'polish-status.ts',
         'polish-sync.ts',
-        'smoke.ts',
         'source-status.ts',
         'source-sync.ts',
         'worker-health.ts',
@@ -167,10 +167,53 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
   })
 
   it('leaves outside the modules only the shared infrastructure in lib', () => {
-    expect(files('lib').sort()).toEqual([
-      'lib/contact-details.ts',
-      'lib/db.ts',
-      'lib/queue.ts',
-    ])
+    expect(
+      files('lib')
+        .filter((file) => !isTest(file))
+        .sort(),
+    ).toEqual(
+      [
+        'lib/contact-details.ts',
+        'lib/db.ts',
+        // The existing way to the queue, until oferty-pracy-2ba.6 (B1-D14).
+        'lib/queue.ts',
+        // The queue library (oferty-pracy-2ba.1).
+        'lib/queues/configuration.ts',
+        'lib/queues/connection.ts',
+        'lib/queues/consumer.ts',
+        'lib/queues/definition.ts',
+        'lib/queues/index.ts',
+        'lib/queues/prepare.ts',
+        'lib/queues/send.ts',
+        // The worker library (oferty-pracy-2ba.1).
+        'lib/workers/index.ts',
+        'lib/workers/messages.ts',
+        'lib/workers/pool-process.ts',
+        'lib/workers/pool.ts',
+        'lib/workers/registry.ts',
+        'lib/workers/worker.ts',
+      ].sort(),
+    )
+  })
+
+  // ASSUMPTION(oferty-pracy-2ba.1/ASM-1): the migration step is not one of
+  // the command-line scripts that must not run the module plugins.
+  it('runs the module plugins only in the worker, its pool processes and the migration step (B1-AC15)', () => {
+    const runners = application.filter((file) =>
+      importsOf(file).includes('plugins/index.ts'),
+    )
+    expect(runners).toEqual(['scripts/init-queue.ts'])
+    // The worker entry passes the plugins index by path to the worker
+    // library, which runs it and passes it to its pool processes.
+    expect(readFileSync(join(root, 'worker/index.ts'), 'utf8')).toContain(
+      "new URL('../plugins/index.ts', import.meta.url)",
+    )
+    // The web application loads neither the plugins nor the worker library.
+    const web = [...files('server'), ...files('app')].filter((file) =>
+      /plugins\/index|lib\/workers/.test(
+        readFileSync(join(root, file), 'utf8'),
+      ),
+    )
+    expect(web).toEqual([])
   })
 })
