@@ -17,10 +17,12 @@ import {
   type HandlerRegistry,
   type ModulePlugin,
 } from '../lib/workers/index.ts'
+import { registerAiJobs } from './ai.ts'
 import { registerProfileJobs } from './profile.ts'
 import { registerSourcesJobs } from './sources.ts'
 
 const modulePlugins: Record<string, ModulePlugin> = {
+  ai: registerAiJobs,
   profile: registerProfileJobs,
   sources: registerSourcesJobs,
 }

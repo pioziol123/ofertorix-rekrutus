@@ -8,32 +8,13 @@ import {
 } from 'h3'
 import type { H3Event } from 'h3'
 import { z, ZodError } from 'zod'
-import { createBoss } from '../../lib/queue'
-import { useAiQueue } from '../../modules/ai/index'
 
 /**
  * Request handling shared by the API routes of every module: identifier
- * validation, the request body limit and parsing, mapping exceptions to
- * response codes and access to the pg-boss client. It knows no module's
+ * validation, the request body limit and parsing and mapping exceptions to
+ * response codes. It knows no module's
  * rules; a module's route utility maps that module's exceptions on top.
  */
-
-let bossPromise: Promise<ReturnType<typeof createBoss>> | undefined
-/** The server's pg-boss client, started once and shared by all routes. */
-export function queueClient() {
-  bossPromise ??= (async () => {
-    const boss = createBoss()
-    boss.on('error', () => console.error('Queue unavailable'))
-    await boss.start()
-    // Requests from the routes send AI executions on this client.
-    useAiQueue(boss)
-    return boss
-  })().catch((error) => {
-    bossPromise = undefined
-    throw error
-  })
-  return bossPromise
-}
 
 /** A UUID, as identifiers in route parameters and request bodies are. */
 export const uuid = z.string().uuid()

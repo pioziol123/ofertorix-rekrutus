@@ -218,8 +218,6 @@ export class OpenAiAdapter implements StructuredModel {
 export function openAiEnd(observation: ProviderObservation): ExecutionEnd {
   if (observation.kind === 'outcome')
     return { state: 'failed', cause: observation.outcome }
-  if (observation.kind === 'lost_lease')
-    return { state: 'uncertain', cause: 'interrupted' }
   const error = observation.error
   // A request whose archive was asked for is not sent without it; after
   // it was sent, a response that could not be archived is not read, so

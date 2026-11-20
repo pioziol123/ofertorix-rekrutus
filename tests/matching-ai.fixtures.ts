@@ -1,9 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import type { Pool } from 'pg'
-import type { PgBoss } from 'pg-boss'
 import { vi } from 'vitest'
-import { aiExecutionQueue, runExecution } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   BatchClient,
@@ -210,46 +208,6 @@ export class FakeBatchClient extends BatchClient {
   }
   override async remove(file: string) {
     this.removed.push(file)
-  }
-}
-
-/** A queue client that keeps the jobs sent to it, for the test to run. */
-export function recordingQueue() {
-  const send = vi.fn(async (..._args: unknown[]) => randomUUID())
-  const boss = { send } as unknown as PgBoss
-  let done = 0
-  const executionJobs = () =>
-    send.mock.calls
-      .filter((call) => call[0] === aiExecutionQueue)
-      .map((call) => (call[1] as { executionId: string }).executionId)
-  return {
-    boss,
-    send,
-    executionJobs,
-    /** Forgets the jobs sent so far. */
-    reset() {
-      send.mockClear()
-      done = 0
-    },
-    /**
-     * Runs every AI execution job sent and not run yet, until none is left,
-     * as the queue would: a job that fails does not stop the others. The
-     * first failure is raised once every job ran.
-     */
-    async work() {
-      const failures: unknown[] = []
-      for (;;) {
-        const jobs = executionJobs()
-        if (done >= jobs.length) break
-        const next = jobs.slice(done)
-        done = jobs.length
-        for (const executionId of next)
-          await runExecution(executionId).catch((error: unknown) => {
-            failures.push(error)
-          })
-      }
-      if (failures.length) throw failures[0]
-    },
   }
 }
 

@@ -112,6 +112,23 @@ async function queueMigrationQueues(boss: PgBoss): Promise<string[]> {
     .map((queue) => queue.name)
 }
 
+/** Whether a queue of this name exists, for the migration step. */
+export async function queueExists(name: string): Promise<boolean> {
+  return withClient(async (boss) => (await boss.getQueue(name)) !== null)
+}
+
+/**
+ * Deletes a queue with its jobs, for the migration step, when it exists;
+ * a queue that no longer exists is left so. Returns whether it existed.
+ */
+export async function deleteQueue(name: string): Promise<boolean> {
+  return withClient(async (boss) => {
+    if (!(await boss.getQueue(name))) return false
+    await boss.deleteQueue(name)
+    return true
+  })
+}
+
 /**
  * The automated check of B1-R18 (B1-D15): the queue of every definition
  * exists with the key mode the definition names. Throws naming each queue

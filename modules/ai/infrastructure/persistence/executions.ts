@@ -233,74 +233,16 @@ export async function fundExecution(
 }
 
 /**
- * The lease a worker takes on a running paid execution: its owner token
- * and how long, by the database clock, it lasts from now.
+ * Takes a queued execution for work. The conditional state change protects
+ * against the same execution being picked up twice; exclusivity in the
+ * queue keeps a second job of its kind from running meanwhile (B6-D01).
  */
-export type ExecutionLease = { owner: string; seconds: number }
-
-/**
- * Who may end a running execution:
- * - `holder`: the worker holding the lease with this owner token;
- * - `lapsed`: recovery, while the execution's lease expired or it has none;
- * - absent: whoever runs it (the shared local slot, a batch being polled).
- */
-export type EndGuard = { holder: string } | { lapsed: true }
-
-/** The condition of a guard, with the owner token as parameter `$n`. */
-function guardCondition(
-  guard: EndGuard | undefined,
-  n: number,
-): { sql: string; values: string[] } {
-  if (!guard) return { sql: '', values: [] }
-  if ('holder' in guard)
-    return { sql: ` AND lease_owner=$${n}`, values: [guard.holder] }
-  return {
-    sql: ' AND (lease_expires_at IS NULL OR lease_expires_at<now())',
-    values: [],
-  }
-}
-
-/**
- * Takes a queued execution for work, with the lease when the worker runs
- * paid work. The conditional state change protects against the same
- * execution being picked up twice.
- */
-export async function claimExecution(
-  executionId: string,
-  lease: ExecutionLease | null,
-) {
+export async function claimExecution(executionId: string) {
   const claimed = await db().query(
-    `UPDATE ai_executions SET state='running',lease_owner=$2,
-      lease_expires_at=CASE WHEN $2::uuid IS NULL THEN NULL ELSE now()+make_interval(secs=>$3) END,
-      revision=revision+1 WHERE id=$1 AND state='queued' RETURNING id`,
-    [executionId, lease?.owner ?? null, lease?.seconds ?? 0],
+    "UPDATE ai_executions SET state='running',revision=revision+1 WHERE id=$1 AND state='queued' RETURNING id",
+    [executionId],
   )
   return claimed.rowCount ? readExecutionRow(executionId) : null
-}
-
-/**
- * Extends the lease of the running executions a worker holds to the
- * database clock plus its duration; nothing changes for an execution that
- * no longer runs or whose lease the worker no longer holds.
- */
-export async function renewLease(lease: ExecutionLease) {
-  await db().query(
-    `UPDATE ai_executions SET lease_expires_at=now()+make_interval(secs=>$2)
-     WHERE lease_owner=$1 AND state='running'`,
-    [lease.owner, lease.seconds],
-  )
-}
-
-/**
- * Running work whose lease expired by the database clock, or that has
- * none: paid work that was running before leases existed, and work on the
- * shared local slot, which the caller leaves to the slot's own lease.
- */
-export async function runningWithoutLiveLease() {
-  const rows = await db().query(
-    `${selectExecution} WHERE e.state='running' AND (e.lease_expires_at IS NULL OR e.lease_expires_at<now()) ORDER BY e.created_at,e.id`,
-  )
-  return rows.rows.map(toExecution)
 }
 
 export type Settlement = {
@@ -341,26 +283,25 @@ export async function settleAttempt(
 /**
  * Saves what the provider returned and the cost it implies, without
  * settling: the attempt keeps its reservation until the outcome is
- * delivered. The execution waits for delivery. Only a running execution
- * takes an outcome, and only from whom the guard names, in the same
- * statement, so of a worker's save and recovery's end exactly one
- * succeeds; false when it no longer runs or the guard does not hold.
+ * delivered. The execution waits for delivery. Only an execution in one of
+ * the `from` states, running by default, takes an outcome, in the same
+ * statement, so of a late process's save and an end saved meanwhile
+ * exactly one succeeds (B6-R06); false when it is in no such state.
  */
 export async function saveOutcome(
   executionId: string,
   outcome: { result: unknown; end: ExecutionEnd | null },
   settlement: Settlement,
-  guard?: EndGuard,
+  from: readonly ('queued' | 'running')[] = ['running'],
 ): Promise<boolean> {
-  const condition = guardCondition(guard, 5)
   const saved = await db().query(
-    `UPDATE ai_executions SET state='delivering',result=$2,cause=$3,end_state=$4,revision=revision+1 WHERE id=$1 AND state='running'${condition.sql}`,
+    `UPDATE ai_executions SET state='delivering',result=$2,cause=$3,end_state=$4,revision=revision+1 WHERE id=$1 AND state=ANY($5::text[])`,
     [
       executionId,
       outcome.result === null ? null : JSON.stringify(outcome.result),
       outcome.end?.cause ?? null,
       outcome.end?.state ?? null,
-      ...condition.values,
+      from,
     ],
   )
   if (!saved.rowCount) return false
@@ -373,19 +314,14 @@ export async function saveOutcome(
 
 /**
  * Saves the adapter's own state of a running execution; false when the
- * execution no longer runs or the guard does not hold. The value is stored
- * as it is, never read here. It is what an agent saves step by step.
+ * execution no longer runs. The value is stored as it is, never read here.
+ * It is what an agent saves step by step.
  * ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
  */
-export async function saveAdapterState(
-  executionId: string,
-  state: unknown,
-  guard?: EndGuard,
-) {
-  const condition = guardCondition(guard, 3)
+export async function saveAdapterState(executionId: string, state: unknown) {
   const saved = await db().query(
-    `UPDATE ai_executions SET adapter_state=$2::jsonb,revision=revision+1 WHERE id=$1 AND state='running'${condition.sql}`,
-    [executionId, JSON.stringify(state), ...condition.values],
+    "UPDATE ai_executions SET adapter_state=$2::jsonb,revision=revision+1 WHERE id=$1 AND state='running'",
+    [executionId, JSON.stringify(state)],
   )
   return (saved.rowCount ?? 0) > 0
 }
@@ -419,19 +355,14 @@ export async function recordFailedDelivery(executionId: string, error: string) {
   )
 }
 
-/**
- * Ends a running execution as retried when the guard lets it end; false
- * when it no longer runs or the guard does not hold.
- */
+/** Ends a running execution as retried; false when it no longer runs. */
 export async function finishRunning(
   executionId: string,
   cause: ExecutionCause | null,
-  guard: EndGuard,
 ) {
-  const condition = guardCondition(guard, 3)
   const finished = await db().query(
-    `UPDATE ai_executions SET state='retried',cause=$2,end_state=NULL,finished_at=now(),revision=revision+1 WHERE id=$1 AND state='running'${condition.sql}`,
-    [executionId, cause, ...condition.values],
+    "UPDATE ai_executions SET state='retried',cause=$2,end_state=NULL,finished_at=now(),revision=revision+1 WHERE id=$1 AND state='running'",
+    [executionId, cause],
   )
   return (finished.rowCount ?? 0) > 0
 }
@@ -490,10 +421,21 @@ export async function readLatestExecutionRow(operationId: string) {
   return row ? toExecution(row) : null
 }
 
-export async function executionsInState(state: 'waiting_budget' | 'queued') {
+export async function executionsInState(state: 'waiting_budget') {
   const rows = await db().query(
     `${selectExecution} WHERE e.state=$1 ORDER BY e.created_at,e.id`,
     [state],
+  )
+  return rows.rows.map(toExecution)
+}
+
+/**
+ * The executions that wait for work, run or wait for delivery, in the
+ * order they were requested.
+ */
+export async function unfinishedExecutions() {
+  const rows = await db().query(
+    `${selectExecution} WHERE e.state IN ('queued','running','delivering') ORDER BY e.created_at,e.id`,
   )
   return rows.rows.map(toExecution)
 }
@@ -545,14 +487,14 @@ export async function countActiveExecutionRows(settingsKey: string) {
 
 /**
  * Takes the queued executions of a batch group for work, all in one
- * statement and under one lease, so that only one run sends the group.
- * Returns how many it took.
+ * statement, so that only one run sends the group. Returns how many it
+ * took.
  */
-export async function claimGroup(groupId: string, lease: ExecutionLease) {
+export async function claimGroup(groupId: string) {
   const claimed = await db().query(
-    `UPDATE ai_executions SET state='running',lease_owner=$2,lease_expires_at=now()+make_interval(secs=>$3),revision=revision+1
+    `UPDATE ai_executions SET state='running',revision=revision+1
      WHERE group_id=$1 AND mode='batch' AND state='queued'`,
-    [groupId, lease.owner, lease.seconds],
+    [groupId],
   )
   return claimed.rowCount ?? 0
 }
@@ -569,26 +511,23 @@ export async function runningGroupRows(groupId: string) {
 /**
  * Saves the adapter's state of a group when it still holds the state the
  * caller read; false when another run changed it since. The run that
- * took the group (`holder`) saves only while its items still run under its
- * lease. The value is compared and stored as it is, never interpreted.
+ * took the group (`claimed`) saves only while its items still run, so a
+ * group ended meanwhile is not sent further. The value is compared and
+ * stored as it is, never interpreted.
  */
 export async function saveGroupAdapterState(
   groupId: string,
   expected: unknown,
   next: unknown,
-  holder: string | null = null,
+  claimed = false,
 ) {
-  const condition = holder
-    ? guardCondition({ holder }, 4)
-    : { sql: '', values: [] }
   const saved = await db().query(
     `UPDATE ai_executions SET adapter_state=$3::jsonb,revision=revision+1
-     WHERE group_id=$1 AND mode='batch' AND adapter_state IS NOT DISTINCT FROM $2::jsonb${holder ? " AND state='running'" : ''}${condition.sql}`,
+     WHERE group_id=$1 AND mode='batch' AND adapter_state IS NOT DISTINCT FROM $2::jsonb${claimed ? " AND state='running'" : ''}`,
     [
       groupId,
       expected === null ? null : JSON.stringify(expected),
       JSON.stringify(next),
-      ...condition.values,
     ],
   )
   return (saved.rowCount ?? 0) > 0
@@ -612,31 +551,24 @@ export async function readGroupAdapterState(groupId: string) {
 }
 
 /**
- * Batch groups with work left for their next step: one execution of each
- * group still running (to poll it), and the adapter state of each ended
+ * Batch groups with work left for their next step: each group that still
+ * has a running item (to poll it), and the adapter state of each ended
  * group that has one (the adapter says whether it needs cleaning up).
  */
 export async function batchGroupsInProgress() {
   const rows = await db().query(
-    `SELECT DISTINCT ON (group_id) id,group_id FROM ai_executions
-     WHERE mode='batch' AND state='running' ORDER BY group_id,id`,
+    `SELECT DISTINCT group_id FROM ai_executions
+     WHERE mode='batch' AND state='running' ORDER BY group_id`,
   )
-  return rows.rows.map((row) => ({
-    executionId: row.id as string,
-    groupId: row.group_id as string,
-  }))
+  return rows.rows.map((row) => row.group_id as string)
 }
 
 export async function endedBatchGroups() {
   const rows = await db().query(
-    `SELECT DISTINCT ON (group_id) id,group_id,adapter_state,configuration FROM ai_executions e
+    `SELECT DISTINCT ON (group_id) group_id FROM ai_executions e
      WHERE mode='batch' AND adapter_state IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM ai_executions r WHERE r.group_id=e.group_id AND r.mode='batch' AND r.state IN ('queued','running'))
-     ORDER BY group_id,id`,
+     ORDER BY group_id`,
   )
-  return rows.rows.map((row) => ({
-    executionId: row.id as string,
-    state: row.adapter_state as unknown,
-    snapshot: row.configuration as ExecutionSnapshot,
-  }))
+  return rows.rows.map((row) => row.group_id as string)
 }

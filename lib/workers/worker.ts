@@ -32,13 +32,6 @@ export const workerTimings = {
 
 export const defaultPoolSize = 2
 
-/**
- * The queues of the modules not yet moved to the libraries, carried out by
- * the existing worker path (B1-R17); the worker leaves them out (B1-D16).
- * Transitional (B1-D14): each module's task removes its queue from here.
- */
-export const existingPathQueues = ['ai-execution'] as const
-
 export type WorkerOptions = {
   /** Path or URL of the plugins index that registers every module. */
   plugins: string
@@ -92,9 +85,9 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
   onQueueError((error) =>
     fatal(`the queue reported an error: ${error.message}`),
   )
-  // Every queue in the database except those of the existing path, so a
-  // job without a handler is taken, cancelled and logged (B1-D16, B1-R12).
-  const opened = await openJobSource({ excluding: existingPathQueues }).catch(
+  // Every queue in the database, so a job without a handler is taken,
+  // cancelled and logged (B1-D16, B1-R12).
+  const opened = await openJobSource().catch(
     (error: Error) => fatal(`the queues could not be read: ${error.message}`),
   )
   const source = options.jobSource?.(opened) ?? opened

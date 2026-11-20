@@ -21,6 +21,8 @@ export {
   applyQueueConfiguration,
   checkKeyModes,
   createQueue,
+  deleteQueue,
+  queueExists,
 } from './prepare.ts'
 export {
   openJobSource,

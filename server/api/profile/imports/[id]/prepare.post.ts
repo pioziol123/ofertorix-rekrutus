@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { prepareProposal } from '../../../../../modules/profile/index'
-import { jsonBody, queueClient, uuid } from '../../../../utils/http'
+import { jsonBody, uuid } from '../../../../utils/http'
 import { profileHandler } from '../../../../utils/profile'
 export default profileHandler(async (event) => {
   const body = z
@@ -10,8 +10,6 @@ export default profileHandler(async (event) => {
     })
     .strict()
     .parse(await jsonBody(event))
-  // Connects the AI execution queue before the request.
-  await queueClient()
   return prepareProposal(
     uuid.parse(getRouterParam(event, 'id')),
     body.text,

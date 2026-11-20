@@ -1,96 +1,28 @@
 import { fileURLToPath } from 'node:url'
-import {
-  aiExecutionQueue,
-  recoverExecutions,
-  registerResultReceiver,
-  runExecution,
-  useAiQueue,
-} from '../modules/ai/index.ts'
-import {
-  proposalReceiver,
-  proposalSettingsKey,
-  resumeProposalPreparations,
-} from '../modules/profile/index.ts'
 import { closePool } from '../lib/db.ts'
-import { createBoss } from '../lib/queue.ts'
 import { startWorker } from '../lib/workers/index.ts'
 
-import {
-  currentScheduleDay,
-  requestScheduledSyncs,
-} from '../modules/sources/index.ts'
-
-import {
-  assessmentReceiver,
-  assessmentSettingsKey,
-} from '../modules/matching/index.ts'
-import {
-  researchReceiver,
-  researchSettingsKey,
-} from '../modules/companies/index.ts'
-
-// The worker library starts first: an invalid queue configuration, pool
-// size (WORKER_POOL_SIZE) or module plugin ends the worker before the
-// existing path takes any job (B1-R04, B1-R14). It then takes the jobs of the module plugins' job
-// definitions and writes the worker's liveness record. The existing path
-// below stays until each module is moved to the libraries (B1-R17, B1-D14).
+// The worker carries out the jobs of every queue through the worker
+// library: an invalid queue configuration, pool size (WORKER_POOL_SIZE) or
+// module plugin ends it at start (B1-R04, B1-R14). It knows no module and
+// does no periodic work; the periodic process does (B6-R09).
 const worker = await startWorker({
   plugins: fileURLToPath(new URL('../plugins/index.ts', import.meta.url)),
 })
-const boss = createBoss()
-let stopping = false
-const fatal = () => {
-  console.error(
-    'Worker failed; inspect service configuration and database availability',
-  )
-  process.exit(1)
-}
-boss.on('error', fatal)
-await boss.start()
-// Validate the schedule before the daily sync request runs.
-currentScheduleDay()
-useAiQueue(boss)
-registerResultReceiver(proposalSettingsKey, proposalReceiver)
-registerResultReceiver(assessmentSettingsKey, assessmentReceiver)
-registerResultReceiver(researchSettingsKey, researchReceiver)
-await resumeProposalPreparations()
-await recoverExecutions()
-await boss.work<{ executionId: string }>(aiExecutionQueue, async (jobs) => {
-  for (const job of jobs) await runExecution(job.data.executionId)
-})
-let scheduling = false
-async function schedule() {
-  if (scheduling || stopping) return
-  scheduling = true
-  try {
-    // Until the periodic process of oferty-pracy-2ba.6 (B5-R07).
-    await requestScheduledSyncs()
-    await resumeProposalPreparations()
-    await recoverExecutions()
-  } finally {
-    scheduling = false
-  }
-}
-await schedule()
-const scheduleTimer = setInterval(() => {
-  void schedule().catch(fatal)
-}, 60_000)
-console.info('Worker ready')
 
+let stopping = false
 async function shutdown() {
   if (stopping) return
   stopping = true
-  clearInterval(scheduleTimer)
-  await Promise.all([worker.stop(), boss.stop()])
+  await worker.stop()
   await closePool()
 }
-process.on('SIGTERM', () => {
-  void shutdown()
-    .then(() => process.exit(0))
-    .catch(fatal)
-})
-process.on('SIGINT', () => {
-  void shutdown()
-    .then(() => process.exit(0))
-    .catch(fatal)
-})
+for (const signal of ['SIGTERM', 'SIGINT'] as const)
+  process.on(signal, () => {
+    void shutdown()
+      .then(() => process.exit(0))
+      .catch(() => {
+        console.error('Worker failed to stop')
+        process.exit(1)
+      })
+  })

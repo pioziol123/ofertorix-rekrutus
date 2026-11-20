@@ -48,20 +48,17 @@ const internalPrefix = '__pgboss__'
 
 /**
  * A job source over every queue in the queue schema, failure queues
- * included, except pg-boss's own queues and the queues it is told to leave
- * out, taken in turn so
- * that no queue starves the others (B1-R07, B1-D16). The list is read once,
+ * included, except pg-boss's own queues, taken in turn so that no queue
+ * starves the others (B1-R07, B1-D16). The list is read once,
  * here; reading it checks nothing. A job's definition name is its queue's
  * name, for a failure copy the name of the queue it failed in.
  */
 export async function openJobSource(
-  options: { excluding?: readonly string[] } = {},
   client: () => Promise<PgBoss> = queueClient,
 ): Promise<JobSource> {
-  const excluded = new Set(options.excluding ?? [])
   const queues = (await (await client()).getQueues())
     .map((queue) => queue.name)
-    .filter((name) => !excluded.has(name) && !name.startsWith(internalPrefix))
+    .filter((name) => !name.startsWith(internalPrefix))
     .sort()
   let cursor = 0
   const attempt = (job: TakenJob) => ({

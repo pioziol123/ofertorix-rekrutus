@@ -1,7 +1,8 @@
 /**
  * Public operations of the AI module: general capabilities for working with
  * a model, independent of the clients' business cases.
- * Clients, the worker and the server use only these.
+ * Clients, the module plugin, the periodic process, the migration step
+ * and the server use only these.
  */
 export {
   requestExecution,
@@ -57,11 +58,18 @@ export {
   type ResultReceiver,
 } from './result-receiver.ts'
 
-// Composition: where the worker and the server assemble dependencies.
+// The jobs of AI executions, registered by the AI module plugin with their
+// job handler and failure handler (B6-R11).
 export {
-  aiExecutionJobOptions,
-  aiExecutionQueue,
-  useAiQueue,
-} from './execution-queue.ts'
+  localExecutionJob,
+  paidExecutionJob,
+  type ExecutionJobData,
+} from './execution-jobs.ts'
 export { runExecution } from './run-execution.ts'
-export { recoverExecutions } from './recover-executions.ts'
+export {
+  endFailedExecution,
+  requestUnfinishedExecutions,
+} from './end-failed-execution.ts'
+// The steps of the periodic process (B6-R09).
+export { fundWaitingExecutions } from './fund-executions.ts'
+export { advanceSentBatches, cleanUpEndedBatches } from './run-batch.ts'

@@ -448,12 +448,6 @@ describe('A14-AC12: each adapter decides the public end of what it observed', ()
       'uncertain',
       'unknown',
     ],
-    [
-      'a lost lease of the worker of paid work (0mq.15)',
-      { kind: 'lost_lease', processEnded: false },
-      'uncertain',
-      'interrupted',
-    ],
   ] as const)('OpenAI: %s', (_, observation, state, cause) => {
     expect(openAiEnd(observation)).toEqual({ state, cause })
   })
@@ -466,7 +460,7 @@ describe('A14-AC12: each adapter decides the public end of what it observed', ()
       'model_unavailable',
     ],
     [
-      'a lease lost before sending',
+      'a configuration error before sending',
       { kind: 'error', error: new ModelError('configuration') },
       'failed',
       'configuration',
@@ -509,18 +503,6 @@ describe('A14-AC12: each adapter decides the public end of what it observed', ()
       },
       'uncertain',
       'http',
-    ],
-    [
-      'a lost lease of a running process',
-      { kind: 'lost_lease', processEnded: false },
-      'uncertain',
-      'interrupted',
-    ],
-    [
-      'a process that ended after its lease lapsed and released the slot',
-      { kind: 'lost_lease', processEnded: true },
-      'failed',
-      'interrupted',
     ],
   ] as const)('Ollama: %s', (_, observation, state, cause) => {
     expect(ollamaEnd(observation)).toEqual({ state, cause })

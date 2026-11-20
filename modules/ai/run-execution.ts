@@ -1,13 +1,11 @@
-import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { transaction } from '../../lib/db.ts'
 import { admitExecutions } from './admit-executions.ts'
 import { archiveArtifact } from './infrastructure/persistence/batch-archive.ts'
 import { chargeCost } from './domain/cost.ts'
-import { executionLease } from './domain/execution-lease.ts'
 import type { ExecutionEnd } from './domain/execution-state.ts'
 import { parseResult } from './domain/response-schema.ts'
-import { resendExecutionJob } from './execution-queue.ts'
+import { sendExecutionJob, type ExecutionJobData } from './execution-jobs.ts'
 import {
   claimDelivery,
   claimExecution,
@@ -15,25 +13,13 @@ import {
   finishRunning,
   readExecutionRow,
   recordFailedDelivery,
-  renewLease,
   saveAdapterState,
   saveOutcome,
   settleAttempt,
   settleSavedAttempt,
-  type EndGuard,
-  type ExecutionLease,
   type ExecutionRow,
   type Settlement,
 } from './infrastructure/persistence/executions.ts'
-import {
-  archiveLocal,
-  authorizeLocalRequest,
-  claimLocalSlot,
-  finishLocal,
-  queuedLocalExecutions,
-  renewLocal,
-  type LocalClaim,
-} from './infrastructure/persistence/local-slot.ts'
 import {
   emptyUsage,
   ModelError,
@@ -44,12 +30,10 @@ import {
 } from './provider-adapter.ts'
 import { providerAdapter } from './provider-registry.ts'
 import { resultReceiver } from './result-receiver.ts'
-import { runBatch } from './run-batch.ts'
+import { carryOutBatchItem } from './run-batch.ts'
 
 /** The attempts an operation gets for transient errors, as before. */
 const maxAttempts = 2
-/** How often a worker on the shared local slot extends its lease. */
-const leaseRenewalMs = 15_000
 
 export type Outcome = {
   /** The parsed result, or null when the execution ended without one. */
@@ -81,49 +65,35 @@ export const noOutcome = (): Outcome => ({
   retryAfterMs: 1000,
 })
 
-/** A new lease of paid work, owned by the run that takes it. */
-export function newLease(): ExecutionLease {
-  return { owner: randomUUID(), seconds: executionLease.durationSeconds }
-}
+/**
+ * The end of work AI cannot tell the course of: an execution found running
+ * by a new attempt, or left waiting or running after its job's last attempt
+ * failed (B6-R05, B6-R07, B6-D02). AI does not deduce that the work was
+ * interrupted.
+ */
+export const unknownEnd: ExecutionEnd = { state: 'uncertain', cause: 'unknown' }
 
 /**
- * Runs the work while renewing the lease, so that recovery does not take
- * a live worker for a lost one, however long the provider takes.
+ * Ends an execution in one of the `from` states as uncertain with the cause
+ * unknown, keeping its reservation (nothing is charged beyond what was
+ * saved), and sends the job that delivers that end to the client. It calls
+ * no provider. A conditional write: false, with no effect, when the
+ * execution is in no such state. Runs in the caller's transaction.
  */
-export async function whileLeased<T>(
-  lease: ExecutionLease,
-  work: () => Promise<T>,
-): Promise<T> {
-  const heartbeat = setInterval(() => {
-    void renewLease(lease).catch(() => {})
-  }, executionLease.renewEveryMs)
-  heartbeat.unref()
-  try {
-    return await work()
-  } finally {
-    clearInterval(heartbeat)
-  }
-}
-
-/**
- * Takes a queued execution for work. An execution of a provider on the
- * shared local slot is taken only together with the slot, in request
- * order; otherwise it stays queued until the slot is free. Any other
- * execution is paid work and is taken under a lease (SD 0mq.15 decision 2).
- */
-async function claim(executionId: string) {
-  return transaction(async () => {
-    const queued = await readExecutionRow(executionId)
-    if (queued?.state !== 'queued') return null
-    let local: LocalClaim | null = null
-    let lease: ExecutionLease | null = null
-    if (providerAdapter(queued.snapshot.settings.provider)?.sharedSlot) {
-      local = await claimLocalSlot(executionId)
-      if (!local) return null
-    } else lease = newLease()
-    const execution = await claimExecution(executionId, lease)
-    return execution ? { execution, local, lease } : null
-  })
+export async function endAsUnknown(
+  execution: ExecutionRow,
+  from: readonly ('queued' | 'running')[] = ['running'],
+): Promise<boolean> {
+  const outcome = { ...noOutcome(), end: unknownEnd }
+  const saved = await saveOutcome(
+    execution.id,
+    { result: null, end: unknownEnd },
+    settlementOf(execution, outcome),
+    from,
+  )
+  if (saved)
+    await sendExecutionJob(execution.id, execution.snapshot.settings)
+  return saved
 }
 
 /** A raw provider response a paid run received, kept in memory. */
@@ -133,7 +103,7 @@ type RawResponse = { key: string; content: string }
  * The keeper of the provider's artefacts for a paid run: it writes them to
  * the execution's archive when the client asked for it, and always holds
  * the raw responses, so that a run that may no longer save its outcome can
- * still archive what the provider returned (SD 0mq.15 decision 3).
+ * still archive what the provider returned (B6-R06).
  */
 function artefactKeeper(execution: ExecutionRow, responses: RawResponse[]) {
   return async (kind: 'input' | 'output', key: string, content: string) => {
@@ -144,9 +114,9 @@ function artefactKeeper(execution: ExecutionRow, responses: RawResponse[]) {
 }
 
 /**
- * Keeps the raw responses of a run that lost its execution in the
+ * Keeps the raw responses of a run whose execution ended meanwhile in the
  * execution's archive; a client that asked for the archive has them there
- * already.
+ * already (B6-R06).
  */
 async function archiveLate(execution: ExecutionRow, responses: RawResponse[]) {
   if (execution.snapshot.keepArchive) return
@@ -219,14 +189,10 @@ async function callAgent(
         tools: execution.snapshot.tools,
       },
       {
-        // The lease is renewed across all steps; a save after recovery
-        // ended the work fails, and the adapter sends nothing more.
+        // A save after the execution ended fails, and the adapter sends
+        // nothing more (B6-R06).
         save: async (state) => {
-          if (
-            !(await transaction(() =>
-              saveAdapterState(execution.id, state, paid?.guard),
-            ))
-          )
+          if (!(await transaction(() => saveAdapterState(execution.id, state))))
             throw new Error('The execution no longer runs')
         },
         ...(paid
@@ -254,17 +220,13 @@ async function callAgent(
   }
 }
 
-/**
- * A paid run: who may end the execution (the holder of its lease) and the
- * raw responses the run received.
- */
-type PaidRun = { guard: EndGuard; responses: RawResponse[] }
+/** A paid run: the raw responses it received. */
+type PaidRun = { responses: RawResponse[] }
 
 /** Calls the provider through its adapter and classifies what happened. */
 async function callProvider(
   execution: ExecutionRow,
   adapter: ProviderAdapter | undefined,
-  local: LocalClaim | null,
   paid: PaidRun | null,
 ): Promise<Outcome> {
   const { settings, instruction, input, responseSchema } = execution.snapshot
@@ -287,8 +249,8 @@ async function callProvider(
     const response = await single(settings, {
       fixed: execution.snapshot.fixed ?? {},
       // Archived when the client asked for it (SD 0mq.17 decision 5); a
-      // paid run also holds the raw response in case it loses the
-      // execution (SD 0mq.15 decision 3).
+      // paid run also holds the raw response in case its execution ends
+      // meanwhile (B6-R06).
       ...(paid
         ? { keepArtifact: artefactKeeper(execution, paid.responses) }
         : execution.snapshot.keepArchive
@@ -303,12 +265,16 @@ async function callProvider(
                 ),
             }
           : {}),
-      ...(local
-        ? {
-            beforeSend: () => authorizeLocalRequest(local),
-            archive: (raw: string) => archiveLocal(local, raw),
-          }
-        : {}),
+      // The raw response of the local model is always kept in the
+      // execution's archive.
+      ...(paid
+        ? {}
+        : {
+            archive: (raw: string) =>
+              transaction(() =>
+                archiveArtifact(execution.id, 'output', 'response', raw),
+              ),
+          }),
     }).generate({
       model: settings.model,
       instructions: instruction,
@@ -328,41 +294,6 @@ async function callProvider(
       retryAfterMs: error.details.retryAfterMs ?? 1000,
     }
   }
-}
-
-/**
- * Runs the call while holding the shared local slot: the lease is renewed
- * during the call, and afterwards the slot is released unless the adapter
- * judged the end uncertain. An outcome reached after the lease lapsed is
- * not used: the adapter decides what the lost lease means, knowing whether
- * the process ended and released the slot. An execution recovery already
- * ended as uncertain keeps that state; its slot is released once its
- * process confirms its end.
- */
-async function callOnSlot(
-  execution: ExecutionRow,
-  adapter: ProviderAdapter | undefined,
-  local: LocalClaim,
-): Promise<Outcome> {
-  const heartbeat = setInterval(() => {
-    void renewLocal(local).catch(() => {})
-  }, leaseRenewalMs)
-  heartbeat.unref()
-  let outcome: Outcome
-  try {
-    outcome = await callProvider(execution, adapter, local, null)
-  } finally {
-    clearInterval(heartbeat)
-  }
-  const ended = outcome.end?.state !== 'uncertain'
-  const { held, released } = await transaction(() => finishLocal(local, ended))
-  if (!held && adapter)
-    outcome = {
-      ...outcome,
-      result: null,
-      end: adapter.endOf({ kind: 'lost_lease', processEnded: released }),
-    }
-  return outcome
 }
 
 /**
@@ -409,21 +340,16 @@ export function settlementOf(
 }
 
 /**
- * Ends the attempt and requests the next one of the same operation. A paid
- * run does so only while it still holds the execution's lease; false when
- * recovery ended the execution first.
+ * Ends the attempt and requests the next one of the same operation, while
+ * the execution still runs; false when it ended meanwhile.
  */
 async function retry(
   execution: ExecutionRow,
   settlement: Settlement,
   end: ExecutionEnd | null,
-  guard: EndGuard | undefined,
 ): Promise<boolean> {
   return transaction(async () => {
-    const cause = end?.cause ?? null
-    if (guard) {
-      if (!(await finishRunning(execution.id, cause, guard))) return false
-    } else await finishExecution(execution.id, { state: 'retried', cause })
+    if (!(await finishRunning(execution.id, end?.cause ?? null))) return false
     await settleAttempt(execution.id, settlement)
     await admitExecutions(
       [
@@ -523,89 +449,65 @@ async function deliver(executionId: string) {
   }
 }
 
-/** Sends again the jobs of the executions waiting for the shared slot. */
-export async function wakeLocalQueue() {
-  for (const executionId of await queuedLocalExecutions())
-    await resendExecutionJob(executionId)
-}
-
 /**
- * Handles one job of the AI execution queue. A queued execution is
- * claimed, the provider called once, and the outcome saved before it is
- * delivered; a transient error is retried once as a new attempt of the same
- * operation. An execution waiting for delivery is delivered again without
- * calling the provider.
+ * The job handler of both AI queues (B6-R02, B6-R03, B6-R05). A queued
+ * execution is claimed, the provider called once, and the outcome saved
+ * before it is delivered; a transient error is retried once as a new
+ * attempt of the same operation. An execution waiting for delivery is
+ * delivered again without calling the provider; a delivery error throws,
+ * so the queue retries the job.
  *
- * Paid work runs under the execution's lease, renewed until its outcome is
- * saved. A paid run that finds the execution ended by recovery meanwhile
- * keeps the raw responses it received in the execution's archive and ends
- * without saving or delivering anything.
+ * Exclusivity in the queue means that an execution found running was left
+ * by an attempt that has ended: it ends as uncertain with the cause
+ * unknown, and the job that delivers that end is sent. A paid run whose
+ * save finds the execution ended keeps the raw responses it received in the
+ * execution's archive and ends without effect (B6-R06).
  */
-export async function runExecution(executionId: string): Promise<void> {
+export async function runExecution({
+  executionId,
+}: ExecutionJobData): Promise<void> {
+  const row = await readExecutionRow(executionId)
+  if (row?.state === 'delivering') return deliver(executionId)
   // An item of a provider batch moves with its group; its own job then
   // delivers its outcome.
-  const row = await readExecutionRow(executionId)
   if (row?.mode === 'batch' && row.groupId) {
-    await runBatch(row.groupId)
+    await carryOutBatchItem(row.groupId)
     await deliver(executionId)
     return
   }
-  const claimed = await claim(executionId)
-  if (claimed?.lease) {
-    const { execution, lease } = claimed
-    const kept = await whileLeased(lease, () => runPaid(execution, lease))
-    if (!kept) return
-  } else if (claimed?.local) {
-    const { execution, local } = claimed
-    const adapter = providerAdapter(execution.snapshot.settings.provider)
-    const outcome = await callOnSlot(execution, adapter, local)
-    const settlement = settlementOf(execution, outcome)
-    if (outcome.retry && execution.attempt.number < maxAttempts) {
-      await delay(outcome.retryAfterMs)
-      await retry(execution, settlement, outcome.end, undefined)
-      return
-    }
-    await transaction(() =>
+  const execution = await transaction(() => claimExecution(executionId))
+  if (!execution) {
+    if (row?.state === 'running')
+      await transaction(() => endAsUnknown(row, ['running']))
+    return
+  }
+  if (await carryOut(execution)) await deliver(executionId)
+}
+
+/**
+ * Calls the provider and saves its outcome, or retries it. True when the
+ * outcome was saved and waits for delivery; false when the work was
+ * retried, or when the execution had ended meanwhile, for paid work with
+ * the raw responses kept in its archive instead.
+ */
+async function carryOut(execution: ExecutionRow): Promise<boolean> {
+  const adapter = providerAdapter(execution.snapshot.settings.provider)
+  const paid: PaidRun | null = adapter?.sharedSlot ? null : { responses: [] }
+  const outcome = await callProvider(execution, adapter, paid)
+  const settlement = settlementOf(execution, outcome)
+  let kept: boolean
+  if (outcome.retry && execution.attempt.number < maxAttempts) {
+    await delay(outcome.retryAfterMs)
+    if (!(await retry(execution, settlement, outcome.end))) kept = false
+    else return false
+  } else
+    kept = await transaction(() =>
       saveOutcome(
         execution.id,
         { result: outcome.result, end: outcome.end },
         settlement,
       ),
     )
-    // The slot may be free now; the next local execution takes it.
-    await wakeLocalQueue()
-  }
-  await deliver(executionId)
-}
-
-/**
- * Calls the provider for paid work and saves its outcome, or retries it,
- * as the holder of the lease. True when the outcome was saved and waits
- * for delivery; false when the work was retried, or when recovery had
- * ended it and the raw responses went to the archive instead.
- */
-async function runPaid(
-  execution: ExecutionRow,
-  lease: ExecutionLease,
-): Promise<boolean> {
-  const paid: PaidRun = { guard: { holder: lease.owner }, responses: [] }
-  const adapter = providerAdapter(execution.snapshot.settings.provider)
-  const outcome = await callProvider(execution, adapter, null, paid)
-  const settlement = settlementOf(execution, outcome)
-  if (outcome.retry && execution.attempt.number < maxAttempts) {
-    await delay(outcome.retryAfterMs)
-    if (!(await retry(execution, settlement, outcome.end, paid.guard)))
-      await archiveLate(execution, paid.responses)
-    return false
-  }
-  const saved = await transaction(() =>
-    saveOutcome(
-      execution.id,
-      { result: outcome.result, end: outcome.end },
-      settlement,
-      paid.guard,
-    ),
-  )
-  if (!saved) await archiveLate(execution, paid.responses)
-  return saved
+  if (!kept && paid) await archiveLate(execution, paid.responses)
+  return kept
 }

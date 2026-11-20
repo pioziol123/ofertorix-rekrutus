@@ -25,7 +25,6 @@ export type OllamaOptions = {
   credential?: () => string | undefined
   modelDigest?: string | null
   archive?: (raw: string) => Promise<void>
-  beforeGenerate?: () => Promise<void>
 }
 export class OllamaAdapter implements StructuredModel {
   constructor(
@@ -75,7 +74,6 @@ export class OllamaAdapter implements StructuredModel {
   ): Promise<ModelResult> {
     validateRequest(request)
     await this.checkModelAvailability(request.model)
-    await this.options.beforeGenerate?.()
     let response: Response
     try {
       response = await this.fetcher(
@@ -115,7 +113,7 @@ export class OllamaAdapter implements StructuredModel {
         { cause },
       )
     }
-    // A failed archive is not a successful request; keep the slot conservative.
+    // A failed archive is not a successful request.
     await this.options.archive?.(raw)
     let value: Record<string, unknown>
     try {
@@ -176,20 +174,12 @@ export class OllamaAdapter implements StructuredModel {
  * What an observation of the Ollama adapter means publicly. The adapter
  * records whether the local process confirmed its end. An error before
  * the request was sent, or after the process confirmed its end, tells how
- * the work ended. A lost lease of a running process, or an error without
- * a confirmed end, leaves the process in an unknown state: the execution is
- * uncertain and keeps the shared local slot. A process that ended after
- * its lease lapsed released the slot: its outcome is not used, and the
- * execution failed as interrupted.
+ * the work ended. An error without a confirmed end leaves the process in an
+ * unknown state: the execution is uncertain.
  */
 export function ollamaEnd(observation: ProviderObservation): ExecutionEnd {
   if (observation.kind === 'outcome')
     return { state: 'failed', cause: observation.outcome }
-  if (observation.kind === 'lost_lease')
-    return {
-      state: observation.processEnded ? 'failed' : 'uncertain',
-      cause: 'interrupted',
-    }
   const error = observation.error
   if (!(error instanceof ModelError))
     return { state: 'uncertain', cause: 'unknown' }
@@ -221,7 +211,7 @@ const credentialOf = (endpoint: AiEndpoint) => () =>
 
 /**
  * The Ollama provider for the AI coordination, in single mode, on the
- * installation's shared local slot. Its check fixes the endpoint and the
+ * installation's local model, whose executions run one at a time. Its check fixes the endpoint and the
  * version (digest) of the model before a request; the execution refuses a
  * changed endpoint or model instead of redirecting queued work.
  */
@@ -269,10 +259,6 @@ export function ollamaProvider(
           modelDigest: fixed.data.modelDigest,
           credential: credentialOf(endpoint),
           archive: context.archive,
-          beforeGenerate: async () => {
-            if (context.beforeSend && !(await context.beforeSend()))
-              throw new ModelError('configuration')
-          },
         })
       },
     },

@@ -11,8 +11,8 @@
  * (B1-D05). It does not run the module plugins.
  */
 import { closePool } from '../lib/db.ts'
-import { createBoss } from '../lib/queue.ts'
-import { stopQueues } from '../lib/queues/index.ts'
+import { deleteQueue, queueExists, stopQueues } from '../lib/queues/index.ts'
+import { requestUnfinishedExecutions } from '../modules/ai/index.ts'
 import { requestUnfinishedCvTextReadings } from '../modules/profile/index.ts'
 import { requestUnfinishedSyncRuns } from '../modules/sources/index.ts'
 
@@ -23,21 +23,22 @@ const carryOvers: Record<string, () => Promise<number>> = {
   // Every sync run queued or running gets one job: a queued one is carried
   // out, a running one taken over (B5-R08, B5-D03).
   'source-sync': requestUnfinishedSyncRuns,
+  // Every AI execution queued, running or waiting for delivery gets one
+  // job: a queued one is carried out, a running one ends as uncertain, one
+  // waiting for delivery is delivered (B6-R10, B6-D04).
+  'ai-execution': requestUnfinishedExecutions,
 }
 
-const boss = createBoss()
 try {
-  await boss.start()
   for (const [queue, carryOver] of Object.entries(carryOvers)) {
-    if (!(await boss.getQueue(queue))) continue
+    if (!(await queueExists(queue))) continue
     const requested = await carryOver()
-    await boss.deleteQueue(queue)
+    await deleteQueue(queue)
     console.info(
       `Carried ${requested} jobs over from queue "${queue}" and deleted it`,
     )
   }
 } finally {
-  await boss.stop()
   await stopQueues()
   await closePool()
 }

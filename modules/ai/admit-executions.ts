@@ -2,15 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { db } from '../../lib/db.ts'
 import { attemptCeiling } from './domain/cost.ts'
 import { decimal, money } from './domain/money.ts'
-import { sendExecutionJob } from './execution-queue.ts'
+import { sendExecutionJob } from './execution-jobs.ts'
 import type { ExecutionMode, ExecutionSettings } from './execution-settings.ts'
 import { reserve } from './infrastructure/persistence/budget.ts'
 import {
   insertExecution,
   type ExecutionSnapshot,
 } from './infrastructure/persistence/executions.ts'
-import { enqueueLocal } from './infrastructure/persistence/local-slot.ts'
-import { providerAdapter } from './provider-registry.ts'
 
 export type Admission = {
   settingsKey: string
@@ -44,15 +42,13 @@ async function fund(count: number, settings: ExecutionSettings) {
 
 /**
  * Saves executions that share settings, in the current transaction. Funded
- * ones are queued, the others wait for budget. Executions of a provider on
- * the shared local slot also take their place in the local queue.
+ * ones are queued with their job sent, the others wait for budget.
  */
 export async function admitExecutions(
   admissions: Admission[],
   settings: ExecutionSettings,
 ): Promise<RequestedExecution[]> {
   const funding = await fund(admissions.length, settings)
-  const sharedSlot = providerAdapter(settings.provider)?.sharedSlot === true
   const requested: RequestedExecution[] = []
   for (const admission of admissions) {
     const executionId = randomUUID()
@@ -67,8 +63,7 @@ export async function admitExecutions(
         funding,
       },
     })
-    if (sharedSlot) await enqueueLocal(executionId)
-    if (funding) await sendExecutionJob(executionId)
+    if (funding) await sendExecutionJob(executionId, settings)
     requested.push({ executionId, state })
   }
   return requested

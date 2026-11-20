@@ -98,15 +98,13 @@ export type ProviderSettings = {
 
 /**
  * What an adapter observed when the work ended without a result: a
- * response the model did not complete, an error, or a lost lease: of a
- * running process on the shared local slot, or of the worker of paid work
- * (whose end is never observed). For a lost lease, `processEnded` says
- * whether the end of the process was observed and the slot released.
+ * response the model did not complete, or an error. Work found running by
+ * a new attempt is not an observation of the adapter: it ends as uncertain
+ * with the cause unknown (B6-D02).
  */
 export type ProviderObservation =
   | { kind: 'outcome'; outcome: 'refused' | 'incomplete' | 'no_content' }
   | { kind: 'error'; error: unknown }
-  | { kind: 'lost_lease'; processEnded: boolean }
 
 /** What the coordination gives an adapter for one request. */
 export type RequestContext = {
@@ -116,18 +114,16 @@ export type RequestContext = {
    */
   fixed: Record<string, unknown>
   /**
-   * Called right before the request is sent; false means the request may
-   * no longer be sent, e.g. the lease of the shared local slot lapsed.
+   * Keeps the raw response of the provider in the execution's archive;
+   * given for every run on the local model.
    */
-  beforeSend?: () => Promise<boolean>
-  /** Keeps the raw response of the provider with the execution. */
   archive?: (raw: string) => Promise<void>
   /**
    * Keeps an exact provider artefact (the request body sent, the raw
    * response received) for the execution's diagnostic archive. Given when
    * the client asked for the archive, and for every paid run: the
    * coordination archives a paid run's raw response also when the run
-   * finds its execution already ended (SD 0mq.15 decision 3).
+   * finds its execution already ended (B6-R06).
    */
   keepArtifact?: (
     kind: 'input' | 'output',
@@ -303,8 +299,9 @@ export type BatchContext = {
  *   needs it.
  * - `sending`: whether a saved state (null before the first save) shows a
  *   group still being sent, before the provider's batch identifier was
- *   saved. Only sending runs under the lease of the run that took the
- *   group; a group already sent is left to polling when its run is lost.
+ *   saved. Only the job that took the group sends it; a group found still
+ *   being sent by another job ends as uncertain, and a group already sent
+ *   is left to polling by the periodic process (B6-R05, B6-D03).
  */
 export type BatchRunner = {
   admit: (items: BatchItem[]) => void
@@ -329,8 +326,9 @@ export type BatchRunner = {
  *   inside the adapter and returns it as an `AgentOutcome` of kind `end`
  *   (ASSUMPTION(oferty-pracy-0mq.22/ASM-3)); a batch runner does the same
  *   for its items.
- * - `sharedSlot`: the provider runs on the installation's one shared local
- *   slot, so its executions take the slot in request order.
+ * - `sharedSlot`: the provider runs on the installation's one local
+ *   model, so its executions go to the queue of the local model, carried
+ *   out one at a time in request order (B6-R02).
  * - `check`: fixes, before a request and outside any transaction, what the
  *   adapter needs carried to the execution (e.g. the version of a local
  *   model). It refuses with `AiRequestError`.

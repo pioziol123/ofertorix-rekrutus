@@ -102,6 +102,18 @@ services:
       retries: 6
     restart: unless-stopped
 
+  # Periodic work, separate from the worker (B6-R09): funding AI work that
+  # waits for budget, polling sent provider batches and cleaning them up,
+  # resuming profile proposals and the daily ad sync request. No health
+  # check; the container restarts the process when it exits.
+  periodic:
+    <<: *app
+    command: pnpm periodic
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   tools:
     <<: *app
     profiles: [tools]
