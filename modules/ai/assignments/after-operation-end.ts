@@ -45,9 +45,9 @@ export type NextStep =
  * - any other failure, the last automatic one, a non-retryable one or one
  *   of an operation the owner added, and an uncertain end: needs attention
  *   (T4-R03).
- * The deadline is not read here until task oferty-pracy-sq2.7 adds the
- * time limit; past it, the same rows apply and the time limit fails the
- * assignment at its next pass.
+ * Until task oferty-pracy-sq2.7 the deadline is not read here. That task
+ * adds the row where a failed or uncertain end past the deadline gives
+ * needs attention with no further operation.
  */
 export function nextStep(
   ended: Pick<

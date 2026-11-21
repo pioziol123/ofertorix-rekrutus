@@ -6,6 +6,7 @@ import type {
 } from '../../assignments/assignment.ts'
 import type { AgentTool } from '../../domain/execution-mode.ts'
 import type { ExecutorParameters } from '../../executors/declaration.ts'
+import type { OperationOrigin } from './operations.ts'
 
 /** A new assignment with its frozen content, executor and parameters. */
 export type NewAssignment = {
@@ -60,7 +61,7 @@ export async function insertPendingOperation(operation: {
   id: string
   assignmentId: string
   ordinal: number
-  origin: 'automatic' | 'manual'
+  origin: OperationOrigin
 }) {
   await db().query(
     `INSERT INTO ai_operations(id,assignment_id,ordinal,origin,state,waits_for,pending_since)
