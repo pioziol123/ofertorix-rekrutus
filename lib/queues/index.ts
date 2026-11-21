@@ -16,7 +16,12 @@ export {
   readQueueConfiguration,
   type QueueConfiguration,
 } from './configuration.ts'
-export { onQueueError, startQueues, stopQueues } from './connection.ts'
+export {
+  connectQueues,
+  onQueueError,
+  startQueues,
+  stopQueues,
+} from './connection.ts'
 export {
   applyQueueConfiguration,
   checkKeyModes,

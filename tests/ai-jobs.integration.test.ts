@@ -506,6 +506,9 @@ integration('AI executions through the queue and worker libraries', () => {
   })
 
   describe('interrupted work (B6-R05)', () => {
+    // ASSUMPTION(oferty-pracy-2ba.1/ASM-4): the pool process that exits by
+    // itself fails its attempt at once, so the next attempt finds the
+    // execution running within the waits below, with retry_count 1.
     it.each([
       ['a paid', paidKey],
       ['a local', localKey],

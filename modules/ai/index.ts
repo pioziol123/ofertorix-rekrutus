@@ -66,10 +66,9 @@ export {
   type ExecutionJobData,
 } from './execution-jobs.ts'
 export { runExecution } from './run-execution.ts'
-export {
-  endFailedExecution,
-  requestUnfinishedExecutions,
-} from './end-failed-execution.ts'
+export { endFailedExecution } from './end-failed-execution.ts'
+// The carry-over of unfinished executions by the migration step (B6-R10).
+export { requestUnfinishedExecutions } from './request-unfinished-executions.ts'
 // The steps of the periodic process (B6-R09).
 export { fundWaitingExecutions } from './fund-executions.ts'
 export { advanceSentBatches, cleanUpEndedBatches } from './run-batch.ts'

@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 import { describe, expect, it } from 'vitest'
-import { runPass, startPasses } from '../periodic/pass.ts'
+import { queueErrorHandling, runPass, startPasses } from '../periodic/pass.ts'
 import { periodicSteps } from '../periodic/steps.ts'
 
 describe('the periodic process (B6-R09)', () => {
@@ -61,5 +61,20 @@ describe('the periodic process (B6-R09)', () => {
       'resume profile proposal preparations',
       'request daily ad syncs',
     ])
+  })
+
+  it('ends the process for a queue error while it starts and only logs one after it started', () => {
+    const ended: string[] = []
+    const logged: string[] = []
+    const handling = queueErrorHandling(
+      (message) => ended.push(message),
+      (message) => logged.push(message),
+    )
+    handling.listener(new Error('connection refused'))
+    expect(ended).toEqual(['the queue reported an error: connection refused'])
+    handling.started()
+    handling.listener(new Error('supervision failed'))
+    expect(ended).toHaveLength(1)
+    expect(logged).toEqual(['Queue unavailable: supervision failed'])
   })
 })

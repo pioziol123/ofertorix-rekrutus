@@ -64,6 +64,14 @@ export function startQueues(): QueueConfiguration {
   return configuration
 }
 
+/**
+ * Waits until the connection has started; throws when it cannot start, so
+ * a process can end at start when the queue is unavailable.
+ */
+export async function connectQueues(): Promise<void> {
+  await queueClient()
+}
+
 /** Stops the connection, if one was started, and forgets it. */
 export async function stopQueues(): Promise<void> {
   const current = client

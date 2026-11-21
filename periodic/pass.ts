@@ -63,3 +63,28 @@ export function startPasses(
     },
   }
 }
+
+/**
+ * What the process does with an error the queue reports: while the process
+ * starts, the error ends it (`fatal`); once it has started, the error is
+ * logged and the passes go on, so a short outage of the database costs only
+ * the steps that fail meanwhile. Contract: periodic process ('An error
+ * starting the process … ends it with exit code 1'; 'A step's error is
+ * logged … and does not stop the pass or the process').
+ */
+export function queueErrorHandling(
+  fatal: (message: string) => void,
+  log: StepErrorLog = console.error,
+) {
+  let started = false
+  return {
+    listener(error: Error) {
+      if (started) log(`Queue unavailable: ${error.message}`)
+      else fatal(`the queue reported an error: ${error.message}`)
+    },
+    /** The process has started; later errors are logged. */
+    started() {
+      started = true
+    },
+  }
+}

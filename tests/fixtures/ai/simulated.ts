@@ -9,7 +9,7 @@
  * - `transient`: the call fails once with a transient error asking for a
  *   wait of `transient` ms, the first time it is made for the tag;
  * - `exit`: the first call for the tag ends the pool process, as when the
- *   process is lost;
+ *   process is lost (ASSUMPTION(oferty-pracy-2ba.1/ASM-4));
  * - `hang`: the call never ends.
  *
  * Calls and deliveries are written to the test's tables through a pool of
@@ -75,6 +75,8 @@ function simulated(provider: string, local: boolean): ProviderAdapter {
               [behaviour.tag, process.pid],
             )
           ).rows[0].earlier as number
+          // ASSUMPTION(oferty-pracy-2ba.1/ASM-4): the worker fails the
+          // attempt of a pool process that exits by itself at once.
           if (behaviour.exit && calls === 0) process.exit(3)
           if (behaviour.hang) await new Promise(() => {})
           await new Promise((done) => setTimeout(done, behaviour.delayMs ?? 0))

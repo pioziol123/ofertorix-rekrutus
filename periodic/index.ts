@@ -6,9 +6,14 @@
  * when it exits.
  */
 import { closePool, db } from '../lib/db.ts'
-import { onQueueError, startQueues, stopQueues } from '../lib/queues/index.ts'
+import {
+  connectQueues,
+  onQueueError,
+  startQueues,
+  stopQueues,
+} from '../lib/queues/index.ts'
 import { currentScheduleDay } from '../modules/sources/index.ts'
-import { startPasses } from './pass.ts'
+import { queueErrorHandling, startPasses } from './pass.ts'
 import { periodicSteps } from './steps.ts'
 
 function fatal(message: string): never {
@@ -17,15 +22,19 @@ function fatal(message: string): never {
 }
 
 // An unavailable database or queue, an invalid queue configuration or an
-// invalid schedule ends the process at start.
-onQueueError((error) => fatal(`the queue reported an error: ${error.message}`))
+// invalid schedule ends the process at start. A queue error after the start
+// is logged and the passes go on; a step it makes fail is logged by the pass.
+const queueErrors = queueErrorHandling(fatal)
+onQueueError(queueErrors.listener)
 try {
   startQueues()
   currentScheduleDay()
+  await connectQueues()
   await db().query('SELECT 1')
 } catch (error) {
   fatal((error as Error).message)
 }
+queueErrors.started()
 
 const passes = startPasses(periodicSteps)
 console.info('Periodic process ready')
