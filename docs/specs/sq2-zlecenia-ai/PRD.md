@@ -53,8 +53,8 @@ On 20 November 2026 the owner reconciled that design with the [background work e
 - A requesting module places an assignment and receives one outcome, with no knowledge of operations, retries or costs.
 - An assignment that keeps failing reaches "needs attention", and the owner retries or rejects it from the panel without touching the database.
 - After a top-up, an operation that waited for budget starts without any other action.
-- No assignment stays unfinished past the time limit, whatever it waited for.
-- The panel's monthly total equals the sum of the budget charges of the month's operations plus the amount carried from before the deployment; for a month that began before it, the total is the same before and after the migration.
+- No assignment stays unfinished past the time limit, whatever it waited for, unless an operation of it is still running, its result is still to be handed over, or the requesting module's receiver keeps failing.
+- The panel's monthly total equals the sum of the budget charges of the month's operations plus the amount carried from before the deployment; for a month that began before it, the total after the migration is the total before it less the amounts held for work that had not started.
 
 ## Constraints and dependencies
 
@@ -65,7 +65,7 @@ On 20 November 2026 the owner reconciled that design with the [background work e
 ## Risks the owner accepted
 
 - **One paid operation at a time.** A long company research, or a large batch of assessments, makes other paid work wait. More at a time is put off (item 30).
-- **AI work shares the worker with ad syncs and CV reading.** With every worker process busy, an operation or a delivery waits for a free one.
+- **AI work shares the worker with ad syncs and CV reading.** With every worker process busy, an operation waits for a free one.
 - **A result the requesting module fails to take is lost** with its cost; delivering it again is put off (`oferty-pracy-sz5`, the item on delivering again).
 - **Every interrupted operation needs the owner**, also when nothing had been sent; each deployment during a running operation can add one assignment needing attention.
 - **An error in a requesting module's receiver holds back Reject and the time limit** for its assignments until the error is fixed.
