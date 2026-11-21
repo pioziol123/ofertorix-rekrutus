@@ -5,6 +5,7 @@ import {
   lockOperationToStart,
 } from '../infrastructure/persistence/operations.ts'
 import { afterOperationEnd } from './after-operation-end.ts'
+import { endInterruptedOperation } from './end-interrupted-operation.ts'
 
 /**
  * The failure handler of every executor's queue (solution design of epic
@@ -15,11 +16,12 @@ import { afterOperationEnd } from './after-operation-end.ts'
  *   started, ends as an ordinary failure with the cause `unknown` and no
  *   cost, so it charges nothing (T4-R06), and what follows the end is
  *   decided for its assignment: its next operation or needs attention;
- * - a running one is left for task oferty-pracy-sq2.6, which ends it as
- *   uncertain;
+ * - a running one, whose last attempt was lost or passed its time limit,
+ *   ends as uncertain without calling the executor again, and its
+ *   assignment needs attention (T5-R01, T5-R03);
  * - any other state, or an unknown operation: nothing happens.
- * The end is conditional on the operation still pending, so a repeated
- * call has no further effect.
+ * The end is conditional on the operation's state, so a repeated call has
+ * no further effect.
  */
 export async function endFailedOperation(
   { operationId }: OperationJobData,
@@ -27,6 +29,8 @@ export async function endFailedOperation(
 ): Promise<void> {
   await transaction(async () => {
     const operation = await lockOperationToStart(operationId)
+    if (operation?.state === 'running')
+      return endInterruptedOperation(operation, now)
     if (operation?.state !== 'pending') return
     await endPendingAsFailed(operationId, now)
     await afterOperationEnd({

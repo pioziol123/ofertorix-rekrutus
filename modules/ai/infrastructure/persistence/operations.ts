@@ -199,6 +199,26 @@ export async function endPendingAsFailed(id: string, at: Date): Promise<void> {
   )
 }
 
+/**
+ * Ends a running operation whose work stopped without an outcome as
+ * uncertain with the cause `unknown` (T5-R01): its actual cost stays
+ * unknown and its potential cost and budget month stay, so the potential
+ * cost stays charged to its month (T5-R02, ZA-R04). False, with nothing
+ * changed, when it no longer runs.
+ */
+export async function endRunningAsUncertain(
+  id: string,
+  at: Date,
+): Promise<boolean> {
+  const ended = await db().query(
+    `UPDATE ai_operations SET state='uncertain',cause='unknown',
+      retryable=NULL,actual_cost=NULL,finished_at=$2
+     WHERE id=$1 AND state='running'`,
+    [id, at],
+  )
+  return ended.rowCount === 1
+}
+
 /** A running operation about to end, with its assignment's status. */
 export type OperationToEnd = {
   assignmentId: string

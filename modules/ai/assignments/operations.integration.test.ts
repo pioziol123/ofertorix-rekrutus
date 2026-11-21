@@ -934,15 +934,9 @@ integration('starting and ending operations on a real database', () => {
       ])
     })
 
-    it('leaves a running operation to the failure handler of oferty-pracy-sq2.6 and does nothing for an unknown one', async () => {
-      const assignmentId = await place()
-      const operationId = await operationIdOf(assignmentId)
-      await startOperation(operationId)
-      await endFailedOperation({ operationId })
+    it('does nothing for a failure handler of an unknown operation', async () => {
       await endFailedOperation({ operationId: randomUUID() })
-      expect(await operationsOf(assignmentId)).toMatchObject([
-        { state: 'running' },
-      ])
+      expect(calls).toHaveLength(0)
     })
 
     it('after three operations whose background work failed, moves the assignment to needs attention', async () => {
@@ -954,6 +948,139 @@ integration('starting and ending operations on a real database', () => {
       }
       expect(await statusOf(assignmentId)).toBe('needs_attention')
       await expectNothingWaitingOrRunning(assignmentId)
+    })
+  })
+
+  describe('interrupted operations (T5)', () => {
+    const statusOf = async (assignmentId: string) =>
+      (
+        await pool.query('SELECT status FROM ai_assignments WHERE id=$1', [
+          assignmentId,
+        ])
+      ).rows[0].status as string
+    const exchangeOf = async (operationId: string) =>
+      (
+        await pool.query(
+          `SELECT kind,content FROM ai_operation_exchange
+           WHERE operation_id=$1 ORDER BY sequence`,
+          [operationId],
+        )
+      ).rows
+    const uncertain = {
+      state: 'uncertain',
+      waits_for: null,
+      cause: 'unknown',
+      retryable: null,
+      result: null,
+      potential_cost: '0.008000',
+      actual_cost: null,
+    }
+
+    it.each([
+      {
+        name: 'a later attempt of its background work',
+        interrupt: (operationId: string) => runOperation({ operationId }),
+      },
+      {
+        name: 'the failure handler after its last attempt',
+        interrupt: (operationId: string) => endFailedOperation({ operationId }),
+      },
+    ])(
+      'ends an operation interrupted before anything was sent, found running by $name, as uncertain with its potential cost charged, needing attention and calling no executor (T5-AC01, T5-AC04)',
+      async ({ interrupt }) => {
+        const assignmentId = await place()
+        const operationId = await operationIdOf(assignmentId)
+        // The attempt that started it was lost before calling its executor.
+        expect(await startOperation(operationId)).toBe('started')
+        await interrupt(operationId)
+        const operation = await operationOf(assignmentId)
+        expect(operation).toMatchObject({
+          ...uncertain,
+          budget_month: budgetMonth(new Date()),
+        })
+        expect(operation.finished_at).not.toBeNull()
+        expect(calls).toHaveLength(0)
+        expect(await exchangeOf(operationId)).toEqual([])
+        expect(await statusOf(assignmentId)).toBe('needs_attention')
+        expect(await readMonthlyBudgets()).toMatchObject([
+          { settled: '0.000000', held: '0.008000' },
+        ])
+        // No further operation, and a repeated job or failure handler has
+        // no further effect.
+        await runOperation({ operationId })
+        await endFailedOperation({ operationId })
+        expect(
+          (
+            await pool.query(
+              'SELECT state FROM ai_operations WHERE assignment_id=$1',
+              [assignmentId],
+            )
+          ).rows,
+        ).toEqual([{ state: 'uncertain' }])
+        expect(calls).toHaveLength(0)
+        expect(await jobs()).toHaveLength(1)
+      },
+    )
+
+    it('changes neither the operation nor the assignment with a result saved after the operation was ended as uncertain, and keeps the raw response with the operation (T5-AC03, T5-R04)', async () => {
+      const assignmentId = await place()
+      const operationId = await operationIdOf(assignmentId)
+      let responded!: () => void
+      const reached = new Promise<void>((resolve) => (responded = resolve))
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      const late: string[] = []
+      registerExecutor({
+        ...paidExecutor(),
+        async carryOut(work) {
+          calls.push(work)
+          await work.exchange('request', '{"input":"Some text"}')
+          await work.exchange('response', '{"output":"raw"}')
+          responded()
+          await gate
+          // Writes of the late process after the end match nothing.
+          if (!(await work.exchange('response', 'late'))) late.push('exchange')
+          if (!(await work.saveState({ late: true }))) late.push('state')
+          return { kind: 'result', content: { text: 'late' }, usage }
+        },
+      })
+      // The first attempt is still carrying the operation out when the
+      // queue gives up on it and the next attempt runs.
+      const first = runOperation({ operationId })
+      await reached
+      await runOperation({ operationId })
+      expect(await statusOf(assignmentId)).toBe('needs_attention')
+      release()
+      await first
+      expect(late).toEqual(['exchange', 'state'])
+      expect(await operationOf(assignmentId)).toMatchObject({
+        ...uncertain,
+        usage: null,
+        executor_state: null,
+      })
+      expect(await statusOf(assignmentId)).toBe('needs_attention')
+      expect(await exchangeOf(operationId)).toEqual([
+        { kind: 'request', content: '{"input":"Some text"}' },
+        { kind: 'response', content: '{"output":"raw"}' },
+      ])
+      expect(calls).toHaveLength(1)
+      expect(await readMonthlyBudgets()).toMatchObject([
+        { settled: '0.000000', held: '0.008000' },
+      ])
+    })
+
+    it('ends an operation interrupted while its assignment was no longer in progress as uncertain, leaving the assignment as it is', async () => {
+      const assignmentId = await place()
+      const operationId = await operationIdOf(assignmentId)
+      await startOperation(operationId)
+      await pool.query(
+        `UPDATE ai_assignments SET status='failed',failure_reason='rejected'
+         WHERE id=$1`,
+        [assignmentId],
+      )
+      await endFailedOperation({ operationId })
+      expect(await operationOf(assignmentId)).toMatchObject(uncertain)
+      expect(await statusOf(assignmentId)).toBe('failed')
     })
   })
 

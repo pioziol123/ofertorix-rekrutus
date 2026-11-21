@@ -13,6 +13,7 @@ import {
 } from '../infrastructure/persistence/operations.ts'
 import { currentPrice } from './current-price.ts'
 import { afterOperationEnd } from './after-operation-end.ts'
+import { endInterruptedOperation } from './end-interrupted-operation.ts'
 
 /** What the start of an operation did. */
 export type StartOutcome =
@@ -36,8 +37,9 @@ export type StartOutcome =
  *   budget and does not hold its executor (T3-R04);
  * - pending, assignment no longer in progress: it ends as failed with the
  *   cause `not_started`, charging nothing;
- * - running: left by an attempt that ended; task oferty-pracy-sq2.6 ends it
- *   as interrupted, until then nothing happens;
+ * - running: left by an attempt that ended or was lost; it ends as
+ *   uncertain without calling the executor again, and its assignment needs
+ *   attention (T5-R01);
  * - any other state, or an unknown operation: nothing happens.
  * `now` gives the moment of the start; its month in Polish time is the
  * operation's budget month.
@@ -48,6 +50,10 @@ export async function startOperation(
 ): Promise<StartOutcome> {
   return transaction(async () => {
     const operation = await lockOperationToStart(operationId)
+    if (operation?.state === 'running') {
+      await endInterruptedOperation(operation, now)
+      return 'nothing'
+    }
     if (operation?.state !== 'pending' || operation.waitsFor !== 'executor')
       return 'nothing'
     if (operation.assignmentStatus !== 'in_progress') {
