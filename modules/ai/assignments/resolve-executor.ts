@@ -32,6 +32,21 @@ const sameParameters = (a: ExecutorParameters, b: ExecutorParameters) =>
   )
 
 /**
+ * The offer of an executor for an assignment type with exactly these
+ * parameters, as its declaration gives it now; undefined when the executor
+ * does not serve the type or no longer offers the parameters.
+ */
+export function findOffer(
+  executor: Executor,
+  type: AssignmentType,
+  parameters: ExecutorParameters,
+): ServiceOffer | undefined {
+  return executor.services[type]?.offers.find((candidate) =>
+    sameParameters(candidate.parameters, parameters),
+  )
+}
+
+/**
  * Finds the executor and its parameters under a settings name for an
  * assignment type, and checks them against the executor's declaration,
  * without calling a provider. Refuses with `unknown_settings`,
@@ -52,9 +67,7 @@ export function resolveExecutor(
   const service = executor.services[type]
   if (!service) throw new AssignmentError('unsupported_type')
   const parameters = parsed.data.parameters
-  const offer = service.offers.find((candidate) =>
-    sameParameters(candidate.parameters, parameters),
-  )
+  const offer = findOffer(executor, type, parameters)
   if (!offer) throw new AssignmentError('invalid_parameters')
   if (!executor.configured(parameters))
     throw new AssignmentError('not_configured')

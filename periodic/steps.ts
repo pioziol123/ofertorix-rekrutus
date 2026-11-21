@@ -2,6 +2,7 @@ import {
   advanceSentBatches,
   cleanUpEndedBatches,
   fundWaitingExecutions,
+  sendOperationsWaitingForBudget,
 } from '../modules/ai/index.ts'
 import { resumeProposalPreparations } from '../modules/profile/index.ts'
 import { requestScheduledSyncs } from '../modules/sources/index.ts'
@@ -15,6 +16,10 @@ export const periodicSteps: readonly PeriodicStep[] = [
   {
     name: 'fund AI executions waiting for budget',
     run: fundWaitingExecutions,
+  },
+  {
+    name: 'send AI operations waiting for budget',
+    run: () => sendOperationsWaitingForBudget(),
   },
   { name: 'advance sent AI batches', run: advanceSentBatches },
   { name: 'clean up ended AI batches', run: cleanUpEndedBatches },

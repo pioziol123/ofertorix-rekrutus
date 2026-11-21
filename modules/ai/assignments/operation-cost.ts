@@ -1,4 +1,4 @@
-import { chargeCost } from '../domain/cost.ts'
+import { attemptCeiling, chargeCost } from '../domain/cost.ts'
 import type { PriceList } from '../executors/declaration.ts'
 import type { ExecutorUsage } from '../executors/outcome.ts'
 
@@ -30,4 +30,14 @@ export function actualCost(
     output: outputTokens,
     toolCalls,
   })
+}
+
+/**
+ * The potential cost of an operation under a price list (ZA-R04, T3-R02):
+ * the cost of its caps of input, output and paid tool calls, in złoty as a
+ * decimal string, as the old way reserves an attempt; zero for an executor
+ * without a price list (T3-R03).
+ */
+export function potentialCost(priceList: PriceList | null): string {
+  return priceList === null ? '0.000000' : attemptCeiling(priceList)
 }

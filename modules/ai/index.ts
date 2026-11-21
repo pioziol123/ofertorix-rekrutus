@@ -28,6 +28,19 @@ export {
   type AssignmentType,
   type ResponseFormat,
 } from './assignments/assignment.ts'
+// The budget of assignments by month (T3-R09), for the budget card of the
+// profile page from task oferty-pracy-sq2.11 and the panel from
+// oferty-pracy-sq2.14.
+export {
+  readMonthlyBudgets,
+  type MonthlyBudget,
+} from './assignments/read-monthly-budgets.ts'
+// The jobs of the executors' queues with their handler, registered by the
+// AI module plugin, and the step of the periodic process that sends the
+// operations waiting for the budget once it has room (T3-R05).
+export { executorJobs } from './executors/registry.ts'
+export { runOperation } from './assignments/run-operation.ts'
+export { sendOperationsWaitingForBudget } from './assignments/send-operations-waiting-for-budget.ts'
 
 export {
   requestExecution,

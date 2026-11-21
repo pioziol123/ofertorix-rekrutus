@@ -2,6 +2,8 @@ import type { Executor } from './declaration.ts'
 import { ollamaExecutor } from './ollama.ts'
 import { openAiExecutor } from './openai.ts'
 
+type OperationJob = Executor['job']
+
 /**
  * The executors of assignments by name. An executor is built anew on each
  * lookup, so its declaration follows the AI configuration and the
@@ -22,4 +24,12 @@ export function findExecutor(name: string): Executor | undefined {
  */
 export function registerExecutor(executor: Executor): void {
   executors.set(executor.name, () => executor)
+}
+
+/**
+ * The jobs of every executor's queue, one per executor, which the AI module
+ * plugin registers with the handler of operations.
+ */
+export function executorJobs(): OperationJob[] {
+  return [...executors.values()].map((executor) => executor().job)
 }
