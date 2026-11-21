@@ -169,8 +169,7 @@ export async function carryOutSingle(
     )
     .map((part) => part.text as string)
   const text = texts.length === 1 ? texts[0]! : ''
-  if (!text.trim())
-    return failed(run, 'no_content')
+  if (!text.trim()) return failed(run, 'no_content')
   const result = resultContent(text, content.responseFormat !== null)
   if (!result) return failed(run, 'format')
   return { kind: 'result', content: result.content, usage: run.meter.usage() }

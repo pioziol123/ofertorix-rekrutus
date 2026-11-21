@@ -20,11 +20,9 @@ import {
   nothingSent,
   type ExecutorCause,
   type ExecutorOutcome,
-  type ExecutorUsage,
 } from './outcome.ts'
 import {
   failedBeforeSending,
-  Meter,
   resultContent,
   timeLimitPassed,
   type Run,
@@ -85,20 +83,6 @@ export function sessionMaterials(state: unknown): AgentMaterial[] | null {
     ? parsed.data.materials
     : null
 }
-
-/**
- * The meter of a session: gpt-4.1-mini is charged a fixed block of input
- * tokens per search, while gpt-6-luna reports its search context in the
- * usage, as the old way counts them.
- */
-export const sessionMeter = (model: string | null | undefined) =>
-  new Meter((usage: ExecutorUsage) =>
-    model === 'gpt-4.1-mini' &&
-    usage.inputTokens !== null &&
-    usage.toolCalls !== null
-      ? { ...usage, inputTokens: usage.inputTokens + usage.toolCalls * 8000 }
-      : usage,
-  )
 
 /** A step that gave no usable response: how the session ends. */
 class SessionEnd extends Error {

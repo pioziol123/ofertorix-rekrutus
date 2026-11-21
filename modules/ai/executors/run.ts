@@ -36,8 +36,7 @@ export class Meter {
    * charges, e.g. a fixed block of tokens per paid tool call.
    */
   constructor(
-    private adjust: (usage: ExecutorUsage) => ExecutorUsage = (usage) =>
-      usage,
+    private adjust: (usage: ExecutorUsage) => ExecutorUsage = (usage) => usage,
   ) {}
   /** A request is about to be sent. */
   sending() {
@@ -145,13 +144,11 @@ export async function withinMaxRunTime(
       resolve(timeLimitPassed(meter))
     }, maxRunSeconds * 1000)
   })
-  const working = body(context).catch(
-    (): ExecutorOutcome => ({
-      kind: 'uncertain',
-      cause: 'unknown',
-      usage: meter.usage(),
-    }),
-  )
+  const working = body(context).catch((): ExecutorOutcome => ({
+    kind: 'uncertain',
+    cause: 'unknown',
+    usage: meter.usage(),
+  }))
   try {
     return await Promise.race([working, timeLimit])
   } finally {

@@ -72,7 +72,12 @@ export function errorAnswer(
       usage: meter.usage(),
     }
   }
-  return { kind: 'failed', retryable: true, cause: 'http', usage: meter.usage() }
+  return {
+    kind: 'failed',
+    retryable: true,
+    cause: 'http',
+    usage: meter.usage(),
+  }
 }
 
 /** Whether a message of the answer holds the model's refusal. */

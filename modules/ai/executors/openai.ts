@@ -10,11 +10,7 @@ import type {
   PriceList,
   ServiceOffer,
 } from './declaration.ts'
-import {
-  carryOutSession,
-  sessionMaterials,
-  sessionMeter,
-} from './openai-agent-session.ts'
+import { carryOutSession, sessionMaterials } from './openai-agent-session.ts'
 import { carryOutSingle, singleBody } from './openai-single.ts'
 import { withinMaxRunTime } from './run.ts'
 
@@ -123,19 +119,15 @@ export function openAiExecutor(
       const { content, parameters } = work
       if (content.type === 'agent') {
         const priceList = priceListOf(parameters, 'agent')
-        return withinMaxRunTime(
-          paidMaxRunSeconds.agent,
-          work,
-          (run) =>
-            carryOutSession(
-              run,
-              content,
-              parameters,
-              priceList,
-              priceList !== null && sessionFits(parameters, priceList),
-              fetcher,
-            ),
-          sessionMeter(parameters.model),
+        return withinMaxRunTime(paidMaxRunSeconds.agent, work, (run) =>
+          carryOutSession(
+            run,
+            content,
+            parameters,
+            priceList,
+            priceList !== null && sessionFits(parameters, priceList),
+            fetcher,
+          ),
         )
       }
       return withinMaxRunTime(paidMaxRunSeconds.single, work, (run) =>

@@ -43,9 +43,7 @@ describe('the declarations of the two executors, from today’s AI configuration
     }
     const parameters = { model: 'gpt-6-luna', reasoningEffort: 'low' }
     const priceList = luna.prices.single!
-    expect(
-      openAiExecutor().requestSize!(content, parameters, priceList),
-    ).toBe(
+    expect(openAiExecutor().requestSize!(content, parameters, priceList)).toBe(
       openAiProvider().singleRequestBytes!(
         {
           provider: 'openai',
@@ -82,9 +80,9 @@ describe('the declarations of the two executors, from today’s AI configuration
 
   it('T2-AC03: every declared maximum run time is below the time limit of the executor’s queue', () => {
     for (const executor of [openAiExecutor(), ollamaExecutor()]) {
-      const queue = (
-        queues as Record<string, { timeLimitSeconds: number }>
-      )[executor.job.queue]!
+      const queue = (queues as Record<string, { timeLimitSeconds: number }>)[
+        executor.job.queue
+      ]!
       const services = Object.values(executor.services)
       expect(services.length).toBeGreaterThan(0)
       for (const service of services)
