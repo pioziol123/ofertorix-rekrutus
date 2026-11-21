@@ -179,7 +179,7 @@ class StepEnd extends Error {
  * gpt-6-luna reports its context in the input tokens, so its input cap
  * must take it; gpt-4.1-mini is charged a fixed block per search.
  */
-function fits(settings: ProviderSettings) {
+export function agentFits(settings: ProviderSettings) {
   const minimum =
     settings.model === 'gpt-6-luna'
       ? 500000
@@ -201,7 +201,7 @@ export function openAiAgent(
 ): AgentRunner {
   return {
     tools: agentTools,
-    fits: () => fits(settings),
+    fits: () => agentFits(settings),
     materials: (state) => agentState.parse(state).materials,
     async run(request, context) {
       return runAgent(settings, request, context, fetcher, apiKey())

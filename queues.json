@@ -11,6 +11,18 @@
     "retryBackoff": true,
     "timeLimitSeconds": 3600
   },
+  "ai-operation-ollama": {
+    "attempts": 4,
+    "retryDelaySeconds": 30,
+    "retryBackoff": true,
+    "timeLimitSeconds": 3600
+  },
+  "ai-operation-openai": {
+    "attempts": 4,
+    "retryDelaySeconds": 30,
+    "retryBackoff": true,
+    "timeLimitSeconds": 3600
+  },
   "profile-cv-text": {
     "attempts": 2,
     "timeLimitSeconds": 120

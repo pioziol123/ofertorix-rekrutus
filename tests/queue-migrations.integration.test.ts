@@ -6,6 +6,9 @@ import { runModulePlugins } from '../plugins/index.ts'
 import { localExecutionJob, paidExecutionJob } from '../modules/ai/index.ts'
 import { cvTextReadingJob } from '../modules/profile/index.ts'
 import { syncJob } from '../modules/sources/index.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
+import { ollamaOperationJob } from '../modules/ai/executors/ollama.ts'
+import { openAiOperationJob } from '../modules/ai/executors/openai.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -80,5 +83,25 @@ integration('queues of the migrated database', () => {
     }
     expect(await boss.getQueue('ai-execution')).toBeFalsy()
     expect(await boss.getQueue('system-smoke')).toBeFalsy()
+  })
+
+  it('creates the queues of the paid and the local executor of assignments beside those of the old way, with their failure queues, exclusivity on a constant key and the configured 4 attempts of 60 minutes (sq2 T1, ZA-D01)', async () => {
+    expect([openAiOperationJob.queue, ollamaOperationJob.queue]).toEqual([
+      'ai-operation-openai',
+      'ai-operation-ollama',
+    ])
+    for (const job of [openAiOperationJob, ollamaOperationJob]) {
+      expect(job.key).toEqual({ mode: 'exclusivity', value: job.queue })
+      expect(await boss.getQueue(job.queue)).toMatchObject({
+        policy: 'singleton',
+        retryLimit: 3,
+        retryDelay: 30,
+        retryBackoff: true,
+        expireInSeconds: 3600,
+        deadLetter: `${job.queue}.failed`,
+      })
+      expect(await boss.getQueue(`${job.queue}.failed`)).toBeTruthy()
+    }
+    await checkKeyModes([openAiOperationJob, ollamaOperationJob])
   })
 })

@@ -4,6 +4,31 @@
  * Clients, the module plugin, the periodic process, the migration step
  * and the server use only these.
  */
+// Assignments: the contract of requesting modules (epic sq2). The old
+// contract below stays in use beside it until the requesting modules move
+// (task oferty-pracy-sq2.11). An agent assignment uses the shared list of
+// agent tools, the rule of a safe source URL and the materials of agent
+// work exported below (T1-R09).
+export {
+  placeAssignment,
+  type PlacedAssignment,
+} from './assignments/place-assignment.ts'
+export {
+  readAssignmentStatuses,
+  type AssignmentStatusEntry,
+  type AssignmentStatuses,
+} from './assignments/read-assignment-statuses.ts'
+export { canPlaceAssignments } from './assignments/can-place-assignments.ts'
+export {
+  AssignmentError,
+  assignmentStatuses,
+  type AssignmentErrorCode,
+  type AssignmentRequest,
+  type AssignmentStatus,
+  type AssignmentType,
+  type ResponseFormat,
+} from './assignments/assignment.ts'
+
 export {
   requestExecution,
   requestExecutionGroup,
