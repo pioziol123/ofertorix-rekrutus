@@ -14,14 +14,19 @@ import { closePool, setPool, transaction } from '../../../lib/db.ts'
 import { createQueue, stopQueues } from '../../../lib/queues/index.ts'
 import { openAiExecutor } from '../executors/openai.ts'
 import { registerExecutor } from '../executors/registry.ts'
-import { placeAssignment, type AssignmentRequest } from '../index.ts'
+import {
+  placeAssignment,
+  runOperation,
+  type AssignmentRequest,
+} from '../index.ts'
 import { carryOutOperation } from './carry-out-operation.ts'
 
 /**
  * T2-AC06: after an operation, the request sent and every raw response
  * are stored with it, also when the response could not be read; the
- * writers stop when the operation no longer runs. The paid executor runs
- * on a simulated OpenAI.
+ * writers stop when the operation no longer runs. T4-AC04: a provider
+ * that cannot be reached is an ordinary failure, and the assignment gets
+ * its next operation. The paid executor runs on a simulated OpenAI.
  */
 
 const settings = vi.hoisted(() => ({}) as Record<string, unknown>)
@@ -132,6 +137,7 @@ integration('carrying out an operation on a real database', () => {
       '1770000000004_profiles',
       '1770000000027_ai_assignments',
       '1770000000030_ai_operation_exchange',
+      '1770000000031_ai_budget_default_limit',
     ])
       createRequire(import.meta.url)(`../../../migrations/${migration}.cjs`).up(
         { sql: (statement: string) => sql.push(statement) },
@@ -263,5 +269,54 @@ integration('carrying out an operation on a real database', () => {
       [operationId],
     )
     expect(rows[0].state).toBe('running')
+  })
+
+  it('ends an operation whose provider cannot be reached as an ordinary failure, and adds the next operation of the assignment (T4-AC04, T4-R05)', async () => {
+    const { assignmentId } = await transaction(() => placeAssignment(single))
+    next = [
+      async () => {
+        throw Object.assign(new TypeError('fetch failed'), {
+          cause: Object.assign(new Error('ECONNREFUSED'), {
+            code: 'ECONNREFUSED',
+          }),
+        })
+      },
+    ]
+    const { rows: placed } = await pool.query(
+      'SELECT id FROM ai_operations WHERE assignment_id=$1',
+      [assignmentId],
+    )
+    await runOperation({ operationId: placed[0].id })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    const { rows } = await pool.query(
+      `SELECT ordinal,origin,state,waits_for,cause,retryable,actual_cost
+       FROM ai_operations WHERE assignment_id=$1 ORDER BY ordinal`,
+      [assignmentId],
+    )
+    expect(rows).toEqual([
+      {
+        ordinal: 1,
+        origin: 'automatic',
+        state: 'failed',
+        waits_for: null,
+        cause: 'network',
+        retryable: true,
+        actual_cost: '0.000000',
+      },
+      {
+        ordinal: 2,
+        origin: 'automatic',
+        state: 'pending',
+        waits_for: 'executor',
+        cause: null,
+        retryable: null,
+        actual_cost: null,
+      },
+    ])
+    const { rows: assignment } = await pool.query(
+      'SELECT status FROM ai_assignments WHERE id=$1',
+      [assignmentId],
+    )
+    expect(assignment[0].status).toBe('in_progress')
   })
 })

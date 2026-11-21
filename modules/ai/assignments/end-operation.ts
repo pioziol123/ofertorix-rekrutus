@@ -39,6 +39,8 @@ export async function endOperation(
       assignmentId: running.assignmentId,
       assignmentStatus: running.assignmentStatus,
       state: end.state,
+      retryable: end.retryable,
+      origin: running.origin,
     })
     return true
   })

@@ -10,6 +10,10 @@ import type {
   PriceList,
 } from '../../executors/declaration.ts'
 import type { ExecutorUsage, OperationCause } from '../../executors/outcome.ts'
+
+/** Whether an operation was added without the owner or by the owner. */
+export type OperationOrigin = 'automatic' | 'manual'
+
 /** A running operation with the frozen content of its assignment. */
 export type RunningOperation = {
   id: string
@@ -87,6 +91,7 @@ export type OperationToStart = {
   assignmentId: string
   state: 'pending' | 'running' | 'succeeded' | 'failed' | 'uncertain'
   waitsFor: 'budget' | 'executor' | null
+  origin: OperationOrigin
   assignmentStatus: AssignmentStatus
   executor: string
   type: AssignmentType
@@ -111,7 +116,7 @@ export async function lockOperationToStart(
   const row = (
     await db().query<OperationToStart>(
       `SELECT o.id,o.assignment_id AS "assignmentId",o.state,
-        o.waits_for AS "waitsFor",
+        o.waits_for AS "waitsFor",o.origin,
         a.status AS "assignmentStatus",a.executor,a.type,
         a.executor_parameters AS "executorParameters"
        FROM ai_operations o JOIN ai_assignments a ON a.id=o.assignment_id
@@ -180,10 +185,25 @@ export async function endNotStarted(id: string, at: Date): Promise<void> {
   )
 }
 
+/**
+ * Ends a pending operation whose background work failed finally before it
+ * started as an ordinary failure with the cause `unknown`: retryable, with
+ * no cost and no budget month, so it charges nothing (T4-R06).
+ */
+export async function endPendingAsFailed(id: string, at: Date): Promise<void> {
+  await db().query(
+    `UPDATE ai_operations SET state='failed',waits_for=NULL,
+      cause='unknown',retryable=true,finished_at=$2
+     WHERE id=$1 AND state='pending'`,
+    [id, at],
+  )
+}
+
 /** A running operation about to end, with its assignment's status. */
 export type OperationToEnd = {
   assignmentId: string
   assignmentStatus: AssignmentStatus
+  origin: OperationOrigin
   priceList: PriceList | null
 }
 
@@ -208,13 +228,13 @@ export async function lockRunningToEnd(
   ).rows[0]
   if (!assignment) return null
   const operation = (
-    await db().query<{ priceList: PriceList | null }>(
-      `SELECT price_list AS "priceList" FROM ai_operations
+    await db().query<{ priceList: PriceList | null; origin: OperationOrigin }>(
+      `SELECT price_list AS "priceList",origin FROM ai_operations
        WHERE id=$1 AND state='running' FOR UPDATE`,
       [id],
     )
   ).rows[0]
-  return operation ? { ...assignment, priceList: operation.priceList } : null
+  return operation ? { ...assignment, ...operation } : null
 }
 
 /** What the end of an operation saves (T3-R06). */

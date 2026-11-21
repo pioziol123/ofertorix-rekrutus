@@ -82,3 +82,48 @@ export async function readStatuses(
   ).rows
   return new Map(rows.map((row) => [row.id, row.status]))
 }
+
+/**
+ * What decides the next step of an assignment after an operation ended: its
+ * frozen executor, its limit of automatic operations, how many automatic
+ * operations it has and the highest ordinal of its operations. The caller
+ * holds the lock on the assignment's row.
+ */
+export type AssignmentOperations = {
+  executor: string
+  automaticOperationLimit: number
+  automaticOperations: number
+  lastOrdinal: number
+}
+
+export async function readAssignmentOperations(
+  assignmentId: string,
+): Promise<AssignmentOperations> {
+  return (
+    await db().query<AssignmentOperations>(
+      `SELECT a.executor,
+        a.automatic_operation_limit AS "automaticOperationLimit",
+        (count(o.id) FILTER (WHERE o.origin='automatic'))::int
+          AS "automaticOperations",
+        coalesce(max(o.ordinal),0)::int AS "lastOrdinal"
+       FROM ai_assignments a LEFT JOIN ai_operations o ON o.assignment_id=a.id
+       WHERE a.id=$1 GROUP BY a.id`,
+      [assignmentId],
+    )
+  ).rows[0]!
+}
+
+/**
+ * Moves an assignment in progress to needs attention; false, with nothing
+ * changed, when it is no longer in progress (ZA-R03).
+ */
+export async function setNeedsAttention(
+  assignmentId: string,
+): Promise<boolean> {
+  const changed = await db().query(
+    `UPDATE ai_assignments SET status='needs_attention'
+     WHERE id=$1 AND status='in_progress'`,
+    [assignmentId],
+  )
+  return changed.rowCount === 1
+}

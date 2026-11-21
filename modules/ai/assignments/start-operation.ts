@@ -57,6 +57,8 @@ export async function startOperation(
         assignmentId: operation.assignmentId,
         assignmentStatus: operation.assignmentStatus,
         state: 'failed',
+        retryable: false,
+        origin: operation.origin,
       })
       return 'nothing'
     }

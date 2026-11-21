@@ -33,6 +33,7 @@ import {
 } from '../executors/outcome.ts'
 import { registerExecutor } from '../executors/registry.ts'
 import {
+  endFailedOperation,
   placeAssignment,
   readMonthlyBudgets,
   runOperation,
@@ -547,8 +548,9 @@ integration('starting and ending operations on a real database', () => {
         // A repeated job has no further effect and calls nothing.
         await runOperation({ operationId: operation.id })
         expect(calls).toHaveLength(1)
-        // Until oferty-pracy-sq2.5 and sq2.7 the assignment stays in
-        // progress after its operation ended.
+        // The assignment stays in progress: a result waits for its
+        // delivery (oferty-pracy-sq2.7), an ordinary failure has its next
+        // operation (T4-R02).
         const { rows } = await pool.query(
           'SELECT status FROM ai_assignments WHERE id=$1',
           [assignmentId],
@@ -674,18 +676,16 @@ integration('starting and ending operations on a real database', () => {
         usage: unknownUsage(),
       },
     ]
-    await runOperation({ operationId: await operationIdOf(assignmentId) })
-    // The next operations of the assignment, as retries add them from
-    // oferty-pracy-sq2.5.
-    const added = [randomUUID(), randomUUID()]
-    for (const [index, id] of added.entries())
-      await pool.query(
-        `INSERT INTO ai_operations(id,assignment_id,ordinal,origin,state,
-          waits_for,pending_since)
-         VALUES($1,$2,$3,'automatic','pending','executor',now())`,
-        [id, assignmentId, index + 2],
-      )
-    await runOperation({ operationId: added[0]! })
+    // The failure adds the second operation, which ends uncertain.
+    for (const job of await jobs()) await runOperation(job)
+    for (const job of await jobs()) await runOperation(job)
+    // A never-started operation, as the owner's retry adds one.
+    await pool.query(
+      `INSERT INTO ai_operations(id,assignment_id,ordinal,origin,state,
+        waits_for,pending_since)
+       VALUES($1,$2,3,'manual','pending','executor',now())`,
+      [randomUUID(), assignmentId],
+    )
     expect(await readAssignmentCost(assignmentId)).toEqual({
       potential: '0.016000',
       actual: '0.000080',
@@ -732,6 +732,229 @@ integration('starting and ending operations on a real database', () => {
         charge: '0.000080',
       },
     ])
+  })
+
+  describe('retries and needs attention (T4)', () => {
+    const failure = (retryable = true): ExecutorOutcome => ({
+      kind: 'failed',
+      retryable,
+      cause: 'http',
+      usage,
+    })
+    const statusOf = async (assignmentId: string) =>
+      (
+        await pool.query('SELECT status FROM ai_assignments WHERE id=$1', [
+          assignmentId,
+        ])
+      ).rows[0].status as string
+    const operationsOf = async (assignmentId: string) =>
+      (
+        await pool.query(
+          `SELECT id,ordinal,origin,state,waits_for,cause,retryable,
+            potential_cost,actual_cost,budget_month
+           FROM ai_operations WHERE assignment_id=$1 ORDER BY ordinal`,
+          [assignmentId],
+        )
+      ).rows
+    /** Runs every job sent, also those sent meanwhile, once each. */
+    const runEveryJob = async () => {
+      const done = new Set<string>()
+      for (;;) {
+        const { rows } = await admin.query(
+          `SELECT id,data->>'operationId' AS "operationId"
+           FROM ${queueSchema}.job WHERE name=ANY($1::text[])
+           ORDER BY created_on,id`,
+          [[paidJob.queue, freeJob.queue]],
+        )
+        const fresh = rows.filter((job: { id: string }) => !done.has(job.id))
+        if (fresh.length === 0) return
+        for (const job of fresh) {
+          done.add(job.id)
+          await runOperation({ operationId: job.operationId })
+        }
+      }
+    }
+    const expectNothingWaitingOrRunning = async (assignmentId: string) => {
+      const operations = await operationsOf(assignmentId)
+      expect(
+        operations.filter((operation: { state: string }) =>
+          ['pending', 'running'].includes(operation.state),
+        ),
+      ).toEqual([])
+    }
+
+    it('ends the third operation with a result after two ordinary failures, each operation carrying the same frozen content (T4-AC01)', async () => {
+      const assignmentId = await place()
+      answers = [failure(), failure()]
+      await runEveryJob()
+      expect(await operationsOf(assignmentId)).toMatchObject([
+        { ordinal: 1, origin: 'automatic', state: 'failed', retryable: true },
+        { ordinal: 2, origin: 'automatic', state: 'failed', retryable: true },
+        { ordinal: 3, origin: 'automatic', state: 'succeeded' },
+      ])
+      expect(calls).toHaveLength(3)
+      expect(calls[1]!.content).toEqual(calls[0]!.content)
+      expect(calls[2]!.content).toEqual(calls[0]!.content)
+      expect(calls[0]!.content).toMatchObject({
+        instruction: 'Summarise the text.',
+        input: 'Some text',
+        responseFormat: { name: 'summary', schema: { type: 'object' } },
+      })
+      expect(calls.map((call) => call.parameters)).toEqual([
+        { model: 'cheap' },
+        { model: 'cheap' },
+        { model: 'cheap' },
+      ])
+      // The delivery of the result comes with oferty-pracy-sq2.7.
+      expect(await statusOf(assignmentId)).toBe('in_progress')
+    })
+
+    it('adds the next operation in the save that ends the failed one, pending for its executor with its job sent (T4-R02)', async () => {
+      const assignmentId = await place()
+      const first = await operationIdOf(assignmentId)
+      answers = [failure()]
+      await runOperation({ operationId: first })
+      const [, next] = await operationsOf(assignmentId)
+      expect(next).toMatchObject({
+        ordinal: 2,
+        origin: 'automatic',
+        state: 'pending',
+        waits_for: 'executor',
+        potential_cost: null,
+      })
+      expect((await jobs()).map((job) => job.operationId)).toEqual([
+        first,
+        next.id,
+      ])
+      expect(await statusOf(assignmentId)).toBe('in_progress')
+    })
+
+    it.each([
+      {
+        name: 'three ordinary failures',
+        script: [failure(), failure(), failure()],
+        operations: 3,
+      },
+      {
+        name: 'a non-retryable failure',
+        script: [failure(false)],
+        operations: 1,
+      },
+      {
+        name: 'an uncertain end',
+        script: [
+          {
+            kind: 'uncertain',
+            cause: 'network',
+            usage: unknownUsage(),
+          } as ExecutorOutcome,
+        ],
+        operations: 1,
+      },
+    ])(
+      'moves the assignment to needs attention after $name, with no operation pending or running (T4-AC02, T4-R03)',
+      async ({ script, operations }) => {
+        const assignmentId = await place()
+        answers = [...script]
+        await runEveryJob()
+        expect(await statusOf(assignmentId)).toBe('needs_attention')
+        expect(await operationsOf(assignmentId)).toHaveLength(operations)
+        expect(calls).toHaveLength(operations)
+        await expectNothingWaitingOrRunning(assignmentId)
+      },
+    )
+
+    it('moves the assignment to needs attention after an ordinary failure of an operation the owner added, without a further operation (T4-R01)', async () => {
+      const assignmentId = await place()
+      answers = [failure(false)]
+      await runEveryJob()
+      // The owner's retry, as oferty-pracy-sq2.13 adds it.
+      await pool.query(
+        "UPDATE ai_assignments SET status='in_progress' WHERE id=$1",
+        [assignmentId],
+      )
+      const manual = randomUUID()
+      await pool.query(
+        `INSERT INTO ai_operations(id,assignment_id,ordinal,origin,state,
+          waits_for,pending_since)
+         VALUES($1,$2,2,'manual','pending','executor',now())`,
+        [manual, assignmentId],
+      )
+      answers = [failure()]
+      await runOperation({ operationId: manual })
+      expect(await statusOf(assignmentId)).toBe('needs_attention')
+      expect(await operationsOf(assignmentId)).toHaveLength(2)
+    })
+
+    it('carries out the next assignment of the paid executor after an operation of it ended uncertain (T4-AC03, T4-R04)', async () => {
+      const first = await place()
+      const second = await place()
+      answers = [{ kind: 'uncertain', cause: 'network', usage: unknownUsage() }]
+      await runEveryJob()
+      expect(await statusOf(first)).toBe('needs_attention')
+      expect(await operationsOf(second)).toMatchObject([{ state: 'succeeded' }])
+      expect(calls).toHaveLength(2)
+    })
+
+    it('ends a pending operation whose background work failed on every attempt as an ordinary failure charging nothing, and adds the next operation (T4-AC05, T4-R06)', async () => {
+      const assignmentId = await place()
+      const first = await operationIdOf(assignmentId)
+      // The worker calls the failure handler after the last attempt.
+      await endFailedOperation({ operationId: first })
+      const [ended, next] = await operationsOf(assignmentId)
+      expect(ended).toMatchObject({
+        state: 'failed',
+        waits_for: null,
+        cause: 'unknown',
+        retryable: true,
+        potential_cost: null,
+        actual_cost: null,
+        budget_month: null,
+      })
+      expect(next).toMatchObject({
+        ordinal: 2,
+        origin: 'automatic',
+        state: 'pending',
+        waits_for: 'executor',
+      })
+      expect((await jobs()).map((job) => job.operationId)).toEqual([
+        first,
+        next.id,
+      ])
+      expect(calls).toHaveLength(0)
+      expect(await readMonthlyBudgets()).toEqual([])
+      // A repeated failure handler, or one of an operation that ended, has
+      // no effect.
+      await endFailedOperation({ operationId: first })
+      await runOperation({ operationId: next.id })
+      await endFailedOperation({ operationId: next.id })
+      expect(await operationsOf(assignmentId)).toMatchObject([
+        { state: 'failed' },
+        { state: 'succeeded' },
+      ])
+    })
+
+    it('leaves a running operation to the failure handler of oferty-pracy-sq2.6 and does nothing for an unknown one', async () => {
+      const assignmentId = await place()
+      const operationId = await operationIdOf(assignmentId)
+      await startOperation(operationId)
+      await endFailedOperation({ operationId })
+      await endFailedOperation({ operationId: randomUUID() })
+      expect(await operationsOf(assignmentId)).toMatchObject([
+        { state: 'running' },
+      ])
+    })
+
+    it('after three operations whose background work failed, moves the assignment to needs attention', async () => {
+      const assignmentId = await place()
+      for (let ordinal = 1; ordinal <= 3; ordinal++) {
+        const pending = (await operationsOf(assignmentId)).at(-1)!
+        expect(pending).toMatchObject({ ordinal, state: 'pending' })
+        await endFailedOperation({ operationId: pending.id })
+      }
+      expect(await statusOf(assignmentId)).toBe('needs_attention')
+      await expectNothingWaitingOrRunning(assignmentId)
+    })
   })
 
   describe('an executor that no longer offers the parameters (ASSUMPTION(oferty-pracy-sq2.4/ASM-1))', () => {
