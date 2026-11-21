@@ -17,11 +17,6 @@ import {
 } from '../modules/companies/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { enqueueMatching } from '../modules/matching/request-assessment.ts'
-import {
-  importCvText,
-  prepareProposal,
-  readImport,
-} from '../modules/profile/index.ts'
 import { emptyProfile } from '../modules/profile/view.ts'
 import { prepareAiQueues } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
@@ -91,7 +86,6 @@ integration('AI work carried out by the AI module plugin', () => {
     process.env.PG_BOSS_SCHEMA = queueSchema
     vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
     usePricing('matching', pricing)
-    usePricing('profile', pricing)
     usePricing('research', researchPricing, 'agent')
   }, 60_000)
 
@@ -178,12 +172,10 @@ integration('AI work carried out by the AI module plugin', () => {
     return ad
   }
 
-  it('delivers an assessment, and the ends of a Profile proposal and of company research whose only attempt failed, each to the module that requested it (B6-AC01, B6-AC07)', async () => {
+  // The Profile no longer requests AI work the old way (epic sq2, T7); its
+  // preparations are delivered through assignments.
+  it('delivers an assessment, and the end of company research whose only attempt failed, each to the module that requested it (B6-AC01, B6-AC07)', async () => {
     const assessment = await enqueueMatching(await offer())
-    const text = 'PHP professional'
-    const cv = await importCvText(text)
-    const proposal = await prepareProposal(cv, text, 0)
-    if (!('executionId' in proposal)) throw new Error('Expected a request')
     const companyId = (
       await createCompany({
         commandId: randomUUID(),
@@ -217,18 +209,8 @@ integration('AI work carried out by the AI module plugin', () => {
       ).rows[0].n,
     ).toBe(1)
 
-    // The proposal's only attempt passed its time limit; the failure
-    // handler ended it and Profile's receiver took that end.
-    await waitFor(
-      async () => (await readImport(cv))?.status === 'needs_attention',
-      60_000,
-      'the end of the proposal preparation to reach Profile',
-    )
-    expect(await readExecutionHistory(cv)).toMatchObject([
-      { state: 'uncertain', cause: 'unknown' },
-    ])
-
-    // The same for company research, delivered to Companies.
+    // The research's only attempt passed its time limit; the failure
+    // handler ended it and Companies' receiver took that end.
     const operation = async () =>
       (await readCompanyResearch(companyId)).operations.find(
         (o) => o.id === research.id,

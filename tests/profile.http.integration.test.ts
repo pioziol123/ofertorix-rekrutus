@@ -32,9 +32,13 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
     pool = new Pool({ connectionString: connection.toString() })
     setPool(pool)
     const sql: string[] = []
-    createRequire(import.meta.url)(
-      '../migrations/1770000000004_profiles.cjs',
-    ).up({ sql: (s: string) => sql.push(s) })
+    for (const migration of [
+      '1770000000004_profiles',
+      '1770000000032_profile_assignment',
+    ])
+      createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
+        sql: (s: string) => sql.push(s),
+      })
     await pool.query(sql.join('\n'))
     await prepareCvTextQueue(queueSchema)
     root = await mkdtemp(join(tmpdir(), 'profile-http-'))
