@@ -15,16 +15,12 @@ import {
   readCompanyResearch,
   requestResearch,
 } from '../modules/companies/index.ts'
-// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { enqueueMatching } from '../modules/matching/request-assessment.ts'
-import { emptyProfile } from '../modules/profile/view.ts'
 import { prepareAiQueues } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {
   pricing as researchPricing,
   researchMigrations,
 } from './company-research.fixtures.ts'
-import { pricing } from './matching-ai.fixtures.ts'
 import { waitFor } from './worker.fixtures.ts'
 
 // The settings and price lists AI keeps in code, replaced for the requests
@@ -85,7 +81,6 @@ integration('AI work carried out by the AI module plugin', () => {
     await prepareAiQueues(queueSchema, { attempts: 1, timeLimitSeconds: 3 })
     process.env.PG_BOSS_SCHEMA = queueSchema
     vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-    usePricing('matching', pricing)
     usePricing('research', researchPricing, 'agent')
   }, 60_000)
 
@@ -131,51 +126,9 @@ integration('AI work carried out by the AI module plugin', () => {
     return child
   }
 
-  /** An offer and an active profile for Matching to assess. */
-  async function offer() {
-    const ad = randomUUID(),
-      revision = randomUUID(),
-      profileVersion = randomUUID(),
-      scope = randomUUID()
-    await pool.query(
-      "INSERT INTO source_scopes(id,source,fingerprint,parameters) VALUES($1,'solid',$2,'{}')",
-      [scope, randomUUID()],
-    )
-    await pool.query(
-      "INSERT INTO source_ads(id,source,external_id,last_seen_scope_id) VALUES($1,'solid',$2,$3)",
-      [ad, randomUUID(), scope],
-    )
-    await pool.query(
-      "INSERT INTO source_ad_revisions(id,source_ad_id,content_hash,payload) VALUES($1,$2,'test',$3)",
-      [
-        revision,
-        ad,
-        {
-          title: 'PHP developer',
-          description: 'PHP backend',
-          skills: [{ name: 'PHP' }],
-          seniority: 'senior',
-        },
-      ],
-    )
-    await pool.query(
-      'UPDATE source_ads SET current_revision_id=$2 WHERE id=$1',
-      [ad, revision],
-    )
-    await pool.query(
-      'INSERT INTO profile_versions(id,number,data,command_id,draft_revision) VALUES($1,1,$2,$3,1)',
-      [profileVersion, emptyProfile(), randomUUID()],
-    )
-    await pool.query('UPDATE profile_head SET active_version_id=$1', [
-      profileVersion,
-    ])
-    return ad
-  }
-
-  // The Profile no longer requests AI work the old way (epic sq2, T7); its
-  // preparations are delivered through assignments.
-  it('delivers an assessment, and the end of company research whose only attempt failed, each to the module that requested it (B6-AC01, B6-AC07)', async () => {
-    const assessment = await enqueueMatching(await offer())
+  // The Profile (epic sq2, T7) and Matching (T8) no longer request AI work
+  // the old way; their work is delivered through assignments.
+  it('delivers the end of company research whose only attempt failed to the module that requested it (B6-AC01, B6-AC07)', async () => {
     const companyId = (
       await createCompany({
         commandId: randomUUID(),
@@ -191,23 +144,6 @@ integration('AI work carried out by the AI module plugin', () => {
     })
 
     worker = await startWorker()
-
-    // Matching's receiver took the result: the assessment is published.
-    await waitFor(
-      async () =>
-        (await readExecutionHistory(assessment.id)).at(-1)?.state ===
-        'completed',
-      30_000,
-      'the assessment to be delivered',
-    )
-    expect(
-      (
-        await pool.query(
-          'SELECT count(*)::int AS n FROM matching_rating_revisions WHERE request_id=$1',
-          [assessment.id],
-        )
-      ).rows[0].n,
-    ).toBe(1)
 
     // The research's only attempt passed its time limit; the failure
     // handler ended it and Companies' receiver took that end.

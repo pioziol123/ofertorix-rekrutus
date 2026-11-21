@@ -29,6 +29,24 @@ export const matchingStateLabels: Record<string, string> = {
   unknown: 'Wymaga sprawdzenia',
   excluded: 'Niezgodność wymagań',
 } satisfies Record<MatchingState, string>
+/**
+ * The labels of the offer details for the state of an assessment request.
+ * An assessment with an assignment reaches only "Ocena w toku", "Ocena
+ * gotowa", "Ocena nie powiodła się" and the exclusion (T8-R04); the labels
+ * of waiting for the budget, of the queue and of a send or cost to check
+ * stay for assessments of the old way until task oferty-pracy-sq2.11.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-3): one in-progress state replaces the
+ * steps of the former batch path.
+ */
+export const matchingDetailLabels: Record<string, string> = {
+  waiting_budget: 'Czeka na budżet',
+  queued: 'W kolejce',
+  running: 'Ocena w toku',
+  completed: 'Ocena gotowa',
+  failed: 'Ocena nie powiodła się',
+  unknown: 'Wysyłka lub koszt wymagają sprawdzenia',
+  excluded: 'Niezgodność z wymaganiem koniecznym',
+} satisfies Record<MatchingState, string>
 export const matchingGroupLabels = {
   technologies: 'Technologie',
   experience: 'Doświadczenie',

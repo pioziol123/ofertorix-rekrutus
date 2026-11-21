@@ -19,6 +19,13 @@ export {
   type AssignmentStatuses,
 } from './assignments/read-assignment-statuses.ts'
 export { canPlaceAssignments } from './assignments/can-place-assignments.ts'
+// The exchange kept with an assignment's operations, for Matching's view
+// of an assessment's provider exchange (T8-R07).
+export {
+  readAssignmentExchange,
+  type AssignmentExchange,
+  type OperationExchange,
+} from './assignments/read-assignment-exchange.ts'
 export {
   AssignmentError,
   assignmentStatuses,

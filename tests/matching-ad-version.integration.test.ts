@@ -28,17 +28,18 @@ import {
 import { enqueueMatching } from '../modules/matching/request-assessment.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { readMatching } from '../modules/matching/read-assessments.ts'
-import { registerResultReceiver } from '../modules/ai/index.ts'
-import {
-  assessmentReceiver,
-  assessmentSettingsKey,
-} from '../modules/matching/index.ts'
+import { registerAssignmentReceivers } from '../receivers/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { defaultWeights } from '../modules/matching/domain/weights.ts'
 import { emptyProfile } from '../modules/profile/view.ts'
 import { aiQueue } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
-import { migrate, SimulatedOpenAi } from './matching-ai.fixtures.ts'
+import { migrate } from './matching-ai.fixtures.ts'
+import {
+  carryOut,
+  prepareExecutorQueue,
+  SimulatedProvider,
+} from './matching-assignments.fixtures.ts'
 
 // The settings and price lists AI keeps in code, replaced for the test.
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
@@ -90,7 +91,7 @@ integration(
     const schema = `matching_ad_version_${randomUUID().replaceAll('-', '')}`
     let admin: Pool, pool: Pool, ad: string, assessed: string, changed: string
     const pricing = {
-      model: 'test-only',
+      model: 'gpt-6-luna',
       version: 'test',
       inputUsdPerMillion: '1',
       outputUsdPerMillion: '1',
@@ -111,17 +112,17 @@ integration(
       await migrate(pool)
       setPool(pool)
       await queue.start()
-      registerResultReceiver(assessmentSettingsKey, assessmentReceiver)
+      await prepareExecutorQueue()
+      registerAssignmentReceivers()
     })
 
     beforeEach(async () => {
       vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-      usePricing('matching', pricing, ['single', 'batch'])
-      new SimulatedOpenAi()
-      await queue.reset()
+      usePricing('matching', pricing)
+      new SimulatedProvider().register()
       injected.change = null
       await pool.query(
-        'TRUNCATE matching_rating_heads,matching_rating_revisions,matching_weight_head,matching_weight_versions,matching_requests,ai_executions,ai_attempts,ai_budget_months,profile_head,profile_versions,source_ads,source_scopes CASCADE',
+        'TRUNCATE matching_rating_heads,matching_rating_revisions,matching_weight_head,matching_weight_versions,matching_requests,ai_operation_exchange,ai_operations,ai_assignments,ai_executions,ai_attempts,ai_budget_months,profile_head,profile_versions,source_ads,source_scopes CASCADE',
       )
       const weights = randomUUID()
       await pool.query(
@@ -241,7 +242,7 @@ integration(
       // The receiver reads the current version without a lock; the ad
       // changes right after that read, before the result is saved.
       injected.afterCurrentVersions = changeAd
-      await queue.work()
+      await carryOut(pool)
       expect(injected.afterCurrentVersions).toBeNull()
       expect((await currentAdVersions([ad])).get(ad)).toBe(changed)
       const rating = (

@@ -54,7 +54,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
     revision: string,
     profileVersion: string
   const pricing = {
-    model: 'test-only',
+    model: 'gpt-6-luna',
     version: 'test',
     inputUsdPerMillion: '1',
     outputUsdPerMillion: '1',
@@ -79,7 +79,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
     vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
     usePricing('matching', pricing, ['single', 'batch'])
     await pool.query(
-      'TRUNCATE matching_requests,matching_rating_heads,matching_rating_revisions,ai_executions,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
+      'TRUNCATE matching_requests,matching_rating_heads,matching_rating_revisions,ai_operations,ai_assignments,ai_executions,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
     )
     ad = randomUUID()
     revision = randomUUID()
@@ -350,6 +350,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
       maximumCostPln: '0.020500',
     })
     usePricing('matching', null)
+    vi.stubEnv('OPENAI_API_KEY', '')
     await pool.query('UPDATE profile_head SET active_version_id=NULL')
     expect(await matchingListStatus()).toEqual({
       configured: false,
@@ -357,5 +358,78 @@ integration('list matching projections in isolated PostgreSQL', () => {
       pending: 1,
       maximumCostPln: null,
     })
+  })
+
+  /**
+   * A request with an assignment in the given status, its outcome saved
+   * when the assignment ended, as Matching's receiver saves it.
+   */
+  async function assignedRequest(
+    status: 'in_progress' | 'needs_attention' | 'succeeded' | 'failed',
+  ) {
+    const id = randomUUID(),
+      assignmentId = randomUUID()
+    await pool.query(
+      `INSERT INTO ai_assignments(id,settings_name,type,label,instruction,input,executor,executor_parameters,status,failure_reason,automatic_operation_limit,placed_at,deadline)
+       VALUES($1,'matching','single','Oferta','Oceń','{}','openai','{}',$2,$3,3,now(),now()+interval '7 days')`,
+      [assignmentId, status, status === 'failed' ? 'time_limit' : null],
+    )
+    await pool.query(
+      `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state,assignment_id,calculation,result,error)
+       VALUES($1,$2,$3,$4,'{}','{}','requested',$5,$6,$7,$8)`,
+      [
+        id,
+        ad,
+        revision,
+        profileVersion,
+        assignmentId,
+        status === 'succeeded' ? calculation : null,
+        status === 'succeeded'
+          ? { summary: 'x', strengths: [], gaps: [], criteria: [] }
+          : null,
+        status === 'failed' ? 'Ocena nie została wykonana.' : null,
+      ],
+    )
+    return { id, assignmentId }
+  }
+  it('keeps the offer list refreshing while an assessment with an assignment is in progress or needs attention, and stops once none is (T8-AC06, T8-R06)', async () => {
+    const running = await assignedRequest('in_progress')
+    const attention = await assignedRequest('needs_attention')
+    expect((await matchingListStatus()).pending).toBe(2)
+    const [offer] = await decorateMatching(offers())
+    expect(offer!.assessment).toMatchObject({ state: 'running' })
+    // Their receiver saved an outcome when they ended.
+    await pool.query(
+      "UPDATE ai_assignments SET status='succeeded' WHERE id=$1",
+      [running.assignmentId],
+    )
+    await pool.query(
+      'UPDATE matching_requests SET calculation=$2,result=$3 WHERE id=$1',
+      [
+        running.id,
+        calculation,
+        { summary: 'x', strengths: [], gaps: [], criteria: [] },
+      ],
+    )
+    expect((await matchingListStatus()).pending).toBe(1)
+    await pool.query(
+      "UPDATE ai_assignments SET status='failed',failure_reason='rejected' WHERE id=$1",
+      [attention.assignmentId],
+    )
+    await pool.query("UPDATE matching_requests SET error='x' WHERE id=$1", [
+      attention.id,
+    ])
+    expect((await matchingListStatus()).pending).toBe(0)
+  })
+  it('shows an assessment with an assignment in the list as in progress, ready or failed, never with a removed text (T8-AC04)', async () => {
+    const shown = async () => (await decorateMatching(offers()))[0]!.assessment
+    await assignedRequest('needs_attention')
+    expect((await shown())!.state).toBe('running')
+    await pool.query('TRUNCATE matching_requests,ai_assignments CASCADE')
+    await assignedRequest('failed')
+    expect((await shown())!.state).toBe('failed')
+    await pool.query('TRUNCATE matching_requests,ai_assignments CASCADE')
+    await assignedRequest('succeeded')
+    expect((await shown())!.state).toBe('completed')
   })
 })

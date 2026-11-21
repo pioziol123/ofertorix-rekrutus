@@ -1,17 +1,34 @@
-import { readExecutionArchive, readLatestExecution } from '../ai/index.ts'
+import {
+  readAssignmentExchange,
+  readExecutionArchive,
+  readLatestExecution,
+} from '../ai/index.ts'
 import {
   legacyPayloads,
-  requestExists,
+  requestAssignment,
 } from './infrastructure/persistence/assessment-requests.ts'
 
 /**
- * The diagnostic archive of a request's assessment, read through AI: the
- * provider batch its latest AI work was sent in. The artefacts contain
- * professional profile data and complete provider output, so they stay
- * outside the normal history and logs, as requested by the owner.
+ * The diagnostic record of what a request's assessment sent to the
+ * provider and what came back. For an assessment with an assignment it is
+ * the exchange kept with each of the assignment's operations, read through
+ * the AI module's exchange read (T8-R07); for one of the old way, the
+ * archive of the provider batch or single call its latest AI work was sent
+ * in. Both contain professional profile data and complete provider output,
+ * so they stay outside the normal history and logs, as requested by the
+ * owner. Null for an unknown request.
  */
 export async function readBatchArchive(requestId: string) {
-  if (!(await requestExists(requestId))) return null
+  const request = await requestAssignment(requestId)
+  if (!request) return null
+  if (request.assignmentId) {
+    const exchange = await readAssignmentExchange(request.assignmentId)
+    return {
+      kind: 'exchange' as const,
+      assignmentId: request.assignmentId,
+      operations: exchange?.operations ?? [],
+    }
+  }
   const execution = await readLatestExecution(requestId)
   // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the public archive read.
   // ASSUMPTION(oferty-pracy-0mq.21/ASM-8): inputs of requests sent before
@@ -27,6 +44,7 @@ export async function readBatchArchive(requestId: string) {
       )
     : null
   return {
+    kind: 'batch' as const,
     operationId: archive?.archiveId ?? requestId,
     artifacts: archive?.artifacts ?? [],
     reconstructedInput: archive?.reconstructedInput ?? null,

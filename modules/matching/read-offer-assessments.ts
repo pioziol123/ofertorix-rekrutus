@@ -1,10 +1,16 @@
 import type { OfferView } from '../offers/index.ts'
 import { readLatestExecutions } from '../ai/index.ts'
 import {
-  activeAssessments,
+  activeExecutions,
   assessmentReservation,
+  assessmentsConfigured,
+  assignmentsInProgress,
 } from './infrastructure/adapters/assessment-ai.ts'
-import { assessmentState } from './domain/assessment-state.ts'
+import {
+  assessmentState,
+  assignedAssessmentState,
+} from './domain/assessment-state.ts'
+import { assignmentsWithoutOutcome } from './infrastructure/persistence/assessment-requests.ts'
 import { latestOfAds } from './infrastructure/persistence/ratings.ts'
 import {
   activeProfileVersion,
@@ -34,7 +40,10 @@ export async function decorateMatching(
     (
       await readLatestExecutions(
         rows
-          .filter((row) => row.request_id && row.state !== 'excluded')
+          .filter(
+            (row) =>
+              row.request_id && row.state !== 'excluded' && !row.assignment_id,
+          )
           .map((row) => row.request_id),
       )
     ).map((execution) => [execution.operationId, execution]),
@@ -67,9 +76,17 @@ export async function decorateMatching(
       ...offer,
       assessment: {
         requestId: row.request_id ?? null,
-        state: row.request_id
-          ? assessmentState(row.state, executions.get(row.request_id) ?? null)
-          : 'completed',
+        state: !row.request_id
+          ? 'completed'
+          : row.assignment_id
+            ? assignedAssessmentState({
+                assessment: row.assessed,
+                message: row.failed,
+              })
+            : assessmentState(
+                row.state,
+                executions.get(row.request_id) ?? null,
+              ),
         author: row.assessment_author ?? undefined,
         scoreId: row.score_id ?? null,
         rating: percent(calculation?.rating),
@@ -85,17 +102,20 @@ export async function decorateMatching(
 }
 /**
  * Whether groups of assessments can be requested, how many assessments are
- * in progress and the most one item of a group reserves.
+ * in progress and the most one assessment of a group reserves. The count
+ * of assessments with an assignment comes from the status read over the
+ * assignments of Matching's assessments without an outcome (T8-R06); those
+ * of the old way are counted by the AI read until task oferty-pracy-sq2.11.
  */
 export async function matchingListStatus() {
-  // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reservation read and the
-  // count of assessments in progress.
-  const reservation = assessmentReservation('group')
   const profile = await activeProfileVersion()
+  const pending =
+    (await assignmentsInProgress(await assignmentsWithoutOutcome())) +
+    (await activeExecutions())
   return {
-    configured: reservation !== null,
+    configured: assessmentsConfigured(),
     profileReady: profile !== null,
-    pending: await activeAssessments(),
-    maximumCostPln: reservation,
+    pending,
+    maximumCostPln: assessmentReservation(),
   }
 }

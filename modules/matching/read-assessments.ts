@@ -5,7 +5,10 @@ import type {
   MatchingInput,
   calculate,
 } from './domain/assessment.ts'
-import { assessmentState } from './domain/assessment-state.ts'
+import {
+  assessmentState,
+  assignedAssessmentState,
+} from './domain/assessment-state.ts'
 import type { MatchingState } from './domain/assessment-view.ts'
 import {
   assessmentReservation,
@@ -35,11 +38,17 @@ export type MatchingHistory = {
   checks: MatchingInput['checks']
   criteria: Criterion[]
   /**
-   * The cost of the request's latest AI work, from the AI read: reserved,
-   * and settled (null while it is not settled). Null for an excluded
-   * request.
+   * The cost of the request's latest AI work of the old way, from the AI
+   * read: reserved, and settled (null while it is not settled). Null for an
+   * excluded request and for one with an assignment, whose cost is in the
+   * AI assignments panel.
    */
   cost: { reserved: string; actual: string | null } | null
+  /**
+   * Whether the request's AI work is an assignment, whose provider exchange
+   * the exchange view shows (T8-R07); else its archive of the old way.
+   */
+  assignment: boolean
   stale: boolean
 }
 
@@ -52,17 +61,30 @@ export async function readMatching(adId: string) {
   const executions = new Map(
     (
       await readLatestExecutions(
-        rows.filter((row) => row.state !== 'excluded').map((row) => row.id),
+        rows
+          .filter((row) => row.state !== 'excluded' && !row.assignment_id)
+          .map((row) => row.id),
       )
     ).map((execution) => [execution.operationId, execution]),
   )
   const requests = await withAdVersionState(
-    rows.map((row) => {
+    rows.map(({ assignment_id: assignmentId, ...row }) => {
+      if (assignmentId)
+        return {
+          ...row,
+          state: assignedAssessmentState({
+            assessment: row.result !== null,
+            message: row.error !== null,
+          }),
+          cost: null,
+          assignment: true,
+        }
       const execution = executions.get(row.id) ?? null
       return {
         ...row,
         state: assessmentState(row.state, execution),
         cost: execution ? execution.cost : null,
+        assignment: false,
       }
     }),
     adId,
@@ -75,8 +97,7 @@ export async function readMatching(adId: string) {
   return {
     configured: assessmentsConfigured(),
     profileReady: activeId !== null,
-    // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reservation read.
-    maximumCostPln: assessmentReservation('single'),
+    maximumCostPln: assessmentReservation(),
     history,
     ...(await readRatings(adId, activeId)),
   }

@@ -25,11 +25,17 @@ import { usePricing } from './ai-test-configuration.ts'
 import {
   aiLeaseMigration,
   aiWithoutLeaseMigration,
+  assignmentMigrations,
   matchingMigrations,
   migrate,
   pricing,
-  SimulatedOpenAi,
 } from './matching-ai.fixtures.ts'
+import {
+  carryOut,
+  prepareExecutorQueue,
+  SimulatedProvider,
+} from './matching-assignments.fixtures.ts'
+import { registerAssignmentReceivers } from '../receivers/index.ts'
 
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
@@ -246,7 +252,10 @@ integration('migration of the assessment history to AI executions', () => {
       '1770000000018_matching_ai_executions',
       aiLeaseMigration,
       aiWithoutLeaseMigration,
+      ...assignmentMigrations,
     ])
+    await prepareExecutorQueue()
+    registerAssignmentReceivers()
   })
   afterAll(async () => {
     await queue.stop()
@@ -388,17 +397,18 @@ integration('migration of the assessment history to AI executions', () => {
     })
   })
 
-  it('accepts new assessments of the ad through AI after the migration', async () => {
-    usePricing('matching', pricing, ['single', 'batch'])
+  it('accepts new assessments of the ad through an AI assignment after the migration (sq2.9)', async () => {
+    usePricing('matching', pricing)
     vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-    new SimulatedOpenAi()
+    new SimulatedProvider().register()
     const request = await enqueueMatching(ad)
     expect(request.reused).toBe(false)
-    await queue.work()
+    await carryOut(pool)
     expect((await readMatching(ad)).history[0]).toMatchObject({
       id: request.id,
       state: 'completed',
-      cost: { actual: '0.000120' },
+      cost: null,
+      assignment: true,
     })
     vi.unstubAllEnvs()
   })

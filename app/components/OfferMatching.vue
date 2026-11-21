@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   matchingCriterionLabel,
+  matchingDetailLabels as labels,
   matchingPending,
 } from '../../modules/matching/view'
 const props = defineProps<{ offerId: string; refreshVersion?: number }>()
@@ -24,17 +25,6 @@ const pending = computed(() =>
 const money = (value: string) =>
   Number(value).toLocaleString('pl-PL', { maximumFractionDigits: 6 })
 const current = computed(() => data.value?.current)
-// ASSUMPTION(oferty-pracy-0mq.21/ASM-3): one in-progress state replaces the
-// steps of the former batch path.
-const labels: Record<string, string> = {
-  waiting_budget: 'Czeka na budżet',
-  queued: 'W kolejce',
-  running: 'Ocena w toku',
-  completed: 'Ocena gotowa',
-  failed: 'Ocena nie powiodła się',
-  unknown: 'Wysyłka lub koszt wymagają sprawdzenia',
-  excluded: 'Niezgodność z wymaganiem koniecznym',
-}
 const groups: Record<string, string> = {
   technologies: 'Technologie',
   experience: 'Doświadczenie',
@@ -258,7 +248,11 @@ onUnmounted(() => clearInterval(timer))
             :href="`/api/matching/${encodeURIComponent(row.id)}/archive`"
             download
           >
-            Pobierz archiwum całej partii (JSON)
+            {{
+              row.assignment
+                ? 'Pobierz zapis wymiany z dostawcą (JSON)'
+                : 'Pobierz archiwum całej partii (JSON)'
+            }}
           </a>
         </p>
         <details v-if="row.result">

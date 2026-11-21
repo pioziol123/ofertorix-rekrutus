@@ -69,6 +69,46 @@ export async function appendExchange(
   return true
 }
 
+/** One entry of an operation's exchange, with its operation's ordinal. */
+export type ExchangeRow = {
+  ordinal: number
+  sequence: number
+  kind: 'request' | 'response'
+  content: string
+}
+
+/**
+ * Whether the assignment exists, and the exchange of each of its
+ * operations, by the operations' ordinal and then the order of writing;
+ * without row locks.
+ */
+export async function readExchangeOfAssignment(
+  assignmentId: string,
+): Promise<{ exists: boolean; operations: number[]; rows: ExchangeRow[] }> {
+  const operations = (
+    await db().query<{ ordinal: number }>(
+      'SELECT ordinal FROM ai_operations WHERE assignment_id=$1 ORDER BY ordinal',
+      [assignmentId],
+    )
+  ).rows.map((row) => row.ordinal)
+  const exists =
+    operations.length > 0 ||
+    ((
+      await db().query('SELECT 1 FROM ai_assignments WHERE id=$1', [
+        assignmentId,
+      ])
+    ).rowCount ?? 0) > 0
+  const rows = (
+    await db().query<ExchangeRow>(
+      `SELECT o.ordinal,e.sequence,e.kind,e.content
+       FROM ai_operation_exchange e JOIN ai_operations o ON o.id=e.operation_id
+       WHERE o.assignment_id=$1 ORDER BY o.ordinal,e.sequence`,
+      [assignmentId],
+    )
+  ).rows
+  return { exists, operations, rows }
+}
+
 /**
  * Replaces the executor state of the operation while it runs; false when
  * it no longer runs.

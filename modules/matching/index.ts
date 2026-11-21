@@ -19,9 +19,12 @@ export {
   saveWeights,
 } from './ratings.ts'
 
-// Composition: where the worker registers the receiver of assessment
-// outcomes.
+// Composition: the receiver of Matching's assignments, which the shared
+// registration of receivers registers under the settings name, and the
+// receiver of outcomes of the old way, which the AI module plugin registers
+// until task oferty-pracy-sq2.11.
 export {
+  assessmentAssignmentReceiver,
   assessmentReceiver,
   assessmentSettingsKey,
 } from './infrastructure/adapters/assessment-ai.ts'

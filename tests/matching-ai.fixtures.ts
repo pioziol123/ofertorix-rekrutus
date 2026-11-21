@@ -49,9 +49,26 @@ export const aiLeaseMigration = '1770000000020_ai_execution_lease'
 export const aiWithoutLeaseMigration =
   '1770000000026_ai_without_local_slot_and_lease'
 
+/**
+ * The assignments of the AI module (epic sq2) and the assignment column of
+ * Matching's requests (task oferty-pracy-sq2.9); they follow the migration
+ * without the lease.
+ */
+export const assignmentMigrations = [
+  '1770000000027_ai_assignments',
+  '1770000000030_ai_operation_exchange',
+  '1770000000031_ai_budget_default_limit',
+  '1770000000033_matching_assignment',
+]
+
 export async function migrate(
   pool: Pool,
-  names = [...matchingMigrations, aiLeaseMigration, aiWithoutLeaseMigration],
+  names = [
+    ...matchingMigrations,
+    aiLeaseMigration,
+    aiWithoutLeaseMigration,
+    ...assignmentMigrations,
+  ],
 ) {
   const statements: string[] = []
   for (const name of names)
@@ -61,9 +78,12 @@ export async function migrate(
   await pool.query(statements.join('\n'))
 }
 
-/** The test price list; it holds for single calls and batch items. */
+/**
+ * The test price list, for the model of Matching's settings of
+ * assignments; it holds for single calls and batch items.
+ */
 export const pricing = {
-  model: 'test-only',
+  model: 'gpt-6-luna',
   version: 'test',
   inputUsdPerMillion: '1',
   outputUsdPerMillion: '1',

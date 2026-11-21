@@ -1,5 +1,6 @@
 import type {
   AiRequestErrorCode,
+  AssignmentErrorCode,
   ExecutionCause,
   ExecutionState,
 } from '../../ai/index.ts'
@@ -18,6 +19,24 @@ export function assessmentState(
   if (requestState === 'excluded') return 'excluded'
   if (!execution) return 'failed'
   return executionStateOf[execution.state]
+}
+
+/**
+ * The state of an assessment request whose AI work is an assignment, from
+ * Matching's own data alone (T8-R04): in progress until its receiver saved
+ * an outcome, then completed with a saved assessment, or failed with a
+ * saved message (a failed assignment, or a result that did not pass
+ * Matching's own check). An assignment needing attention is still in
+ * progress for the owner. The texts of waiting for the budget, of the
+ * queue and of an uncertain end are never reached for it.
+ */
+export function assignedAssessmentState(saved: {
+  assessment: boolean
+  message: boolean
+}): MatchingState {
+  if (saved.assessment) return 'completed'
+  if (saved.message) return 'failed'
+  return 'running'
 }
 
 const executionStateOf: Record<ExecutionState, MatchingState> = {
@@ -40,6 +59,31 @@ const notConfirmed =
 /** The message of a result Matching rejected, with its safe diagnostic. */
 export function rejectionMessage(code: string): string {
   return `${notConfirmed} [Ocena: ${code}]`
+}
+
+/**
+ * The message of an assessment whose assignment failed (T8-R03): the
+ * receiver gets no cause, so the message names none; the details of the
+ * failure are in the AI assignments panel.
+ * ASSUMPTION(oferty-pracy-sq2.9/ASM-2): today's message of an assessment
+ * that was not carried out, without the cause it can no longer name.
+ */
+export const failedAssignmentMessage =
+  'Ocena nie została wykonana. Poprzednie wyniki pozostały bez zmian. Szczegóły są w panelu zleceń AI.'
+
+/**
+ * What a refused assignment means to the owner, for a single assessment or
+ * a group (T8-R05): an oversized request keeps the message of the input
+ * limit it had; any other refusal is a gap in the AI configuration.
+ * ASSUMPTION(oferty-pracy-sq2.9/ASM-2): a group, which no longer runs at
+ * the Batch price, gets the configuration message of a single assessment.
+ */
+export function assignmentRefusalMessage(
+  code: AssignmentErrorCode,
+  kind: 'single' | 'group',
+): string {
+  if (code === 'request_too_large') return inputLimitMessage(kind)
+  return notConfiguredMessage
 }
 
 /**

@@ -1,14 +1,11 @@
 import { z } from 'zod'
 import {
-  checkExecution,
+  canPlaceAssignments,
   countActiveExecutions,
-  isConfigured,
+  placeAssignment,
+  readAssignmentStatuses,
   readReservation,
-  requestExecution,
-  requestExecutionGroup,
-  type ExecutionCheck,
-  type ExecutionRequest,
-  type RequestedExecution,
+  type AssignmentReceiver,
   type ResultReceiver,
 } from '../../../ai/index.ts'
 import {
@@ -16,17 +13,23 @@ import {
   type MatchingInput,
 } from '../../domain/assessment.ts'
 import {
+  endFailedAssessment,
   recordAssessmentEnd,
   recordAssessmentResult,
+  takeAssessmentResult,
 } from '../../receive-assessment.ts'
 
 /**
  * Matching's integration with the AI module: it translates an assessment
- * request into an instruction, a response schema and the input, and passes
- * AI's outcomes to Matching's operations. Matching knows no provider.
+ * request into an assignment with an instruction, a response format and the
+ * input, and passes the end of the assignment to Matching's operations.
+ * Matching knows no provider.
  */
 
-/** The key under which AI keeps the settings of Matching's executions. */
+/**
+ * The settings name under which AI keeps the settings of Matching's
+ * assignments, and of its executions of the old way.
+ */
 export const assessmentSettingsKey = 'matching'
 
 const instruction =
@@ -40,91 +43,76 @@ export function assessmentResponseSchema() {
   }
 }
 
-function assessmentRequest(
-  requestId: string,
+/**
+ * Whether assessments can be requested now (T1-R08): no provider is
+ * called.
+ */
+export function assessmentsConfigured(): boolean {
+  return canPlaceAssignments(assessmentSettingsKey, 'single')
+}
+
+/**
+ * The most one assessment reserves, in PLN, or null when it cannot be
+ * requested now. Each assessment, also one of a group command, is a single
+ * answer, so the single price list gives it.
+ * ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reservation read of the old
+ * way, which shows the owner the same price list's ceiling until task
+ * oferty-pracy-sq2.11.
+ */
+export function assessmentReservation(): string | null {
+  return readReservation(assessmentSettingsKey, 'single')
+}
+
+/**
+ * Places the single-answer assignment that assesses one offer, in the
+ * caller's transaction (T8-R01), and returns its identifier. The label
+ * names the offer for the owner. A request larger than the price list
+ * covers is refused before anything is created (T8-R05).
+ */
+export async function placeAssessmentAssignment(
+  label: string,
   input: MatchingInput,
-  mode: ExecutionRequest['mode'],
-  check?: ExecutionCheck,
-): ExecutionRequest {
-  return {
-    settingsKey: assessmentSettingsKey,
-    operationId: requestId,
-    mode,
+): Promise<string> {
+  const { assignmentId } = await placeAssignment({
+    settingsName: assessmentSettingsKey,
+    type: 'single',
+    label,
     instruction,
-    responseSchema: assessmentResponseSchema(),
     input: JSON.stringify(input),
+    responseFormat: assessmentResponseSchema(),
     // ASSUMPTION(oferty-pracy-0mq.21/ASM-5): an assessment is refused
     // above the input cap, as the former batch path refused it.
-    refuseAboveInputCap: true,
-    // Every assessment keeps its diagnostic archive: a single one through
-    // AI's archive of the execution, a group through its batch archive
-    // (SD 0mq.17 decision 5).
-    keepArchive: true,
-    ...(check ? { check } : {}),
-  }
-}
-
-/** Whether single assessments can be requested now. */
-export function assessmentsConfigured(): boolean {
-  return isConfigured(assessmentSettingsKey)
+    refuseOversized: true,
+  })
+  return assignmentId
 }
 
 /**
- * The most one assessment reserves, in PLN: a single one, or one item of
- * a group. Null when it cannot be requested now.
+ * The receiver of Matching's assignments (T6-R01). It runs in the AI
+ * module's transaction that saves the assignment's final status, so
+ * Matching's saves and that status commit together. It takes every result
+ * without an error: an assessment that fails Matching's own check is
+ * Matching's matter (T8-R03). It follows the three rules of the receiver
+ * (T6-R09): it changes only a request whose outcome is not saved yet, so a
+ * repeated call has no effect; it uses only its arguments and the data of
+ * Matching and of the modules it reads; and it relies on no moment of the
+ * end.
  */
-export function assessmentReservation(kind: 'single' | 'group'): string | null {
-  // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reservation read.
-  return readReservation(
-    assessmentSettingsKey,
-    kind === 'single' ? 'single' : 'batch',
-  )
-}
-
-/** The check before a single request, outside any transaction. */
-export function checkAssessmentExecution(): Promise<ExecutionCheck> {
-  return checkExecution(assessmentSettingsKey)
+export const assessmentAssignmentReceiver: AssignmentReceiver = {
+  async receiveResult({ assignmentId, result }) {
+    await takeAssessmentResult(assignmentId, result)
+  },
+  async receiveFailure({ assignmentId }) {
+    await endFailedAssessment(assignmentId)
+  },
 }
 
 /**
- * Requests one assessment in single mode, in the caller's transaction. The
- * request is the operation.
- */
-export function requestAssessment(
-  requestId: string,
-  input: MatchingInput,
-  check: ExecutionCheck,
-): Promise<RequestedExecution> {
-  return requestExecution(
-    assessmentRequest(requestId, input, { kind: 'single' }, check),
-  )
-}
-
-/**
- * Requests the assessments of a group as the items of one provider batch,
- * in the caller's transaction; the budget covers the whole group or none
- * of it. Each request is an item's operation, which is also its item
- * identifier in the batch.
- */
-export function requestAssessmentGroup(
-  groupId: string,
-  requests: { requestId: string; input: MatchingInput }[],
-): Promise<RequestedExecution[]> {
-  return requestExecutionGroup(
-    requests.map((request) =>
-      assessmentRequest(request.requestId, request.input, {
-        kind: 'batch',
-        groupId,
-      }),
-    ),
-  )
-}
-
-/**
- * The receiver of assessment outcomes. It runs in AI's delivery
- * transaction, so publication and settlement commit together, and a failed
- * delivery leaves none of its writes, which lets it take the same outcome
- * again.
+ * The receiver of assessment outcomes of the old way, for assessments
+ * requested before Matching moved to assignments; it goes with the old way
+ * (task oferty-pracy-sq2.11). It runs in AI's delivery transaction, so
+ * publication and settlement commit together, and a failed delivery leaves
+ * none of its writes, which lets it take the same outcome again.
  */
 export const assessmentReceiver: ResultReceiver = {
   receiveResult: (delivery) =>
@@ -137,8 +125,24 @@ export const assessmentReceiver: ResultReceiver = {
   },
 }
 
-/** How many of Matching's assessments are in progress in AI. */
-export function activeAssessments(): Promise<number> {
+/**
+ * How many of the given assignments are still in progress or need
+ * attention, from the status read (T8-R06, T6-R11): it only shows that
+ * work is in progress; Matching learns of an end from its receiver.
+ */
+export async function assignmentsInProgress(
+  assignmentIds: readonly string[],
+): Promise<number> {
+  if (!assignmentIds.length) return 0
+  const { found } = await readAssignmentStatuses(assignmentIds)
+  return found.filter(
+    (entry) =>
+      entry.status === 'in_progress' || entry.status === 'needs_attention',
+  ).length
+}
+
+/** How many of Matching's assessments of the old way are in progress. */
+export function activeExecutions(): Promise<number> {
   // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the count of work in progress.
   return countActiveExecutions(assessmentSettingsKey)
 }

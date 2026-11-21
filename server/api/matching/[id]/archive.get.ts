@@ -12,7 +12,9 @@ export default apiHandler(async (event) => {
   setHeader(
     event,
     'Content-Disposition',
-    `attachment; filename="batch-${archive.operationId}.json"`,
+    archive.kind === 'exchange'
+      ? `attachment; filename="exchange-${archive.assignmentId}.json"`
+      : `attachment; filename="batch-${archive.operationId}.json"`,
   )
   setHeader(event, 'X-Content-Type-Options', 'nosniff')
   return archive

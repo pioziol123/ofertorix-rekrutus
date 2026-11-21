@@ -1,32 +1,30 @@
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { transaction } from '../../lib/db.ts'
-import {
-  AiRequestError,
-  readExecutionHistory,
-  readLatestExecutions,
-} from '../ai/index.ts'
-import {
-  assessmentReservation,
-  requestAssessmentGroup,
-} from './infrastructure/adapters/assessment-ai.ts'
+import { AssignmentError, readExecutionHistory } from '../ai/index.ts'
+import { assessmentsConfigured } from './infrastructure/adapters/assessment-ai.ts'
 import {
   assessmentState,
-  groupNotConfiguredMessage,
-  refusalMessage,
+  assignedAssessmentState,
+  assignmentRefusalMessage,
+  notConfiguredMessage,
 } from './domain/assessment-state.ts'
 import {
-  requestedOfAds,
   requestedWith,
+  requestedWithIds,
   requestsOfAd,
-  linkExecution,
   lockCommand,
+  type CommandRequest,
 } from './infrastructure/persistence/assessment-requests.ts'
 import {
   activeProfileVersion,
   adsForAssessment,
 } from './read-assessment-inputs.ts'
-import { MatchingError, prepareMatching } from './request-assessment.ts'
-import type { MatchingInput } from './domain/assessment.ts'
+import {
+  MatchingError,
+  placePrepared,
+  prepareMatching,
+} from './request-assessment.ts'
 import {
   matchingPending,
   type MatchingState,
@@ -57,9 +55,37 @@ type Item = {
 }
 
 /**
- * The state of a group: waiting for budget while its AI work waits for it,
- * the stage of the work still in progress, otherwise completed (its
- * results were collected; each item has its own outcome).
+ * The identifier a group command gives the request it saves for an offer
+ * that needs AI work: derived from the command and the offer (a name-based
+ * UUID, version 5 layout), so a repeat of the command finds its requests
+ * in Matching's own data.
+ * ASSUMPTION(oferty-pracy-sq2.9/ASM-1): with no AI group any more, these
+ * identifiers stand in for the group that recognised a repeated command.
+ * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): Matching does not record a
+ * command, so its requests stand in for that record.
+ */
+export function commandRequestId(commandId: string, offerId: string): string {
+  const hash = createHash('sha1')
+    .update(`matching-command:${commandId}:${offerId}`)
+    .digest()
+  hash[6] = (hash[6]! & 0x0f) | 0x50
+  hash[8] = (hash[8]! & 0x3f) | 0x80
+  const hex = hash.subarray(0, 16).toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+/** The state of a request a command saved with its assignment. */
+const commandRequestState = (
+  request: Pick<CommandRequest, 'assessed' | 'ended'>,
+) =>
+  assignedAssessmentState({
+    assessment: request.assessed,
+    message: request.ended && !request.assessed,
+  })
+
+/**
+ * The state of a group: the stage of the work still in progress, otherwise
+ * completed (its results were collected; each item has its own outcome).
  */
 function groupState(items: { state: MatchingState }[]): MatchingState {
   const pending = items.find((item) =>
@@ -72,11 +98,12 @@ const otherOffers =
   'Ten identyfikator zlecenia dotyczy innych ofert. Odśwież zaznaczenie.'
 
 /**
- * The item a repeated command had for an offer outside its AI group, when
- * the command's transaction can be told from the data: an excluded request
- * saved at the moment of the command (a transaction saves every row with
- * its start time), or a request whose AI work was in progress at that
- * moment (the command reused it). Null when there is none.
+ * The item a repeated command had for an offer outside the requests it
+ * saved with AI work, when the command's transaction can be told from the
+ * data: an excluded request saved at the moment of the command (a
+ * transaction saves every row with its start time), or a request whose AI
+ * work was in progress at that moment (the command reused it). Null when
+ * there is none.
  * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): Matching does not record the full
  * selection of a command, so this stands in for comparing with it.
  */
@@ -90,6 +117,17 @@ async function itemOutsideGroup(
     if (request.state === 'excluded') {
       if (created === acceptedAt)
         return { id: request.id, offerId, state: 'excluded', reused: false }
+      continue
+    }
+    if (request.assignment_id) {
+      // In progress until its outcome was saved (T8-R04).
+      if (!request.ended || request.updated_at.getTime() >= acceptedAt)
+        return {
+          id: request.id,
+          offerId,
+          state: commandRequestState(request),
+          reused: true,
+        }
       continue
     }
     const history = await readExecutionHistory(request.id)
@@ -111,58 +149,53 @@ async function itemOutsideGroup(
 }
 
 /**
- * The AI group a command requested, found from Matching's own requests:
- * a request of a selected offer whose AI work belongs to the group named
- * by the command, and every request saved in the same transaction whose
- * work belongs to it. Null when no selected offer has work in the group.
+ * The requests with AI work a command saved, found from Matching's own
+ * requests: a request of a selected offer with the identifier the command
+ * gives it, and every request saved in the same transaction with the
+ * identifier the command gives its offer. Null when no selected offer has
+ * one.
  * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): Matching does not record a
- * command, so its group stands in for that record.
+ * command, so its requests stand in for that record.
+ * ASSUMPTION(oferty-pracy-sq2.9/ASM-1)
  */
-// ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the latest AI work of many
-// requests in one read, with its group.
 async function commandGroup(commandId: string, offerIds: string[]) {
-  const ofOffers = await requestedOfAds(offerIds)
-  const anchor = (await readLatestExecutions(ofOffers.map((r) => r.id))).find(
-    (execution) => execution.groupId === commandId,
+  const [anchor] = await requestedWithIds(
+    offerIds.map((offerId) => commandRequestId(commandId, offerId)),
   )
   if (!anchor) return null
-  const saved = await requestedWith(anchor.operationId)
-  const latest = new Map(
-    (await readLatestExecutions(saved.map((r) => r.id)))
-      .filter((execution) => execution.groupId === commandId)
-      .map((execution) => [execution.operationId, execution]),
-  )
+  const saved = await requestedWith(anchor.id)
   return {
-    acceptedAt: saved[0]!.created_at.getTime(),
-    requests: saved.filter((request) => latest.has(request.id)),
-    latest,
+    acceptedAt: anchor.created_at.getTime(),
+    requests: saved.filter(
+      (request) => request.id === commandRequestId(commandId, request.ad_id),
+    ),
   }
 }
 
 /**
- * The view of a group command already accepted: the requests its AI group
- * holds, and the offers it reused or excluded. A selection is a conflict
- * when the group holds an offer it does not name, or when it names an
- * offer the command did not reuse or exclude.
+ * The view of a group command already accepted: the requests it saved
+ * with AI work, and the offers it reused or excluded. A selection is a
+ * conflict when the command saved a request for an offer it does not
+ * name, or when it names an offer the command did not reuse or exclude.
  * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the interim check of a selection
  * and the interim items of a repeat. A changed selection is accepted as a
- * repeat when it differs only in offers outside the group: it may drop an
- * offer the command reused or excluded, or add an offer whose assessment
- * was in progress when the command was accepted (shown as reused). Neither
- * requests AI work.
+ * repeat when it differs only in offers outside those requests: it may
+ * drop an offer the command reused or excluded, or add an offer whose
+ * assessment was in progress when the command was accepted (shown as
+ * reused). Neither requests AI work.
  */
 async function acceptedGroup(
   groupId: string,
   group: NonNullable<Awaited<ReturnType<typeof commandGroup>>>,
   offerIds: string[],
 ) {
-  const { acceptedAt, requests, latest } = group
+  const { acceptedAt, requests } = group
   if (requests.some((request) => !offerIds.includes(request.ad_id)))
     throw new MatchingError(otherOffers)
   const items: Item[] = requests.map((request) => ({
     id: request.id,
     offerId: request.ad_id,
-    state: assessmentState('requested', latest.get(request.id) ?? null),
+    state: commandRequestState(request),
     reused: false,
   }))
   const inGroup = new Set(requests.map((request) => request.ad_id))
@@ -177,11 +210,12 @@ async function acceptedGroup(
 }
 
 /**
- * Requests the assessments of several offers as one group: the new ones
- * become the items of one provider batch, whose budget is reserved for the
- * whole group or not at all. An offer whose assessment is still in progress
- * keeps it, and an offer whose required conditions conflict is excluded.
- * The command identifier names the group, so the same command is accepted
+ * Requests the assessments of several offers (up to 100) in one save: one
+ * single-answer assignment per offer that needs AI work, each funded on
+ * its own by the AI module; all are placed or none (T8-R01, T8-R02). An
+ * offer whose assessment is still in progress keeps it, and an offer whose
+ * required conditions conflict is excluded. A repeat of the command is
+ * recognised from the requests it saved, so the same command is accepted
  * once.
  */
 export async function enqueueMatchingGroup(value: unknown) {
@@ -195,46 +229,34 @@ export async function enqueueMatchingGroup(value: unknown) {
   try {
     return await transaction(async () => {
       await lockCommand(command.commandId)
-      // FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the AI group of the command,
-      // found from the selected offers, is the only record that it was
-      // accepted. A command that requested no AI work leaves none, and its
-      // repeat is handled as a new command.
+      // FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the requests the command saved
+      // with AI work are the only record that it was accepted. A command
+      // that requested no AI work leaves none, and its repeat is handled as
+      // a new command.
       const accepted = await commandGroup(command.commandId, ids)
       if (accepted) return acceptedGroup(command.commandId, accepted, ids)
-      // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reservation read.
-      if (assessmentReservation('group') === null)
-        throw new MatchingError(groupNotConfiguredMessage)
+      if (!assessmentsConfigured())
+        throw new MatchingError(notConfiguredMessage)
       if (!profile)
         throw new MatchingError('Najpierw zatwierdź profil zawodowy.')
       const items: Item[] = []
-      const toRequest: { requestId: string; input: MatchingInput }[] = []
       for (const offerId of ids) {
         const prepared = await prepareMatching(
           offerId,
           profile,
           ads.get(offerId),
           'group',
+          // ASSUMPTION(oferty-pracy-sq2.9/ASM-1)
+          () => commandRequestId(command.commandId, offerId),
         )
+        if (prepared.toRequest)
+          await placePrepared(prepared.id, prepared.toRequest)
         items.push({
           id: prepared.id,
           offerId,
           state: prepared.state,
           reused: prepared.reused,
         })
-        if (prepared.toRequest)
-          toRequest.push({ requestId: prepared.id, input: prepared.toRequest })
-      }
-      if (toRequest.length) {
-        const requested = await requestAssessmentGroup(
-          command.commandId,
-          toRequest,
-        )
-        for (const [index, execution] of requested.entries()) {
-          const requestId = toRequest[index]!.requestId
-          await linkExecution(requestId, execution.executionId)
-          const item = items.find((i) => i.id === requestId)!
-          item.state = execution.state
-        }
       }
       return {
         groupId: command.commandId,
@@ -244,14 +266,8 @@ export async function enqueueMatchingGroup(value: unknown) {
       }
     })
   } catch (error) {
-    // A repeat whose selection shares no offer with the group its command
-    // requested is not recognised above; AI refuses a second request of
-    // the group. ASSUMPTION(oferty-pracy-0mq.21/ASM-7)
-    // FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): the interim message of it.
-    if (error instanceof AiRequestError && error.code === 'group_requested')
-      throw new MatchingError(otherOffers)
-    if (error instanceof AiRequestError)
-      throw new MatchingError(refusalMessage(error.code, 'group'))
+    if (error instanceof AssignmentError)
+      throw new MatchingError(assignmentRefusalMessage(error.code, 'group'))
     throw error
   }
 }

@@ -39,6 +39,26 @@ export async function lockAssessmentRequest(
   )
 }
 
+/**
+ * The request of an assignment, locked until the caller's transaction ends,
+ * with whether its outcome is already saved; null when no request keeps the
+ * assignment.
+ */
+export async function lockAssignmentRequest(
+  assignmentId: string,
+): Promise<(AssessmentRequest & { ended: boolean }) | null> {
+  return (
+    (
+      await db().query<AssessmentRequest & { ended: boolean }>(
+        `SELECT id,ad_id,profile_version_id,ad_revision_id,input,state,
+          (result IS NOT NULL OR error IS NOT NULL) AS ended
+         FROM matching_requests WHERE assignment_id=$1 FOR UPDATE`,
+        [assignmentId],
+      )
+    ).rows[0] ?? null
+  )
+}
+
 /** Saves what the AI work of a request ended with. */
 export async function saveAssessmentOutcome(
   id: string,
@@ -67,14 +87,19 @@ export async function lockAdRequests(adId: string) {
   ])
 }
 
-/** The ad's latest request that asked AI for work, or null. */
+/**
+ * The ad's latest request that asked AI for work, or null: with its
+ * assignment, when it has one, and whether its outcome is saved.
+ */
 export async function latestRequestedOfAd(
   adId: string,
-): Promise<{ id: string } | null> {
+): Promise<RequestProgress | null> {
   return (
     (
-      await db().query<{ id: string }>(
-        "SELECT id FROM matching_requests WHERE ad_id=$1 AND state='requested' ORDER BY created_at DESC,id DESC LIMIT 1",
+      await db().query<RequestProgress>(
+        `SELECT id,assignment_id,(result IS NOT NULL OR error IS NOT NULL) AS ended
+         FROM matching_requests WHERE ad_id=$1 AND state='requested'
+         ORDER BY created_at DESC,id DESC LIMIT 1`,
         [adId],
       )
     ).rows[0] ?? null
@@ -109,6 +134,36 @@ export async function insertAssessmentRequest(request: {
   )
 }
 
+/** What tells whether a request's AI work is still in progress. */
+export type RequestProgress = {
+  id: string
+  /** The assignment placed for it; null for AI work of the old way. */
+  assignment_id: string | null
+  /** Whether its outcome, an assessment or a message, is saved. */
+  ended: boolean
+}
+
+/** Keeps with a request the assignment placed for it. */
+export async function linkAssignment(requestId: string, assignmentId: string) {
+  await db().query(
+    'UPDATE matching_requests SET assignment_id=$2 WHERE id=$1',
+    [requestId, assignmentId],
+  )
+}
+
+/**
+ * The assignments of requests whose outcome is not saved yet, for the
+ * status read that keeps the offer list refreshing.
+ */
+export async function assignmentsWithoutOutcome(): Promise<string[]> {
+  return (
+    await db().query<{ assignment_id: string }>(
+      `SELECT assignment_id FROM matching_requests
+       WHERE assignment_id IS NOT NULL AND result IS NULL AND error IS NULL`,
+    )
+  ).rows.map((row) => row.assignment_id)
+}
+
 /** Links a request to the execution AI accepted for it. */
 export async function linkExecution(requestId: string, executionId: string) {
   await db().query('UPDATE matching_requests SET execution_id=$2 WHERE id=$1', [
@@ -120,6 +175,7 @@ export async function linkExecution(requestId: string, executionId: string) {
 export type AssessmentHistoryRow = {
   id: string
   state: string
+  assignment_id: string | null
   result: Assessment | null
   calculation: ReturnType<typeof calculate> | null
   error: string | null
@@ -137,7 +193,7 @@ export async function requestHistoryOfAd(
 ): Promise<AssessmentHistoryRow[]> {
   return (
     await db().query<AssessmentHistoryRow>(
-      `SELECT r.id,r.state,r.result,r.calculation,r.error,r.created_at,r.updated_at,r.profile_version_id,r.ad_revision_id,r.input->'checks' AS checks,r.input->'criteria' AS criteria
+      `SELECT r.id,r.state,r.assignment_id,r.result,r.calculation,r.error,r.created_at,r.updated_at,r.profile_version_id,r.ad_revision_id,r.input->'checks' AS checks,r.input->'criteria' AS criteria
        FROM matching_requests r WHERE r.ad_id=$1 ORDER BY r.created_at DESC,r.id DESC`,
       [adId],
     )
@@ -161,12 +217,20 @@ export async function legacyPayloads(
   ).rows
 }
 
-/** Whether the request exists. */
-export async function requestExists(id: string): Promise<boolean> {
-  return (
-    ((await db().query('SELECT 1 FROM matching_requests WHERE id=$1', [id]))
-      .rowCount ?? 0) > 0
-  )
+/**
+ * Whether the request exists, with the assignment placed for it (null for
+ * AI work of the old way); null for an unknown request.
+ */
+export async function requestAssignment(
+  id: string,
+): Promise<{ assignmentId: string | null } | null> {
+  const row = (
+    await db().query<{ assignment_id: string | null }>(
+      'SELECT assignment_id FROM matching_requests WHERE id=$1',
+      [id],
+    )
+  ).rows[0]
+  return row ? { assignmentId: row.assignment_id } : null
 }
 
 /**
@@ -179,18 +243,37 @@ export async function lockCommand(commandId: string) {
   ])
 }
 
+/** What a group command shows of a request saved for it. */
+export type CommandRequest = {
+  id: string
+  ad_id: string
+  created_at: Date
+  /** Whether its assessment is saved. */
+  assessed: boolean
+  /** Whether its outcome, an assessment or a message, is saved. */
+  ended: boolean
+}
+
+const commandRequestColumns = `r.id,r.ad_id,r.created_at,
+  (r.result IS NOT NULL) AS assessed,
+  (r.result IS NOT NULL OR r.error IS NOT NULL) AS ended`
+
 /**
- * The requests of the given ads that asked AI for work.
+ * The requests with the given identifiers that asked AI for work.
  * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): serves the interim recognition of
  * a repeated group command.
+ * ASSUMPTION(oferty-pracy-sq2.9/ASM-1): the identifiers a command gives
+ * the requests it saves.
  */
-export async function requestedOfAds(
-  adIds: string[],
-): Promise<{ id: string; ad_id: string }[]> {
+export async function requestedWithIds(
+  ids: string[],
+): Promise<CommandRequest[]> {
   return (
-    await db().query<{ id: string; ad_id: string }>(
-      "SELECT id,ad_id FROM matching_requests WHERE ad_id=ANY($1::uuid[]) AND state='requested'",
-      [adIds],
+    await db().query<CommandRequest>(
+      `SELECT ${commandRequestColumns} FROM matching_requests r
+       WHERE r.id=ANY($1::uuid[]) AND r.state='requested'
+       ORDER BY r.id`,
+      [ids],
     )
   ).rows
 }
@@ -204,10 +287,10 @@ export async function requestedOfAds(
  */
 export async function requestedWith(
   requestId: string,
-): Promise<{ id: string; ad_id: string; created_at: Date }[]> {
+): Promise<CommandRequest[]> {
   return (
-    await db().query<{ id: string; ad_id: string; created_at: Date }>(
-      `SELECT r.id,r.ad_id,r.created_at FROM matching_requests r
+    await db().query<CommandRequest>(
+      `SELECT ${commandRequestColumns} FROM matching_requests r
        JOIN matching_requests o ON o.id=$1 AND r.created_at=o.created_at
        WHERE r.state='requested'`,
       [requestId],
@@ -216,22 +299,25 @@ export async function requestedWith(
 }
 
 /**
- * Every request of an ad, newest first, with its state and time.
+ * Every request of an ad, newest first, with its state and time, and for
+ * one with an assignment whether and when its outcome was saved.
  * FOLLOW-UP(oferty-pracy-0mq.21/DEV-1): serves the interim recognition of
  * a repeated group command (itemOutsideGroup).
  */
-export async function requestsOfAd(
-  adId: string,
-): Promise<
-  { id: string; state: 'requested' | 'excluded'; created_at: Date }[]
+export async function requestsOfAd(adId: string): Promise<
+  (Omit<CommandRequest, 'ad_id'> & {
+    state: 'requested' | 'excluded'
+    assignment_id: string | null
+    updated_at: Date
+  })[]
 > {
   return (
-    await db().query<{
-      id: string
-      state: 'requested' | 'excluded'
-      created_at: Date
-    }>(
-      'SELECT id,state,created_at FROM matching_requests WHERE ad_id=$1 ORDER BY created_at DESC,id DESC',
+    await db().query(
+      `SELECT r.id,r.state,r.created_at,r.updated_at,r.assignment_id,
+        (r.result IS NOT NULL) AS assessed,
+        (r.result IS NOT NULL OR r.error IS NOT NULL) AS ended
+       FROM matching_requests r WHERE r.ad_id=$1
+       ORDER BY r.created_at DESC,r.id DESC`,
       [adId],
     )
   ).rows

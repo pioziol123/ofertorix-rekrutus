@@ -242,9 +242,9 @@ export async function ratingHistory(adId: string): Promise<RatingHistoryRow[]> {
 export async function latestOfAds(ids: readonly string[]) {
   return (
     await db().query(
-      `SELECT a.id,l.id AS request_id,l.state,s.id AS score_id,s.calculation,s.assessment_author,s.profile_version_id,s.ad_revision_id
+      `SELECT a.id,l.id AS request_id,l.state,l.assignment_id,l.assessed,l.failed,s.id AS score_id,s.calculation,s.assessment_author,s.profile_version_id,s.ad_revision_id
     FROM unnest($1::uuid[]) AS a(id)
-    LEFT JOIN LATERAL (SELECT id,state FROM matching_requests WHERE ad_id=a.id ORDER BY created_at DESC,id DESC LIMIT 1) l ON true
+    LEFT JOIN LATERAL (SELECT id,state,assignment_id,(result IS NOT NULL) AS assessed,(result IS NULL AND error IS NOT NULL) AS failed FROM matching_requests WHERE ad_id=a.id ORDER BY created_at DESC,id DESC LIMIT 1) l ON true
     LEFT JOIN matching_rating_heads rh ON rh.ad_id=a.id
     LEFT JOIN matching_rating_revisions s ON s.id=rh.revision_id`,
       [ids],
