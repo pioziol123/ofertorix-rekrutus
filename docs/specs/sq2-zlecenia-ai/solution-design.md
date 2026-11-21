@@ -80,6 +80,28 @@ Reason: none recorded beyond the agent's reasoning, which the owner accepted: th
 Discarded: sharing the two AI queues of B6 between both ways and counting both ways' charges in a month's room (the decision of 2026-11-20). Verified fact: the handler registry takes one job definition per queue, so a queue cannot serve both ways; and the old way would not count the new operations, so the shared count held in one direction only.
 Consequences, all removed by T10 and accepted by the owner because the system does not run in production: a second mechanism (architecture rules, costs); a month may be charged by both ways beyond its limit; a paid operation of each way may run at the same time, and so may a local one.
 
+### Confirmed assumptions
+
+Gaps in these documents that an implementing agent settled and the owner confirmed on 2026-11-21. Each is still marked in the code with its `ASSUMPTION(...)` marker, so the places that rely on it can be found.
+
+**ZA-D10 (Owner, 2026-11-21; `ASSUMPTION(oferty-pracy-sq2.3/ASM-1)`, T1-R02, T2-R06, T2-R07). Without a response format an executor sends none and the result is the provider's text as it came.**
+The paid single answer and the agent's synthesis send no `text.format`; the local chat sends no `format`. With a format the requests are byte-identical to the old way's and the result is the parsed JSON.
+
+**ZA-D11 (Owner, 2026-11-21; `ASSUMPTION(oferty-pracy-sq2.3/ASM-2)`, T2-R06, T2-R08). The local executor keeps its request for the list of models in the exchange, without headers.**
+The exchange holds `GET <endpoint>/api/tags` and its raw response, then the chat body and its raw response. Headers are not kept, so the endpoint's credential is not either (architecture rules: diagnostics leave out secrets).
+
+**ZA-D12 (Owner, 2026-11-21; `ASSUMPTION(oferty-pracy-sq2.3/ASM-3)`, T2-R03). Both executors read an error answer by one shared rule.**
+429 is an ordinary `http` failure charged nothing. A context overflow is a non-retryable `context_overflow` failure. 5xx is an ordinary `http` failure. Any other 4xx except 408 and 409 is a request the provider cannot take at all: a non-retryable `configuration` failure. Any other answer, 408 and 409 included, is uncertain with the cause `unknown`. Every answered request except 429 has an unknown cost unless the provider reported usage (ZA-R04 is unchanged). For the local executor a 404 of the chat stays `model_unavailable`.
+
+**ZA-D13 (Owner, 2026-11-21; `ASSUMPTION(oferty-pracy-sq2.4/ASM-1)`, T3-R02, T3-R05). An operation whose executor, or its offer of the frozen parameters, is no longer declared does not start and is charged nothing.**
+Its start throws inside the start transaction, so nothing changes; the attempt fails and the queue's attempts and the failure handler decide its end (T4-R06). The pass over operations waiting for the budget skips it, so it waits until the time limit (T6) ends it. Accepted for the first version only: the owner wants such an assignment to end at once with a clear reason, which is item 47 of `oferty-pracy-sz5`.
+
+**ZA-D14 (Owner, 2026-11-21; `ASSUMPTION(oferty-pracy-sq2.8/ASM-1)`, T7-R01, T1-R04). An assignment placed for a pasted CV is labelled "Wklejony tekst".**
+It is the name the profile page already shows for such an import; an uploaded CV is labelled with its stored file name.
+
+**ZA-D15 (Owner, 2026-11-21; `ASSUMPTION(oferty-pracy-sq2.8/ASM-2)`, T7-R02, T7-AC06). The import's own stored status decides whether the Profile refuses a new preparation.**
+A request is refused while the import records a preparation in progress, of the old way (`ai_queued`, `ai_running`, `waiting_budget`) or with an assignment (`ai_running`). A CV whose old-way preparation ended without reaching the import stays refused ("A proposal is already pending") until the migration of T10 step 1 marks it failed. This is a regression against today's behaviour that exists only between the Profile's move to the new contract and T10, in a build that is not released.
+
 ### Contract: the closed lists
 
 - Assignment status, operation state, failure reason: as in the data above. The failure reasons of the requirements (ZA-R05) are stored as `rejected` (rejected by the owner), `time_limit` (time limit exceeded) and `delivery_failed` (result not taken). Requesting modules import the status list from the AI module's public entry; no other list is public.
