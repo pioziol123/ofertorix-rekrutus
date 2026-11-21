@@ -130,6 +130,9 @@ async function itemOutsideGroup(
         }
       continue
     }
+    // ASSUMPTION(oferty-pracy-sq2.9/ASM-4): whether an assessment of the old
+    // way was in progress when the command was accepted is read from its
+    // executions until task oferty-pracy-sq2.11.
     const history = await readExecutionHistory(request.id)
     const spanning = history.some(
       (execution) =>

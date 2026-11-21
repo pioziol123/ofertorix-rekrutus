@@ -57,6 +57,10 @@ async function progressState(
     return request.ended
       ? null
       : assignedAssessmentState({ assessment: false, message: false })
+  // ASSUMPTION(oferty-pracy-sq2.9/ASM-4): an assessment of the old way
+  // still in progress is read from its execution until task
+  // oferty-pracy-sq2.11, so it is reused rather than duplicated with a new
+  // paid assignment.
   const execution = await readLatestExecution(request.id)
   if (!execution) return null
   const state = assessmentState('requested', execution)
@@ -84,6 +88,8 @@ export async function prepareMatching(
   // adsForAssessment); undefined when it does not exist.
   ad: SourceAd | undefined,
   kind: 'single' | 'group',
+  // ASSUMPTION(oferty-pracy-sq2.9/ASM-1): the identifier a group command
+  // gives a request with AI work; random otherwise.
   newId: () => string = randomUUID,
 ): Promise<PreparedRequest> {
   await lockAdRequests(adId)
@@ -103,6 +109,9 @@ export async function prepareMatching(
   // covers is refused for every request that needs AI work.
   if (!excluded && exceedsCriteria(input))
     throw new MatchingError(inputLimitMessage(kind))
+  // ASSUMPTION(oferty-pracy-sq2.9/ASM-1): an excluded request always gets a
+  // random identifier, so a command handled again as new never saves the
+  // same identifier twice.
   const id = excluded ? randomUUID() : newId()
   await insertAssessmentRequest({
     id,

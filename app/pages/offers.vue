@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  matchingBulkTexts,
   matchingStateLabels,
   matchingGroupLabels,
 } from '../../modules/matching/view'
@@ -139,19 +140,16 @@ async function assessChecked() {
         offerIds: [...checkedOffers.value],
       },
     })
-    const reused = result.items.filter((i) => i.reused).length
-    const excluded = result.items.filter((i) => i.state === 'excluded').length
     assessmentMessage.value = result.reused
-      ? 'To zlecenie zostało już przyjęte; nie wysłano ponownie.'
-      : `Zlecenie zapisane: ${result.items.length} ofert. Już oczekujące: ${reused}. Niezgodne z wymaganiami: ${excluded}.${result.state === 'waiting_budget' ? ' Grupa czeka na budżet.' : ''}`
+      ? matchingBulkTexts.repeated
+      : matchingBulkTexts.accepted(result.items)
     checkedOffers.value = []
     matchingRefresh.value++
     await refresh()
   } catch (e) {
     const response = e as { data?: { data?: { message?: string } } }
     assessmentMessage.value =
-      response.data?.data?.message ??
-      'Nie udało się potwierdzić zlecenia. Możesz spróbować ponownie z tym samym zaznaczeniem — nie zleci to tej partii drugi raz.'
+      response.data?.data?.message ?? matchingBulkTexts.notConfirmed
   } finally {
     assessing.value = false
   }
@@ -616,14 +614,13 @@ const pageLink = (page: number) => ({
         <div>
           <strong>Zaznaczono {{ checkedOffers.length }} / 100</strong>
           <p v-if="checkedOffers.length && bulkReservation">
-            Maksymalna rezerwacja: {{ bulkReservation }} zł. Wspólna partia,
-            osobne oceny.
+            {{ matchingBulkTexts.reservation(bulkReservation) }}
           </p>
           <p v-if="data && !data.matching.profileReady">
             Zatwierdź profil, aby oceniać oferty.
           </p>
           <p v-else-if="data && !data.matching.configured">
-            Oceny wymagają konfiguracji Batch.
+            {{ matchingBulkTexts.notConfigured }}
           </p>
         </div>
         <UButton

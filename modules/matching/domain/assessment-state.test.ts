@@ -5,6 +5,7 @@ import {
   failedAssignmentMessage,
 } from './assessment-state.ts'
 import {
+  matchingBulkTexts,
   matchingDetailLabels,
   matchingPending,
   matchingStateLabels,
@@ -90,6 +91,32 @@ describe('the state the offer views show for an assessment with an assignment (T
     )
     expect(assignmentRefusalMessage('not_configured', 'group')).toBe(
       'Skonfiguruj model i cennik przed oceną ofert.',
+    )
+  })
+})
+
+describe('the texts of the bulk assessment in the offer list (T8-R04, sq2.9 ASM-2)', () => {
+  it('names no shared batch, no Batch price list and no group waiting for the budget', () => {
+    const texts = [
+      matchingBulkTexts.reservation('0,265000'),
+      matchingBulkTexts.notConfigured,
+      matchingBulkTexts.notConfirmed,
+      matchingBulkTexts.repeated,
+      matchingBulkTexts.accepted([
+        { reused: true, state: 'waiting_budget' },
+        { reused: false, state: 'excluded' },
+        { reused: false, state: 'running' },
+      ]),
+    ]
+    for (const text of texts) {
+      expect(text).not.toMatch(/Batch|parti|Grupa czeka na budżet/)
+      for (const gone of removed) expect(text).not.toContain(gone)
+    }
+    expect(texts[4]).toBe(
+      'Zlecenie zapisane: 3 ofert. Już oczekujące: 1. Niezgodne z wymaganiami: 1.',
+    )
+    expect(matchingBulkTexts.notConfigured).toBe(
+      'Oceny AI wymagają konfiguracji modelu i cennika.',
     )
   })
 })

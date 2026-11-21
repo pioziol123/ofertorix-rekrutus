@@ -5,6 +5,7 @@
  */
 export {
   matchingCriterionLabel,
+  matchingBulkTexts,
   matchingDetailLabels,
   matchingGroupLabels,
   matchingPending,

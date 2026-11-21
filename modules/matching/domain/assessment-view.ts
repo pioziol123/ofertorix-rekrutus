@@ -47,6 +47,26 @@ export const matchingDetailLabels: Record<string, string> = {
   unknown: 'Wysyłka lub koszt wymagają sprawdzenia',
   excluded: 'Niezgodność z wymaganiem koniecznym',
 } satisfies Record<MatchingState, string>
+/**
+ * The texts of the offer list's bulk assessment. Each selected offer is
+ * assessed by its own assignment, funded on its own (T8-R01, T8-R02), so
+ * no text names a shared batch, the Batch price list or a group waiting
+ * for the budget (T8-R04).
+ * ASSUMPTION(oferty-pracy-sq2.9/ASM-2): the wording of the reservation
+ * note and of the failed command; the configuration note is the one the
+ * offer details already show.
+ */
+export const matchingBulkTexts = {
+  reservation: (amount: string) =>
+    `Maksymalna rezerwacja: ${amount} zł. Każda oferta jest oceniana osobno.`,
+  notConfigured: 'Oceny AI wymagają konfiguracji modelu i cennika.',
+  notConfirmed:
+    'Nie udało się potwierdzić zlecenia. Możesz spróbować ponownie z tym samym zaznaczeniem — nie zleci to tych ocen drugi raz.',
+  repeated: 'To zlecenie zostało już przyjęte; nie wysłano ponownie.',
+  /** The message of a command accepted now, from its items alone. */
+  accepted: (items: { reused: boolean; state: string }[]) =>
+    `Zlecenie zapisane: ${items.length} ofert. Już oczekujące: ${items.filter((i) => i.reused).length}. Niezgodne z wymaganiami: ${items.filter((i) => i.state === 'excluded').length}.`,
+} as const
 export const matchingGroupLabels = {
   technologies: 'Technologie',
   experience: 'Doświadczenie',

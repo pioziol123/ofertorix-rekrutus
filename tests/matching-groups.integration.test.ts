@@ -28,6 +28,7 @@ import {
 import { aiQueue } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {
+  insertExecution,
   migrate,
   pricing,
   responseBody,
@@ -479,6 +480,54 @@ integration(
       expect(again.items[0]!.id).toBe(commandRequestId(commandId, other))
       expect(await count('matching_requests')).toBe(2)
       expect(await count('ai_assignments')).toBe(2)
+    })
+
+    /** A request of the old way whose execution is in the given state. */
+    async function oldRequest(offerId: string, state: string) {
+      const id = randomUUID()
+      await pool.query(
+        `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state)
+         SELECT $1,$2,current_revision_id,$3,'{}','{}','requested' FROM source_ads WHERE id=$2`,
+        [id, offerId, profileVersion],
+      )
+      await insertExecution(pool, id, state)
+      return id
+    }
+
+    it('reuses an assessment of the old way still in progress instead of placing a new paid assignment, and places one once it has ended (sq2.9 ASM-4)', async () => {
+      const old = await oldRequest(ad, 'queued')
+      expect(await enqueueMatching(ad)).toMatchObject({
+        id: old,
+        reused: true,
+        state: 'queued',
+      })
+      expect(await count('ai_assignments')).toBe(0)
+      await pool.query(
+        "UPDATE ai_executions SET state='completed' WHERE operation_id=$1",
+        [old],
+      )
+      const next = await enqueueMatching(ad)
+      expect(next).toMatchObject({ reused: false, state: 'running' })
+      expect(await count('ai_assignments')).toBe(1)
+    })
+
+    it('recognises the repeat of a command that reused an assessment of the old way in progress (sq2.9 ASM-4, FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {
+      const old = await oldRequest(ad, 'running')
+      const other = await anotherAd(),
+        commandId = randomUUID()
+      const first = await enqueue([ad, other], commandId)
+      expect(first.items.find((i) => i.offerId === ad)).toMatchObject({
+        id: old,
+        reused: true,
+      })
+      const again = await enqueue([other, ad], commandId)
+      expect(again).toMatchObject({ groupId: commandId, reused: true })
+      expect(again.items.find((i) => i.offerId === ad)).toMatchObject({
+        id: old,
+        reused: true,
+        state: 'running',
+      })
+      expect(await count('ai_assignments')).toBe(1)
     })
 
     it.todo(
