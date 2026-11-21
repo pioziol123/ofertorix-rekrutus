@@ -24,7 +24,7 @@ import {
   type AssignmentRequest,
 } from '../index.ts'
 import type {
-  ExecutorDeclaration,
+  Executor,
   OperationJobData,
   PriceList,
 } from '../executors/declaration.ts'
@@ -56,8 +56,14 @@ const job = defineJob<OperationJobData>({
 
 let configured = true
 
+/** Placing never carries out an operation. */
+const notCarriedOut = {
+  carryOut: () => Promise.reject(new Error('Not carried out in this test')),
+  materials: () => null,
+}
+
 /** A test executor: both types, two models, web search for the agent. */
-const simulated: ExecutorDeclaration = {
+const simulated: Executor = {
   name: 'simulated',
   job,
   services: {
@@ -67,36 +73,42 @@ const simulated: ExecutorDeclaration = {
         { parameters: { model: 'simulated-model', effort: 'high' }, priceList },
       ],
       tools: [],
+      maxRunSeconds: 60,
     },
     agent: {
       offers: [
         { parameters: { model: 'simulated-model', effort: 'low' }, priceList },
       ],
       tools: ['web_search'],
+      maxRunSeconds: 60,
     },
   },
   configured: () => configured,
+  ...notCarriedOut,
 }
 
 /** A test executor of single answers only, whose agent offers no tool. */
-const singleOnly: ExecutorDeclaration = {
+const singleOnly: Executor = {
   name: 'single-only',
   job,
   services: {
     single: {
       offers: [{ parameters: { model: 'small' }, priceList: null }],
       tools: [],
+      maxRunSeconds: 60,
     },
   },
   configured: () => true,
+  ...notCarriedOut,
 }
-const toolless: ExecutorDeclaration = {
+const toolless: Executor = {
   ...singleOnly,
   name: 'toolless',
   services: {
     agent: {
       offers: [{ parameters: { model: 'small' }, priceList: null }],
       tools: [],
+      maxRunSeconds: 60,
     },
   },
 }

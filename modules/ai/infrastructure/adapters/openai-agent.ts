@@ -29,7 +29,7 @@ import { safeSourceUrl } from '../../domain/source-url.ts'
  * and the settings the agent fits.
  */
 
-const responseSchema = z
+export const responseSchema = z
   .object({
     id: z.string(),
     status: z.string(),

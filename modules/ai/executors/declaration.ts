@@ -1,16 +1,19 @@
 import type { JobDefinition } from '../../../lib/queues/index.ts'
 import type { AgentTool } from '../domain/execution-mode.ts'
 import type { AiConfiguration } from '../model-catalog.ts'
+import type { AgentMaterial } from '../provider-adapter.ts'
 import type {
   AssignmentType,
   ResponseFormat,
 } from '../assignments/assignment.ts'
+import type { ExecutorOutcome } from './outcome.ts'
 
 /**
- * The declaration part of the executor contract (solution design of epic
- * sq2, "Contract: executor"): what an executor offers, read without calling
- * a provider. Carrying out an operation is added to the contract by task
- * oferty-pracy-sq2.3, with the maximum run time of each service.
+ * The executor contract (solution design of epic sq2, "Contract:
+ * executor"): what an executor offers, read without calling a provider,
+ * and carrying out one operation. Assignment handling uses every executor
+ * through it alone; an executor knows no assignment, budget, retry or
+ * requesting module (T2-R02).
  */
 
 /**
@@ -43,6 +46,12 @@ export type ServiceDeclaration = {
   offers: readonly ServiceOffer[]
   /** The tools of the shared list an agent assignment may ask for. */
   tools: readonly AgentTool[]
+  /**
+   * The longest an operation of the type runs: the executor ends its own
+   * work then and reports an ordinary failure (T2-R05). Below the time
+   * limit of the executor's queue.
+   */
+  maxRunSeconds: number
 }
 
 /** The frozen content of an assignment, as far as an executor reads it. */
@@ -52,6 +61,26 @@ export type ExecutorContent = {
   input: string
   responseFormat: ResponseFormat | null
   agent: { tools: AgentTool[]; resultInstruction: string } | null
+}
+
+/**
+ * What an executor is given to carry out one operation: the frozen
+ * content of its assignment with the executor's parameters, the executor
+ * state saved for this operation so far (null for a new one), and two
+ * writers. Each writer answers whether the operation still runs; when one
+ * answers no, or fails, the executor sends nothing more and returns.
+ */
+export type OperationWork = {
+  content: ExecutorContent
+  parameters: ExecutorParameters
+  state: unknown
+  /**
+   * Appends the raw text of a request before it is sent, or of a response
+   * before it is read (T2-R08).
+   */
+  exchange: (kind: 'request' | 'response', raw: string) => Promise<boolean>
+  /** Replaces the executor state saved for the operation. */
+  saveState: (state: unknown) => Promise<boolean>
 }
 
 /** What the job of an operation carries: only the operation's identifier. */
@@ -77,4 +106,15 @@ export type ExecutorDeclaration = {
     parameters: ExecutorParameters,
     priceList: PriceList,
   ) => number | undefined
+}
+
+/** An executor: its declaration and the carrying out of one operation. */
+export type Executor = ExecutorDeclaration & {
+  /** Carries out one operation once and returns its one outcome (T2-R03). */
+  carryOut: (work: OperationWork) => Promise<ExecutorOutcome>
+  /**
+   * The materials an agent session gathered, read from the executor state
+   * it saved; null when the state holds none.
+   */
+  materials: (state: unknown) => AgentMaterial[] | null
 }

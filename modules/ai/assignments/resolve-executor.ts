@@ -1,11 +1,11 @@
 import { z } from 'zod'
 import type {
-  ExecutorDeclaration,
+  Executor,
   ExecutorParameters,
   ServiceDeclaration,
   ServiceOffer,
 } from '../executors/declaration.ts'
-import { executorDeclaration } from '../executors/registry.ts'
+import { findExecutor } from '../executors/registry.ts'
 import { assignmentSettings } from './assignment-settings.ts'
 import { AssignmentError, type AssignmentType } from './assignment.ts'
 
@@ -19,7 +19,7 @@ const settingsSchema = z
 
 /** The executor found for a settings name and a type, with its offer. */
 export type ResolvedExecutor = {
-  executor: ExecutorDeclaration
+  executor: Executor
   service: ServiceDeclaration
   parameters: ExecutorParameters
   offer: ServiceOffer
@@ -47,7 +47,7 @@ export function resolveExecutor(
       : undefined,
   )
   if (!parsed.success) throw new AssignmentError('unknown_settings')
-  const executor = executorDeclaration(parsed.data.executor)
+  const executor = findExecutor(parsed.data.executor)
   if (!executor) throw new AssignmentError('unknown_settings')
   const service = executor.services[type]
   if (!service) throw new AssignmentError('unsupported_type')
