@@ -147,24 +147,43 @@ describe('T2-AC02: the paid single answer maps each event to its outcome, cause 
     expect(cost).toBe('0.000000')
   })
 
-  it('ASM-3: a request the provider cannot take at all is a non-retryable configuration failure charged nothing', async () => {
-    const { outcome, cost } = await run(
-      vi
+  it.each([400, 401, 403, 404, 422])(
+    'ASM-3: a client error %i is a request the provider cannot take at all: a non-retryable configuration failure of unknown cost',
+    async (status) => {
+      const fetcher = vi
         .fn<typeof fetch>()
         .mockResolvedValue(
-          Response.json(
-            { error: { code: 'invalid_api_key' } },
-            { status: 401 },
-          ),
-        ),
-    )
-    expect(outcome).toMatchObject({
-      kind: 'failed',
-      retryable: false,
-      cause: 'configuration',
-    })
-    expect(cost).toBe('0.000000')
-  })
+          Response.json({ error: { code: 'invalid_request' } }, { status }),
+        )
+      const { outcome, cost } = await run(fetcher)
+      expect(outcome).toEqual({
+        kind: 'failed',
+        retryable: false,
+        cause: 'configuration',
+        usage: {
+          sent: true,
+          inputTokens: null,
+          outputTokens: null,
+          toolCalls: null,
+        },
+      })
+      expect(cost).toBeNull()
+      expect(fetcher).toHaveBeenCalledOnce()
+    },
+  )
+
+  it.each([408, 409, 302])(
+    'any other answer such as %i is uncertain of unknown cost, without a second call',
+    async (status) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response('{}', { status }))
+      const { outcome, cost } = await run(fetcher)
+      expect(outcome).toMatchObject({ kind: 'uncertain', cause: 'unknown' })
+      expect(cost).toBeNull()
+      expect(fetcher).toHaveBeenCalledOnce()
+    },
+  )
 
   it('an input beyond the model’s context is a non-retryable failure of unknown cost', async () => {
     const { outcome, cost } = await run(

@@ -32,8 +32,17 @@ export const openAiOperationJob = defineJob<OperationJobData>({
  */
 export const paidMaxRunSeconds = { single: 120, agent: 900 } as const
 
-/** Whether the agent session runs its steps with the price list's caps. */
-const sessionFits = (parameters: ExecutorParameters, priceList: PriceList) =>
+/**
+ * Whether the agent session runs its steps with the price list's caps. The
+ * old agent also runs gpt-4.1-mini, charged a fixed block of input tokens
+ * per search; the session has no such rule of usage, so it does not take
+ * that model.
+ */
+export const sessionFits = (
+  parameters: ExecutorParameters,
+  priceList: PriceList,
+) =>
+  parameters.model !== 'gpt-4.1-mini' &&
   agentFits({
     provider,
     model: String(parameters.model),

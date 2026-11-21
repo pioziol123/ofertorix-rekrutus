@@ -245,4 +245,23 @@ integration('carrying out an operation on a real database', () => {
     expect(await carryOutOperation(operationId)).toBeNull()
     expect(fetcher).not.toHaveBeenCalled()
   })
+
+  it('fails the attempt, deciding no outcome, when no executor exists under the frozen name', async () => {
+    const operationId = await runningOperation(single)
+    await pool.query(
+      `UPDATE ai_assignments SET executor='gone'
+       WHERE id=(SELECT assignment_id FROM ai_operations WHERE id=$1)`,
+      [operationId],
+    )
+    await expect(carryOutOperation(operationId)).rejects.toThrow(
+      'No executor gone',
+    )
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(await exchangeOf(operationId)).toEqual([])
+    const { rows } = await pool.query(
+      'SELECT state FROM ai_operations WHERE id=$1',
+      [operationId],
+    )
+    expect(rows[0].state).toBe('running')
+  })
 })

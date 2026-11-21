@@ -5,7 +5,7 @@ import type {
   PriceList,
 } from './declaration.ts'
 import {
-  errorAnswer,
+  contextExceeded,
   openAiKey,
   refused,
   responsesHeaders,
@@ -13,6 +13,7 @@ import {
 } from './openai-protocol.ts'
 import { nothingSent, type ExecutorOutcome } from './outcome.ts'
 import {
+  errorAnswer,
   failedBeforeSending,
   resultContent,
   timeLimitPassed,
@@ -135,7 +136,8 @@ export async function carryOutSingle(
     request.done()
   }
   await run.exchange('response', raw)
-  if (status < 200 || status >= 300) return errorAnswer(status, raw, run.meter)
+  if (status < 200 || status >= 300)
+    return errorAnswer(status, contextExceeded(status, raw), run.meter)
   let value: Record<string, unknown>
   try {
     value = record(JSON.parse(raw))
@@ -170,6 +172,7 @@ export async function carryOutSingle(
     .map((part) => part.text as string)
   const text = texts.length === 1 ? texts[0]! : ''
   if (!text.trim()) return failed(run, 'no_content')
+  // ASSUMPTION(oferty-pracy-sq2.3/ASM-1): the text without a format.
   const result = resultContent(text, content.responseFormat !== null)
   if (!result) return failed(run, 'format')
   return { kind: 'result', content: result.content, usage: run.meter.usage() }

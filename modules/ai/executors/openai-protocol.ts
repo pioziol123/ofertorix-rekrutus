@@ -1,6 +1,3 @@
-import type { ExecutorOutcome } from './outcome.ts'
-import type { Meter } from './run.ts'
-
 /**
  * What the paid executor's single answer and agent session share of
  * OpenAI's Responses API: the endpoint, the key and what an error answer
@@ -33,55 +30,9 @@ function errorCode(raw: string): unknown {
   return undefined
 }
 
-/**
- * What an error answer of the provider means. A rate limit is an ordinary
- * failure the provider charges nothing for; an input beyond the model's
- * context is not retried; another answer that the request cannot be
- * taken at all (a client error) is a configuration matter, charged
- * nothing; a server error, a timeout or a conflict answered by the
- * provider is an ordinary failure of unknown cost. No wait and no second
- * call follow inside the operation.
- * ASSUMPTION(oferty-pracy-sq2.3/ASM-3): a client error other than a rate
- * limit, a timeout, a conflict or a context overflow is a request the
- * provider cannot take at all.
- */
-export function errorAnswer(
-  status: number,
-  raw: string,
-  meter: Meter,
-): ExecutorOutcome {
-  if (status === 429) {
-    meter.notCharged()
-    return {
-      kind: 'failed',
-      retryable: true,
-      cause: 'http',
-      usage: meter.usage(),
-    }
-  }
-  if (status === 400 && errorCode(raw) === 'context_length_exceeded')
-    return {
-      kind: 'failed',
-      retryable: false,
-      cause: 'context_overflow',
-      usage: meter.usage(),
-    }
-  if (status >= 400 && status < 500 && status !== 408 && status !== 409) {
-    meter.notCharged()
-    return {
-      kind: 'failed',
-      retryable: false,
-      cause: 'configuration',
-      usage: meter.usage(),
-    }
-  }
-  return {
-    kind: 'failed',
-    retryable: true,
-    cause: 'http',
-    usage: meter.usage(),
-  }
-}
+/** Whether an error answer says the input exceeds the model's context. */
+export const contextExceeded = (status: number, raw: string) =>
+  status === 400 && errorCode(raw) === 'context_length_exceeded'
 
 /** Whether a message of the answer holds the model's refusal. */
 export function refused(output: unknown): boolean {

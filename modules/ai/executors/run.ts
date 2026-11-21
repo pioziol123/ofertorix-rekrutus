@@ -31,13 +31,6 @@ export class Meter {
   private inputTokens = 0
   private outputTokens = 0
   private toolCalls = 0
-  /**
-   * @param adjust turns the measured counts into the usage the provider
-   * charges, e.g. a fixed block of tokens per paid tool call.
-   */
-  constructor(
-    private adjust: (usage: ExecutorUsage) => ExecutorUsage = (usage) => usage,
-  ) {}
   /** A request is about to be sent. */
   sending() {
     this.sentBefore = this.sent
@@ -66,12 +59,12 @@ export class Meter {
   usage(): ExecutorUsage {
     if (!this.sent) return nothingSent()
     if (this.unmeasured) return unknownUsage()
-    return this.adjust({
+    return {
       sent: true,
       inputTokens: this.inputTokens,
       outputTokens: this.outputTokens,
       toolCalls: this.toolCalls,
-    })
+    }
   }
 }
 
@@ -190,7 +183,11 @@ export function failedBeforeSending(error: unknown): boolean {
   return notSentCodes.has(String(code(error) ?? code(cause)))
 }
 
-/** The result content: JSON when a response format was given. */
+/**
+ * The result content: JSON when a response format was given.
+ * ASSUMPTION(oferty-pracy-sq2.3/ASM-1): without a response format the
+ * result is the provider's text as it came.
+ */
 export function resultContent(
   text: string,
   json: boolean,
@@ -201,4 +198,48 @@ export function resultContent(
   } catch {
     return null
   }
+}
+
+/**
+ * What an error answer of a provider means, the same for every executor
+ * (solution design of epic sq2, mapping of events to outcomes). No wait and
+ * no second call follow inside the operation.
+ * - A rate limit (429) is an ordinary `http` failure, charged nothing.
+ * - An input beyond the model's context is a non-retryable
+ *   `context_overflow` failure; without usage its cost is unknown.
+ * - A server error (5xx) is an ordinary `http` failure of unknown cost.
+ * - ASSUMPTION(oferty-pracy-sq2.3/ASM-3): any other client error except
+ *   408 and 409 (e.g. 400, 401, 403, 404, 422) is a request the provider
+ *   cannot take at all: a non-retryable `configuration` failure. It was
+ *   sent and reported no usage, so its cost is unknown (ZA-R04).
+ * - Any other answer, 408 and 409 included, is uncertain with the cause
+ *   `unknown`, of unknown cost.
+ */
+export function errorAnswer(
+  status: number,
+  contextExceeded: boolean,
+  meter: Meter,
+): ExecutorOutcome {
+  const usage = () => meter.usage()
+  if (status === 429) {
+    meter.notCharged()
+    return { kind: 'failed', retryable: true, cause: 'http', usage: usage() }
+  }
+  if (contextExceeded)
+    return {
+      kind: 'failed',
+      retryable: false,
+      cause: 'context_overflow',
+      usage: usage(),
+    }
+  if (status >= 500 && status < 600)
+    return { kind: 'failed', retryable: true, cause: 'http', usage: usage() }
+  if (status >= 400 && status < 500 && status !== 408 && status !== 409)
+    return {
+      kind: 'failed',
+      retryable: false,
+      cause: 'configuration',
+      usage: usage(),
+    }
+  return { kind: 'uncertain', cause: 'unknown', usage: usage() }
 }

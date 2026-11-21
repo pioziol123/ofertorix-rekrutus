@@ -10,7 +10,7 @@ import type {
   PriceList,
 } from './declaration.ts'
 import {
-  errorAnswer,
+  contextExceeded,
   openAiKey,
   refused,
   responsesHeaders,
@@ -22,6 +22,7 @@ import {
   type ExecutorOutcome,
 } from './outcome.ts'
 import {
+  errorAnswer,
   failedBeforeSending,
   resultContent,
   timeLimitPassed,
@@ -201,7 +202,11 @@ export async function carryOutSession(
     }
     await run.exchange('response', raw)
     if (status < 200 || status >= 300) {
-      const answer = errorAnswer(status, raw, run.meter)
+      const answer = errorAnswer(
+        status,
+        contextExceeded(status, raw),
+        run.meter,
+      )
       if (answer.kind === 'result') throw new Error('Unexpected result')
       throw await end(
         new SessionEnd(
@@ -209,7 +214,7 @@ export async function carryOutSession(
           answer.cause,
           answer.kind === 'failed' && answer.retryable,
         ),
-        'failed',
+        answer.kind === 'failed' ? 'failed' : 'unknown',
       )
     }
     let r: ProviderResponse
@@ -286,6 +291,7 @@ export async function carryOutSession(
       .map((p) => p.text)
     const text = texts.length === 1 ? texts[0] : undefined
     if (!text?.trim()) throw new SessionEnd('failed', 'no_content')
+    // ASSUMPTION(oferty-pracy-sq2.3/ASM-1): the text without a format.
     const result = resultContent(text, format !== null)
     if (!result) throw new SessionEnd('failed', 'format')
     return { kind: 'result', content: result.content, usage: run.meter.usage() }

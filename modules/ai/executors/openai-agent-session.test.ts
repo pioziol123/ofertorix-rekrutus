@@ -6,7 +6,7 @@ import {
 } from '../infrastructure/adapters/openai-agent.ts'
 import { aiCatalog } from '../model-catalog.ts'
 import type { ExecutorContent, OperationWork } from './declaration.ts'
-import { openAiExecutor } from './openai.ts'
+import { openAiExecutor, sessionFits } from './openai.ts'
 
 /**
  * The paid executor's agent session with a simulated OpenAI: the mapping
@@ -248,6 +248,16 @@ describe('T2-AC04: the paid agent session sends the requests of the old way and 
   })
 })
 
+describe('the models of an agent session', () => {
+  it('does not take gpt-4.1-mini, whose fixed block of tokens per search it does not count', () => {
+    const caps = { ...priceList, maxInputTokens: 500000, maxOutputTokens: 6000 }
+    expect(sessionFits(parameters, caps)).toBe(true)
+    expect(
+      sessionFits({ model: 'gpt-4.1-mini', reasoningEffort: null }, caps),
+    ).toBe(false)
+  })
+})
+
 describe('ASM-1: an agent session without a response format', () => {
   it('asks the synthesis for no format and returns its text', async () => {
     const fetcher = answers(
@@ -435,6 +445,42 @@ describe('T2-AC02: the paid agent session maps each event to its outcome, cause 
     expect(cost).not.toBeNull()
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
+
+  it.each([400, 401, 403, 404, 422])(
+    'ASM-3: a client error %i of the synthesis is a non-retryable configuration failure of unknown cost',
+    async (status) => {
+      const fetcher = answers(
+        Response.json(search()),
+        Response.json({ error: { code: 'invalid_request' } }, { status }),
+      )
+      const { outcome, cost, states } = await run(fetcher)
+      expect(outcome).toMatchObject({
+        kind: 'failed',
+        retryable: false,
+        cause: 'configuration',
+        usage: { sent: true, inputTokens: null },
+      })
+      expect(cost).toBeNull()
+      expect(fetcher).toHaveBeenCalledTimes(2)
+      expect(
+        (states.at(-1) as { steps: { status: string }[] }).steps.at(-1)!.status,
+      ).toBe('failed')
+    },
+  )
+
+  it.each([408, 409])(
+    'an answer %i of a step is uncertain of unknown cost, without a second call',
+    async (status) => {
+      const fetcher = answers(new Response('{}', { status }))
+      const { outcome, cost, states } = await run(fetcher)
+      expect(outcome).toMatchObject({ kind: 'uncertain', cause: 'unknown' })
+      expect(cost).toBeNull()
+      expect(fetcher).toHaveBeenCalledOnce()
+      expect(
+        (states.at(-1) as { steps: { status: string }[] }).steps.at(-1)!.status,
+      ).toBe('unknown')
+    },
+  )
 
   it('a server error is an ordinary failure of unknown cost', async () => {
     const { outcome, cost } = await run(

@@ -3,6 +3,7 @@ import { record, tokenCount } from '../infrastructure/adapters/response.ts'
 import type { ExecutorContent, ExecutorParameters } from './declaration.ts'
 import type { ExecutorOutcome } from './outcome.ts'
 import {
+  errorAnswer,
   failedBeforeSending,
   resultContent,
   timeLimitPassed,
@@ -29,12 +30,7 @@ export type LocalModel = {
 const ordinary = (
   run: Run,
   cause:
-    | 'incomplete'
-    | 'no_content'
-    | 'format'
-    | 'network'
-    | 'http'
-    | 'model_unavailable',
+    'incomplete' | 'no_content' | 'format' | 'network' | 'model_unavailable',
 ): ExecutorOutcome => ({
   kind: 'failed',
   retryable: true,
@@ -112,7 +108,9 @@ export async function carryOutLocalSingle(
   )
   if ('kind' in tags) return tags
   await run.exchange('response', tags.raw)
-  if (!ok(tags.status)) return ordinary(run, 'http')
+  // ASSUMPTION(oferty-pracy-sq2.3/ASM-3): an error answer is read as the
+  // paid executor reads it.
+  if (!ok(tags.status)) return errorAnswer(tags.status, false, run.meter)
   let listed: Record<string, unknown>
   try {
     listed = record(JSON.parse(tags.raw))
@@ -156,18 +154,15 @@ export async function carryOutLocalSingle(
     value = null
   }
   if (!ok(chat.status)) {
-    if (chat.status === 404) {
-      run.meter.notCharged()
-      return ordinary(run, 'model_unavailable')
-    }
-    if (chat.status === 400 && value?.code === 'context_overflow')
-      return {
-        kind: 'failed',
-        retryable: false,
-        cause: 'context_overflow',
-        usage: run.meter.usage(),
-      }
-    return ordinary(run, 'http')
+    // The runtime does not have the model.
+    if (chat.status === 404) return ordinary(run, 'model_unavailable')
+    // ASSUMPTION(oferty-pracy-sq2.3/ASM-3): any other error answer is read
+    // as the paid executor reads it.
+    return errorAnswer(
+      chat.status,
+      chat.status === 400 && value?.code === 'context_overflow',
+      run.meter,
+    )
   }
   if (value === null) return ordinary(run, 'format')
   const input = tokenCount(value.prompt_eval_count)
@@ -182,6 +177,7 @@ export async function carryOutLocalSingle(
     !message.content.trim()
   )
     return ordinary(run, 'no_content')
+  // ASSUMPTION(oferty-pracy-sq2.3/ASM-1): the text without a format.
   const result = resultContent(message.content, format !== null)
   if (!result) return ordinary(run, 'format')
   return { kind: 'result', content: result.content, usage: run.meter.usage() }

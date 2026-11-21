@@ -178,6 +178,45 @@ describe('T2-AC02: the local single answer maps each event to its outcome, cause
     })
   })
 
+  it.each([400, 401, 403, 422])(
+    'ASM-3: a client error %i of the chat is a non-retryable configuration failure, as for the paid executor',
+    async (status) => {
+      const fetcher = answers(
+        tags(),
+        Response.json({ error: 'rejected' }, { status }),
+      )
+      const { outcome } = await run(fetcher)
+      expect(outcome).toMatchObject({
+        kind: 'failed',
+        retryable: false,
+        cause: 'configuration',
+      })
+      expect(fetcher).toHaveBeenCalledTimes(2)
+    },
+  )
+
+  it('ASM-3: a client error of the list of models is a non-retryable configuration failure before the chat', async () => {
+    const fetcher = answers(new Response('Unauthorized', { status: 401 }))
+    const { outcome } = await run(fetcher)
+    expect(outcome).toMatchObject({
+      kind: 'failed',
+      retryable: false,
+      cause: 'configuration',
+      usage: { sent: false },
+    })
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+
+  it.each([408, 409])(
+    'ASM-3: an answer %i of the chat is uncertain',
+    async (status) => {
+      const { outcome } = await run(
+        answers(tags(), new Response('{}', { status })),
+      )
+      expect(outcome).toMatchObject({ kind: 'uncertain', cause: 'unknown' })
+    },
+  )
+
   it('a server error is an ordinary failure, without a second call', async () => {
     const fetcher = answers(
       tags(),

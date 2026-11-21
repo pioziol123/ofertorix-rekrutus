@@ -1,5 +1,5 @@
 import { transaction } from '../../../lib/db.ts'
-import { nothingSent, type ExecutorOutcome } from '../executors/outcome.ts'
+import type { ExecutorOutcome } from '../executors/outcome.ts'
 import { findExecutor } from '../executors/registry.ts'
 import {
   appendExchange,
@@ -14,9 +14,10 @@ import {
  * executor parameters, the executor state saved so far and two writers,
  * each conditional on the operation still running, so a late process
  * writes nothing (T2-R08, T5-R04). It returns the executor's outcome, or
- * null when the operation does not run. An executor that no longer exists
- * under the frozen name could take nothing: a non-retryable failure with
- * nothing sent. The outcome is saved by the end of the operation (T3).
+ * null when the operation does not run. Without an executor under the
+ * frozen name it throws: the attempt fails, and the queue's attempts and
+ * the failure handler decide the operation's end (T4, T5). The outcome is
+ * saved by the end of the operation (T3).
  */
 export async function carryOutOperation(
   operationId: string,
@@ -25,12 +26,9 @@ export async function carryOutOperation(
   if (!operation) return null
   const executor = findExecutor(operation.executor)
   if (!executor)
-    return {
-      kind: 'failed',
-      retryable: false,
-      cause: 'configuration',
-      usage: nothingSent(),
-    }
+    throw new Error(
+      `No executor ${operation.executor} for operation ${operationId}`,
+    )
   return executor.carryOut({
     content: {
       type: operation.type,
