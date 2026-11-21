@@ -1033,7 +1033,16 @@ export async function processTask(shared: Runner, issue: Issue, baseSha: string)
       return
     }
     const name = taskBranch(r, issue)
-    git(r.repo, ['branch', '--force', name, start.from])
+    const existing = tryGit(r.repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`])
+    // Sandcastle keeps dirty worktrees after a failed attempt. When the return's
+    // commit is already checked out, moving the branch is unnecessary and Git
+    // refuses it. Reopening that branch also keeps the agent's uncommitted files.
+    if (start.continuation && existing.ok && existing.out === start.from) {
+      r.log(`${issue.id}: reusing ${name} at ${start.from.slice(0, 7)}, preserving any uncommitted work`)
+    } else {
+      const prepared = tryGit(r.repo, ['branch', '--force', name, start.from])
+      if (!prepared.ok) throw new Error(`Cannot prepare task branch ${name} at ${start.from}. Existing work was not reset or removed.\n${prepared.out}`)
+    }
     branch = name
     const ctx = epicContext(r, issue)
     continuation = start.continuation

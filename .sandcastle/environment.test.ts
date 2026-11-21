@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import { START_FRESH } from './continuation.ts'
 import { cycle, RESULT_FILE } from './flow.ts'
-import { type AgentTurn, type World, committingAgent, doneResult, exchangeFile, sh, world, writeFile } from './testing.ts'
+import { type AgentTurn, type World, committingAgent, doneResult, exchangeFile, sh, snapshot, world, writeFile } from './testing.ts'
 
 let w: World
 afterEach(() => w?.cleanup())
@@ -27,6 +27,71 @@ function failFreshOpenings(times: number, message = 'docker: Error response from
 }
 
 describe('5yd.3: retry after an environment failure', () => {
+  it('resumes a returned attempt in its retained worktree, preserving tracked and untracked changes', async () => {
+    let retained = ''
+    let failures = 0
+    w = world((ctx) => {
+      retained = ctx.worktree
+      failures++
+      writeFile(ctx.worktree, 'README.md', 'unfinished tracked work\n')
+      writeFile(ctx.worktree, 'draft.txt', 'unfinished new file\n')
+      throw new Error('agent timeout')
+    })
+    await cycle(w.runner)
+    assert.equal(failures, 3)
+    assert.ok(w.db.show('t-1').labels?.includes('needs-info'))
+
+    let resumed = false
+    w.db.handOffAgain('t-1')
+    w.sandboxes.agentTurn = (ctx) => {
+      resumed = true
+      assert.equal(ctx.worktree, retained)
+      assert.equal(readFileSync(join(ctx.worktree, 'README.md'), 'utf8'), 'unfinished tracked work\n')
+      assert.equal(readFileSync(join(ctx.worktree, 'draft.txt'), 'utf8'), 'unfinished new file\n')
+      sh(ctx.worktree, 'add', 'README.md', 'draft.txt')
+      sh(ctx.worktree, 'commit', '--quiet', '-m', 'finish retained work')
+      answer(ctx)
+    }
+    await cycle(w.runner)
+
+    assert.equal(resumed, true, 'the next attempt reaches the agent')
+    assert.equal(w.db.show('t-1').status, 'closed')
+    assert.equal(exchangeFile(w, 'README.md'), 'unfinished tracked work')
+    assert.equal(exchangeFile(w, 'draft.txt'), 'unfinished new file')
+  })
+
+  for (const scenario of ['different retained commit', 'start-fresh'] as const) {
+    it(`does not reset or remove retained work when resuming with ${scenario}`, async () => {
+      let retained = ''
+      w = world((ctx) => {
+        retained = ctx.worktree
+        writeFile(ctx.worktree, 'README.md', 'unfinished tracked work\n')
+        writeFile(ctx.worktree, 'draft.txt', 'unfinished new file\n')
+        throw new Error('agent timeout')
+      })
+      await cycle(w.runner)
+      assert.ok(w.db.show('t-1').labels?.includes('needs-info'))
+      if (scenario === 'different retained commit') {
+        writeFile(retained, 'local.txt', 'local commit after return\n')
+        sh(retained, 'add', 'local.txt')
+        sh(retained, 'commit', '--quiet', '-m', 'local work after return')
+      } else {
+        w.db.update('t-1', { add: [START_FRESH] })
+      }
+      const before = snapshot(retained)
+      const opens = w.sandboxes.warmOpens
+      w.db.handOffAgain('t-1')
+      w.sandboxes.agentTurn = committingAgent()
+      await cycle(w.runner)
+
+      assert.equal(w.sandboxes.warmOpens, opens, 'the unsafe attempt never opens a sandbox')
+      assert.deepEqual(snapshot(retained), before, 'the branch, index and all working files survive')
+      assert.ok(w.db.show('t-1').labels?.includes('needs-info'))
+      assert.match(comments().at(-1)!, /Cannot prepare task branch/)
+      assert.match(comments().at(-1)!, /Existing work was not reset or removed/)
+    })
+  }
+
   it('ENV-AC01: the agent fails in the first turn: a new agent in a new sandbox on the same work directory finds the uncommitted file and delivers', async () => {
     const seen: { worktree: string; turn: number; prompt: string; draft: boolean }[] = []
     w = world((ctx) => {
