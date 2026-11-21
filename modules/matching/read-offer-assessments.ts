@@ -116,6 +116,7 @@ export async function matchingListStatus() {
     configured: assessmentsConfigured(),
     profileReady: profile !== null,
     pending,
+    // ASSUMPTION(oferty-pracy-sq2.9/ASM-3)
     maximumCostPln: assessmentReservation(),
   }
 }

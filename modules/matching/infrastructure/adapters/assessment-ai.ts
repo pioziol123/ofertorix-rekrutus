@@ -58,6 +58,9 @@ export function assessmentsConfigured(): boolean {
  * ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reservation read of the old
  * way, which shows the owner the same price list's ceiling until task
  * oferty-pracy-sq2.11.
+ * ASSUMPTION(oferty-pracy-sq2.9/ASM-3): the offer views keep showing the
+ * most one assessment reserves, read this way; a group command shows the
+ * single price list's ceiling per offer.
  */
 export function assessmentReservation(): string | null {
   return readReservation(assessmentSettingsKey, 'single')

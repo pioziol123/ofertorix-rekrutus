@@ -97,6 +97,7 @@ export async function readMatching(adId: string) {
   return {
     configured: assessmentsConfigured(),
     profileReady: activeId !== null,
+    // ASSUMPTION(oferty-pracy-sq2.9/ASM-3)
     maximumCostPln: assessmentReservation(),
     history,
     ...(await readRatings(adId, activeId)),

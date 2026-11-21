@@ -340,7 +340,10 @@ integration('list matching projections in isolated PostgreSQL', () => {
     })
     await assertSame()
   })
-  it('reports configuration, profile readiness, pending count and reservation ceiling through AI reads without any provider call (0mq.21 ASM-4)', async () => {
+  it('reports configuration, profile readiness, pending count and reservation ceiling through AI reads without any provider call (0mq.21 ASM-4, sq2.9 ASM-3)', async () => {
+    // A group command is one assignment per offer: the single price list
+    // gives its ceiling per offer, also without a Batch price list.
+    usePricing('matching', pricing, 'single')
     await request('running', '2026-01-01')
     await request('completed', '2026-01-02', calculation)
     expect(await matchingListStatus()).toEqual({
