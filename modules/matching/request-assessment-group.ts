@@ -238,6 +238,9 @@ export async function enqueueMatchingGroup(value: unknown) {
       // a new command.
       const accepted = await commandGroup(command.commandId, ids)
       if (accepted) return acceptedGroup(command.commandId, accepted, ids)
+      // ASSUMPTION(oferty-pracy-sq2.9/ASM-2): a group, which no longer runs
+      // at the Batch price, gets the configuration message of a single
+      // assessment.
       if (!assessmentsConfigured())
         throw new MatchingError(notConfiguredMessage)
       if (!profile)

@@ -154,6 +154,7 @@ export async function linkAssignment(requestId: string, assignmentId: string) {
 /**
  * The assignments of requests whose outcome is not saved yet, for the
  * status read that keeps the offer list refreshing.
+ * ASSUMPTION(oferty-pracy-sq2.9/ASM-5): of every ad, not only those shown.
  */
 export async function assignmentsWithoutOutcome(): Promise<string[]> {
   return (

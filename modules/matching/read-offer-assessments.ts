@@ -106,9 +106,13 @@ export async function decorateMatching(
  * of assessments with an assignment comes from the status read over the
  * assignments of Matching's assessments without an outcome (T8-R06); those
  * of the old way are counted by the AI read until task oferty-pracy-sq2.11.
+ * ASSUMPTION(oferty-pracy-sq2.9/ASM-5): the count covers every assessment
+ * of Matching in progress, not only those of the offers shown, as the
+ * count before the task did.
  */
 export async function matchingListStatus() {
   const profile = await activeProfileVersion()
+  // ASSUMPTION(oferty-pracy-sq2.9/ASM-5)
   const pending =
     (await assignmentsInProgress(await assignmentsWithoutOutcome())) +
     (await activeExecutions())

@@ -424,6 +424,28 @@ integration('list matching projections in isolated PostgreSQL', () => {
     ])
     expect((await matchingListStatus()).pending).toBe(0)
   })
+  it('counts an assessment in progress of an offer that is not shown, as the count before the task did (sq2.9 ASM-5)', async () => {
+    // An ad the list does not show: no offer of the page carries it.
+    const hidden = randomUUID()
+    await pool.query(
+      "INSERT INTO source_ads(id,source,external_id,last_seen_scope_id) SELECT $1,'solid',$2,last_seen_scope_id FROM source_ads WHERE id=$3",
+      [hidden, randomUUID(), ad],
+    )
+    const assignmentId = randomUUID()
+    await pool.query(
+      `INSERT INTO ai_assignments(id,settings_name,type,label,instruction,input,executor,executor_parameters,status,automatic_operation_limit,placed_at,deadline)
+       VALUES($1,'matching','single','Oferta','Oceń','{}','openai','{}','in_progress',3,now(),now()+interval '7 days')`,
+      [assignmentId],
+    )
+    await pool.query(
+      `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state,assignment_id)
+       VALUES($1,$2,$3,$4,'{}','{}','requested',$5)`,
+      [randomUUID(), hidden, revision, profileVersion, assignmentId],
+    )
+    const [shown] = await decorateMatching(offers())
+    expect(shown!.assessment).toBeUndefined()
+    expect((await matchingListStatus()).pending).toBe(1)
+  })
   it('shows an assessment with an assignment in the list as in progress, ready or failed, never with a removed text (T8-AC04)', async () => {
     const shown = async () => (await decorateMatching(offers()))[0]!.assessment
     await assignedRequest('needs_attention')
