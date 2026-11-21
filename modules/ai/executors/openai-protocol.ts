@@ -41,6 +41,9 @@ function errorCode(raw: string): unknown {
  * nothing; a server error, a timeout or a conflict answered by the
  * provider is an ordinary failure of unknown cost. No wait and no second
  * call follow inside the operation.
+ * ASSUMPTION(oferty-pracy-sq2.3/ASM-3): a client error other than a rate
+ * limit, a timeout, a conflict or a context overflow is a request the
+ * provider cannot take at all.
  */
 export function errorAnswer(
   status: number,

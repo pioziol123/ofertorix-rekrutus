@@ -147,7 +147,7 @@ describe('T2-AC02: the paid single answer maps each event to its outcome, cause 
     expect(cost).toBe('0.000000')
   })
 
-  it('a request the provider cannot take at all is a non-retryable configuration failure charged nothing', async () => {
+  it('ASM-3: a request the provider cannot take at all is a non-retryable configuration failure charged nothing', async () => {
     const { outcome, cost } = await run(
       vi
         .fn<typeof fetch>()

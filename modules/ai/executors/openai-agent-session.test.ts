@@ -248,6 +248,35 @@ describe('T2-AC04: the paid agent session sends the requests of the old way and 
   })
 })
 
+describe('ASM-1: an agent session without a response format', () => {
+  it('asks the synthesis for no format and returns its text', async () => {
+    const fetcher = answers(
+      Response.json(search()),
+      Response.json(
+        synthesis({
+          output: [
+            {
+              type: 'message',
+              content: [{ type: 'output_text', text: 'Plain report' }],
+            },
+          ],
+        }),
+      ),
+    )
+    const outcome = await openAiExecutor(fetcher).carryOut({
+      content: { ...content, responseFormat: null },
+      parameters,
+      state: null,
+      exchange: async () => true,
+      saveState: async () => true,
+    })
+    expect(
+      JSON.parse(String(fetcher.mock.calls[1]![1]!.body)),
+    ).not.toHaveProperty('text')
+    expect(outcome).toMatchObject({ kind: 'result', content: 'Plain report' })
+  })
+})
+
 describe('T2-AC02: the paid agent session maps each event to its outcome, cause and usage', () => {
   it('a missing secret is a non-retryable configuration failure with nothing sent', async () => {
     vi.stubEnv('OPENAI_API_KEY', '')

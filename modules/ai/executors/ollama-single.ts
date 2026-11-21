@@ -99,6 +99,8 @@ export async function carryOutLocalSingle(
   const model = String(parameters.model)
 
   const tagsUrl = `${base}/api/tags`
+  // ASSUMPTION(oferty-pracy-sq2.3/ASM-2): the request for the list of
+  // models, which has no body, is kept as its method and address.
   await run.exchange('request', `GET ${tagsUrl}`)
   const tags = await send(
     run,

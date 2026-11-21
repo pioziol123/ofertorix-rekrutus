@@ -316,7 +316,7 @@ describe('T2-AC05 and T2-R08 for the local single answer', () => {
     })
   })
 
-  it('writes each request before sending it and each raw response before reading it', async () => {
+  it('writes each request before sending it and each raw response before reading it, the list of models as its method and address (ASM-2)', async () => {
     const raws = [
       JSON.stringify({ models: [{ name: 'gpt-oss:20b' }] }),
       JSON.stringify(completion()),
