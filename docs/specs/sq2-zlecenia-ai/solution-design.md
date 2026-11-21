@@ -2,11 +2,13 @@
 
 Basis: [PRD](PRD.md), [requirements](requirements.md). Builds on the [background work design](../2ba-praca-w-tle/solution-design.md), sections B1 and B6. Binding rules: [architecture rules](../../architecture/moduly-i-zasady-kodu.md).
 
+References that start with B1 or B6 point into that design and its requirements: B1 is the queue and worker libraries, B6 the move of the AI module onto them (`oferty-pracy-2ba.6`). Each is quoted here with what it says; the libraries exist in the code.
+
 Section `T<n>` belongs to stage n of the PRD. Decision IDs (`ZA-D..`) are stable. Sections marked *Contract* are constraints once the design is agreed; everything else names the mechanism and leaves names, files and paths to the implementer.
 
 **Status: draft.** A decision marked *Owner* records a choice the owner made, with the source. The owner has not read the contracts and approaches below the decisions. The owner's [decisions of 20 November 2026](requirements.md#open) on the requirements are settled; of the decisions below, only the choice of table in ZA-D08 is still the agent's proposal.
 
-**Code observed** at commit `0f2e0ae` for the AI module and the requesting modules. The queue and worker libraries and the AI module after `oferty-pracy-2ba.6` are taken from the background work design, not from code: that task is not implemented yet.
+**Code observed** at commit `324f023`: the queue and worker libraries, the module plugins, the periodic process and the AI module after `oferty-pracy-2ba.6`, which requests its work through the two queues `ai-execution-paid` and `ai-execution-local` and registers the requesting modules' receivers in its module plugin.
 
 <a id="wspolne"></a>
 
@@ -20,14 +22,15 @@ Section `T<n>` belongs to stage n of the PRD. Decision IDs (`ZA-D..`) are stable
 | Executor submodule (one per executor) | Its declaration (services, parameters, price list, maximum run times), carrying out one operation, the translation of its technology's events into the four outcomes, and its own state between the steps of one operation. |
 | Settings of requesting modules | The fixed table, in the AI module, from a settings name to the executor, its parameters and the requesting module's display name. Its inner design belongs to `oferty-pracy-334`. |
 | Requesting module | Its own matter, the assignment identifier it keeps, its receiver, the check of the result and what its views show. |
-| Module plugin of the AI module | Registers the job definitions with their handlers and failure handlers. The plugins of the requesting modules register their receivers. |
+| Module plugin of the AI module | Registers the job definitions with their handlers and failure handlers. |
+| Receiver registration | One shared place, run at the start of every process, where each requesting module's receiver is registered under its settings name (T6). |
 | Periodic process | Calls three public operations in turn: operations waiting for the budget, the time limit, the daily ad syncs. |
 
 ### Data
 
 Four tables of the AI module. Status, state and reason columns carry a database check on their closed list.
 
-**Assignment.** Identifier; settings name; type (`single`, `agent`); label; instruction; input; response format (nullable); agent options (allowed tools and result instruction; null for `single`); executor name; executor parameters (a JSON value only the executor reads, the check's value included); status (`in_progress`, `needs_attention`, `succeeded`, `failed`); failure reason (null, or `rejected`, `time_limit`, `delivery_failed`); delivery error (nullable text, without secrets); automatic operation limit (3, written at placing); placed at; deadline; delivered at (nullable); finished at (nullable). A database check ties a failure reason to `failed` only.
+**Assignment.** Identifier; settings name; type (`single`, `agent`); label; instruction; input; response format (nullable); agent options (allowed tools and result instruction; null for `single`); executor name; executor parameters (a JSON value only the executor reads); status (`in_progress`, `needs_attention`, `succeeded`, `failed`); failure reason (null, or `rejected`, `time_limit`, `delivery_failed`); automatic operation limit (3, written at placing); placed at; deadline; finished at (nullable). A database check ties a failure reason to `failed` only.
 
 **Operation.** Identifier; assignment; ordinal within the assignment; origin (`automatic`, `manual`); state (`pending`, `running`, `succeeded`, `failed`, `uncertain`); waits for (`budget`, `executor`; null unless pending); pending since; cause (from the closed list of causes; null for a result); retryable (boolean; null unless failed); potential cost (null until started); actual cost (null while unknown or not started); budget month (null until started); price list used (JSON, written at the start); usage (JSON, nullable); result (JSON, nullable); executor state (JSON, only the executor reads and writes it); started at; finished at.
 
@@ -41,16 +44,15 @@ Nothing stores a sum. A month's charge, an assignment's cost figures and the cou
 
 | Queue | Key mode | Job data | Settings |
 | --- | --- | --- | --- |
-| Paid executor's queue: the paid AI queue of B6 | Exclusivity, constant key | Operation identifier | As B6: 4 attempts, 30 s delay with backoff, 60 min time limit |
-| Local executor's queue: the local-model AI queue of B6 | Exclusivity, constant key | Operation identifier | As B6 |
-| Delivery queue (new, created by its own queue migration) | None | Assignment identifier | The queue mechanism's defaults |
+| Paid executor's queue (new, created by its own queue migration, beside `ai-execution-paid` of the old way) | Exclusivity, constant key | Operation identifier | 4 attempts, 30 s delay with backoff, 60 min time limit |
+| Local executor's queue (new, created by its own queue migration, beside `ai-execution-local`) | Exclusivity, constant key | Operation identifier | The same |
 
-Each executor names its queue in its declaration. A job is sent only inside the save that makes its operation wait for the executor, or that makes an assignment deliverable, so the request is rolled back with it (architecture rules, queue in the transaction).
+Each executor names its queue in its declaration. A job is sent only inside the save that makes its operation wait for the executor, so the request is rolled back with it (architecture rules, queue in the transaction). No job is sent for a delivery (ZA-D09).
 
 ### Decisions
 
 **ZA-D01 (Owner, 2026-11-20). One operation at a time per executor comes from the queue: one queue per executor with exclusivity on a constant key.**
-Reason: the owner chose one operation at a time for the first version; the queues of B6 already give it.
+Reason: the owner chose one operation at a time for the first version; a queue with exclusivity on a constant key gives it, as the two AI queues of B6 do for the old way.
 Discarded: a number of operations at a time kept by the AI module and set in the panel (Q39, Q46, Q100): put off, item 30 of `oferty-pracy-sz5`. It returns later as the pool size of workers dedicated to one executor's queue (B1-D06), without a change to assignments.
 
 **ZA-D02 (Owner, 2026-11-20). The AI module keeps no line of its own; an operation waiting for its executor is one job in the executor's queue.**
@@ -70,32 +72,44 @@ Discarded: a lease on the operation with a periodic check (`oferty-pracy-0mq.15`
 Reason: none recorded beyond the agent's reasoning, which the owner accepted: one counter of retries (the assignment's limit of 3) instead of two; a second attempt of a job either starts an operation that never started or closes one that was interrupted (ZA-D04).
 Discarded: one attempt for the executors' queues: a passing database error before the start would use up one of the assignment's three operations although the provider was not called.
 
-**ZA-D06 (Owner, 2026-11-20, on the agent's proposal). Every delivery is a job of a separate delivery queue without a key.**
-Reason: none recorded beyond the agent's reasoning, which the owner accepted: Reject (from the web application) and the time limit (from the periodic process) cannot call a receiver, because receivers are registered only in the worker's processes (B1-R15); a result is delivered the same way so that there is one delivery path. The job is sent in the save that makes the assignment deliverable, so no result can be lost between the end of an operation and its delivery.
-Discarded: delivering a result inside the operation's handler and only failures through a job (two paths, but a result is delivered without waiting for a free process); delivering through the executor's queue as B6 does (a failure notice would wait behind an hour of research).
-Consequence: with the pool size of 2 and both executors busy, a delivery waits for a free process. The worker's pool size is set to 3 in the container configuration.
+**ZA-D06. Withdrawn by ZA-D09 (2026-11-21).**
+It made every delivery a job of a separate delivery queue and raised the worker's pool size to 3. It rested on reading a rule of the background work epic (module plugins, which register the handlers of queue jobs, run only in the worker and its pool processes; requirement B1-R15 there) as a ban on calling a requesting module's receiver outside the worker. The owner's decision behind that rule concerned handlers of queue jobs and had no such reason; a receiver is not one.
 
-**ZA-D07 (Owner, 2026-11-20, on the agent's proposal). The old and the new way coexist from T1 to T10.**
+**ZA-D07 (Owner, 2026-11-21, after the review of that day). The old and the new way coexist from T1 to T10, each with its own queues and its own count against the budget.**
 Reason: none recorded beyond the agent's reasoning, which the owner accepted: the requesting modules move one task at a time and the checks must pass between tasks.
-Consequences, all removed by T10: a second mechanism (architecture rules, costs); while both exist, a month's room counts the old attempts' charge and the new operations' charge together; the executors' queues carry the job definitions of both ways, which keeps "one at a time" across them.
+Discarded: sharing the two AI queues of B6 between both ways and counting both ways' charges in a month's room (the decision of 2026-11-20). Verified fact: the handler registry takes one job definition per queue, so a queue cannot serve both ways; and the old way would not count the new operations, so the shared count held in one direction only.
+Consequences, all removed by T10 and accepted by the owner because the system does not run in production: a second mechanism (architecture rules, costs); a month may be charged by both ways beyond its limit; a paid operation of each way may run at the same time, and so may a local one.
 
 ### Contract: the closed lists
 
-- Assignment status, operation state, failure reason: as in the data above. Requesting modules import the status list from the AI module's public entry; no other list is public.
+- Assignment status, operation state, failure reason: as in the data above. The failure reasons of the requirements (ZA-R05) are stored as `rejected` (rejected by the owner), `time_limit` (time limit exceeded) and `delivery_failed` (result not taken). Requesting modules import the status list from the AI module's public entry; no other list is public.
 - Causes: the existing list of the AI module (`refused`, `incomplete`, `no_content`, `format`, `configuration`, `network`, `http`, `aborted`, `model_unavailable`, `context_overflow`, `unknown`) plus `not_started` for a pending operation ended with its assignment and `time_limit_run` for a passed maximum run time. `interrupted` and `adapter_unavailable` are not written any more. The list is no longer public: only the panel's reads return a cause.
 
 ### Contract: what follows the end of an operation
 
-One function of assignment handling decides it, in the transaction that ends the operation, after locking the assignment's row. Every caller that ends an operation uses it.
+One function of assignment handling decides it, in the transaction that ends the operation, after locking the assignment's row. Every caller that ends an operation uses it. The last column names the task that adds the row; before that task, the row's case leaves the assignment as it is.
 
-| Operation ended as | Assignment is | Then |
-| --- | --- | --- |
-| succeeded | in progress | Send a delivery job |
-| succeeded | failed (rejected meanwhile) | Nothing; the result stays with the operation |
-| failed, retryable, origin automatic, fewer than 3 automatic operations, deadline not passed | in progress | Insert the next operation (pending, waits for executor) and send its job |
-| any other failed or uncertain end, deadline not passed | in progress | Status needs attention |
-| any failed or uncertain end, deadline passed | in progress | Status failed, reason `time_limit`; send a delivery job |
-| anything | not in progress | Nothing |
+| Operation ended as | Assignment is | Then | Added by |
+| --- | --- | --- | --- |
+| succeeded | in progress | Nothing in this transaction; the handler delivers next (T6) | T6 |
+| succeeded | failed (rejected meanwhile) | Nothing; the result stays with the operation | T3 |
+| failed, retryable, origin automatic, fewer than 3 automatic operations, deadline not passed | in progress | Insert the next operation (pending, waits for executor) and send its job | T4 |
+| any other failed or uncertain end, deadline not passed | in progress | Status needs attention | T4 |
+| any failed or uncertain end, deadline passed | in progress | Status needs attention; the time limit fails it at its next pass (T6) | T4; the deadline is read from T6 on |
+| anything | not in progress | Nothing | T3 |
+
+T3 builds the function with its two rows and the conditional end of the operation. Between T3 and T4 a failed operation leaves its assignment in progress with nothing pending; between T3 and T6 so does a succeeded one. Both are states of the build only (requirements, T3 scope).
+
+### Which task changes the database
+
+| Task | Change |
+| --- | --- |
+| T1 | The assignment table and the operation table, with every column of the data above. Later tasks add no column to them. |
+| T2 | The operation exchange table. |
+| T3 | The one-row table of the default limit, holding 100 PLN, the amount fixed in code today. The two executors' queues, each by its own queue migration. |
+| T7, T8, T9 | In the module's own data: a column for the assignment identifier beside today's reference to the old AI record (the Profile has an unused one of that kind and identifies its AI work by the CV import; Matching keeps its reference with the assessment request; Companies with the research row). The old reference stays until T10. |
+| T10 | The carried charge column of the month table, filled by the migration; the old AI tables renamed as archive; the columns of the former Profile path dropped; the old references of T7–T9 dropped; the queues `ai-execution-paid` and `ai-execution-local` deleted. |
+| T4, T5, T6, T11, T12, T13 | None. |
 
 <a id="t1"></a>
 
@@ -119,7 +133,7 @@ Requirements: [T1](requirements.md#t1).
 
 ### Verification
 
-Integration tests on a real database cover T1-AC01–AC05 and AC07 with a test executor declaration; T1-AC06 is a unit test of the settings and declarations.
+Integration tests on a real database cover T1-AC01–AC05 with a test executor declaration; T1-AC06 is a unit test of the settings and declarations.
 
 <a id="t2"></a>
 
@@ -132,9 +146,40 @@ Requirements: [T2](requirements.md#t2).
 - The existing provider adapters become two executor submodules behind one interface: the declaration, and carrying out one operation given the assignment's frozen content, the operation's saved executor state and two writers (for the exchange and for the executor state). The interface returns an outcome: a result with usage, or one of the three other ways with a cause and the usage known.
 - Both writers are conditional on the operation still running. A write that matches nothing tells the executor to stop: nothing more is sent (as the agent's step log does today).
 - The paid agent keeps its step log and materials in the executor state column (architecture rules, default storage of adapter state); the materials are read from it for delivery.
-- The executor enforces its maximum run time itself, with a timer around the whole operation, in addition to its limits per request.
+- The executor enforces its maximum run time itself, with a timer around the whole operation, in addition to its limits per request. The values are those of T2-R06: 120 s, 900 s and 1800 s, all below the 3600 s of the executors' queues.
 - Removed from the adapters: the batch cycle, the shared-slot flag, the translation of a lost lease, the transient flag with its suggested wait, and the reconstruction of batch input.
 - The result is the content the provider returned, parsed as JSON when the service promised JSON; content that cannot be parsed is the cause `format`. No comparison with the response format is made (T2-R07).
+
+### Contract: executor
+
+Agreed shape of the interface between assignment handling and an executor submodule. Names are the implementer's; the parts and their meaning are fixed here, and T3–T6 use them without changing them.
+
+**Declaration** (read without calling a provider):
+
+- the executor's name and the name of its queue;
+- per assignment type it serves: the parameters an assignment may carry with their allowed values (today: model and reasoning effort; for the agent also the tools it offers), the maximum run time, and the price list: a version, the exchange rate, the rates and the caps of input, output and paid tool calls that the potential cost is computed from. A local executor's price list is absent, which means a potential and actual cost of zero;
+- whether it is configured now (its secret or address is present);
+- optionally, the size of the request it would send for a given content, for the size check of T1-R04.
+
+**Carry out one operation.** Input:
+
+- the assignment's frozen content: type, instruction, input, response format, agent options, executor parameters;
+- the executor state saved for this operation so far (empty for a new operation; an executor never receives another operation's state);
+- a writer for the exchange: given a kind (request or response) and the raw text, it appends a row and answers whether the operation is still running;
+- a writer for the executor state: given the new state, it replaces the saved one and answers the same.
+
+When a writer answers that the operation is no longer running, or fails, the executor sends nothing more and returns; whatever it returns is then discarded by the conditional end (T5-R04). The executor writes the request before sending it and each response before reading it.
+
+Output, exactly one of:
+
+- **a result**: the content (a JSON value when the service promised JSON, otherwise text) and the usage;
+- **an ordinary failure**, **a non-retryable failure** or **uncertain**: a cause from the closed list and the usage known so far.
+
+Usage is the count of input tokens, output tokens and paid tool calls, each known or unknown, and whether anything was sent to the provider. Assignment handling computes the actual cost from it and the price list saved at the start: nothing sent gives zero; every count known and within the caps gives the computed cost; anything else gives an unknown cost. This keeps today's rule of the cost computation.
+
+**Materials of an agent session.** A second entry of the executor, given a saved executor state, returns the materials gathered (text with its sources) or none. Assignment handling calls it at delivery and passes the result to the receiver; it never reads the state itself.
+
+**Not part of the interface**: any knowledge of assignments, operations' identifiers, budget, retries or receivers; a retry inside the executor; a translation of a lost process (assignment handling ends such an operation itself, T5).
 
 ### Contract: mapping of events to outcomes
 
@@ -189,7 +234,8 @@ Requirements: [T3](requirements.md#t3).
 
 ### Contract: room in the budget
 
-- Room of a month = limit − carried charge − the sum of the charges of the operations with that budget month (while the old way exists, also minus its attempts' charge, ZA-D07).
+- Room of a month = limit − carried charge − the sum of the charges of the operations with that budget month. The old way's attempts are not counted (ZA-D07); the carried charge is zero until T10.
+- The month table and its limits are shared with the old way until T10. This task adds the one-row table of the default limit and the budget read of T3-R09: every month with its limit and its computed charge.
 - The lock on the month's row makes check and charge one step for all executors (T3-R02).
 - Amounts are kept and computed as today, in millionths of a złoty.
 
@@ -215,7 +261,7 @@ Requirements: [T4](requirements.md#t4).
 
 - The rule is the table of [what follows the end](#contract-what-follows-the-end-of-an-operation); this task adds its failure rows.
 - The count of automatic operations is the number of the assignment's operations with origin automatic, compared with the limit stored on the assignment.
-- **Failure handler of the executors' queues**, called after a job failed finally (B1-R11): a pending operation ends as failed, retryable, cause `unknown`, with no cost; a running one ends as uncertain ([T5](#t5)); then the same function runs. Other states: no effect. It is a conditional write.
+- **Failure handler of the executors' queues**, called by the worker through the failure queue after a job failed on its last attempt, also when the worker died in it: a pending operation ends as failed, retryable, cause `unknown`, with no cost; a running one ends as uncertain ([T5](#t5)); then the same function runs. Other states: no effect. It is a conditional write.
 - The coordination's single extra attempt after a transient error is removed (T4-R07).
 
 ### Verification
@@ -234,6 +280,7 @@ Requirements: [T5](requirements.md#t5).
 - A lost attempt is found by the queue in about 30–90 s (B1-R10), and the next attempt follows the retry delay, which gives T5-R03.
 - A late process: its end matches no row. Its responses are in the exchange table already, because the executor writes each before reading it; when even that write matched nothing, the executor stopped (T2).
 - Not kept from B6: the delivery of an uncertain end to the requesting module; it now learns nothing until the assignment is final.
+- An attempt that finds its operation succeeded while the assignment is in progress makes the delivery (T6-R10).
 
 ### Verification
 
@@ -247,32 +294,37 @@ Requirements: [T6](requirements.md#t6).
 
 ### Approach
 
-**Handler of a delivery job.** It locks the assignment's row in a transaction and acts by what it finds:
+**Delivery after an operation.** The operation's handler, after the transaction that ends an operation with a result, and also when it finds its operation already succeeded with the assignment in progress (T6-R10), opens a delivery transaction: it locks the assignment's row and, when the assignment is still in progress, calls the receiver's result entry with the assignment identifier, the result and, for an agent, the materials (read by the executor from its state), then sets succeeded and finished at. An error raised by the receiver's call, or a missing receiver, rolls that transaction back; a second transaction, conditional on the assignment still being in progress, sets failed with the reason `delivery_failed` and calls the receiver's failure entry. An error in the second transaction, or an error that does not come from the receiver (the database, the commit), fails the attempt; the queue's next attempt finds the operation succeeded and repeats the delivery from its beginning.
 
-- delivered at is set: no effect.
-- in progress with a succeeded operation: call the receiver with the assignment identifier and the operation's result (and the agent's materials, read by the executor from its state); set succeeded, delivered at and finished at; commit. An error raised by the receiver, or a missing receiver, rolls the transaction back; a second transaction then sets failed with the reason `delivery_failed`, the error's message and delivered at, conditional on the assignment still being in progress and undelivered.
-- failed and undelivered: set delivered at and call the receiver's failure entry in the same transaction; on the receiver's error, roll back and, in a second transaction, set delivered at and the delivery error.
+After the last attempt, the failure handler finds a succeeded operation and changes nothing: the error is in the log, the assignment stays in progress, the time limit leaves it alone (T6-R07), and the owner can still reject it.
 
-An error that does not come from the receiver's call (the database, the commit) fails the attempt, and the queue retries the job (T6-R09).
-
-**Time limit** (a public operation the periodic process calls). For each assignment in progress or needing attention whose deadline has passed and which has no running operation, one transaction: a conditional write sets failed with the reason `time_limit` and finished at; its pending operations end as failed with the cause `not_started`; a delivery job is sent. An assignment with a running operation is left to the function of what follows the end.
+**Time limit** (a public operation the periodic process calls). It takes each assignment in progress or needing attention whose deadline has passed, unless it has a running operation or, while in progress, a succeeded one. For each, one transaction: a conditional write sets failed with the reason `time_limit` and finished at; its pending operations end as failed with the cause `not_started`; the receiver's failure entry is called. An error of the receiver rolls the transaction back and is logged with the assignment's identifier; the other assignments are still handled, and the next pass tries again.
 
 ### Contract: receiver
 
-- Registered per settings name in the requesting module's plugin; a second registration of a name throws when the plugin runs.
+- Defined by the AI module in its public contract; implemented by each requesting module in its integration layer.
+- Registered per settings name in one shared registration that the web application, the periodic process, the worker and its pool processes each run at start. It is separate from the module plugins, which still only the worker and its pool processes run; it registers no job handler. Today the AI module's plugin registers the receivers; that registration moves here in T6. A second registration of a name throws at start.
 - Two entries: a result (assignment identifier, result, materials when the type is agent) and a failure (assignment identifier). Neither returns a value; neither receives a cost, a cause or a reason.
-- Both run inside the AI module's delivery transaction, so the receiver's writes are saved with the status or not at all. A receiver must not rely on being called at most once before a crash, only on taking effect at most once.
+- Each call runs inside the transaction of the AI module that saves the assignment's final status.
+- Three rules of T6-R09 bind every receiver: a repeated call has no further effect; it uses only its arguments; the requesting module does not rely on the end being reported at the moment it happened. They let the call become an event delivered through a queue later without changing the receivers.
+
+### Decision
+
+**ZA-D09 (Owner, 2026-11-21). Every end of an assignment reaches the requesting module through its receiver, synchronously, in the transaction that saves the final status; receivers are available in all three kinds of process.**
+Reason (owner): the first version is to dig no holes for later. With failures learned from a status read, each requesting module would carry its own logic for guessing an end, and every later way of ending an assignment outside the worker would meet the same wall.
+Discarded: a delivery queue (ZA-D06). Discarded: a result through the receiver and failures through the status read (the reviewers' simplest variant, first recommended by the agent): two sources of "failed" and a contract built into three modules that is costly to change.
+Consequences the owner accepted: Reject and the time limit run code of the requesting module, so an error there holds back the end of the assignment until the receiver works; the web application and the periodic process load the requesting modules' receivers.
 
 ### Situations per operation
 
 | Operation | Concurrent call | Resource limit | Repeated call | Malformed input |
 | --- | --- | --- | --- | --- |
-| Deliver | The row lock orders it with Reject and the time limit; the one that saves first wins (ZA-R03) | Pool full: the job waits. Database error: retried | Delivered at set: no effect | Unknown assignment: no effect |
-| Time limit | Conditional write; an operation that starts between the check and the write keeps running, and its end applies the rule | — | A failed assignment is skipped | — |
+| Deliver a result | The row lock orders it with Reject and the time limit; the one that saves first wins (ZA-R03) | Database error: the attempt fails and the next one repeats the delivery | Assignment no longer in progress: no effect | Unknown assignment: no effect |
+| Time limit | Conditional write; an operation that starts between the check and the write keeps running, and the next pass applies the rule | — | A failed assignment is skipped | — |
 
 ### Verification
 
-Integration tests with test receivers (accepting, raising, missing, writing its own row) cover T6-AC01–AC03 and AC07; T6-AC04 uses a long test operation on the paid executor's queue; T6-AC05 and AC06 use a controlled clock.
+Integration tests with test receivers (accepting, raising on a result, raising on a failure, missing, writing its own row) cover T6-AC01–AC04 and AC07; T6-AC05 and AC06 use a controlled clock; T6-AC08 kills a worker between the two transactions.
 
 <a id="t7"></a><a id="t8"></a><a id="t9"></a>
 
@@ -289,7 +341,7 @@ Requirements: [T7](requirements.md#t7), [T8](requirements.md#t8), [T9](requireme
 
 ### Per module
 
-- **Profile (T7).** The operation that resumes preparations and its periodic step are removed. The mapping from states and causes to messages shrinks to the three texts of T7-R04.
+- **Profile (T7).** The operation that resumes preparations and its periodic step are removed. The Profile keeps its two messages for a proposal that does not pass its own check (quotes, format); the mapping from the AI module's states and causes to messages is replaced by the one message for a failed assignment (T7-R04).
 - **Matching (T8).** The group command loops over its offers and places one assignment each, inside its one transaction. The batch request, the group identifier passed to the AI module and the text about a group waiting for the budget are removed. The exchange view reads the new exchange read of the AI module by assignment identifier. The count that drives the list's refresh comes from the status read over the assessments shown.
 - **Companies (T9).** The research request places an agent assignment with the web search tool and its result instruction; the view no longer reads a reserved amount.
 
@@ -312,11 +364,22 @@ Requirements: [T10](requirements.md#t10).
 Order within the deployment's migration step, with the old worker stopped:
 
 1. Each requesting module's public operation marks its matters that wait for AI work of the old way as failed (T10-R02). It is called from the migration step because it needs the module's rules ([good practices](../../architecture/good-practices.md), item 1).
-2. A database migration computes each month's carried charge from the old attempts: the actual cost of settled ones, the reserved amount of those of unknown cost and of those whose work had started and not ended; nothing for those that never started.
-3. The old tables are renamed with an archive prefix and lose the columns of the former Profile path; no code references them.
-4. The job definitions, handlers and failure handler of the old way, its public operations, the batch steps of the periodic process and the public lists of states and causes are removed. Jobs of the old definitions left in the executors' queues are deleted.
+2. A database migration computes each month's carried charge from the old settlement records, by the state of each record and of its AI work at that moment:
 
-The AI module's description is rewritten for the first version, and the glossary's AI section loses or marks the terms of the parts put off (batch item, partially succeeded, Approve, abandonment, executor capacity, Settle).
+   | Old work | Its settlement record | Enters the carried charge |
+   | --- | --- | --- |
+   | Ended, cost known | settled | Its actual cost |
+   | Ended, cost unknown (also uncertain work) | unknown | Its reserved amount |
+   | Waiting for delivery | open | Its reserved amount: the provider was called |
+   | Running (possible only when the old worker was killed) | open | Its reserved amount |
+   | Queued, never started | open, holding a reservation | Nothing: the reservation is released, because nothing was sent |
+   | Waiting for the budget | open, reserving nothing | Nothing |
+
+   The month's limit stays in its row. The default limit needs no migration: its table holds 100 PLN since T3.
+3. The old tables are renamed with an archive prefix and lose the columns of the former Profile path; no code references them.
+4. The job definitions, handlers and failure handler of the old way, its public operations, the batch steps of the periodic process and the public lists of states and causes are removed. The queues `ai-execution-paid` and `ai-execution-local` are deleted with their jobs, and the profile page's budget card is switched to the budget read of T3 (T10-R06).
+
+The AI module's description is rewritten for the first version. The glossary's AI section already describes it since the specification was written (2026-11-21), with the terms of the parts put off under their own heading.
 
 ### Verification
 
@@ -330,10 +393,10 @@ Requirements: [T11](requirements.md#t11), [T12](requirements.md#t12), [T13](requ
 
 ### Approach
 
-- **Reads.** The AI module exposes a read object without server code (architecture rules, dependency rule 2) with four reads: the list (a page of 50 by a cursor, ordered by needs attention first and then placed at descending; each row with its computed budget charge and the display name of the requesting module from the settings table), the details of one assignment with its operations, the count of assignments needing attention, and the budget (the current month's figures of T13-R01 and the list of months). The budget card of the profile page uses the last one in place of today's history read.
-- **Navigation.** The repeated navigation of the pages becomes one shared component that also shows the item "Zadania AI" with the counter; the count is fetched with each page.
+- **Reads.** The AI module exposes a read object without server code (architecture rules, dependency rule 2) with four reads: the list (a page of 50 by a cursor, ordered by needs attention first and then placed at descending; each row with its computed budget charge and the display name of the requesting module from the settings table), the details of one assignment with its operations, the count of assignments needing attention, and the budget (the current month's figures of T13-R01 and the list of months). The current month's figures extend the budget read of T3, which the profile page's budget card already uses since T10.
+- **Navigation.** The repeated navigation of the pages becomes one shared component that also shows the item "Zlecenia AI" with the counter; the count is fetched with each page.
 - **Retry.** One transaction: a conditional write moves the assignment from needs attention to in progress when its deadline has not passed; it inserts an operation with origin manual (pending, waits for executor) and sends its job. A manual operation's failure never meets the retry row of the table of what follows the end, which gives T12-R02.
-- **Reject.** One transaction: a conditional write moves the assignment from in progress or needs attention to failed with the reason `rejected`; its pending operations end as failed with the cause `not_started`; a delivery job is sent.
+- **Reject.** One transaction: a conditional write moves the assignment from in progress or needs attention to failed with the reason `rejected`; its pending operations end as failed with the cause `not_started`; the receiver's failure entry is called. An error of the receiver rolls everything back, and the action returns an error (T12-R06).
 - Both actions return the assignment's current status, and whether the action took effect; the page shows the message of T12-R04 when it did not.
 - **Limits.** Setting the current limit inserts or updates the current month's row; setting the default limit updates the one-row table. Both validate the amount (T13-R04) and are idempotent.
 
@@ -355,4 +418,4 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9 → T10 → T11 → T
 
 ## Towards more traffic
 
-Not part of this epic; recorded so that today's choices are seen not to block it. A queue per executor lets dedicated workers be added per executor, and the number of operations at a time then becomes their pool size (ZA-D01). Correctness rests on conditional writes and one job per waiting operation, not on a single process. Requesting modules know only an assignment identifier, a status and a receiver, so the AI module can move behind a network boundary without changing them. The cost is stored per operation, so separate budgets per requesting module are a new sum over the same data.
+Not part of this epic; recorded so that today's choices are seen not to block it. A queue per executor lets dedicated workers be added per executor, and the number of operations at a time then becomes their pool size (ZA-D01). The receiver's call in one transaction becomes an event delivered through a queue; the three rules of the receiver's behaviour (T6-R09) keep the receivers unchanged, and the rule that a result not taken fails the assignment then needs a new decision. Correctness rests on conditional writes and one job per waiting operation, not on a single process. Requesting modules know only an assignment identifier, a status and a receiver, so the AI module can move behind a network boundary without changing them. The cost is stored per operation, so separate budgets per requesting module are a new sum over the same data.

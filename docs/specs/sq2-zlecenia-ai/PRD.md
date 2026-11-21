@@ -26,10 +26,10 @@ On 20 November 2026 the owner reconciled that design with the [background work e
 
 ## What changes for the owner
 
-- **AI tasks panel.** A list of assignments with those needing attention on top, the details of each with its operations, their costs and the cause of a failure, and a counter of assignments needing attention in the navigation.
+- **AI assignments panel.** A list of assignments with those needing attention on top, the details of each with its operations, their costs and the cause of a failure, and a counter of assignments needing attention in the navigation.
 - **Actions.** Retry and Reject on an assignment; changing the current and the default monthly limit.
 - **Modules that ask for AI work** stop showing "waiting for budget" and other technical states; they show only whether their assignment is in progress, succeeded or failed.
-- **Offer assessment.** Each offer is assessed by its own assignment, with an ordinary request instead of OpenAI's batch mode. An assessment costs about twice as much and returns within minutes instead of up to a day. Assessing 20 offers shows as 20 assignments in the panel; when the budget covers only some of them, those run and the rest wait for a top-up (owner's decision).
+- **Offer assessment.** Each offer is assessed by its own assignment, with an ordinary request instead of OpenAI's batch mode. One assessment costs about twice as much (at most about 0.27 PLN is held for it, so a month's 100 PLN covers at least about 370 assessments) and returns within about a minute and a half instead of up to a day. Assessments are carried out one after another, so 100 offers requested at once take from several minutes up to a few hours in the worst case, and company research running at that moment, up to 15 minutes, holds them back. Assessing 20 offers shows as 20 assignments in the panel; when the budget covers only some of them, those run and the rest wait for a top-up (owner's decision).
 - **Existing AI history.** Only the budget moves into the new model: each month with its limit and charge, so the current month's figures stay right. The few earlier attempts (one month, under one złoty spent) stay in a read-only archive, and the panel's history starts empty (owner's decision).
 - **AI work unfinished at the moment of deployment** is ended, and the module that asked for it requests it again; the system does not yet run in production (owner's decision).
 
@@ -54,30 +54,40 @@ On 20 November 2026 the owner reconciled that design with the [background work e
 - An assignment that keeps failing reaches "needs attention", and the owner retries or rejects it from the panel without touching the database.
 - After a top-up, an operation that waited for budget starts without any other action.
 - No assignment stays unfinished past the time limit, whatever it waited for.
-- The panel's monthly total equals the sum of the budget charges of the month's operations, before and after the migration.
+- The panel's monthly total equals the sum of the budget charges of the month's operations plus the amount carried from before the deployment; for a month that began before it, the total is the same before and after the migration.
 
 ## Constraints and dependencies
 
 - The [background work epic](../2ba-praca-w-tle/PRD.md) (`oferty-pracy-2ba`) is delivered before this one. AI operations wait and are carried out through its shared way of requesting background work, and an interrupted operation is recognised the way that epic defines: the AI module keeps no waiting line and no supervision of its own.
-- The epic is delivered as a whole; the old AI contract disappears together with the migration, and no old and new path run side by side (owner's decision).
+- The epic is delivered as a whole; the old AI contract disappears together with the migration, and a released application never runs the old and the new path side by side (owner's decision). While the epic is being built, both exist: the new path has its own waiting lines and counts only its own work against the month's limit, so the two together may spend more than the limit. The owner accepted this on 21 November 2026, because the system does not yet run in production.
 - The architecture rules bind the design, in particular the shared contract for interchangeable executors.
+
+## Risks the owner accepted
+
+- **One paid operation at a time.** A long company research, or a large batch of assessments, makes other paid work wait. More at a time is put off (item 30).
+- **AI work shares the worker with ad syncs and CV reading.** With every worker process busy, an operation or a delivery waits for a free one.
+- **A result the requesting module fails to take is lost** with its cost; delivering it again is put off (`oferty-pracy-sz5`, the item on delivering again).
+- **Every interrupted operation needs the owner**, also when nothing had been sent; each deployment during a running operation can add one assignment needing attention.
+- **An error in a requesting module's receiver holds back Reject and the time limit** for its assignments until the error is fixed.
+- **While the epic is being built**, the old and the new path together may exceed the month's limit.
+- **An operation without budget waits silently** up to the time limit of 7 days; only the panel shows what it waits for.
 
 ## Stages
 
-The epic is delivered as a whole; the tasks are small steps towards it, not separate releases. Stage 14 of the earlier division (executors in the panel) is put off with item 30 above, and its number is not reused.
+The epic is delivered as a whole; the tasks are small steps towards it, not separate releases. Stage 14 of the earlier division (executors in the panel) is put off with item 30 above, and its number is not reused. The task numbers start at sq2.2 because `oferty-pracy-sq2.1` is an earlier check of the paid executor's code.
 
 | Stage | Task |
 | --- | --- |
-| A requesting module places an assignment and reads its status | [sq2.1](requirements.md#t1) |
-| Executors behind a shared interface | [sq2.2](requirements.md#t2) |
-| Operations start in order and within the budget | [sq2.3](requirements.md#t3) |
-| Automatic retries and "needs attention" | [sq2.4](requirements.md#t4) |
-| Interrupted operations | [sq2.5](requirements.md#t5) |
-| One result delivery and the time limit | [sq2.6](requirements.md#t6) |
-| Profile on the new contract | [sq2.7](requirements.md#t7) |
-| Matching on the new contract | [sq2.8](requirements.md#t8) |
-| Companies on the new contract | [sq2.9](requirements.md#t9) |
-| Budget migration and removal of the old path | [sq2.10](requirements.md#t10) |
-| AI tasks panel: list and details | [sq2.11](requirements.md#t11) |
-| Retry and Reject | [sq2.12](requirements.md#t12) |
-| Budget management | [sq2.13](requirements.md#t13) |
+| A requesting module places an assignment and reads its status | [sq2.2](requirements.md#t1) |
+| Executors behind a shared interface | [sq2.3](requirements.md#t2) |
+| Operations start in order and within the budget | [sq2.4](requirements.md#t3) |
+| Automatic retries and "needs attention" | [sq2.5](requirements.md#t4) |
+| Interrupted operations | [sq2.6](requirements.md#t5) |
+| One result delivery and the time limit | [sq2.7](requirements.md#t6) |
+| Profile on the new contract | [sq2.8](requirements.md#t7) |
+| Matching on the new contract | [sq2.9](requirements.md#t8) |
+| Companies on the new contract | [sq2.10](requirements.md#t9) |
+| Budget migration and removal of the old path | [sq2.11](requirements.md#t10) |
+| AI assignments panel: list and details | [sq2.12](requirements.md#t11) |
+| Retry and Reject | [sq2.13](requirements.md#t12) |
+| Budget management | [sq2.14](requirements.md#t13) |

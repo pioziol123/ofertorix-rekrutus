@@ -151,10 +151,7 @@ One piece of work a requesting module hands to the AI module, with its type, its
 _Avoid_: task, job, request, execution
 
 **Assignment type** (typ zlecenia):
-The kind of work an assignment asks for: a single answer, a batch of independent items or an agent session; the requesting module chooses it, and the way an executor carries it out stays hidden.
-
-**Batch item** (pozycja partii):
-One independent element of a batch assignment, such as one offer to assess, with its own result that is either correct or failed.
+The kind of work an assignment asks for: a single answer or an agent session; the requesting module chooses it, and the way an executor carries it out stays hidden.
 
 **Assignment label** (etykieta zlecenia):
 A short description the requesting module gives the owner so the assignment can be recognised, e.g. which offer it assesses; the AI module shows it but never interprets it.
@@ -170,29 +167,26 @@ _Avoid_: provider, backend (a provider is what an executor uses, not the executo
 **Assignment time limit** (limit czasu zlecenia):
 The time, counted from placing an assignment, after which an assignment that has not reached a final status fails. An operation already running is allowed to finish first.
 
-**Executor capacity** (limit operacji naraz):
-The number of operations an executor may run at the same time.
-
 **Maximum run time** (maksymalny czas działania):
 The longest an operation may run on a given executor before it is treated as failed.
 
 **Interrupted operation** (operacja przerwana):
-An operation whose work stopped without an outcome, e.g. because the application stopped. Depending on the executor's service it is either retried or becomes uncertain.
+An operation whose work stopped without an outcome, e.g. because the application stopped. It becomes uncertain.
 
 **Result delivery** (dostawa wyniku):
-The single handover of an assignment's outcome to its requesting module, which settles the assignment's final status; a delivery the requesting module does not take makes the assignment fail.
+The handover of an assignment's end, a result or a failure, to its requesting module through the module's result receiver, saved together with the assignment's final status; a result the requesting module does not take makes the assignment fail.
+
+**Result receiver** (odbiorca wyniku):
+The part of a requesting module that takes the end of its assignments from the AI module.
 
 ### Assignment status
 
 **Assignment status** (status zlecenia):
-The state of an assignment as other modules see it: in progress, needs attention, succeeded, partially succeeded or failed.
+The state of an assignment as other modules see it: in progress, needs attention, succeeded or failed.
 
 **Needs attention** (wymaga uwagi):
-A non-final status in which the AI module has stopped retrying an assignment and waits for the owner to retry, reject or approve it.
+A non-final status in which the AI module has stopped retrying an assignment and waits for the owner to retry or reject it.
 _Avoid_: failed (it is not final), stuck
-
-**Partially succeeded** (zakończone częściowo):
-The final status of a batch assignment that has at least one correct item and at least one failed item; the requesting module treats it as a success.
 
 **Non-retryable failure** (błąd bez ponawiania):
 An operation failure that, according to the executor's judgement, another operation would not fix, so the assignment needs the owner's attention instead of an automatic retry.
@@ -206,20 +200,11 @@ An operation whose outcome and cost cannot be established, e.g. the connection b
 ### Owner's actions
 
 **Retry** (Ponów):
-The owner's decision to run one more operation of an assignment that needs attention, covering only what still has no correct result.
+The owner's decision to run one more operation of an assignment that needs attention.
 _Avoid_: rerun, new assignment
 
 **Reject** (Odrzuć):
-The owner's decision to end an assignment as failed, discarding any correct batch items.
-
-**Approve** (Zatwierdź):
-The owner's decision to end a batch assignment with at least one correct item as partially succeeded.
-
-**Abandonment** (porzucenie):
-The requesting module withdrawing its assignment; the assignment ends as failed and nothing is reported back to that module.
-
-**Settle** (Rozlicz):
-The owner enters the actual cost of an operation whose cost was unknown, taken from the provider's billing.
+The owner's decision to end an assignment as failed.
 
 ### Cost
 
@@ -244,6 +229,28 @@ The owner raising the current month's budget; unspent money does not carry over 
 
 **Price list** (cennik):
 The prices and exchange rate an executor uses to calculate costs; an operation keeps those valid when it started.
+
+### Put off
+
+Terms of parts of the AI module that the first version does not have.
+
+**Batch item** (pozycja partii):
+One independent element of a batch assignment, such as one offer to assess, with its own result that is either correct or failed.
+
+**Executor capacity** (limit operacji naraz):
+The number of operations an executor may run at the same time.
+
+**Partially succeeded** (zakończone częściowo):
+The final status of a batch assignment that has at least one correct item and at least one failed item; the requesting module treats it as a success.
+
+**Approve** (Zatwierdź):
+The owner's decision to end a batch assignment with at least one correct item as partially succeeded.
+
+**Abandonment** (porzucenie):
+The requesting module withdrawing its assignment; the assignment ends as failed and nothing is reported back to that module.
+
+**Settle** (Rozlicz):
+The owner enters the actual cost of an operation whose cost was unknown, taken from the provider's billing.
 
 ## Technical terms
 
