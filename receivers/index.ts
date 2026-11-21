@@ -7,20 +7,23 @@
  * start. It registers no job handler and is separate from the module
  * plugins, which only the worker and its pool processes run.
  *
- * Empty until a requesting module moves to assignments: tasks
- * oferty-pracy-sq2.8 to sq2.10 each add their module's receiver below,
- * imported from the module's public entry, as
- *
- *   profile: profileAssignmentReceiver,
- *
- * A second registration of a settings name throws at start.
+ * Each requesting module that moved to assignments has its receiver below,
+ * imported from the module's public entry: the Profile from task
+ * oferty-pracy-sq2.8; tasks oferty-pracy-sq2.9 and sq2.10 add Matching and
+ * Companies. A second registration of a settings name throws at start.
  */
 import {
   registerAssignmentReceiver,
   type AssignmentReceiver,
 } from '../modules/ai/index.ts'
+import {
+  proposalAssignmentReceiver,
+  proposalSettingsKey,
+} from '../modules/profile/index.ts'
 
-const receivers: Readonly<Record<string, AssignmentReceiver>> = {}
+const receivers: Readonly<Record<string, AssignmentReceiver>> = {
+  [proposalSettingsKey]: proposalAssignmentReceiver,
+}
 
 let registered = false
 

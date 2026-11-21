@@ -27,33 +27,34 @@ import {
   importCvDocument,
   importCvText,
   prepareProposal,
-  proposalReceiver,
-  proposalSettingsKey,
+  proposalAssignmentReceiver,
   readCvText,
   readImport,
   readOriginalFile,
   readProfile,
   saveDraft,
 } from '../modules/profile/index.ts'
-import { closePool, setPool } from '../lib/db.ts'
+import { importStatusLabel } from '../modules/profile/view.ts'
+import { closePool, setPool, transaction } from '../lib/db.ts'
+import { createQueue } from '../lib/queues/index.ts'
+import { registerAssignmentReceivers } from '../receivers/index.ts'
 import { prepareCvTextQueue } from './profile.fixtures.ts'
 import { aiQueue } from './ai-queue.fixtures.ts'
 import {
-  fundWaitingExecutions,
-  readExecutionArchive,
-  readLatestExecution,
-  registerResultReceiver,
-  runExecution,
+  failAssignmentsPastTimeLimit,
+  runOperation,
 } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { budgetMonth } from '../modules/ai/domain/cost.ts'
+import {
+  openAiExecutor,
+  openAiOperationJob,
+} from '../modules/ai/executors/openai.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { openAiProvider } from '../modules/ai/infrastructure/adapters/openai.ts'
-// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { registerProviderAdapter } from '../modules/ai/provider-registry.ts'
+import { registerExecutor } from '../modules/ai/executors/registry.ts'
 import { usePricing } from './ai-test-configuration.ts'
 
-// The settings and price lists AI keeps in code, replaced for the test.
+// The price lists AI keeps in code, replaced for the test; the Profile's
+// settings of assignments are the application's own.
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/client-settings.ts',
@@ -65,6 +66,13 @@ vi.mock(
   () => import('./ai-test-configuration.ts'),
 )
 
+const quoteMessage =
+  'Nie udało się potwierdzić cytatów AI w tekście CV. Profil pozostaje bez zmian.'
+const formatMessage =
+  'Odpowiedź AI ma nieprawidłowy format danych. Profil pozostaje bez zmian.'
+const failedMessage =
+  'Nie udało się przygotować propozycji. Profil pozostaje bez zmian. Szczegóły są w panelu zleceń AI.'
+
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
 integration(
@@ -73,8 +81,9 @@ integration(
     const schema = `profile_test_${randomUUID().replaceAll('-', '')}`
     const queue = aiQueue()
     let admin: Pool, pool: Pool, root: string
+    // The model of the Profile's settings, with a test price list.
     const pricing = {
-      model: 'test-only',
+      model: 'gpt-6-luna',
       version: 'test',
       inputUsdPerMillion: '1',
       outputUsdPerMillion: '1',
@@ -105,29 +114,37 @@ integration(
         '1770000000018_matching_ai_executions',
         '1770000000020_ai_execution_lease',
         '1770000000026_ai_without_local_slot_and_lease',
+        '1770000000027_ai_assignments',
+        '1770000000030_ai_operation_exchange',
+        '1770000000031_ai_budget_default_limit',
+        '1770000000032_profile_assignment',
       ])
         createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
           sql: (s: string) => sql.push(s),
         })
       await pool.query(sql.join('\n'))
       setPool(pool)
-      // The AI queues and the queue of reading a CV share the test's
-      // queue schema.
+      // The AI queues, the paid executor's queue and the queue of reading
+      // a CV share the test's queue schema.
       await queue.start()
       await prepareCvTextQueue(queue.queueSchema)
-      // The paid provider, simulated by the fetcher each test sets.
-      registerProviderAdapter(
-        openAiProvider((input, init) => provider(input, init)),
-      )
-      registerResultReceiver(proposalSettingsKey, proposalReceiver)
+      await createQueue(openAiOperationJob.queue, 'exclusivity')
+      // The receivers of the shared registration.
+      registerAssignmentReceivers()
       root = await mkdtemp(join(tmpdir(), 'profile-tests-'))
     }, 30000)
     beforeEach(async () => {
       vi.unstubAllEnvs()
       vi.stubEnv('OPENAI_API_KEY', 'test-key-never-send')
       usePricing('profile', pricing)
+      // The paid executor with the test's price list, on the provider
+      // simulated by the fetcher each test sets.
+      registerExecutor(openAiExecutor((input, init) => provider(input, init)))
+      provider = () => {
+        throw new Error('Unexpected provider call')
+      }
       await pool.query(
-        'TRUNCATE profile_import_texts,ai_attempts,ai_executions,ai_budget_months,profile_imports,profile_drafts,profile_head,profile_versions CASCADE',
+        'TRUNCATE profile_import_texts,ai_attempts,ai_executions,ai_budget_months,ai_operation_exchange,ai_operations,ai_assignments,profile_imports,profile_drafts,profile_head,profile_versions CASCADE',
       )
       await pool.query('INSERT INTO profile_head(singleton) VALUES(true)')
       await queue.reset()
@@ -147,30 +164,55 @@ integration(
     let provider: typeof fetch = () => {
       throw new Error('Unexpected provider call')
     }
-    /** Runs the AI job of an execution with the simulated provider. */
-    async function executeAi(executionId: string, fetcher: typeof fetch) {
-      provider = fetcher
-      await runExecution({ executionId })
-    }
-    async function readyAttempt(text = 'PHP professional') {
-      const id = await importCvText(text)
-      const result = await prepareProposal(id, text, 0)
-      if (!('executionId' in result)) throw new Error('Expected a request')
-      return { id, executionId: result.executionId }
-    }
-    const attemptOf = async (executionId: string) =>
-      (
-        await pool.query('SELECT * FROM ai_attempts WHERE execution_id=$1', [
-          executionId,
-        ])
-      ).rows[0]
     const importOf = async (id: string) =>
       (
         await pool.query(
-          'SELECT status,proposal,error,text_revision FROM profile_imports WHERE id=$1',
+          'SELECT status,proposal,error,text_revision,assignment_id FROM profile_imports WHERE id=$1',
           [id],
         )
       ).rows[0]
+    const assignmentOf = async (assignmentId: string) =>
+      (
+        await pool.query(
+          'SELECT label,settings_name,type,input,response_format,status,failure_reason FROM ai_assignments WHERE id=$1',
+          [assignmentId],
+        )
+      ).rows[0]
+    const count = async (table: string) =>
+      (await pool.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0]
+        .n as number
+    /** Requests a preparation and returns the import and its assignment. */
+    async function requested(text = 'PHP professional', revision = 0) {
+      const id = revision === 0 ? await importCvText(text) : null
+      return prepared(id!, text, revision)
+    }
+    async function prepared(id: string, text: string, revision: number) {
+      expect(await prepareProposal(id, text, revision)).toEqual({
+        state: 'in_progress',
+      })
+      return { id, assignmentId: (await importOf(id)).assignment_id as string }
+    }
+    /**
+     * Carries out the pending operations of an assignment, as the worker
+     * would, with the provider answering by the fetcher.
+     */
+    async function carryOut(assignmentId: string, fetcher: typeof fetch) {
+      provider = fetcher
+      const pending = (
+        await pool.query(
+          "SELECT id FROM ai_operations WHERE assignment_id=$1 AND state='pending' ORDER BY ordinal",
+          [assignmentId],
+        )
+      ).rows
+      for (const { id } of pending) await runOperation({ operationId: id })
+    }
+    /** Moves an assignment's deadline into the past. */
+    const pastDeadline = (assignmentId: string) =>
+      pool.query(
+        `UPDATE ai_assignments SET placed_at=now()-interval '8 days',
+          deadline=now()-interval '1 day' WHERE id=$1`,
+        [assignmentId],
+      )
     const response = (
       facts: unknown,
       usage: unknown = { input_tokens: 100, output_tokens: 50 },
@@ -189,6 +231,18 @@ integration(
         }),
         { status: 200 },
       )
+    const answer = (facts: unknown) =>
+      vi.fn<typeof fetch>().mockResolvedValue(response(facts))
+    const phpFacts = {
+      summary: null,
+      skills: [{ name: 'PHP', description: '', evidence: 'PHP' }],
+      experience: [],
+    }
+    /** What the page shows for an import: its label and message. */
+    const shown = async (id: string) => {
+      const view = (await readImport(id))!
+      return { label: importStatusLabel(view.status), message: view.error }
+    }
     it('separates draft from active version, detects stale saves and confirms idempotently', async () => {
       expect((await readProfile()).active).toBeNull()
       const data = emptyProfile()
@@ -314,128 +368,199 @@ integration(
       },
       30000,
     )
-    it('does not enqueue paid requests without configuration and keeps reviewed text revisions', async () => {
+    it('does not place an assignment without configuration and keeps reviewed text revisions', async () => {
       vi.stubEnv('OPENAI_API_KEY', '')
       const id = await importCvText('PHP mail@example.com')
       expect(await prepareProposal(id, 'PHP mail@example.com', 0)).toEqual({
         state: 'needs_configuration',
       })
-      expect((await pool.query('SELECT * FROM ai_attempts')).rowCount).toBe(0)
-      expect((await pool.query('SELECT * FROM ai_executions')).rowCount).toBe(0)
+      expect(await count('ai_assignments')).toBe(0)
+      expect(await count('ai_executions')).toBe(0)
       const row = (
         await pool.query('SELECT * FROM profile_imports WHERE id=$1', [id])
       ).rows[0]
       expect(row.professional_text).not.toContain('mail@example.com')
       expect(row.source_text).toContain('mail@example.com')
+      expect(row.assignment_id).toBeNull()
+      expect(await shown(id)).toEqual({
+        label: 'Wymaga konfiguracji AI',
+        message: null,
+      })
       await expect(prepareProposal(id, 'PHP', 0)).rejects.toThrow(
         'text changed',
       )
     })
-    it('reserves the monthly 100 PLN cap atomically for concurrent imports', async () => {
-      usePricing('profile', {
-        ...pricing,
-        inputUsdPerMillion: '60000',
-        maxInputTokens: 1000,
-        maxOutputTokens: 1,
+    describe('a proposal by assignment (epic sq2, T7)', () => {
+      it('T7-AC01: places one assignment labelled with the CV file name in the save that starts the preparation and keeps its identifier with the text revision', async () => {
+        const bytes = await fixture('text.pdf'),
+          id = await importCvDocument('Moje CV.pdf', bytes, root)
+        await readCvText({ importId: id }, root)
+        const text = 'PHP backend developer'
+        const { assignmentId } = await prepared(id, text, 0)
+        expect(await count('ai_assignments')).toBe(1)
+        expect(await assignmentOf(assignmentId)).toMatchObject({
+          label: 'Moje CV.pdf',
+          settings_name: 'profile',
+          type: 'single',
+          input: text,
+          response_format: { name: 'profile_proposal' },
+          status: 'in_progress',
+        })
+        expect(await importOf(id)).toMatchObject({
+          status: 'ai_running',
+          text_revision: 1,
+          assignment_id: assignmentId,
+        })
+        // No request of the old way.
+        expect(await count('ai_executions')).toBe(0)
+        expect(await queue.jobs()).toEqual([])
       })
-      const ids = await Promise.all([importCvText('PHP'), importCvText('PHP')])
-      const result = await Promise.all(
-        ids.map((id) => prepareProposal(id, 'PHP', 0)),
-      )
-      expect(result.map((v) => v.state).sort()).toEqual([
-        'queued',
-        'waiting_budget',
-      ])
-      const sum = (
-        await pool.query(
-          "SELECT sum(reserved_pln)::text total FROM ai_attempts WHERE state='open'",
-        )
-      ).rows[0].total
-      expect(Number(sum)).toBeLessThanOrEqual(100)
-      const statuses = await Promise.all(
-        ids.map(async (id) => (await readImport(id))!.status),
-      )
-      expect(statuses.sort()).toEqual(['ai_queued', 'waiting_budget'])
-      // A9-R05: at most one proposal preparation per import is in progress.
-      for (const id of ids)
+      it('T7-AC01, ASSUMPTION(oferty-pracy-sq2.8/ASM-1): labels the assignment of a pasted CV "Wklejony tekst"', async () => {
+        const { assignmentId } = await requested()
+        expect((await assignmentOf(assignmentId)).label).toBe('Wklejony tekst')
+      })
+      it('T7-AC01: rolling the request back leaves neither the assignment nor its identifier', async () => {
+        const id = await importCvText('PHP')
+        await expect(
+          transaction(async () => {
+            await prepareProposal(id, 'PHP', 0)
+            throw new Error('rolled back')
+          }),
+        ).rejects.toThrow('rolled back')
+        expect(await count('ai_assignments')).toBe(0)
+        expect(await count('ai_operations')).toBe(0)
+        expect(await count('profile_import_texts')).toBe(0)
+        expect(await importOf(id)).toMatchObject({
+          status: 'ready',
+          text_revision: 0,
+          assignment_id: null,
+        })
+        // A failed request of the operation's job rolls back the same way.
+        const fail = vi
+          .spyOn(PgBoss.prototype, 'send')
+          .mockRejectedValueOnce(new Error('queue failure'))
+        try {
+          await expect(prepareProposal(id, 'PHP', 0)).rejects.toThrow(
+            'queue failure',
+          )
+        } finally {
+          fail.mockRestore()
+        }
+        expect(await count('ai_assignments')).toBe(0)
+        expect(await importOf(id)).toMatchObject({
+          text_revision: 0,
+          assignment_id: null,
+        })
+      })
+      it('T7-AC01: refuses a second request for the same CV while the first is in progress, also one sent at the same time', async () => {
+        const { id, assignmentId } = await requested('PHP')
         await expect(prepareProposal(id, 'PHP', 1)).rejects.toThrow(
           'already pending',
         )
-    })
-    it('A9-AC01: settles known usage, saves the proposal for the right revision, rejects unsupported evidence, and never activates profile automatically', async () => {
-      const { id, executionId } = await readyAttempt()
-      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-        response({
-          summary: null,
-          skills: [{ name: 'PHP', description: '', evidence: 'PHP' }],
-          experience: [],
-        }),
-      )
-      await executeAi(executionId, fetcher)
-      expect(fetcher).toHaveBeenCalledTimes(1)
-      const body = JSON.parse(String(fetcher.mock.calls[0]![1]!.body))
-      expect(body).toMatchObject({
-        model: 'test-only',
-        store: false,
-        tools: [],
-        service_tier: 'default',
-        max_output_tokens: 500,
-        reasoning: { effort: 'low' },
-        input: [
+        vi.stubEnv('OPENAI_API_KEY', '')
+        await expect(prepareProposal(id, 'PHP', 1)).rejects.toThrow(
+          'already pending',
+        )
+        vi.stubEnv('OPENAI_API_KEY', 'test-key-never-send')
+        expect(await count('ai_assignments')).toBe(1)
+        expect(await importOf(id)).toMatchObject({
+          text_revision: 1,
+          assignment_id: assignmentId,
+        })
+        const other = await importCvText('PHP')
+        const results = await Promise.allSettled([
+          prepareProposal(other, 'PHP', 0),
+          prepareProposal(other, 'PHP', 0),
+        ])
+        expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+        expect(await count('ai_assignments')).toBe(2)
+      })
+      it('ASSUMPTION(oferty-pracy-sq2.8/ASM-2): refuses a request for a CV whose preparation of the old way the Profile records as in progress', async () => {
+        for (const old of ['ai_queued', 'ai_running', 'waiting_budget']) {
+          const id = await importCvText('PHP')
+          await pool.query('UPDATE profile_imports SET status=$2 WHERE id=$1', [
+            id,
+            old,
+          ])
+          await expect(prepareProposal(id, 'PHP', 0)).rejects.toThrow(
+            'already pending',
+          )
+        }
+        expect(await count('ai_assignments')).toBe(0)
+      })
+      it('T7-AC02: a correct result gives the proposal for the revision the assignment was placed for, and the assignment succeeds', async () => {
+        const { id, assignmentId } = await requested()
+        const fetcher = answer(phpFacts)
+        await carryOut(assignmentId, fetcher)
+        expect(fetcher).toHaveBeenCalledTimes(1)
+        const body = JSON.parse(String(fetcher.mock.calls[0]![1]!.body))
+        expect(body).toMatchObject({
+          model: 'gpt-6-luna',
+          reasoning: { effort: 'low' },
+          input: [
+            {
+              role: 'user',
+              content: [{ type: 'input_text', text: 'PHP professional' }],
+            },
+          ],
+          text: { format: { type: 'json_schema', name: 'profile_proposal' } },
+        })
+        expect((await assignmentOf(assignmentId)).status).toBe('succeeded')
+        expect(await importOf(id)).toMatchObject({
+          status: 'proposal',
+          text_revision: 1,
+          error: null,
+          proposal: { skills: [{ name: 'PHP', evidence: 'PHP' }] },
+        })
+        expect(await shown(id)).toEqual({
+          label: 'Propozycja gotowa',
+          message: null,
+        })
+        expect((await readProfile()).active).toBeNull()
+      })
+      it.each([
+        [
+          'a quote not in the text',
           {
-            role: 'user',
-            content: [{ type: 'input_text', text: 'PHP professional' }],
-          },
-        ],
-        text: { format: { type: 'json_schema', name: 'profile_proposal' } },
-      })
-      const row = await attemptOf(executionId)
-      expect(row.state).toBe('settled')
-      expect(Number(row.actual_pln)).toBe(0.00015)
-      expect(await importOf(id)).toMatchObject({
-        status: 'proposal',
-        text_revision: 1,
-        error: null,
-        proposal: { skills: [{ name: 'PHP', evidence: 'PHP' }] },
-      })
-      expect(await readLatestExecution(id)).toMatchObject({
-        state: 'completed',
-        inputVersion: '1',
-      })
-      expect((await readProfile()).active).toBeNull()
-      // E02-AC04: a job delivered again has no further effect.
-      await executeAi(executionId, fetcher)
-      expect(fetcher).toHaveBeenCalledTimes(1)
-      expect((await attemptOf(executionId)).actual_pln).toBe(row.actual_pln)
-      const other = await readyAttempt()
-      await executeAi(
-        other.executionId,
-        vi.fn<typeof fetch>().mockResolvedValue(
-          response({
             summary: null,
-            skills: [{ name: 'Vue', description: '', evidence: 'invented' }],
+            skills: [{ name: 'Vue', description: '', evidence: 'PRIVATE' }],
             experience: [],
-          }),
-        ),
+          },
+          quoteMessage,
+        ],
+        [
+          'a proposal not in the format',
+          { summary: null, skills: 'PRIVATE', experience: [] },
+          formatMessage,
+        ],
+      ])(
+        'T7-AC02, T7-AC03: %s leaves the assignment succeeded and ends the preparation with its own message',
+        async (_case, facts, message) => {
+          const { id, assignmentId } = await requested()
+          await carryOut(assignmentId, answer(facts))
+          expect(await assignmentOf(assignmentId)).toMatchObject({
+            status: 'succeeded',
+            failure_reason: null,
+          })
+          expect(await importOf(id)).toMatchObject({
+            status: 'needs_attention',
+            proposal: null,
+            error: message,
+          })
+          expect(await shown(id)).toEqual({
+            label: 'Wymaga sprawdzenia',
+            message,
+          })
+          // The preparation has ended: a new one can be requested.
+          await prepared(id, 'PHP professional', 1)
+        },
       )
-      // A9-AC02: an unconfirmed quote is rejected; the cost is settled.
-      expect(await importOf(other.id)).toMatchObject({
-        status: 'needs_attention',
-        proposal: null,
-        error:
-          'Nie udało się potwierdzić cytatów AI w tekście CV. Profil pozostaje bez zmian.',
-      })
-      expect(await readLatestExecution(other.id)).toMatchObject({
-        state: 'rejected',
-        rejectionReason: 'unconfirmed_quote',
-        cost: { actual: '0.000150' },
-      })
-    })
-    it('accepts flattened PDF citations, settles usage, and saves selected facts with exact source provenance', async () => {
-      const text = 'PHP\n\tbackend\r\nSenior Developer   Acme',
-        { id, executionId } = await readyAttempt(text),
-        fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-          response({
+      it('accepts flattened PDF citations and saves selected facts with exact source provenance', async () => {
+        const text = 'PHP\n\tbackend\r\nSenior Developer   Acme'
+        const { id, assignmentId } = await requested(text)
+        await carryOut(
+          assignmentId,
+          answer({
             summary: null,
             skills: [
               { name: 'PHP', description: 'Backend', evidence: 'PHP backend' },
@@ -454,333 +579,147 @@ integration(
             ],
           }),
         )
-      await executeAi(executionId, fetcher)
-      expect(fetcher).toHaveBeenCalledTimes(1)
-      const attempt = await attemptOf(executionId),
-        imported = await importOf(id)
-      expect(attempt.state).toBe('settled')
-      expect(Number(attempt.actual_pln)).toBe(0.00015)
-      expect(imported.status).toBe('proposal')
-      expect(imported.proposal.skills[0].evidence).toBe('PHP\n\tbackend')
-      expect(imported.proposal.experience[0].evidence).toBe(
-        'Senior Developer   Acme',
-      )
-      const selected = applyProposal(
-          emptyProfile(),
-          imported.proposal,
-          { skills: [0], experience: [0], summary: false },
-          id,
-          imported.text_revision,
-        ),
-        saved = await saveDraft(selected, 0)
-      expect(saved.data.skills[0]!.source!.evidence).toBe('PHP\n\tbackend')
-      expect(saved.data.experience[0]!.source!.evidence).toBe(
-        'Senior Developer   Acme',
-      )
-      expect((await readProfile()).active).toBeNull()
-    })
-    it.each([
-      [{ status: 'incomplete', output: [] }, 'nie ukończyło'],
-      [
-        {
-          status: 'completed',
-          output: [
-            {
-              type: 'message',
-              content: [{ type: 'refusal', text: 'PRIVATE_SENTINEL' }],
-            },
-          ],
-        },
-        'odmówiło',
-      ],
-      [{ status: 'completed', output: [] }, 'jednej kompletnej'],
-      [
-        {
-          status: 'completed',
-          output: [
-            {
-              type: 'message',
-              content: [{ type: 'output_text', text: 'PRIVATE_SENTINEL' }],
-            },
-          ],
-        },
-        'format danych',
-      ],
-      [
-        {
-          status: 'completed',
-          output: [
-            {
-              type: 'message',
-              content: [
-                {
-                  type: 'output_text',
-                  text: JSON.stringify({
-                    summary: null,
-                    skills: [
-                      {
-                        name: 'PHP',
-                        description: '',
-                        evidence: 'PRIVATE_SENTINEL',
-                      },
-                    ],
-                    experience: [],
-                  }),
-                },
-              ],
-            },
-          ],
-        },
-        'potwierdzić cytatów',
-      ],
-    ])(
-      'E02-AC03: settles valid usage even when the proposal is rejected with a safe explanation',
-      async (payload, message) => {
-        const { id, executionId } = await readyAttempt(),
-          fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-            new Response(
-              JSON.stringify({
-                ...payload,
-                usage: { input_tokens: 100, output_tokens: 50 },
-              }),
-              { status: 200 },
-            ),
-          )
-        await executeAi(executionId, fetcher)
-        const attempt = await attemptOf(executionId),
-          imported = await importOf(id)
-        expect(attempt.state).toBe('settled')
-        expect(Number(attempt.actual_pln)).toBe(0.00015)
-        expect(imported).toMatchObject({
+        const imported = await importOf(id)
+        expect(imported.status).toBe('proposal')
+        expect(imported.proposal.skills[0].evidence).toBe('PHP\n\tbackend')
+        expect(imported.proposal.experience[0].evidence).toBe(
+          'Senior Developer   Acme',
+        )
+        const selected = applyProposal(
+            emptyProfile(),
+            imported.proposal,
+            { skills: [0], experience: [0], summary: false },
+            id,
+            imported.text_revision,
+          ),
+          saved = await saveDraft(selected, 0)
+        expect(saved.data.skills[0]!.source!.evidence).toBe('PHP\n\tbackend')
+        expect(saved.data.experience[0]!.source!.evidence).toBe(
+          'Senior Developer   Acme',
+        )
+        expect((await readProfile()).active).toBeNull()
+      })
+      it('T7-AC03, T7-AC07: shows the preparation in progress while its assignment needs attention, and after the failure reaches the receiver ends it with the message of a failed assignment so a new one can be requested', async () => {
+        const { id, assignmentId } = await requested()
+        expect(await shown(id)).toEqual({
+          label: 'Przygotowywanie propozycji',
+          message: null,
+        })
+        // A request the provider cannot take: the assignment needs attention.
+        const refused = vi
+          .fn<typeof fetch>()
+          .mockResolvedValue(new Response('', { status: 401 }))
+        await carryOut(assignmentId, refused)
+        expect(refused).toHaveBeenCalledTimes(1)
+        expect((await assignmentOf(assignmentId)).status).toBe(
+          'needs_attention',
+        )
+        expect(await shown(id)).toEqual({
+          label: 'Przygotowywanie propozycji',
+          message: null,
+        })
+        await expect(
+          prepareProposal(id, 'PHP professional', 1),
+        ).rejects.toThrow('already pending')
+        // The time limit fails it and tells the Profile's receiver.
+        await pastDeadline(assignmentId)
+        expect(await failAssignmentsPastTimeLimit()).toEqual([assignmentId])
+        expect(await assignmentOf(assignmentId)).toMatchObject({
+          status: 'failed',
+          failure_reason: 'time_limit',
+        })
+        expect(await importOf(id)).toMatchObject({
           status: 'needs_attention',
           proposal: null,
+          error: failedMessage,
+          text_revision: 1,
         })
-        expect(imported.error).toContain(message)
-        expect(imported.error).not.toContain('PRIVATE_SENTINEL')
-        expect(fetcher).toHaveBeenCalledTimes(1)
-      },
-    )
-    it('E02-AC04: keeps an unknown charge reserved and caps transient retries at two attempts', async () => {
-      const { id, executionId } = await readyAttempt(),
-        fetcher = vi
-          .fn<typeof fetch>()
-          .mockResolvedValue(new Response('', { status: 503 }))
-      await executeAi(executionId, fetcher)
-      let attempts = (
-        await pool.query('SELECT * FROM ai_attempts ORDER BY attempt')
-      ).rows
-      expect(attempts).toHaveLength(2)
-      expect(attempts[0].state).toBe('unknown')
-      expect(attempts[0].actual_pln).toBeNull()
-      expect(Number(attempts[0].reserved_pln)).toBeGreaterThan(0)
-      expect((await readImport(id))!.status).toBe('ai_queued')
-      await executeAi(attempts[1].execution_id, fetcher)
-      attempts = (
-        await pool.query('SELECT * FROM ai_attempts ORDER BY attempt')
-      ).rows
-      expect(attempts).toHaveLength(2)
-      expect(attempts.every((v) => v.state === 'unknown')).toBe(true)
-      expect(fetcher).toHaveBeenCalledTimes(2)
-      // An HTTP error without usage: AI cannot tell how the work ended.
-      expect(await importOf(id)).toMatchObject({
-        status: 'needs_attention',
-        error:
-          'Nie wiadomo, jak zakończyło się przygotowanie propozycji. Profil pozostaje bez zmian. Sprawdź stan wykonania przed ponowieniem.',
+        expect(await shown(id)).toEqual({
+          label: 'Wymaga sprawdzenia',
+          message: failedMessage,
+        })
+        const next = await prepared(id, 'PHP professional', 1)
+        expect(next.assignmentId).not.toBe(assignmentId)
+        expect(await importOf(id)).toMatchObject({
+          status: 'ai_running',
+          text_revision: 2,
+          error: null,
+        })
       })
-    }, 10000)
-    it('E02-AC04: does not retry a refused key or a wait beyond 60 seconds', async () => {
-      for (const answer of [
-        new Response('', { status: 401 }),
-        new Response('', { status: 429, headers: { 'Retry-After': '120' } }),
-      ]) {
-        const { executionId } = await readyAttempt()
-        const fetcher = vi.fn<typeof fetch>().mockResolvedValue(answer)
-        await executeAi(executionId, fetcher)
-        expect(fetcher).toHaveBeenCalledTimes(1)
-        expect(
-          (await pool.query('SELECT count(*)::int n FROM ai_attempts')).rows[0]
-            .n,
-        ).toBe(1)
-        await pool.query('TRUNCATE ai_attempts,ai_executions CASCADE')
-      }
-    })
-    it('rolls back paid reservation and reviewed text when queue submission fails', async () => {
-      const id = await importCvText('PHP')
-      const fail = vi
-        .spyOn(PgBoss.prototype, 'send')
-        .mockRejectedValueOnce(new Error('queue failure'))
-      try {
-        await expect(prepareProposal(id, 'PHP', 0)).rejects.toThrow(
-          'queue failure',
+      it('T7-AC02: a result for an older revision does not replace a newer proposal', async () => {
+        const { id, assignmentId: older } = await requested()
+        await pastDeadline(older)
+        await failAssignmentsPastTimeLimit()
+        const { assignmentId: newer } = await prepared(
+          id,
+          'PHP professional',
+          1,
         )
-      } finally {
-        fail.mockRestore()
-      }
-      expect((await pool.query('SELECT * FROM ai_attempts')).rowCount).toBe(0)
-      expect(
-        (await pool.query('SELECT * FROM ai_budget_months')).rowCount,
-      ).toBe(0)
-      expect(
-        (await pool.query('SELECT * FROM profile_import_texts')).rowCount,
-      ).toBe(0)
-      expect(
-        (
-          await pool.query(
-            'SELECT text_revision,status FROM profile_imports WHERE id=$1',
-            [id],
-          )
-        ).rows[0],
-      ).toEqual({ text_revision: 0, status: 'ready' })
-    })
-    it('does not reserve or accept a paid operation if queue submission returns null', async () => {
-      const id = await importCvText('PHP'),
-        fail = vi.spyOn(PgBoss.prototype, 'send').mockResolvedValueOnce(null)
-      try {
-        await expect(prepareProposal(id, 'PHP', 0)).rejects.toThrow()
-      } finally {
-        fail.mockRestore()
-      }
-      expect((await pool.query('SELECT * FROM ai_attempts')).rowCount).toBe(0)
-      expect(
-        (
-          await pool.query(
-            'SELECT text_revision FROM profile_imports WHERE id=$1',
-            [id],
-          )
-        ).rows[0].text_revision,
-      ).toBe(0)
-    })
-    it('A9-AC03, B6-AC01: a pass of the periodic process queues a request that waited for budget once funds appear', async () => {
-      await pool.query('INSERT INTO ai_budget_months VALUES ($1,0)', [
-        budgetMonth(),
-      ])
-      const id = await importCvText('PHP')
-      const prepared = await prepareProposal(id, 'PHP', 0)
-      expect(prepared.state).toBe('waiting_budget')
-      expect((await readImport(id))!.status).toBe('waiting_budget')
-      expect(await queue.executionJobs()).toEqual([])
-      await fundWaitingExecutions()
-      expect((await readImport(id))!.status).toBe('waiting_budget')
-      expect(await queue.executionJobs()).toEqual([])
-      await pool.query('UPDATE ai_budget_months SET limit_pln=100')
-      await fundWaitingExecutions()
-      expect((await readImport(id))!.status).toBe('ai_queued')
-      expect(await queue.executionJobs()).toEqual([
-        (await readLatestExecution(id))!.id,
-      ])
-    })
-    it.each([
-      null,
-      { input_tokens: -1, output_tokens: 3 },
-      { input_tokens: 1001, output_tokens: 1 },
-    ])('keeps missing or out-of-bounds usage reserved: %s', async (usage) => {
-      const { id, executionId } = await readyAttempt()
-      await executeAi(
-        executionId,
-        vi
-          .fn<typeof fetch>()
-          .mockResolvedValue(
-            response({ summary: null, skills: [], experience: [] }, usage),
-          ),
-      )
-      const row = await attemptOf(executionId)
-      expect(row.state).toBe('unknown')
-      expect(row.actual_pln).toBeNull()
-      expect(Number(row.reserved_pln)).toBeGreaterThan(0)
-      // A valid proposal is saved even though its cost is not confirmed.
-      expect((await importOf(id)).status).toBe('proposal')
-    })
-    it('A9-AC02: ignores a result for an older text revision and keeps the newer proposal', async () => {
-      const { id, executionId } = await readyAttempt()
-      await pool.query(
-        'UPDATE profile_imports SET text_revision=2,status=$2,proposal=$3 WHERE id=$1',
-        [id, 'proposal', { summary: 'newer', skills: [], experience: [] }],
-      )
-      await executeAi(
-        executionId,
-        vi
-          .fn<typeof fetch>()
-          .mockResolvedValue(
-            response({ summary: 'old', skills: [], experience: [] }),
-          ),
-      )
-      expect(await importOf(id)).toMatchObject({
-        status: 'proposal',
-        proposal: { summary: 'newer' },
+        await carryOut(newer, answer(phpFacts))
+        const after = await importOf(id)
+        expect(after).toMatchObject({ status: 'proposal', text_revision: 2 })
+        // The older assignment's result and failure, delivered late.
+        await transaction(() =>
+          proposalAssignmentReceiver.receiveResult({
+            assignmentId: older,
+            result: { summary: 'old', skills: [], experience: [] },
+          }),
+        )
+        await transaction(() =>
+          proposalAssignmentReceiver.receiveFailure({ assignmentId: older }),
+        )
+        expect(await importOf(id)).toEqual(after)
       })
-      expect(await readLatestExecution(id)).toMatchObject({
-        state: 'rejected',
-        rejectionReason: 'stale_revision',
-        cost: { actual: '0.000150' },
+      it('T7-AC08: the receiver called twice with the same result, and twice with the same failure, leaves the same data as after one call', async () => {
+        const snapshot = async () => ({
+          imports: (
+            await pool.query('SELECT * FROM profile_imports ORDER BY id')
+          ).rows,
+          texts: (
+            await pool.query(
+              'SELECT * FROM profile_import_texts ORDER BY import_id,revision',
+            )
+          ).rows,
+        })
+        const succeeded = await requested()
+        const result = {
+          assignmentId: succeeded.assignmentId,
+          result: phpFacts,
+        }
+        await transaction(() =>
+          proposalAssignmentReceiver.receiveResult(result),
+        )
+        const once = await snapshot()
+        await transaction(() =>
+          proposalAssignmentReceiver.receiveResult(result),
+        )
+        expect(await snapshot()).toEqual(once)
+        expect((await importOf(succeeded.id)).status).toBe('proposal')
+        const failed = await requested()
+        const failure = { assignmentId: failed.assignmentId }
+        await transaction(() =>
+          proposalAssignmentReceiver.receiveFailure(failure),
+        )
+        const failedOnce = await snapshot()
+        await transaction(() =>
+          proposalAssignmentReceiver.receiveFailure(failure),
+        )
+        expect(await snapshot()).toEqual(failedOnce)
+        expect((await importOf(failed.id)).error).toBe(failedMessage)
       })
-    })
-    it('B6-AC05: an attempt that finds a paid proposal preparation running ends it as uncertain with the cause unknown, its cost reserved and the uncertain message shown, without calling the provider', async () => {
-      const { id, executionId } = await readyAttempt()
-      // The previous attempt of its job ended while it ran.
-      await pool.query("UPDATE ai_executions SET state='running' WHERE id=$1", [
-        executionId,
-      ])
-      await queue.reset()
-      const fetcher = vi.fn<typeof fetch>()
-      await executeAi(executionId, fetcher)
-      expect(fetcher).not.toHaveBeenCalled()
-      // The end reaches the Profile through the delivery job it sent.
-      expect(await queue.executionJobs()).toEqual([executionId])
-      await queue.work()
-      expect(fetcher).not.toHaveBeenCalled()
-      expect(await readLatestExecution(id)).toMatchObject({
-        state: 'uncertain',
-        cause: 'unknown',
-        cost: { actual: null },
-      })
-      expect(await attemptOf(executionId)).toMatchObject({
-        state: 'unknown',
-        actual_pln: null,
-      })
-      expect(
-        Number((await attemptOf(executionId)).reserved_pln),
-      ).toBeGreaterThan(0)
-      expect(await importOf(id)).toMatchObject({
-        status: 'needs_attention',
-        proposal: null,
-        error:
-          'Nie wiadomo, jak zakończyło się przygotowanie propozycji. Profil pozostaje bez zmian. Sprawdź stan wykonania przed ponowieniem.',
-      })
-    })
-    it('B6-AC05, B6-AC06: a process returning after a new attempt ended its proposal preparation publishes nothing and keeps its raw response in the archive', async () => {
-      const { id, executionId } = await readyAttempt()
-      let release!: () => void, entered!: () => void
-      const gate = new Promise<void>((resolve) => (release = resolve)),
-        started = new Promise<void>((resolve) => (entered = resolve))
-      const proposal = { summary: 'late', skills: [], experience: [] }
-      const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => {
-        entered()
-        await gate
-        return response(proposal)
-      })
-      const lost = executeAi(executionId, fetcher)
-      await started
-      // The next attempt of the job finds the preparation running.
-      await runExecution({ executionId })
-      await queue.work()
-      const ended = await importOf(id)
-      expect(ended).toMatchObject({ status: 'needs_attention', proposal: null })
-      release()
-      await lost
-      expect(fetcher).toHaveBeenCalledTimes(1)
-      expect(await importOf(id)).toEqual(ended)
-      expect(await readLatestExecution(id)).toMatchObject({
-        state: 'uncertain',
-        cause: 'unknown',
-        result: null,
-        cost: { actual: null },
-      })
-      const archive = await readExecutionArchive(executionId)
-      expect(archive!.artifacts.map((a) => [a.kind, a.artifact_key])).toEqual([
-        ['output', 'response'],
-      ])
-      expect(JSON.parse(archive!.artifacts[0]!.content)).toMatchObject({
-        id: 'synthetic-response',
+      it('the receiver of an assignment no import keeps changes nothing', async () => {
+        const { id } = await requested()
+        const before = await importOf(id)
+        await transaction(async () => {
+          await proposalAssignmentReceiver.receiveResult({
+            assignmentId: randomUUID(),
+            result: phpFacts,
+          })
+          await proposalAssignmentReceiver.receiveFailure({
+            assignmentId: randomUUID(),
+          })
+        })
+        expect(await importOf(id)).toEqual(before)
       })
     })
   },

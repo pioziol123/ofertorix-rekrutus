@@ -2,7 +2,7 @@ import { createError } from 'h3'
 import type { H3Event } from 'h3'
 import { ZodError } from 'zod'
 import { ProfileConflict } from '../../modules/profile/index'
-import { AiRequestError } from '../../modules/ai/index'
+import { AssignmentError } from '../../modules/ai/index'
 import { apiHandler } from './http'
 /** A Profile route: the shared handling plus the Profile's own errors. */
 export function profileHandler<T>(run: (event: H3Event) => Promise<T>) {
@@ -10,9 +10,10 @@ export function profileHandler<T>(run: (event: H3Event) => Promise<T>) {
     try {
       return await run(event)
     } catch (error) {
-      if (error instanceof AiRequestError)
+      // Placing the assignment of a preparation was refused (T1-R04).
+      if (error instanceof AssignmentError)
         throw createError({
-          statusCode: error.code === 'provider_unavailable' ? 503 : 422,
+          statusCode: 422,
           statusMessage: 'AI unavailable; check server configuration and model',
           data: { code: error.code },
         })

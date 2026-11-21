@@ -11,3 +11,4 @@ export {
   type ProfileData,
   type Proposal,
 } from './domain/profile-data.ts'
+export { importStatusLabel } from './domain/import-status.ts'

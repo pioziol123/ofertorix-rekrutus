@@ -47,7 +47,23 @@ export function preparationMessage(end: {
     : failureMessages[end.cause]
 }
 
-/** The import status of proposal preparation still in progress. */
+/**
+ * The import status of a preparation whose assignment is in progress or
+ * needs attention, labelled "Przygotowywanie propozycji" (T7-R04). It ends
+ * only through the Profile's receiver.
+ */
+export const assignmentInProgress = 'ai_running'
+
+/**
+ * The owner's message after the assignment of a preparation failed
+ * (T7-R04), whatever made it fail; the details are in the AI assignments
+ * panel. A proposal the Profile's own check refuses keeps its message of
+ * the check.
+ */
+export const failedAssignmentMessage =
+  'Nie udało się przygotować propozycji. Profil pozostaje bez zmian. Szczegóły są w panelu zleceń AI.'
+
+/** The import status of proposal preparation of the old way in progress. */
 const progressStatus: Partial<Record<ExecutionState, string>> = {
   waiting_budget: 'waiting_budget',
   queued: 'ai_queued',
@@ -63,17 +79,34 @@ export const preparationInProgress: readonly string[] = [
 ]
 
 /**
- * The status and message of an import whose proposal preparation the
- * import last recorded as in progress, from the latest execution of the
- * import. An end without a result shows its message; an end with the
- * Profile's decision is recorded with the import itself.
+ * Whether the view of an import needs the latest execution of the old way:
+ * only a preparation of the old way the import last recorded as in
+ * progress. A preparation with an assignment is shown from the import's
+ * own data alone, which the Profile's receiver updates at its end.
+ */
+export function needsOldExecution(stored: {
+  status: string
+  assignmentId: string | null
+}): boolean {
+  return (
+    stored.assignmentId === null &&
+    preparationInProgress.includes(stored.status)
+  )
+}
+
+/**
+ * The status and message of an import. A preparation of the old way the
+ * import last recorded as in progress shows the latest execution of the
+ * import: an end without a result shows its message; an end with the
+ * Profile's decision is recorded with the import itself. Everything else,
+ * a preparation with an assignment included, shows what the import stores.
  */
 export function preparationView(
-  stored: { status: string; error: string | null },
+  stored: { status: string; error: string | null; assignmentId: string | null },
   execution: AiExecution | null,
 ): { status: string; error: string | null } {
-  if (!execution || !preparationInProgress.includes(stored.status))
-    return stored
+  const own = { status: stored.status, error: stored.error }
+  if (!execution || !needsOldExecution(stored)) return own
   const status = progressStatus[execution.state]
   if (status) return { status, error: null }
   if (
@@ -87,5 +120,5 @@ export function preparationView(
         cause: execution.cause,
       }),
     }
-  return stored
+  return own
 }

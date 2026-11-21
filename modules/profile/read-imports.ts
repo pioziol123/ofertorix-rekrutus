@@ -1,7 +1,7 @@
 import { scrubContacts } from '../../lib/contact-details.ts'
 import { readLatestExecution } from '../ai/index.ts'
 import {
-  preparationInProgress,
+  needsOldExecution,
   preparationView,
 } from './domain/proposal-preparation.ts'
 import {
@@ -12,12 +12,25 @@ import {
 
 export { proposalAiConfigured } from './infrastructure/adapters/proposal-ai.ts'
 
-/** The status and message with the state of proposal preparation. */
+/**
+ * The status and message with the state of proposal preparation. Only a
+ * preparation of the old way reads its latest execution; a preparation
+ * with an assignment is shown from the import alone (ZA-D09).
+ */
 async function withPreparation<
-  T extends { id: string; status: string; error: string | null },
+  T extends {
+    id: string
+    status: string
+    error: string | null
+    assignment_id?: string | null
+  },
 >(row: T): Promise<T> {
-  if (!preparationInProgress.includes(row.status)) return row
-  return { ...row, ...preparationView(row, await readLatestExecution(row.id)) }
+  const stored = { ...row, assignmentId: row.assignment_id ?? null }
+  if (!needsOldExecution(stored)) return row
+  return {
+    ...row,
+    ...preparationView(stored, await readLatestExecution(row.id)),
+  }
 }
 
 /**
@@ -35,6 +48,7 @@ export async function readImport(importId: string) {
     id: string
     status: string
     error: string | null
+    assignment_id: string | null
   }
   return {
     ...(await withPreparation(view)),

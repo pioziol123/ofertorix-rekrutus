@@ -7,15 +7,16 @@
  * Fixed in code; how a requesting module's preferences choose an executor
  * belongs to epic oferty-pracy-334.
  *
- * The requesting modules still request AI work the old way, with the
- * settings they keep in `client-settings.ts`; each adds its entry here when
- * it moves to assignments (tasks oferty-pracy-sq2.8 to sq2.10). An entry
- * looks like
- *
- *   profile: {
- *     executor: 'openai',
- *     parameters: { model: 'gpt-6-luna', reasoningEffort: 'low' },
- *     requestingModule: 'Profil',
- *   }
+ * The Profile prepares its proposals through assignments (task
+ * oferty-pracy-sq2.8), with the executor and parameters its old settings in
+ * `client-settings.ts` give. The other requesting modules still request AI
+ * work the old way with those settings; each adds its entry here when it
+ * moves to assignments (tasks oferty-pracy-sq2.9 and sq2.10).
  */
-export const assignmentSettings: Readonly<Record<string, unknown>> = {}
+export const assignmentSettings: Readonly<Record<string, unknown>> = {
+  profile: {
+    executor: 'openai',
+    parameters: { model: 'gpt-6-luna', reasoningEffort: 'low' },
+    requestingModule: 'Profil',
+  },
+}

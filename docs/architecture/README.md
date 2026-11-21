@@ -167,57 +167,56 @@ flowchart TB
 
 | Component | Entry points and implementation |
 | --- | --- |
-| Periodic work | The [periodic process](../../periodic/index.ts), its own container service beside the worker, repeats a [pass](../../periodic/steps.ts) 60 s after the previous one ended: it funds AI work waiting for budget, sends AI operations waiting for the budget, fails AI assignments past their time limit, polls and cleans up sent provider batches, resumes profile proposals and makes the daily sync request, which requests the SOLID.Jobs import through the [Sources module](../../modules/sources/README.md#requesting-a-sync) once per schedule occurrence. A step's error is logged and the other steps run. |
+| Periodic work | The [periodic process](../../periodic/index.ts), its own container service beside the worker, repeats a [pass](../../periodic/steps.ts) 60 s after the previous one ended: it funds AI work waiting for budget, sends AI operations waiting for the budget, fails AI assignments past their time limit, polls and cleans up sent provider batches and makes the daily sync request, which requests the SOLID.Jobs import through the [Sources module](../../modules/sources/README.md#requesting-a-sync) once per schedule occurrence. A step's error is logged and the other steps run. |
 | Queue and worker libraries | The [worker entry point](../../worker/index.ts) starts the [worker library](../../lib/workers/index.ts): it runs the [module plugins](../../plugins/index.ts), takes jobs of every queue in the database through the [queue library](../../lib/queues/index.ts) and carries each out in a process of a fixed pool, and writes the worker's liveness record. Queue migrations create the queues with their names and key modes written in them; the [queue configuration](../../queues.json) gives the queues' settings, which the migration step applies. The Profile module reads CV text, the Sources module carries out ad syncs and the AI module carries out its executions on them. The [carry-over step](../../scripts/carry-over-jobs.ts) of the migration step requests anew, through the owning module, the work a removed queue of the existing path held. |
 | Ad import | The [Sources module plugin](../../plugins/sources.ts) registers the [sync job](../../modules/sources/infrastructure/worker/sync-queue.ts) of queue `source-sync-run` (one job of a source at a time, 3 attempts of 1 hour) with the [shared run executor](../../modules/sources/execute-sync-run.ts), which takes an interrupted sync over, and its failure handler, which ends the sync after the last attempt failed. The [sync request](../../modules/sources/request-sync.ts) returns the source's unfinished sync or creates one with its job; [ad and revision storage](../../modules/sources/infrastructure/persistence/source-ads.ts). |
 | CV extraction | The [Profile module plugin](../../plugins/profile.ts) registers the [reading job](../../modules/profile/infrastructure/worker/cv-text-queue.ts) of queue `profile-cv-text` (one reading at a time, 2 attempts of 2 minutes) with [`readCvText`](../../modules/profile/extract-cv-text.ts) and its failure handler, which asks for pasted text after the last attempt failed. |
 | Match assessments | The [single request](../../modules/matching/request-assessment.ts) and the [group](../../modules/matching/request-assessment-group.ts) request AI work through [Matching's AI integration](../../modules/matching/infrastructure/adapters/assessment-ai.ts); its [receiver](../../modules/matching/receive-assessment.ts) publishes or rejects each result. Groups run as provider batches in the AI module's [OpenAI Batch adapter](../../modules/ai/infrastructure/adapters/openai-batch.ts), which keeps the batch archive. |
 | Basic research | The [research request](../../modules/companies/request-research.ts) requests agent work through [Companies' AI integration](../../modules/companies/infrastructure/adapters/research-ai.ts); its [receiver](../../modules/companies/receive-research.ts) validates and publishes or rejects each report. The search and synthesis run in the AI module's [OpenAI agent adapter](../../modules/ai/infrastructure/adapters/openai-agent.ts). |
-| General AI executions | The [AI module plugin](../../plugins/ai.ts) registers [`runExecution`](../../modules/ai/run-execution.ts) and its failure handler for the queues `ai-execution-paid` and `ai-execution-local` (one job of each at a time, 4 attempts of 60 minutes), with the receivers of the clients of the [AI module](../../modules/ai/README.md) contract, today the Profile's proposal preparation on the paid and the local path, Matching's assessments and Companies' research. An execution found running by a later attempt, or left by the last one, ends uncertain with the cause unknown. |
+| General AI executions | The [AI module plugin](../../plugins/ai.ts) registers [`runExecution`](../../modules/ai/run-execution.ts) and its failure handler for the queues `ai-execution-paid` and `ai-execution-local` (one job of each at a time, 4 attempts of 60 minutes), with the receivers of the clients of the [AI module](../../modules/ai/README.md) contract, today Matching's assessments, Companies' research and the Profile's proposal preparations requested before it moved to assignments. An execution found running by a later attempt, or left by the last one, ends uncertain with the cause unknown. |
 
 <a id="c4-kod-przygotowanie-propozycji-profilu"></a>
 
 ## C4 — code that prepares a profile proposal
 
-The view shows the calls of proposal preparation across the Profile and the AI module. The Profile knows no provider: the AI coordination picks the adapter from the settings fixed with the execution. The earlier text extraction belongs to a separate worker component.
+The view shows the calls of proposal preparation across the Profile and the AI module. The Profile knows no provider: it places an assignment under its settings name, and the AI module finds the executor and its parameters for that name. The earlier text extraction belongs to a separate worker component.
 
 ```mermaid
 flowchart TB
   Prepare["prepare.post.ts<br/>[Nitro route]"]
-  Worker["worker library<br/>[AI queue jobs]"]
+  Worker["worker library<br/>[queue jobs of the executors]"]
+  Periodic["periodic process<br/>[time limit step]"]
 
   subgraph Profile["Profile module"]
     Enqueue["prepareProposal<br/>[Function · prepare-proposal.ts]"]
-    Integration["requestProposal, proposalReceiver<br/>[Integration · proposal-ai.ts]"]
-    Receive["recordPreparationResult<br/>[Function · receive-proposal.ts]"]
+    Integration["placeProposalAssignment, proposalAssignmentReceiver<br/>[Integration · proposal-ai.ts]"]
+    Receive["takeAssignmentResult, endAssignmentPreparation<br/>[Function · receive-proposal.ts]"]
   end
 
   subgraph AI["AI module"]
-    Check["checkExecution<br/>[Function · check-execution.ts]"]
-    Request["requestExecution<br/>[Function · request-execution.ts]"]
-    Run["runExecution<br/>[Function · run-execution.ts]"]
-    OpenAI["openAiProvider<br/>[Adapter · openai.ts]"]
-    Ollama["ollamaProvider<br/>[Adapter · ollama.ts]"]
+    Place["placeAssignment<br/>[Function · place-assignment.ts]"]
+    Run["runOperation<br/>[Function · run-operation.ts]"]
+    Limit["failAssignmentsPastTimeLimit<br/>[Function · fail-assignments-past-time-limit.ts]"]
+    OpenAI["openAiExecutor<br/>[Executor · openai.ts]"]
   end
 
   Prepare -->|"Validates the request and passes the text and the revision"| Enqueue
-  Enqueue -->|"Checks before the request; requests in its transaction"| Integration
-  Integration --> Check
-  Integration --> Request
-  Check -.->|"Fixes the local model version"| Ollama
-  Worker -->|"Passes the execution ID"| Run
-  Run -->|"Calls the provider and gets the public end"| OpenAI
-  Run -->|"Calls the provider and gets the public end"| Ollama
-  Run -->|"Delivers the result or the end"| Integration
-  Integration -->|"Checks quotes against the revision and saves the proposal"| Receive
+  Enqueue -->|"Places the assignment in its transaction"| Integration
+  Integration --> Place
+  Worker -->|"Passes the operation ID"| Run
+  Run -->|"Carries out the operation"| OpenAI
+  Run -->|"Delivers the result"| Integration
+  Periodic --> Limit
+  Limit -->|"Delivers the failure"| Integration
+  Integration -->|"Checks the format and the quotes and saves the proposal, or ends the preparation"| Receive
 
   classDef internal fill:#dbeafe,stroke:#2563eb,color:#172554
   classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
-  class Enqueue,Integration,Receive,Check,Request,Run,OpenAI,Ollama internal
-  class Prepare,Worker external
+  class Enqueue,Integration,Receive,Place,Run,Limit,OpenAI internal
+  class Prepare,Worker,Periodic external
 ```
 
-`prepareProposal` removes contact data from the passed text, saves its revision and requests an execution in the same transaction; the AI module reserves the budget for a paid model and sends the job to the queue of paid work or of the local model. The worker runs the execution and delivers the outcome to the Profile's receiver in the transaction that settles the cost. After validation the receiver saves the proposal on the import, and applying the proposal is a separate operation by the owner. [HTTP entry point](../../server/api/profile/imports/%5Bid%5D/prepare.post.ts) · [Preparation request](../../modules/profile/prepare-proposal.ts) · [Integration with AI](../../modules/profile/infrastructure/adapters/proposal-ai.ts) · [Proposal validation](../../modules/profile/receive-proposal.ts) · [AI execution](../../modules/ai/run-execution.ts) · [Applying the proposal](../../server/api/profile/imports/%5Bid%5D/apply.post.ts)
+`prepareProposal` removes contact data from the passed text, saves its revision, places the assignment and keeps its identifier with the import, in one transaction; placing sends the job of the assignment's first operation to the executor's queue. The worker carries out the operation and delivers the result to the Profile's receiver in the transaction that saves the assignment's final status; a failure, for example at the time limit, reaches the same receiver the same way. The receiver saves the proposal, or the message of the check it failed, on the import, and applying the proposal is a separate operation by the owner. [HTTP entry point](../../server/api/profile/imports/%5Bid%5D/prepare.post.ts) · [Preparation request](../../modules/profile/prepare-proposal.ts) · [Integration with AI](../../modules/profile/infrastructure/adapters/proposal-ai.ts) · [Proposal validation](../../modules/profile/receive-proposal.ts) · [Carrying out an operation](../../modules/ai/assignments/run-operation.ts) · [Applying the proposal](../../server/api/profile/imports/%5Bid%5D/apply.post.ts)
 
 <a id="stan-lokalnego-ai"></a>
 
@@ -225,7 +224,7 @@ flowchart TB
 
 | Area | State in the current code |
 | --- | --- |
-| Professional profile | Proposal preparation runs on the local model when the Profile's settings in the AI module name it. The profile settings in the AI module choose the local model; [Compose](../../compose.yaml) passes `AI_ENDPOINTS_JSON` to web and the worker. A configuration example is in the [environment file](../../.env.example). Model availability and connectivity from the containers need separate verification. |
+| Professional profile | Proposal preparation runs on the local executor when the Profile's settings of assignments in the AI module name it; today they name the paid executor. The settings in the AI module choose the model; [Compose](../../compose.yaml) passes `AI_ENDPOINTS_JSON` to web and the worker. A configuration example is in the [environment file](../../.env.example). Model availability and connectivity from the containers need separate verification. |
 | Local queue | Executions on the local model go to their own queue, carried out one at a time in request order through exclusivity in the queue; a paid execution runs beside them. The [migration](../../migrations/1770000000026_ai_without_local_slot_and_lease.cjs) of task `oferty-pracy-2ba.6` removed the former slot, its waiting line and its lease. An execution found running ends uncertain with the cause unknown; a local process that was ended may still compute when the next one starts. |
 | Offer matching | Assessments run through the AI module: a single assessment as one OpenAI call, a group as an OpenAI batch. The local assessment path is described in the [solution design](../specs/lokalne-ai/solution-design.md). |
 | Employer research | The connected basic research uses OpenAI Responses and web search. OpenCode and the browser for local research are described in the [solution design](../specs/lokalne-ai/solution-design.md). |

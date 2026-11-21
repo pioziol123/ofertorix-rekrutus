@@ -6,6 +6,8 @@ import type { StoredDocument } from '../adapters/document-storage.ts'
 export type ImportForPreparation = {
   textRevision: number
   hasSourceText: boolean
+  status: string
+  originalName: string | null
 }
 
 /** Reads the import and locks it until the transaction ends. */
@@ -14,7 +16,7 @@ export async function lockImport(
 ): Promise<ImportForPreparation | null> {
   const row = (
     await db().query(
-      'SELECT text_revision,source_text IS NOT NULL AS has_source_text FROM profile_imports WHERE id=$1 FOR UPDATE',
+      'SELECT text_revision,source_text IS NOT NULL AS has_source_text,status,original_name FROM profile_imports WHERE id=$1 FOR UPDATE',
       [importId],
     )
   ).rows[0]
@@ -22,27 +24,31 @@ export async function lockImport(
     ? {
         textRevision: row.text_revision as number,
         hasSourceText: row.has_source_text as boolean,
+        status: row.status as string,
+        originalName: (row.original_name as string | null) ?? null,
       }
     : null
 }
 
 /**
- * Saves the cleaned text as the import's new revision, clears the
- * previous proposal and sets the status.
+ * Saves the cleaned text as the import's new revision with the assignment
+ * placed for it, or none, clears the previous proposal and sets the status.
+ * The import's assignment identifier always belongs to its current revision.
  */
 export async function saveTextRevision(
   importId: string,
   revision: number,
   text: string,
   status: string,
+  assignmentId: string | null,
 ) {
   await db().query(
     'INSERT INTO profile_import_texts(import_id,revision,text) VALUES($1,$2,$3)',
     [importId, revision, text],
   )
   await db().query(
-    'UPDATE profile_imports SET professional_text=$2,text_revision=$3,proposal=NULL,status=$4,error=NULL,updated_at=now() WHERE id=$1',
-    [importId, text, revision, status],
+    'UPDATE profile_imports SET professional_text=$2,text_revision=$3,proposal=NULL,status=$4,error=NULL,assignment_id=$5,updated_at=now() WHERE id=$1',
+    [importId, text, revision, status, assignmentId],
   )
 }
 
@@ -51,6 +57,38 @@ export async function setImportStatus(importId: string, status: string) {
     'UPDATE profile_imports SET status=$2,error=NULL,updated_at=now() WHERE id=$1',
     [importId, status],
   )
+}
+
+/** A preparation in progress for an assignment, with the text it was placed for. */
+export type AssignmentPreparation = {
+  importId: string
+  revision: number
+  text: string
+}
+
+/**
+ * The preparation of the import that keeps the assignment, while it is
+ * still in progress, locking the import until the transaction ends; null
+ * when no import keeps it or its preparation has ended.
+ */
+export async function lockAssignmentPreparation(
+  assignmentId: string,
+  inProgressStatus: string,
+): Promise<AssignmentPreparation | null> {
+  const row = (
+    await db().query(
+      `SELECT i.id,i.text_revision,t.text FROM profile_imports i JOIN profile_import_texts t ON t.import_id=i.id AND t.revision=i.text_revision
+       WHERE i.assignment_id=$1 AND i.status=$2 FOR UPDATE OF i`,
+      [assignmentId, inProgressStatus],
+    )
+  ).rows[0]
+  return row
+    ? {
+        importId: row.id as string,
+        revision: row.text_revision as number,
+        text: row.text as string,
+      }
+    : null
 }
 
 /** The text of a revision, locking the import when it is still current. */
@@ -112,42 +150,16 @@ export type ImportSummary = {
   status: string
   error: string | null
   created_at: Date
+  assignment_id: string | null
 }
 
 /** The imports, newest first. */
 export async function listImportRows(): Promise<ImportSummary[]> {
   return (
     await db().query(
-      'SELECT id,kind,original_name,status,error,created_at FROM profile_imports ORDER BY created_at DESC',
+      'SELECT id,kind,original_name,status,error,created_at,assignment_id FROM profile_imports ORDER BY created_at DESC',
     )
   ).rows
-}
-
-/** The imports whose proposal preparation was requested but not started. */
-export async function importsWaitingForPreparation(): Promise<string[]> {
-  return (
-    await db().query(
-      "SELECT id FROM profile_imports WHERE status IN ('ai_queued','waiting_budget') ORDER BY updated_at",
-    )
-  ).rows.map((row) => row.id as string)
-}
-
-/**
- * Locks an import whose proposal preparation for the revision was requested
- * but not started, and reads that revision's text.
- */
-export async function lockWaitingPreparation(
-  importId: string,
-  revision: number,
-): Promise<string | null> {
-  const row = (
-    await db().query(
-      `SELECT t.text FROM profile_imports i JOIN profile_import_texts t ON t.import_id=i.id AND t.revision=i.text_revision
-       WHERE i.id=$1 AND i.text_revision=$2 AND i.status IN ('ai_queued','waiting_budget') FOR UPDATE OF i`,
-      [importId, revision],
-    )
-  ).rows[0]
-  return (row?.text as string | undefined) ?? null
 }
 
 /** The import's saved proposal, the text it quotes and that text's revision. */

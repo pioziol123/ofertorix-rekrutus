@@ -4,6 +4,7 @@ import {
   emptySkill,
   emptyExperience,
   expectationKeys,
+  importStatusLabel,
   type ProfileData,
   type Proposal,
 } from '../../modules/profile/view'
@@ -232,21 +233,6 @@ const dates = (value: string) =>
     timeStyle: 'short',
     timeZone: 'Europe/Warsaw',
   }).format(new Date(value))
-const statusLabels: Record<string, string> = {
-  receiving: 'Zapisywanie pliku',
-  queued: 'Czeka na odczyt',
-  extracting: 'Odczytywanie CV',
-  ready: 'Tekst gotowy',
-  needs_text: 'Wklej tekst CV',
-  failed: 'Błąd importu',
-  source_missing: 'Brak pliku źródłowego',
-  needs_configuration: 'Wymaga konfiguracji AI',
-  ai_queued: 'Czeka na przygotowanie propozycji',
-  ai_running: 'Przygotowywanie propozycji',
-  waiting_budget: 'Czeka na środki w budżecie',
-  proposal: 'Propozycja gotowa',
-  needs_attention: 'Wymaga sprawdzenia',
-}
 async function loadImport(resetText = true) {
   const id = selectedImport.value
   if (resetText) {
@@ -634,14 +620,14 @@ onBeforeUnmount(() => clearInterval(timer))
                 >
                   {{ imp.original_name ?? 'Wklejony tekst' }} ·
                   {{ dates(imp.created_at) }} ·
-                  {{ statusLabels[imp.status] ?? imp.status }}
+                  {{ importStatusLabel(imp.status) }}
                 </option>
               </select></label
             >
             <div v-if="imported" class="import-detail">
               <div class="entry-heading">
                 <UBadge color="neutral" variant="subtle">{{
-                  statusLabels[imported.status] ?? imported.status
+                  importStatusLabel(imported.status)
                 }}</UBadge
                 ><a
                   v-if="imported.kind !== 'text'"

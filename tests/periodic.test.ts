@@ -53,14 +53,13 @@ describe('the periodic process (B6-R09)', () => {
     expect(events.at(-1)).toMatch(/^end /)
   })
 
-  it('funds AI work, sends AI operations waiting for budget (epic sq2, T3-R05), fails AI assignments past their time limit (T6-R07), advances and cleans up batches, resumes profile proposals and requests the daily syncs, in that order', () => {
+  it('funds AI work, sends AI operations waiting for budget (epic sq2, T3-R05), fails AI assignments past their time limit (T6-R07), advances and cleans up batches and requests the daily syncs, in that order, with no Profile step (epic sq2, T7-AC04)', () => {
     expect(periodicSteps.map((step) => step.name)).toEqual([
       'fund AI executions waiting for budget',
       'send AI operations waiting for budget',
       'fail AI assignments past their time limit',
       'advance sent AI batches',
       'clean up ended AI batches',
-      'resume profile proposal preparations',
       'request daily ad syncs',
     ])
   })

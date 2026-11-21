@@ -214,9 +214,13 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
     expect(imports).toEqual(
       expect.arrayContaining([
         'modules/ai/index.ts',
-        'modules/profile/index.ts',
         'modules/sources/index.ts',
       ]),
+    )
+    // The Profile has no step: it requests no AI work by itself (epic sq2,
+    // T7-AC04). The receivers' registration reaches it only for its receiver.
+    expect(importsOf('periodic/steps.ts')).not.toContain(
+      'modules/profile/index.ts',
     )
     expect(
       imports.filter(

@@ -1,19 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { Pool } from 'pg'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
-import {
-  readExecutionHistory,
-  registerResultReceiver,
-} from '../modules/ai/index.ts'
-import {
-  proposalReceiver,
-  proposalSettingsKey,
-  readImport,
-  resumeProposalPreparations,
-} from '../modules/profile/index.ts'
-import { aiQueue } from './ai-queue.fixtures.ts'
+import { readExecutionHistory } from '../modules/ai/index.ts'
+import { readImport } from '../modules/profile/index.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -25,7 +16,6 @@ const integration =
 integration('migration of the profile AI rows', () => {
   const schema = `profile_ai_migration_${randomUUID().replaceAll('-', '')}`
   let admin: Pool, pool: Pool
-  const queue = aiQueue()
   const migrate = async (names: string[]) => {
     const sql: string[] = []
     for (const name of names)
@@ -218,7 +208,6 @@ integration('migration of the profile AI rows', () => {
     setPool(pool)
   })
   afterAll(async () => {
-    await queue.stop()
     await closePool()
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
@@ -329,34 +318,6 @@ integration('migration of the profile AI rows', () => {
       error: expect.stringContaining('Nie wiadomo, jak zakończyło się'),
     })
     expect((await readImport(imports.paidDone))!.status).toBe('proposal')
-  })
-  it('A9-AC03: requests again the preparations that had not started, as the former recovery resent them', async () => {
-    vi.stubEnv('OPENAI_API_KEY', 'test-key-never-send')
-    // The later AI migrations run before current AI code does.
-    await migrate([
-      '1770000000020_ai_execution_lease',
-      '1770000000026_ai_without_local_slot_and_lease',
-    ])
-    await queue.start()
-    const sent = async () => (await queue.executionJobs()).length
-    registerResultReceiver(proposalSettingsKey, proposalReceiver)
-    try {
-      await resumeProposalPreparations()
-      for (const key of ['paidQueued', 'localQueued'] as const) {
-        const history = await readExecutionHistory(imports[key])
-        expect(history.map((e) => e.state)).toEqual(['retried', 'queued'])
-        expect(history[1]).toMatchObject({ inputVersion: '1', attempt: 1 })
-        expect((await readImport(imports[key]))!.status).toBe('ai_queued')
-      }
-      expect(await sent()).toBe(2)
-      // Uncertain and finished work is left alone, and a second run has
-      // no further effect.
-      expect((await readExecutionHistory(imports.paidRunning)).length).toBe(1)
-      await resumeProposalPreparations()
-      expect(await sent()).toBe(2)
-    } finally {
-      vi.unstubAllEnvs()
-    }
   })
   it('replaces the index of one attempt in progress per import', async () => {
     expect(

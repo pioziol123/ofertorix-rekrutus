@@ -1,25 +1,29 @@
 import { z } from 'zod'
 import {
-  checkExecution,
-  isConfigured,
-  requestExecution,
-  type ExecutionCheck,
-  type RequestedExecution,
+  canPlaceAssignments,
+  placeAssignment,
+  type AssignmentReceiver,
   type ResultReceiver,
 } from '../../../ai/index.ts'
 import { factSchema } from '../../domain/profile-data.ts'
 import {
+  endAssignmentPreparation,
   recordPreparationEnd,
   recordPreparationResult,
+  takeAssignmentResult,
 } from '../../receive-proposal.ts'
 
 /**
  * The Profile's integration with the AI module: it translates a proposal
- * request into an instruction and a response schema, and passes AI's
- * outcomes to the Profile's operations. The Profile knows no provider.
+ * request into an assignment with an instruction and a response format, and
+ * passes the end of the assignment to the Profile's operations. The Profile
+ * knows no provider.
  */
 
-/** The key under which AI keeps the settings of the Profile's executions. */
+/**
+ * The settings name under which AI keeps the settings of the Profile's
+ * assignments, and of its executions of the old way.
+ */
 export const proposalSettingsKey = 'profile'
 
 const instruction =
@@ -35,37 +39,50 @@ export function proposalSchema(): Record<string, unknown> {
   return schema
 }
 
-/** Whether proposals can be requested now. */
+/**
+ * Whether proposals can be requested now (T1-R08): no provider is called.
+ */
 export function proposalAiConfigured(): boolean {
-  return isConfigured(proposalSettingsKey)
-}
-
-/** The check before a request, outside any transaction. */
-export function checkProposalExecution(): Promise<ExecutionCheck> {
-  return checkExecution(proposalSettingsKey)
+  return canPlaceAssignments(proposalSettingsKey, 'single')
 }
 
 /**
- * Requests preparing a proposal from the text revision of an import, in
- * the caller's transaction. The import is the operation and the text
- * revision its input version.
+ * Places the single-answer assignment that prepares a proposal from a text
+ * revision, in the caller's transaction (T7-R01), and returns its
+ * identifier. The label is the CV's file name for the owner.
  */
-export function requestProposal(
-  importId: string,
-  revision: number,
+export async function placeProposalAssignment(
+  label: string,
   text: string,
-  check: ExecutionCheck,
-): Promise<RequestedExecution> {
-  return requestExecution({
-    settingsKey: proposalSettingsKey,
-    operationId: importId,
-    inputVersion: String(revision),
-    mode: { kind: 'single' },
+): Promise<string> {
+  const { assignmentId } = await placeAssignment({
+    settingsName: proposalSettingsKey,
+    type: 'single',
+    label,
     instruction,
-    responseSchema: { name: 'profile_proposal', schema: proposalSchema() },
     input: text,
-    check,
+    responseFormat: { name: 'profile_proposal', schema: proposalSchema() },
   })
+  return assignmentId
+}
+
+/**
+ * The receiver of the Profile's assignments (T6-R01). It runs in the AI
+ * module's transaction that saves the assignment's final status, so the
+ * Profile's saves and that status commit together. It takes every result
+ * without an error: a proposal that fails the Profile's own check is the
+ * Profile's matter (T7-R03). It follows the three rules of the receiver
+ * (T6-R09): it changes only a preparation still in progress for the
+ * assignment, so a repeated call has no effect; it uses only its arguments
+ * and the Profile's own data; and it relies on no moment of the end.
+ */
+export const proposalAssignmentReceiver: AssignmentReceiver = {
+  async receiveResult({ assignmentId, result }) {
+    await takeAssignmentResult(assignmentId, result)
+  },
+  async receiveFailure({ assignmentId }) {
+    await endAssignmentPreparation(assignmentId)
+  },
 }
 
 const revisionOf = (inputVersion: string | null) =>
@@ -74,10 +91,11 @@ const revisionOf = (inputVersion: string | null) =>
     : null
 
 /**
- * The receiver of proposal outcomes. It runs in AI's delivery transaction,
- * so the proposal and the settlement commit together, and a failed
- * delivery leaves none of its writes, which lets it take the same outcome
- * again.
+ * The receiver of proposal outcomes of the old way, for preparations
+ * requested before the Profile moved to assignments; it goes with the old
+ * way (task oferty-pracy-sq2.11). It runs in AI's delivery transaction, so
+ * the proposal and the settlement commit together, and a failed delivery
+ * leaves none of its writes, which lets it take the same outcome again.
  */
 export const proposalReceiver: ResultReceiver = {
   async receiveResult(delivery) {

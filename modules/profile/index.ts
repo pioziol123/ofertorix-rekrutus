@@ -27,10 +27,12 @@ export {
   readImport,
 } from './read-imports.ts'
 
-// Composition: where the worker registers the receiver of proposal outcomes
-// and resumes preparations stored by the former path.
-export { resumeProposalPreparations } from './resume-proposal-preparations.ts'
+// Composition: the receiver of the Profile's assignments, which the shared
+// registration of receivers registers under its settings name (epic sq2,
+// T6), and the receiver of proposal outcomes of the old way, which the AI
+// module plugin registers until the old way is removed.
 export {
+  proposalAssignmentReceiver,
   proposalReceiver,
   proposalSettingsKey,
 } from './infrastructure/adapters/proposal-ai.ts'
