@@ -9,8 +9,8 @@ import { startOperation } from './start-operation.ts'
  * budget, carries it out through its executor once, outside any
  * transaction, and ends it with the outcome in one save (T3-R06). An
  * operation that does not start, because it waits for the budget, ended
- * without starting or is not pending, ends the job without calling the
- * executor. The queue's exclusivity on a constant key gives one operation
+ * without starting, was found running and ended as uncertain (T5-R01) or
+ * is not pending, ends the job without calling the executor. The queue's exclusivity on a constant key gives one operation
  * at a time per executor, in the order their jobs were sent (T3-R01,
  * ZA-D01). `clock` gives the moments of the start and the end.
  */

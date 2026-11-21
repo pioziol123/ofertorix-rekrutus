@@ -275,4 +275,135 @@ integration('operations of assignments through the worker', () => {
       await pool.query('ALTER TABLE months_away RENAME TO ai_budget_months')
     }
   }, 120_000)
+
+  describe('interrupted operations (T5)', () => {
+    /** An executor call that does not return while the test runs. */
+    const hangs = 600_000
+
+    async function kill(child: ChildProcess) {
+      if (child.exitCode !== null || child.signalCode !== null) return
+      child.kill('SIGKILL')
+      await once(child, 'exit')
+    }
+
+    const callsOf = async (tag: string) =>
+      (await pool.query('SELECT 1 FROM operation_calls WHERE tag=$1', [tag]))
+        .rows.length
+
+    const calledOnce = (tag: string) =>
+      waitFor(
+        async () => (await callsOf(tag)) === 1,
+        60_000,
+        'the executor to be called',
+      )
+
+    const needsAttention = (assignmentId: string, timeoutMs: number) =>
+      waitFor(
+        async () => (await statusOf(assignmentId)) === 'needs_attention',
+        timeoutMs,
+        'the assignment to need attention',
+      )
+
+    /** The interrupted operation is uncertain with its potential cost held. */
+    async function expectUncertain(assignmentId: string, tag: string) {
+      const { rows } = await pool.query(
+        `SELECT state,cause,retryable,potential_cost,actual_cost,budget_month
+         FROM ai_operations WHERE assignment_id=$1`,
+        [assignmentId],
+      )
+      expect(rows).toMatchObject([
+        {
+          state: 'uncertain',
+          cause: 'unknown',
+          retryable: null,
+          potential_cost: '0.008000',
+          actual_cost: null,
+        },
+      ])
+      expect(rows[0].budget_month).not.toBeNull()
+      expect(await callsOf(tag)).toBe(1)
+    }
+
+    const attemptsOf = async (assignmentId: string) =>
+      (
+        await admin.query(
+          `SELECT j.state,j.retry_count AS "retryCount"
+           FROM ${queueSchema}.job j
+           WHERE j.name=$1 AND j.data->>'operationId'=(
+             SELECT o.id::text FROM ${schema}.ai_operations o
+             WHERE o.assignment_id=$2)`,
+          [paidTestJob.queue, assignmentId],
+        )
+      ).rows as { state: string; retryCount: number }[]
+
+    it('ends an operation as uncertain with its potential cost charged, needing attention and calling the executor once, after the worker is killed during it (T5-AC01, T5-R01, T5-R02)', async () => {
+      worker ??= await startWorker()
+      const placed = await place('paid', hangs)
+      await calledOnce(placed.tag)
+      await kill(worker)
+      worker = await startWorker()
+      await needsAttention(placed.assignmentId, 120_000)
+      await expectUncertain(placed.assignmentId, placed.tag)
+    }, 240_000)
+
+    it('ends an operation as uncertain with its potential cost charged, needing attention and calling the executor once, after it outlasts a short queue time limit (T5-AC01, T5-R01, T5-R02)', async () => {
+      worker ??= await startWorker()
+      const settings = { attempts: 2, retryDelaySeconds: 0 }
+      // The time limit is set on a job when it is sent.
+      await applyQueueConfiguration({
+        [paidTestJob.queue]: { ...settings, timeLimitSeconds: 3 },
+        [localTestJob.queue]: { ...settings, timeLimitSeconds: 60 },
+      })
+      try {
+        const placed = await place('paid', hangs)
+        await calledOnce(placed.tag)
+        await needsAttention(placed.assignmentId, 60_000)
+        await expectUncertain(placed.assignmentId, placed.tag)
+      } finally {
+        await applyQueueConfiguration({
+          [paidTestJob.queue]: { ...settings, timeLimitSeconds: 60 },
+          [localTestJob.queue]: { ...settings, timeLimitSeconds: 60 },
+        })
+      }
+    }, 120_000)
+
+    it('ends an operation as uncertain within five minutes of the kill, through the failure handler, after the worker is killed during the last attempt (T5-AC02, T5-R03)', async () => {
+      worker ??= await startWorker()
+      // The first start fails once, so the attempt that runs the operation
+      // is the last of the job's two. A sequence is not rolled back.
+      await pool.query(`
+        CREATE SEQUENCE start_failures;
+        CREATE FUNCTION fail_first_start() RETURNS trigger AS $$
+        BEGIN
+          IF OLD.state='pending' AND NEW.state='running'
+            AND nextval('${schema}.start_failures')=1 THEN
+            RAISE EXCEPTION 'The first start fails';
+          END IF;
+          RETURN NEW;
+        END $$ LANGUAGE plpgsql;
+        CREATE TRIGGER fail_first_start BEFORE UPDATE ON ai_operations
+          FOR EACH ROW EXECUTE FUNCTION fail_first_start();`)
+      try {
+        const placed = await place('paid', hangs)
+        await calledOnce(placed.tag)
+        expect(await attemptsOf(placed.assignmentId)).toMatchObject([
+          { state: 'active', retryCount: 1 },
+        ])
+        await kill(worker)
+        const killedAt = Date.now()
+        worker = await startWorker()
+        await needsAttention(placed.assignmentId, 5 * 60_000)
+        expect(Date.now() - killedAt).toBeLessThan(5 * 60_000)
+        await expectUncertain(placed.assignmentId, placed.tag)
+        expect(await attemptsOf(placed.assignmentId)).toMatchObject([
+          { state: 'failed', retryCount: 1 },
+        ])
+      } finally {
+        await pool.query(`
+          DROP TRIGGER fail_first_start ON ai_operations;
+          DROP FUNCTION fail_first_start();
+          DROP SEQUENCE start_failures;`)
+      }
+    }, 420_000)
+  })
 })
