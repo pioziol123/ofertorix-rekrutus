@@ -60,6 +60,7 @@ const application = [
   'modules',
   'migrations',
   'plugins',
+  'receivers',
 ]
   .flatMap(files)
   .filter((file) => !isTest(file))
@@ -269,6 +270,22 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
       ),
     )
     expect(web).toEqual([])
+  })
+
+  it('runs the shared registration of receivers of assignments in the web application, the periodic process, the worker and its pool processes, apart from the module plugins (epic sq2, T6)', () => {
+    for (const file of [
+      'server/plugins/assignment-receivers.ts',
+      'periodic/index.ts',
+      'plugins/index.ts',
+    ])
+      expect(importsOf(file)).toContain('receivers/index.ts')
+    // It registers receivers only, through the AI module's public entry.
+    const imports = importsOf('receivers/index.ts')
+    expect(imports).toContain('modules/ai/index.ts')
+    expect(imports.filter((file) => !isEntry(file))).toEqual([])
+    expect(readFileSync(join(root, 'receivers/index.ts'), 'utf8')).not.toMatch(
+      /HandlerRegistry|lib\/workers/,
+    )
   })
 
   it('runs no module code in the migration step: neither the database migrations nor the queue step import a module or the plugins (B1-AC02, B1-D05)', () => {

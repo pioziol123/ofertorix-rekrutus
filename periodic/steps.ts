@@ -1,6 +1,7 @@
 import {
   advanceSentBatches,
   cleanUpEndedBatches,
+  failAssignmentsPastTimeLimit,
   fundWaitingExecutions,
   sendOperationsWaitingForBudget,
 } from '../modules/ai/index.ts'
@@ -20,6 +21,10 @@ export const periodicSteps: readonly PeriodicStep[] = [
   {
     name: 'send AI operations waiting for budget',
     run: () => sendOperationsWaitingForBudget(),
+  },
+  {
+    name: 'fail AI assignments past their time limit',
+    run: () => failAssignmentsPastTimeLimit(),
   },
   { name: 'advance sent AI batches', run: advanceSentBatches },
   { name: 'clean up ended AI batches', run: cleanUpEndedBatches },

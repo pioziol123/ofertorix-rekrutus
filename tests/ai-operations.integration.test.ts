@@ -18,6 +18,7 @@ import {
   paidTestJob,
   registerTestExecutors,
 } from './fixtures/ai/operation-executors.ts'
+import { receiverTables } from './fixtures/ai/operation-receivers.ts'
 import { waitFor } from './worker.fixtures.ts'
 
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
@@ -73,6 +74,7 @@ integration('operations of assignments through the worker', () => {
       })
     await pool.query(sql.join('\n'))
     await pool.query(operationCallsTable)
+    await pool.query(receiverTables)
     await pool.query(`CREATE TABLE service_heartbeats (
       service text PRIMARY KEY,
       last_seen timestamptz NOT NULL DEFAULT now()
@@ -139,12 +141,14 @@ integration('operations of assignments through the worker', () => {
 
   /**
    * Places an assignment whose executor takes `delayMs` to answer, ending
-   * uncertain when asked.
+   * uncertain when asked; with `holdDelivery` the first delivery of its
+   * result does not return.
    */
   async function place(
     settingsName: 'paid' | 'local',
     delayMs: number,
     uncertain = false,
+    holdDelivery = false,
   ) {
     const tag = randomUUID()
     const { assignmentId } = await transaction(() =>
@@ -153,7 +157,7 @@ integration('operations of assignments through the worker', () => {
         type: 'single',
         label: tag,
         instruction: 'Summarise the text.',
-        input: JSON.stringify({ tag, delayMs, uncertain }),
+        input: JSON.stringify({ tag, delayMs, uncertain, holdDelivery }),
         responseFormat: { name: 'summary', schema: { type: 'object' } },
       }),
     )
@@ -207,6 +211,68 @@ integration('operations of assignments through the worker', () => {
         assignmentId,
       ])
     ).rows[0].status as string
+
+  const receiverCallsOf = async (assignmentId: string) =>
+    (
+      await pool.query(
+        'SELECT entry FROM receiver_calls WHERE assignment_id=$1',
+        [assignmentId],
+      )
+    ).rows.map((row: { entry: string }) => row.entry)
+
+  const receiverSavesOf = async (assignmentId: string) =>
+    (
+      await pool.query(
+        'SELECT entry,saved_at FROM receiver_saves WHERE assignment_id=$1',
+        [assignmentId],
+      )
+    ).rows as { entry: string; saved_at: Date }[]
+
+  it('delivers the result of an operation of the paid executor in its own process while the local executor carries out an operation, with no other background work (T6-AC01, T6-R03)', async () => {
+    worker ??= await startWorker()
+    const since = (await pool.query<{ now: Date }>('SELECT now()')).rows[0]!.now
+    const local = await place('local', 5000)
+    const paid = await place('paid', 0)
+    await waitFor(
+      async () => (await statusOf(paid.assignmentId)) === 'succeeded',
+      60_000,
+      'the paid assignment to succeed',
+    )
+    const [save] = await receiverSavesOf(paid.assignmentId)
+    expect(save).toMatchObject({ entry: 'result' })
+    expect(await receiverCallsOf(paid.assignmentId)).toEqual(['result'])
+    // The local operation was still being carried out at the delivery.
+    const { rows: localCall } = await pool.query(
+      'SELECT started_at,ended_at FROM operation_calls WHERE tag=$1',
+      [local.tag],
+    )
+    expect(localCall[0].started_at < save!.saved_at).toBe(true)
+    expect(
+      localCall[0].ended_at === null || save!.saved_at < localCall[0].ended_at,
+    ).toBe(true)
+    await waitFor(
+      async () => (await statusOf(local.assignmentId)) === 'succeeded',
+      60_000,
+      'the local assignment to succeed',
+    )
+    // No job was sent but the two operations' own.
+    const { rows: sent } = await admin.query(
+      `SELECT name,data->>'operationId' AS "operationId"
+       FROM ${queueSchema}.job WHERE created_on>=$1`,
+      [since],
+    )
+    const operations = await pool.query(
+      'SELECT id FROM ai_operations WHERE assignment_id=ANY($1::uuid[])',
+      [[local.assignmentId, paid.assignmentId]],
+    )
+    type Sent = { name: string; operationId: string }
+    expect(sent.map((job: Sent) => job.name).sort()).toEqual(
+      [localTestJob.queue, paidTestJob.queue].sort(),
+    )
+    expect(sent.map((job: Sent) => job.operationId).sort()).toEqual(
+      operations.rows.map((row: { id: string }) => row.id).sort(),
+    )
+  }, 120_000)
 
   it('carries out the next assignment of the paid executor after an operation of it ended uncertain (T4-AC03, T4-R04)', async () => {
     worker ??= await startWorker()
@@ -366,6 +432,37 @@ integration('operations of assignments through the worker', () => {
         })
       }
     }, 120_000)
+
+    it('makes the delivery by the next attempt, without calling the executor again, after the worker is killed between the end of an operation with a result and its delivery (T6-AC08, T6-R10)', async () => {
+      worker ??= await startWorker()
+      const placed = await place('paid', 0, false, true)
+      await waitFor(
+        async () => (await receiverCallsOf(placed.assignmentId)).length === 1,
+        60_000,
+        'the delivery to begin',
+      )
+      const { rows } = await pool.query(
+        'SELECT state FROM ai_operations WHERE assignment_id=$1',
+        [placed.assignmentId],
+      )
+      expect(rows).toEqual([{ state: 'succeeded' }])
+      expect(await statusOf(placed.assignmentId)).toBe('in_progress')
+      await kill(worker)
+      worker = await startWorker()
+      await waitFor(
+        async () => (await statusOf(placed.assignmentId)) === 'succeeded',
+        180_000,
+        'the assignment to succeed',
+      )
+      expect(await receiverSavesOf(placed.assignmentId)).toMatchObject([
+        { entry: 'result' },
+      ])
+      expect(await receiverCallsOf(placed.assignmentId)).toEqual([
+        'result',
+        'result',
+      ])
+      expect(await callsOf(placed.tag)).toBe(1)
+    }, 300_000)
 
     it('ends an operation as uncertain within five minutes of the kill, through the failure handler, after the worker is killed during the last attempt (T5-AC02, T5-R03)', async () => {
       worker ??= await startWorker()

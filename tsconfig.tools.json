@@ -16,6 +16,7 @@
     "worker/**/*.ts",
     "periodic/**/*.ts",
     "scripts/**/*.ts",
-    "plugins/**/*.ts"
+    "plugins/**/*.ts",
+    "receivers/**/*.ts"
   ]
 }

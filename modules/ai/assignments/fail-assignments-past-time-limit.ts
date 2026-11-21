@@ -1,0 +1,55 @@
+import { transaction } from '../../../lib/db.ts'
+import {
+  assignmentsPastTimeLimit,
+  failPastTimeLimit,
+} from '../infrastructure/persistence/assignments.ts'
+import { endPendingOfAssignmentNotStarted } from '../infrastructure/persistence/operations.ts'
+import { assignmentReceiver } from './assignment-receiver.ts'
+
+/** Where the error of one assignment's end goes; the error log by default. */
+export type TimeLimitErrorLog = (message: string) => void
+
+/**
+ * A step of the periodic process (solution design of epic sq2, T6, "Time
+ * limit"): fails every assignment past its time limit of 7 days from
+ * placing, also one that needs attention, with the reason "time limit
+ * exceeded" (T6-R06, T6-R07). Two kinds are left alone: one with a running
+ * operation, which may still end with a result (T6-R08), and one in
+ * progress with a succeeded operation, whose delivery is still to be made.
+ *
+ * Each assignment ends in its own transaction: a write conditional on the
+ * rule still holding with its row locked sets it failed; its pending
+ * operations end as not started, charging nothing; its receiver's failure
+ * entry is called, when one is registered, so the requesting module learns
+ * of the end in the same save (T6-R02). Being no longer in progress, the
+ * assignment gets nothing further from the end of those operations. An
+ * error, of the receiver or the database, rolls that transaction back and
+ * is logged with the assignment's identifier; the other assignments are
+ * still handled and the next pass, a minute later, tries again (T6-R05).
+ * A failed assignment is not taken again. Returns the assignments failed.
+ */
+export async function failAssignmentsPastTimeLimit(
+  now: Date = new Date(),
+  log: TimeLimitErrorLog = console.error,
+): Promise<string[]> {
+  const failed: string[] = []
+  for (const assignmentId of await assignmentsPastTimeLimit(now)) {
+    try {
+      const ended = await transaction(async () => {
+        const assignment = await failPastTimeLimit(assignmentId, now)
+        if (!assignment) return false
+        await endPendingOfAssignmentNotStarted(assignmentId, now)
+        await assignmentReceiver(assignment.settingsName)?.receiveFailure({
+          assignmentId,
+        })
+        return true
+      })
+      if (ended) failed.push(assignmentId)
+    } catch (error) {
+      log(
+        `The time limit could not end assignment ${assignmentId}: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
+  return failed
+}

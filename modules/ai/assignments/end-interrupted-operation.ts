@@ -34,5 +34,6 @@ export async function endInterruptedOperation(
     state: 'uncertain',
     retryable: null,
     origin: operation.origin,
+    now,
   })
 }

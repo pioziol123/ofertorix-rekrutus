@@ -36,6 +36,7 @@ import {
   endFailedOperation,
   placeAssignment,
   readMonthlyBudgets,
+  registerAssignmentReceiver,
   runOperation,
   type AssignmentRequest,
 } from '../index.ts'
@@ -216,6 +217,13 @@ integration('starting and ending operations on a real database', () => {
     process.env.PG_BOSS_SCHEMA = queueSchema
     await createQueue(paidJob.queue, 'exclusivity')
     await createQueue(freeJob.queue, 'exclusivity')
+    // A receiver that takes every end, so a result succeeds; the delivery
+    // itself is tested in delivery.integration.test.ts (T6).
+    for (const name of ['cheap', 'dear', 'free'])
+      registerAssignmentReceiver(name, {
+        receiveResult: () => Promise.resolve(),
+        receiveFailure: () => Promise.resolve(),
+      })
     Object.assign(settings, {
       cheap: {
         executor: 'test-paid',
@@ -493,6 +501,7 @@ integration('starting and ending operations on a real database', () => {
           actual_cost: '0.000080',
         },
         budget: { settled: '0.000080', held: '0.000000' },
+        status: 'succeeded',
       },
       {
         name: 'a failure',
@@ -510,6 +519,7 @@ integration('starting and ending operations on a real database', () => {
           actual_cost: '0.000080',
         },
         budget: { settled: '0.000080', held: '0.000000' },
+        status: 'in_progress',
       },
       {
         name: 'missing usage',
@@ -525,10 +535,11 @@ integration('starting and ending operations on a real database', () => {
           actual_cost: null,
         },
         budget: { settled: '0.000000', held: '0.008000' },
+        status: 'succeeded',
       },
     ])(
       'ends an operation with $name in one save with its state, cost and the month charge, calling the executor once (T3-AC06)',
-      async ({ answer, row, budget }) => {
+      async ({ answer, row, budget, status }) => {
         const assignmentId = await place()
         answers = [answer]
         await runOperation({ operationId: await operationIdOf(assignmentId) })
@@ -548,14 +559,14 @@ integration('starting and ending operations on a real database', () => {
         // A repeated job has no further effect and calls nothing.
         await runOperation({ operationId: operation.id })
         expect(calls).toHaveLength(1)
-        // The assignment stays in progress: a result waits for its
-        // delivery (oferty-pracy-sq2.7), an ordinary failure has its next
-        // operation (T4-R02).
+        // A result is delivered and the assignment succeeds (T6-R03); after
+        // an ordinary failure it stays in progress with its next operation
+        // (T4-R02).
         const { rows } = await pool.query(
           'SELECT status FROM ai_assignments WHERE id=$1',
           [assignmentId],
         )
-        expect(rows[0].status).toBe('in_progress')
+        expect(rows[0].status).toBe(status)
       },
     )
 
@@ -805,8 +816,7 @@ integration('starting and ending operations on a real database', () => {
         { model: 'cheap' },
         { model: 'cheap' },
       ])
-      // The delivery of the result comes with oferty-pracy-sq2.7.
-      expect(await statusOf(assignmentId)).toBe('in_progress')
+      expect(await statusOf(assignmentId)).toBe('succeeded')
     })
 
     it('adds the next operation in the save that ends the failed one, pending for its executor with its job sent (T4-R02)', async () => {

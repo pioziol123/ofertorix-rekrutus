@@ -42,6 +42,17 @@ export { executorJobs } from './executors/registry.ts'
 export { runOperation } from './assignments/run-operation.ts'
 export { endFailedOperation } from './assignments/end-failed-operation.ts'
 export { sendOperationsWaitingForBudget } from './assignments/send-operations-waiting-for-budget.ts'
+// The receiver through which a requesting module learns of every end of its
+// assignments, registered by the shared registration of receivers that
+// every process runs at start, and the step of the periodic process that
+// fails assignments past their time limit (T6).
+export {
+  registerAssignmentReceiver,
+  type AssignmentFailureDelivery,
+  type AssignmentReceiver,
+  type AssignmentResultDelivery,
+} from './assignments/assignment-receiver.ts'
+export { failAssignmentsPastTimeLimit } from './assignments/fail-assignments-past-time-limit.ts'
 
 export {
   requestExecution,

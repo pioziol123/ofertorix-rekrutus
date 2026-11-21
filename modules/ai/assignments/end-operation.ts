@@ -41,6 +41,7 @@ export async function endOperation(
       state: end.state,
       retryable: end.retryable,
       origin: running.origin,
+      now,
     })
     return true
   })

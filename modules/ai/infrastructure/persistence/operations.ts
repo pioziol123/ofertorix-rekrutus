@@ -186,6 +186,23 @@ export async function endNotStarted(id: string, at: Date): Promise<void> {
 }
 
 /**
+ * Ends every pending operation of the assignment as failed with the cause
+ * `not_started`, not to be retried; none charges anything. A job such an
+ * operation still has in its executor's queue then finds nothing to start.
+ */
+export async function endPendingOfAssignmentNotStarted(
+  assignmentId: string,
+  at: Date,
+): Promise<void> {
+  await db().query(
+    `UPDATE ai_operations SET state='failed',waits_for=NULL,
+      cause='not_started',retryable=false,finished_at=$2
+     WHERE assignment_id=$1 AND state='pending'`,
+    [assignmentId, at],
+  )
+}
+
+/**
  * Ends a pending operation whose background work failed finally before it
  * started as an ordinary failure with the cause `unknown`: retryable, with
  * no cost and no budget month, so it charges nothing (T4-R06).

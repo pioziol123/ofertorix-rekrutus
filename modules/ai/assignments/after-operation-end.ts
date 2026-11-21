@@ -19,6 +19,8 @@ export type EndedOperation = {
   /** Whether a failed operation may be retried; null unless failed. */
   retryable: boolean | null
   origin: OperationOrigin
+  /** The moment of the end, compared with the assignment's deadline. */
+  now: Date
 }
 
 /** What follows the end of an operation for its assignment. */
@@ -37,24 +39,28 @@ export type NextStep =
  * the ended one included, against its limit:
  * - an assignment that is not in progress is left as it is, also one that
  *   failed while its operation ran; a result stays with its operation;
- * - a result of an assignment in progress: nothing here, its delivery comes
- *   with task oferty-pracy-sq2.7;
+ * - a result of an assignment in progress: nothing here, the handler
+ *   delivers it next (T6-R03);
  * - an ordinary failure of an automatic operation while the assignment has
- *   fewer automatic operations than its limit: a next operation, with no
- *   delay (T4-R01, T4-R02);
+ *   fewer automatic operations than its limit and its deadline has not
+ *   passed: a next operation, with no delay (T4-R01, T4-R02);
  * - any other failure, the last automatic one, a non-retryable one or one
  *   of an operation the owner added, and an uncertain end: needs attention
- *   (T4-R03).
- * Until task oferty-pracy-sq2.7 the deadline is not read here. That task
- * adds the row where a failed or uncertain end past the deadline gives
- * needs attention with no further operation.
+ *   (T4-R03);
+ * - any failed or uncertain end past the deadline: needs attention with no
+ *   further operation; the time limit fails the assignment at its next
+ *   pass (T6-R08).
  */
 export function nextStep(
   ended: Pick<
     EndedOperation,
     'assignmentStatus' | 'state' | 'retryable' | 'origin'
   >,
-  operations: { automaticOperations: number; automaticOperationLimit: number },
+  operations: {
+    automaticOperations: number
+    automaticOperationLimit: number
+    deadlinePassed: boolean
+  },
 ): NextStep {
   if (ended.assignmentStatus !== 'in_progress') return 'nothing'
   if (ended.state === 'succeeded') return 'nothing'
@@ -62,6 +68,7 @@ export function nextStep(
     ended.state === 'failed' &&
     ended.retryable === true &&
     ended.origin === 'automatic' &&
+    !operations.deadlinePassed &&
     operations.automaticOperations < operations.automaticOperationLimit
   )
     return 'next_operation'
@@ -85,7 +92,8 @@ export async function afterOperationEnd(ended: EndedOperation): Promise<void> {
   if (ended.assignmentStatus !== 'in_progress' || ended.state === 'succeeded')
     return
   const operations = await readAssignmentOperations(ended.assignmentId)
-  switch (nextStep(ended, operations)) {
+  const deadlinePassed = operations.deadline <= ended.now
+  switch (nextStep(ended, { ...operations, deadlinePassed })) {
     case 'next_operation':
       return addNextOperation(ended.assignmentId, operations)
     case 'needs_attention':

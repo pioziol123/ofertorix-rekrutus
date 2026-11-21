@@ -2,10 +2,11 @@
  * Test executors of assignments for the tests of the worker: a paid one
  * with a price list and a local one without, each on its own queue with
  * exclusivity on a constant key, like the real executors (ZA-D01). An
- * operation's input is JSON with a tag, a delay and optionally `uncertain`;
- * the executor records when it was called and when it returned in
- * `operation_calls`, through its own connection, then answers with a
- * result, or ends uncertain when the input asks for it.
+ * operation's input is JSON with a tag, a delay and optionally `uncertain`
+ * or `holdDelivery`; the executor records when it was called and when it
+ * returned in `operation_calls`, through its own connection, then answers
+ * with a result carrying the tag and `holdDelivery`, or ends uncertain
+ * when the input asks for it.
  */
 import { setTimeout as sleep } from 'node:timers/promises'
 import { Pool } from 'pg'
@@ -65,10 +66,13 @@ function testExecutor(
     },
     configured: () => true,
     async carryOut(work) {
-      const { tag, delayMs, uncertain } = JSON.parse(work.content.input) as {
+      const { tag, delayMs, uncertain, holdDelivery } = JSON.parse(
+        work.content.input,
+      ) as {
         tag: string
         delayMs: number
         uncertain?: boolean
+        holdDelivery?: boolean
       }
       records ??= new Pool({
         connectionString: process.env.DATABASE_URL,
@@ -96,7 +100,7 @@ function testExecutor(
         }
       return {
         kind: 'result',
-        content: { tag },
+        content: { tag, holdDelivery: holdDelivery === true },
         usage: { sent: true, inputTokens: 10, outputTokens: 5, toolCalls: 0 },
       }
     },

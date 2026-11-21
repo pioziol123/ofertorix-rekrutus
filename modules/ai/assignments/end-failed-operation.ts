@@ -40,6 +40,7 @@ export async function endFailedOperation(
       state: 'failed',
       retryable: true,
       origin: operation.origin,
+      now,
     })
   })
 }

@@ -11,12 +11,18 @@
  * directory, written once, that calls the queue library's `createQueue`
  * with the queue name and key mode written in it and imports no module
  * (B1-D05); an automated test keeps the two key modes equal (B1-D15).
+ *
+ * Before the module plugins, it runs the shared registration of the
+ * receivers of assignments, which is not a module plugin: the worker and
+ * its pool processes run it here, as the web application and the periodic
+ * process run it at their start (epic sq2, T6).
  */
 import {
   runPlugins,
   type HandlerRegistry,
   type ModulePlugin,
 } from '../lib/workers/index.ts'
+import { registerAssignmentReceivers } from '../receivers/index.ts'
 import { registerAiJobs } from './ai.ts'
 import { registerProfileJobs } from './profile.ts'
 import { registerSourcesJobs } from './sources.ts'
@@ -30,5 +36,6 @@ const modulePlugins: Record<string, ModulePlugin> = {
 export async function runModulePlugins(
   registry: HandlerRegistry,
 ): Promise<void> {
+  registerAssignmentReceivers()
   await runPlugins(modulePlugins, registry)
 }

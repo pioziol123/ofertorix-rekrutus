@@ -13,6 +13,7 @@ import {
   stopQueues,
 } from '../lib/queues/index.ts'
 import { currentScheduleDay } from '../modules/sources/index.ts'
+import { registerAssignmentReceivers } from '../receivers/index.ts'
 import { queueErrorHandling, startPasses } from './pass.ts'
 import { periodicSteps } from './steps.ts'
 
@@ -27,6 +28,8 @@ function fatal(message: string): never {
 const queueErrors = queueErrorHandling(fatal)
 onQueueError(queueErrors.listener)
 try {
+  // The time limit ends assignments and tells their receivers (epic sq2, T6).
+  registerAssignmentReceivers()
   startQueues()
   currentScheduleDay()
   await connectQueues()

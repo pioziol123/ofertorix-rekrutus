@@ -21,6 +21,11 @@ export type StartOutcome =
   | 'started'
   /** It waits for the budget; its job ends. */
   | 'waits_for_budget'
+  /**
+   * It succeeded and its assignment is still in progress: an earlier
+   * attempt stopped before the delivery, which is to be made now (T6-R10).
+   */
+  | 'delivers'
   /** Nothing to carry out: it ended without starting, or is not pending. */
   | 'nothing'
 
@@ -40,6 +45,9 @@ export type StartOutcome =
  * - running: left by an attempt that ended or was lost; it ends as
  *   uncertain without calling the executor again, and its assignment needs
  *   attention (T5-R01);
+ * - succeeded, assignment in progress: an earlier attempt ended it with a
+ *   result and stopped before its delivery; the delivery is made next,
+ *   without calling the executor (T6-R10);
  * - any other state, or an unknown operation: nothing happens.
  * `now` gives the moment of the start; its month in Polish time is the
  * operation's budget month.
@@ -54,6 +62,11 @@ export async function startOperation(
       await endInterruptedOperation(operation, now)
       return 'nothing'
     }
+    if (
+      operation?.state === 'succeeded' &&
+      operation.assignmentStatus === 'in_progress'
+    )
+      return 'delivers'
     if (operation?.state !== 'pending' || operation.waitsFor !== 'executor')
       return 'nothing'
     if (operation.assignmentStatus !== 'in_progress') {
@@ -65,6 +78,7 @@ export async function startOperation(
         state: 'failed',
         retryable: false,
         origin: operation.origin,
+        now,
       })
       return 'nothing'
     }
