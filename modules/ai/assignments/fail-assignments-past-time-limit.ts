@@ -3,7 +3,11 @@ import {
   assignmentsPastTimeLimit,
   failPastTimeLimit,
 } from '../infrastructure/persistence/assignments.ts'
-import { endPendingOfAssignmentNotStarted } from '../infrastructure/persistence/operations.ts'
+import {
+  endNotStarted,
+  lockPendingOperations,
+} from '../infrastructure/persistence/operations.ts'
+import { afterOperationEnd } from './after-operation-end.ts'
 import { assignmentReceiver } from './assignment-receiver.ts'
 
 /** Where the error of one assignment's end goes; the error log by default. */
@@ -18,11 +22,12 @@ export type TimeLimitErrorLog = (message: string) => void
  * progress with a succeeded operation, whose delivery is still to be made.
  *
  * Each assignment ends in its own transaction: a write conditional on the
- * rule still holding with its row locked sets it failed; its pending
- * operations end as not started, charging nothing; its receiver's failure
- * entry is called, when one is registered, so the requesting module learns
- * of the end in the same save (T6-R02). Being no longer in progress, the
- * assignment gets nothing further from the end of those operations. An
+ * rule still holding with its row locked sets it failed; each of its
+ * pending operations ends as not started, charging nothing, and what
+ * follows that end is decided by the one rule for every ended operation,
+ * which leaves an assignment no longer in progress as it is; its
+ * receiver's failure entry is called, when one is registered, so the
+ * requesting module learns of the end in the same save (T6-R02). An
  * error, of the receiver or the database, rolls that transaction back and
  * is logged with the assignment's identifier; the other assignments are
  * still handled and the next pass, a minute later, tries again (T6-R05).
@@ -38,7 +43,18 @@ export async function failAssignmentsPastTimeLimit(
       const ended = await transaction(async () => {
         const assignment = await failPastTimeLimit(assignmentId, now)
         if (!assignment) return false
-        await endPendingOfAssignmentNotStarted(assignmentId, now)
+        for (const operation of await lockPendingOperations(assignmentId)) {
+          await endNotStarted(operation.id, now)
+          await afterOperationEnd({
+            operationId: operation.id,
+            assignmentId,
+            assignmentStatus: 'failed',
+            state: 'failed',
+            retryable: false,
+            origin: operation.origin,
+            now,
+          })
+        }
         await assignmentReceiver(assignment.settingsName)?.receiveFailure({
           assignmentId,
         })

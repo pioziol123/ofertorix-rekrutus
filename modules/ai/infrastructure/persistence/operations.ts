@@ -186,20 +186,21 @@ export async function endNotStarted(id: string, at: Date): Promise<void> {
 }
 
 /**
- * Ends every pending operation of the assignment as failed with the cause
- * `not_started`, not to be retried; none charges anything. A job such an
- * operation still has in its executor's queue then finds nothing to start.
+ * The pending operations of an assignment with their origin, their rows
+ * locked until the caller's transaction ends, in the order of their
+ * ordinals.
  */
-export async function endPendingOfAssignmentNotStarted(
+export async function lockPendingOperations(
   assignmentId: string,
-  at: Date,
-): Promise<void> {
-  await db().query(
-    `UPDATE ai_operations SET state='failed',waits_for=NULL,
-      cause='not_started',retryable=false,finished_at=$2
-     WHERE assignment_id=$1 AND state='pending'`,
-    [assignmentId, at],
-  )
+): Promise<{ id: string; origin: OperationOrigin }[]> {
+  return (
+    await db().query<{ id: string; origin: OperationOrigin }>(
+      `SELECT id,origin FROM ai_operations
+       WHERE assignment_id=$1 AND state='pending'
+       ORDER BY ordinal FOR UPDATE`,
+      [assignmentId],
+    )
+  ).rows
 }
 
 /**
