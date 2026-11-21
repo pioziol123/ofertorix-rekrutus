@@ -164,14 +164,6 @@ export async function assignmentsWithoutOutcome(): Promise<string[]> {
   ).rows.map((row) => row.assignment_id)
 }
 
-/** Links a request to the execution AI accepted for it. */
-export async function linkExecution(requestId: string, executionId: string) {
-  await db().query('UPDATE matching_requests SET execution_id=$2 WHERE id=$1', [
-    requestId,
-    executionId,
-  ])
-}
-
 export type AssessmentHistoryRow = {
   id: string
   state: string
