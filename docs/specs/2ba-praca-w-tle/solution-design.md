@@ -108,6 +108,7 @@ Owner's decision of 2026-11-20 on the assumptions of the first attempt:
 - `oferty-pracy-2ba.1/ASM-2` (the worker takes only the queues of registered job definitions): reversed by B1-D16.
 - `oferty-pracy-2ba.1/ASM-3` confirmed: when a newer attempt has taken a job over, the old attempt's failure reason goes only to the worker's log, not onto the job, so the newer attempt's state is not overwritten.
 - `oferty-pracy-2ba.1/ASM-4` confirmed: a pool process that exits by itself fails its attempt with the reason `exited` and is replaced, like any failed attempt.
+- `oferty-pracy-2ba.1/ASM-5` confirmed by the owner on 2026-11-21, for the transitional period of the epic's deployment: the queue configuration accepts entries only for queues a queue migration created, recognised by their failure queue; an entry for a failure queue or for a queue of the existing path (B1-R17) stops the migration step with an error naming the queue, and a migrated queue without an entry is reset to the defaults. Whether the configuration may set failure queues outside this transition is not decided here.
 
 ### Contract: queue configuration
 
@@ -245,6 +246,12 @@ Discarded: deduplication keyed by source (point 6 in the notes of `oferty-pracy-
 **B5-D03. A new queue under a new name; the existing sync queue is deleted at the migration step with its waiting jobs.**
 Reason: the key mode changes.
 Discarded: changing the existing queue: pg-boss cannot change a queue's policy after creation (verified for B4-D02).
+
+### Confirmed assumptions
+
+Owner's decision of 2026-11-21:
+
+- `oferty-pracy-2ba.5/ASM-1` confirmed, strictly for the carry-over at deployment: syncs requested before B5 under the former rule (one waiting and one running sync per scope) that leave a source with several unfinished syncs. A request returns the source's running sync, else its oldest waiting one. The carry-over sends running syncs first, then waiting ones from the oldest. A carried-over waiting sync that meets a running sync of its scope waits in its handler until that sync ends, with no attempt used up. This is not a rule for syncs requested after B5, which cannot reach this state (B5-R02). The waiting in the handler is transitional: it can be removed once no sync from before B5 remains unfinished.
 
 ### Situations per operation
 
