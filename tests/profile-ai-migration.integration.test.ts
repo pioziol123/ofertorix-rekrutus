@@ -4,7 +4,7 @@ import { Pool } from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { closePool, setPool } from '../lib/db.ts'
 import { readExecutionHistory } from '../modules/ai/index.ts'
-import { readImport } from '../modules/profile/index.ts'
+import { prepareProposal, readImport } from '../modules/profile/index.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -318,6 +318,29 @@ integration('migration of the profile AI rows', () => {
       error: expect.stringContaining('Nie wiadomo, jak zakończyło się'),
     })
     expect((await readImport(imports.paidDone))!.status).toBe('proposal')
+  })
+  it('ASSUMPTION(oferty-pracy-sq2.8/ASM-2): refuses a new preparation of a CV whose running preparation the migration ended as uncertain, which the import still records as in progress, while the page shows it ended', async () => {
+    const id = imports.paidRunning
+    expect(
+      (await pool.query('SELECT status FROM profile_imports WHERE id=$1', [id]))
+        .rows[0].status,
+    ).toBe('ai_running')
+    expect(await readImport(id)).toMatchObject({
+      status: 'needs_attention',
+      error:
+        'Nie wiadomo, jak zakończyło się przygotowanie propozycji. Profil pozostaje bez zmian. Sprawdź stan wykonania przed ponowieniem.',
+    })
+    await expect(prepareProposal(id, 'PHP', 1)).rejects.toThrow(
+      'already pending',
+    )
+    expect(
+      (
+        await pool.query(
+          'SELECT text_revision FROM profile_imports WHERE id=$1',
+          [id],
+        )
+      ).rows[0].text_revision,
+    ).toBe(1)
   })
   it('replaces the index of one attempt in progress per import', async () => {
     expect(

@@ -605,10 +605,24 @@ integration(
           label: 'Przygotowywanie propozycji',
           message: null,
         })
-        // A request the provider cannot take: the assignment needs attention.
-        const refused = vi
-          .fn<typeof fetch>()
-          .mockResolvedValue(new Response('', { status: 401 }))
+        // The model refuses, a non-retryable failure by the mapping of the
+        // solution design (T2): the assignment needs attention.
+        const refused = vi.fn<typeof fetch>().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              id: 'synthetic-response',
+              status: 'completed',
+              usage: { input_tokens: 100, output_tokens: 5 },
+              output: [
+                {
+                  type: 'message',
+                  content: [{ type: 'refusal', text: 'I cannot help' }],
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        )
         await carryOut(assignmentId, refused)
         expect(refused).toHaveBeenCalledTimes(1)
         expect((await assignmentOf(assignmentId)).status).toBe(
