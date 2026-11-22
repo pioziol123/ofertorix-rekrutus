@@ -9,6 +9,7 @@ import { addDays, formatTime, polishDay } from '../../../lib/time/index.ts'
 export function scheduleDay(now: Date, time: string): string {
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))
     throw new Error('SOURCE_SYNC_TIME must be HH:mm')
+  // ASSUMPTION(oferty-pracy-nq3.6/ASM-1): the shown time is 24-hour HH:mm.
   if (formatTime(now) >= time) return polishDay(now)
   return polishDay(addDays(now, -1))
 }
