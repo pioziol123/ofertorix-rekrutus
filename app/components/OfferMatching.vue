@@ -2,6 +2,7 @@
 import {
   matchingCriterionLabel,
   matchingDetailLabels as labels,
+  matchingExchangeLink,
   matchingPending,
 } from '../../modules/matching/view'
 const props = defineProps<{ offerId: string; refreshVersion?: number }>()
@@ -248,11 +249,7 @@ onUnmounted(() => clearInterval(timer))
             :href="`/api/matching/${encodeURIComponent(row.id)}/archive`"
             download
           >
-            {{
-              row.assignment
-                ? 'Pobierz zapis wymiany z dostawcą (JSON)'
-                : 'Pobierz archiwum całej partii (JSON)'
-            }}
+            {{ matchingExchangeLink(row.assignment) }}
           </a>
         </p>
         <details v-if="row.result">

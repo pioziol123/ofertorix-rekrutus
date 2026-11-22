@@ -3,7 +3,7 @@ import {
   adsForAssessment,
 } from './read-assessment-inputs.ts'
 import { randomUUID } from 'node:crypto'
-import { AssignmentError, readLatestExecution } from '../ai/index.ts'
+import { AssignmentError } from '../ai/index.ts'
 import { transaction } from '../../lib/db.ts'
 import type { ProfileVersion } from '../profile/index.ts'
 import type { SourceAd } from '../sources/index.ts'
@@ -17,7 +17,6 @@ import {
   placeAssessmentAssignment,
 } from './infrastructure/adapters/assessment-ai.ts'
 import {
-  assessmentState,
   assignedAssessmentState,
   assignmentRefusalMessage,
   inputLimitMessage,
@@ -30,10 +29,7 @@ import {
   lockAdRequests,
   type RequestProgress,
 } from './infrastructure/persistence/assessment-requests.ts'
-import {
-  matchingPending,
-  type MatchingState,
-} from './domain/assessment-view.ts'
+import type { MatchingState } from './domain/assessment-view.ts'
 export class MatchingError extends Error {}
 
 /** A prepared request: an existing one in progress, or a new one. */
@@ -46,25 +42,18 @@ export type PreparedRequest = {
 }
 
 /**
- * The state of the AI work of a request that asked for it while it is in
- * progress, else null: from Matching's own data for an assignment
- * (T8-R04), from its latest execution for work of the old way.
+ * The state of a request's AI work while it is in progress, else null,
+ * from Matching's own data alone: in progress until an outcome is saved
+ * (T8-R04, T8-AC08).
+ * ASSUMPTION(oferty-pracy-sq2.9/ASM-4): also for a request of the old way,
+ * which has no assignment; one whose old work ended without an outcome
+ * reaching Matching stays in progress until task oferty-pracy-sq2.11 ends
+ * it.
  */
-async function progressState(
-  request: RequestProgress,
-): Promise<MatchingState | null> {
-  if (request.assignment_id)
-    return request.ended
-      ? null
-      : assignedAssessmentState({ assessment: false, message: false })
-  // ASSUMPTION(oferty-pracy-sq2.9/ASM-4): an assessment of the old way
-  // still in progress is read from its execution until task
-  // oferty-pracy-sq2.11, so it is reused rather than duplicated with a new
-  // paid assignment.
-  const execution = await readLatestExecution(request.id)
-  if (!execution) return null
-  const state = assessmentState('requested', execution)
-  return matchingPending.some((pending) => pending === state) ? state : null
+function progressState(request: RequestProgress): MatchingState | null {
+  return request.ended
+    ? null
+    : assignedAssessmentState({ assessment: false, message: false })
 }
 
 /** The label of an assessment's assignment: the offer's title and employer. */
@@ -98,7 +87,7 @@ export async function prepareMatching(
   // progress per ad.
   const previous = await latestRequestedOfAd(adId)
   if (previous) {
-    const state = await progressState(previous)
+    const state = progressState(previous)
     if (state) return { id: previous.id, state, reused: true, toRequest: null }
   }
   if (!profile) throw new MatchingError('Najpierw zatwierdź profil zawodowy.')

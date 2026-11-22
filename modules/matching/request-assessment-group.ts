@@ -1,10 +1,9 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { transaction } from '../../lib/db.ts'
-import { AssignmentError, readExecutionHistory } from '../ai/index.ts'
+import { AssignmentError } from '../ai/index.ts'
 import { assessmentsConfigured } from './infrastructure/adapters/assessment-ai.ts'
 import {
-  assessmentState,
   assignedAssessmentState,
   assignmentRefusalMessage,
   notConfiguredMessage,
@@ -119,32 +118,15 @@ async function itemOutsideGroup(
         return { id: request.id, offerId, state: 'excluded', reused: false }
       continue
     }
-    if (request.assignment_id) {
-      // In progress until its outcome was saved (T8-R04).
-      if (!request.ended || request.updated_at.getTime() >= acceptedAt)
-        return {
-          id: request.id,
-          offerId,
-          state: commandRequestState(request),
-          reused: true,
-        }
-      continue
-    }
-    // ASSUMPTION(oferty-pracy-sq2.9/ASM-4): whether an assessment of the old
-    // way was in progress when the command was accepted is read from its
-    // executions until task oferty-pracy-sq2.11.
-    const history = await readExecutionHistory(request.id)
-    const spanning = history.some(
-      (execution) =>
-        execution.createdAt.getTime() <= acceptedAt &&
-        (execution.finishedAt === null ||
-          execution.finishedAt.getTime() >= acceptedAt),
-    )
-    if (spanning)
+    // In progress until its outcome was saved (T8-R04), from Matching's own
+    // data alone (T8-AC08).
+    // ASSUMPTION(oferty-pracy-sq2.9/ASM-4): also for a request of the old
+    // way, which has no assignment.
+    if (!request.ended || request.updated_at.getTime() >= acceptedAt)
       return {
         id: request.id,
         offerId,
-        state: assessmentState('requested', history.at(-1) ?? null),
+        state: commandRequestState(request),
         reused: true,
       }
   }

@@ -12,6 +12,7 @@ export default apiHandler(async (event) => {
   setHeader(
     event,
     'Content-Disposition',
+    // ASSUMPTION(oferty-pracy-sq2.9/ASM-2): the file name of an exchange.
     archive.kind === 'exchange'
       ? `attachment; filename="exchange-${archive.assignmentId}.json"`
       : `attachment; filename="batch-${archive.operationId}.json"`,

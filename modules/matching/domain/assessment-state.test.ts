@@ -7,6 +7,7 @@ import {
 import {
   matchingBulkTexts,
   matchingDetailLabels,
+  matchingExchangeLink,
   matchingPending,
   matchingStateLabels,
 } from './assessment-view.ts'
@@ -117,6 +118,18 @@ describe('the texts of the bulk assessment in the offer list (T8-R04, sq2.9 ASM-
     )
     expect(matchingBulkTexts.notConfigured).toBe(
       'Oceny AI wymagają konfiguracji modelu i cennika.',
+    )
+  })
+})
+
+describe('the link to the provider exchange of an assessment (T8-R07, sq2.9 ASM-2)', () => {
+  it('names the exchange for an assessment with an assignment and keeps the batch archive for one of the old way', () => {
+    expect(matchingExchangeLink(true)).toBe(
+      'Pobierz zapis wymiany z dostawcą (JSON)',
+    )
+    expect(matchingExchangeLink(true)).not.toMatch(/parti/)
+    expect(matchingExchangeLink(false)).toBe(
+      'Pobierz archiwum całej partii (JSON)',
     )
   })
 })

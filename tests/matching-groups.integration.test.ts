@@ -448,8 +448,8 @@ integration(
     })
 
     it('handles the identical repeat of a command whose requests the old way saved as a new command: an offer whose assessment has ended gets a new assignment (FOLLOW-UP(oferty-pracy-0mq.21/DEV-1), sq2.9 ASM-1)', async () => {
-      // As the old way left it: the request has a random identifier and its
-      // execution is grouped under the command.
+      // As the old way left it: the request has a random identifier, its
+      // execution is grouped under the command, and its outcome is saved.
       const commandId = randomUUID(),
         old = randomUUID()
       await pool.query(
@@ -458,8 +458,8 @@ integration(
         [old, randomUUID(), commandId],
       )
       await pool.query(
-        `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state,execution_id)
-         VALUES($1,$2,$3,$4,'{}','{}','requested',$1)`,
+        `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state,execution_id,error)
+         VALUES($1,$2,$3,$4,'{}','{}','requested',$1,'Ocena nie została wykonana.')`,
         [old, ad, revision, profileVersion],
       )
       const again = await enqueue([ad], commandId)
@@ -494,16 +494,29 @@ integration(
       return id
     }
 
-    it('reuses an assessment of the old way still in progress instead of placing a new paid assignment, and places one once it has ended (sq2.9 ASM-4)', async () => {
+    it("decides from Matching's own data whether an assessment of the old way is in progress: reused while it has no outcome, also when its old work ended without one, and a new assignment once an outcome is saved (sq2.9 ASM-4, T8-AC08)", async () => {
       const old = await oldRequest(ad, 'queued')
       expect(await enqueueMatching(ad)).toMatchObject({
         id: old,
         reused: true,
-        state: 'queued',
+        state: 'running',
+      })
+      // The old work ended without its end reaching Matching, as the
+      // migration of the old way ended unfinished work: Matching's own data
+      // still holds no outcome, so the request stays in progress until task
+      // oferty-pracy-sq2.11 ends it.
+      await pool.query(
+        "UPDATE ai_executions SET state='retried',cause='interrupted' WHERE operation_id=$1",
+        [old],
+      )
+      expect(await enqueueMatching(ad)).toMatchObject({
+        id: old,
+        reused: true,
       })
       expect(await count('ai_assignments')).toBe(0)
+      // An outcome saved by the old receiver ends it.
       await pool.query(
-        "UPDATE ai_executions SET state='completed' WHERE operation_id=$1",
+        "UPDATE matching_requests SET error='Ocena nie została wykonana.',updated_at=now() WHERE id=$1",
         [old],
       )
       const next = await enqueueMatching(ad)

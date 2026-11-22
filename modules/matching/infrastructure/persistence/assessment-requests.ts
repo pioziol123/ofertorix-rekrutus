@@ -152,15 +152,21 @@ export async function linkAssignment(requestId: string, assignmentId: string) {
 }
 
 /**
- * The assignments of requests whose outcome is not saved yet, for the
- * status read that keeps the offer list refreshing.
- * ASSUMPTION(oferty-pracy-sq2.9/ASM-5): of every ad, not only those shown.
+ * The assignments of the given ads' assessments whose outcome is not saved
+ * yet: the assessment of an ad is its latest request, as the offer list
+ * shows it. For the status read that keeps the list refreshing.
  */
-export async function assignmentsWithoutOutcome(): Promise<string[]> {
+export async function assignmentsWithoutOutcome(
+  adIds: readonly string[],
+): Promise<string[]> {
+  if (!adIds.length) return []
   return (
     await db().query<{ assignment_id: string }>(
-      `SELECT assignment_id FROM matching_requests
-       WHERE assignment_id IS NOT NULL AND result IS NULL AND error IS NULL`,
+      `SELECT l.assignment_id FROM unnest($1::uuid[]) AS a(id)
+       JOIN LATERAL (SELECT assignment_id,result,error FROM matching_requests
+         WHERE ad_id=a.id ORDER BY created_at DESC,id DESC LIMIT 1) l ON true
+       WHERE l.assignment_id IS NOT NULL AND l.result IS NULL AND l.error IS NULL`,
+      [adIds],
     )
   ).rows.map((row) => row.assignment_id)
 }

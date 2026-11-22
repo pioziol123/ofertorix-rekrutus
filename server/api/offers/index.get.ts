@@ -12,12 +12,13 @@ export default defineEventHandler(async (event) => {
   } catch {
     throw createError({ statusCode: 400, statusMessage: 'Invalid filters' })
   }
-  const [list, sync, { jobspy, polish }, matching] = await Promise.all([
+  const [list, sync, { jobspy, polish }] = await Promise.all([
     listOffers(filters),
     readSyncState({ source: solidJobs, scope: {} }),
     readSourceCatalog(),
-    matchingListStatus(),
   ])
+  // The list's refresh follows the assessments of the offers it shows.
+  const matching = await matchingListStatus(list.items.map((offer) => offer.id))
   return {
     ...list,
     matching,

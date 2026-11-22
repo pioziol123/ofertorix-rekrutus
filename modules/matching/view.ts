@@ -7,6 +7,7 @@ export {
   matchingCriterionLabel,
   matchingBulkTexts,
   matchingDetailLabels,
+  matchingExchangeLink,
   matchingGroupLabels,
   matchingPending,
   matchingStateLabels,

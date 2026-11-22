@@ -104,17 +104,14 @@ export async function decorateMatching(
  * Whether groups of assessments can be requested, how many assessments are
  * in progress and the most one assessment of a group reserves. The count
  * of assessments with an assignment comes from the status read over the
- * assignments of Matching's assessments without an outcome (T8-R06); those
- * of the old way are counted by the AI read until task oferty-pracy-sq2.11.
- * ASSUMPTION(oferty-pracy-sq2.9/ASM-5): the count covers every assessment
- * of Matching in progress, not only those of the offers shown, as the
- * count before the task did.
+ * assessments of the offers shown, `shownAdIds`, without an outcome
+ * (T8-R06; solution design T8); those of the old way are counted by the AI
+ * read until task oferty-pracy-sq2.11.
  */
-export async function matchingListStatus() {
+export async function matchingListStatus(shownAdIds: readonly string[]) {
   const profile = await activeProfileVersion()
-  // ASSUMPTION(oferty-pracy-sq2.9/ASM-5)
   const pending =
-    (await assignmentsInProgress(await assignmentsWithoutOutcome())) +
+    (await assignmentsInProgress(await assignmentsWithoutOutcome(shownAdIds))) +
     (await activeExecutions())
   return {
     configured: assessmentsConfigured(),

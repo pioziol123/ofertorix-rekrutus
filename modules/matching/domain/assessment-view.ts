@@ -67,6 +67,17 @@ export const matchingBulkTexts = {
   accepted: (items: { reused: boolean; state: string }[]) =>
     `Zlecenie zapisane: ${items.length} ofert. Już oczekujące: ${items.filter((i) => i.reused).length}. Niezgodne z wymaganiami: ${items.filter((i) => i.state === 'excluded').length}.`,
 } as const
+/**
+ * The link of an assessment's history entry to what was sent to the
+ * provider and what came back (T8-R07): the exchange of its assignment's
+ * operations, or, for an assessment of the old way, the archive of its
+ * provider batch, whose text stays until task oferty-pracy-sq2.11.
+ * ASSUMPTION(oferty-pracy-sq2.9/ASM-2): the text of the exchange link.
+ */
+export const matchingExchangeLink = (assignment: boolean) =>
+  assignment
+    ? 'Pobierz zapis wymiany z dostawcą (JSON)'
+    : 'Pobierz archiwum całej partii (JSON)'
 export const matchingGroupLabels = {
   technologies: 'Technologie',
   experience: 'Doświadczenie',
