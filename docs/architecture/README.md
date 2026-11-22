@@ -124,6 +124,7 @@ flowchart TB
 | Source handling | [Import request](../../server/api/sources/polish.post.ts), [Polish sources status](../../server/api/sources/polish.get.ts), [JobSpy status](../../server/api/sources/jobspy.get.ts) |
 | AI assignments panel | [List API](../../server/api/ai-assignments/index.get.ts), [details API](../../server/api/ai-assignments/%5Bid%5D.get.ts), [count needing attention](../../server/api/ai-assignments/needing-attention.get.ts), [Retry](../../server/api/ai-assignments/%5Bid%5D/retry.post.ts), [Reject](../../server/api/ai-assignments/%5Bid%5D/reject.post.ts), [AI module reads and actions](../../modules/ai/index.ts) |
 | Shared route handling | [Identifier validation, body limit, error mapping and queue client](../../server/utils/http.ts), used by the routes of every module |
+| Polish time | [Time library](../../lib/time/index.ts): Polish days and months, calendar and exact arithmetic, and shown dates, for server and browser code ([rules](moduly-i-zasady-kodu.md#polish-time)); today the Sources module's schedule day uses it |
 
 ### Worker
 

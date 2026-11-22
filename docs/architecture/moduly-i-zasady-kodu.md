@@ -155,6 +155,16 @@ The rules apply to all code. Code created or moved after they were introduced ap
 
 Database tests run on an isolated PostgreSQL and pg-boss schema, and set the shared pool to the isolated schema's pool before first use. [Mechanism test](../../tests/db.integration.test.ts)
 
+## Polish time
+
+The application lives in Polish time (Europe/Warsaw), fixed in one place and configured nowhere. The rules apply to all code. Code created or moved after they were introduced applies them at once; older code moves over when its function changes. The mechanism belongs to the shared infrastructure outside the modules and has no server-only dependency, so browser code uses it too: [time library](../../lib/time/index.ts).
+
+1. **Moments are UTC.** Every moment is stored and passed between parts of the application in UTC: a `Date` in code, ISO text ending in `Z` over HTTP. Polish time exists only while a moment is turned into a day, a month, an hour or a shown date, or back.
+2. **One shared way.** Code that turns moments into Polish days, months, hours or shown dates or back, counts in calendar days or months, compares stored data with a day or month boundary, shows a date, or takes "now" to store it or compare it with stored data, does so through the time library. It does not format dates by hand, call `Intl` or `toLocale…` with a time zone, or add multiples of 24 hours to move by days.
+3. **Queries do not convert time zones.** Stored moments are UTC, and a query gets the UTC moments the library computed, e.g. the start of a Polish day; it does not use `AT TIME ZONE`, `date_trunc` on local time or a session time zone. A calendar day stored as a date is passed as `YYYY-MM-DD` text.
+4. **"Now" is an argument.** A function of the library that needs the current moment takes it as an argument defaulting to now, so tests pass a fixed moment.
+5. **Local elapsed time stays allowed.** Measuring elapsed time locally, such as delays, time limits or "in an hour" in code that touches neither the calendar nor the database, does not need the library.
+
 ## Coding rules
 
 - **Names describe the operation and its subject.** `enqueueMatching`, `publishAiRating` and `readRatings` show which call requests work, saves a result or reads history. We base type and status names on the concepts in the [domain glossary](../../GLOSSARY.md).
