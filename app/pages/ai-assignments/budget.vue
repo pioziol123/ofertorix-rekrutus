@@ -104,7 +104,7 @@ async function save(limit: Limit) {
               {{ amountText(data.current.carriedHeld) }}
             </dd>
           </template>
-          <dt>Obciążenie budżetu</dt>
+          <dt>Koszt obciążający budżet</dt>
           <dd data-testid="ai-budget-charge">
             {{ amountText(data.current.charge) }}
           </dd>
@@ -141,21 +141,22 @@ async function save(limit: Limit) {
           @submit.prevent="save('default')"
         >
           <label
-            >Limit kolejnych miesięcy (zł)<UInput
+            >Limit domyślny (zł)<UInput
               v-model="typed.default"
               inputmode="decimal"
               :placeholder="data.defaultLimit.replace(/\.?0+$/, '')"
           /></label>
           <UButton type="submit" :loading="busy">Ustaw limit</UButton>
           <span class="muted" data-testid="ai-budget-default"
-            >Nowy miesiąc zaczyna z limitem {{ amountText(data.defaultLimit) }}.
-            Zmiana nie dotyczy bieżącego miesiąca.</span
+            >Nowy miesiąc zaczyna z limitem domyślnym
+            {{ amountText(data.defaultLimit) }}. Zmiana nie dotyczy bieżącego
+            miesiąca.</span
           >
           <p v-if="messages.default" role="alert" class="notice">
             {{ messages.default }}
           </p>
           <p v-else-if="saved.default" role="status" class="muted">
-            Zapisano limit kolejnych miesięcy.
+            Zapisano limit domyślny.
           </p>
         </form>
         <h2>Wcześniejsze miesiące</h2>
@@ -167,7 +168,7 @@ async function save(limit: Limit) {
             <tr>
               <th>Miesiąc</th>
               <th>Limit</th>
-              <th>Obciążenie budżetu</th>
+              <th>Koszt obciążający budżet</th>
             </tr>
           </thead>
           <tbody>

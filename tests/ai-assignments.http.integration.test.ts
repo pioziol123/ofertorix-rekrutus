@@ -320,6 +320,8 @@ integration('AI assignments panel over HTTP (T11-AC03)', () => {
       '2,15 zł',
       '7,85 zł',
       'Wcześniejsze miesiące',
+      'Koszt obciążający budżet',
+      'Limit domyślny',
       '30,00 zł',
     ])
       expect(html).toContain(text)
