@@ -583,6 +583,15 @@ tbody tr.selected {
   color: #245c44;
   font-weight: 650;
 }
+.nav-counter {
+  margin-left: 6px;
+  border-radius: 8px;
+  background: #b4462f;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 650;
+  padding: 1px 6px;
+}
 .profile-main {
   max-width: 1250px;
   margin: auto;
@@ -1132,4 +1141,37 @@ tbody tr.selected {
 .research-history {
   margin: 1.5rem 0;
   font-size: 0.9rem;
+}
+.ai-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--paper);
+}
+.ai-table th,
+.ai-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.ai-table th {
+  font-weight: 650;
+  color: #6b7d6e;
+}
+.ai-table .small-label {
+  display: block;
+}
+.ai-table tr.needs-attention td {
+  background: #fbf0ec;
+}
+.ai-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 18px;
+  margin: 18px 0 28px;
+  font-size: 14px;
+}
+.ai-facts dt {
+  color: #6b7d6e;
 }

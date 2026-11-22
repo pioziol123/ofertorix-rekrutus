@@ -20,16 +20,7 @@ const technologies = computed(() =>
 </script>
 <template>
   <div class="workspace">
-    <header class="app-header">
-      <NuxtLink to="/offers" class="brand"
-        ><span class="brand-mark">o.</span> Oferty pracy</NuxtLink
-      >
-      <nav class="app-nav">
-        <NuxtLink to="/offers">Oferty</NuxtLink
-        ><NuxtLink to="/companies" aria-current="page">Firmy</NuxtLink
-        ><NuxtLink to="/profile">Mój profil</NuxtLink>
-      </nav>
-    </header>
+    <AppHeader current="companies" />
     <main class="offers-main companies-main">
       <NuxtLink to="/companies" class="back-link">← Wszystkie firmy</NuxtLink>
       <p v-if="error" role="alert" class="notice">

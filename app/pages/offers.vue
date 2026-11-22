@@ -276,16 +276,7 @@ const pageLink = (page: number) => ({
 
 <template>
   <div class="workspace">
-    <header class="app-header">
-      <NuxtLink to="/offers" class="brand"
-        ><span class="brand-mark">o.</span> Oferty pracy</NuxtLink
-      >
-      <nav class="app-nav">
-        <NuxtLink to="/offers" aria-current="page">Oferty</NuxtLink
-        ><NuxtLink to="/companies">Firmy</NuxtLink
-        ><NuxtLink to="/profile">Mój profil</NuxtLink>
-      </nav>
-    </header>
+    <AppHeader current="offers" />
     <main class="offers-main">
       <div class="page-heading">
         <div>

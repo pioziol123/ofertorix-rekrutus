@@ -383,16 +383,7 @@ onBeforeUnmount(() => clearInterval(timer))
 
 <template>
   <div class="workspace">
-    <header class="app-header">
-      <NuxtLink to="/offers" class="brand"
-        ><span class="brand-mark">o.</span>Oferty pracy</NuxtLink
-      >
-      <nav class="app-nav">
-        <NuxtLink to="/offers">Oferty</NuxtLink
-        ><NuxtLink to="/companies">Firmy</NuxtLink
-        ><NuxtLink to="/profile" aria-current="page">Mój profil</NuxtLink>
-      </nav>
-    </header>
+    <AppHeader current="profile" />
     <main class="profile-main">
       <div class="page-heading">
         <div>
