@@ -155,7 +155,7 @@ integration('the reads of the AI assignments panel', () => {
     )
   })
 
-  it('T11-AC01: a row gives the label, type, requesting module, executor, status, time left and budget charge', async () => {
+  it('T11-AC01, sq2.12 ASM-1: a row gives the label, type, requesting module, executor, status, time left and budget charge', async () => {
     const running = await assignment('in_progress', 2, {
       type: 'agent',
       settingsName: 'research',
@@ -214,7 +214,8 @@ integration('the reads of the AI assignments panel', () => {
       charge: '0.000000',
       finishedAt: new Date(now.getTime()).toISOString(),
     })
-    // The settings name itself when the settings no longer hold it.
+    // sq2.12 ASM-1: the settings name itself when the settings no longer
+    // hold it.
     expect(items[0]).toMatchObject({
       requestingModule: 'removed-settings',
       timeLeftSeconds: 7 * 24 * 3600 - 3 * 3600,

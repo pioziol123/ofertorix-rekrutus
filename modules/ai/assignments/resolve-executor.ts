@@ -21,6 +21,7 @@ const settingsSchema = z
  * The requesting module's display name under a settings name (T11-R05);
  * the settings name itself when the table no longer holds valid settings
  * under it, so an assignment placed under them is still shown.
+ * ASSUMPTION(oferty-pracy-sq2.12/ASM-1)
  */
 export function requestingModuleName(settingsName: string): string {
   const parsed = settingsSchema.safeParse(
