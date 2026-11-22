@@ -5,6 +5,8 @@ import {
   researchScopeLabels,
   researchTopics,
   hasSourcedFindings,
+  researchActiveStates,
+  researchStateLabels as states,
 } from '../../modules/companies/view'
 const props = defineProps<{ companyId: string }>()
 const { data, error, refresh } = await useFetch(
@@ -15,9 +17,7 @@ const busy = ref(false),
   selected = ref('')
 const operations = computed(() => data.value?.operations ?? [])
 const active = computed(() =>
-  operations.value.find((o) =>
-    ['waiting_budget', 'queued', 'running'].includes(o.state),
-  ),
+  operations.value.find((o) => researchActiveStates.includes(o.state)),
 )
 const completed = computed(() =>
   operations.value.filter((o) => o.state === 'completed'),
@@ -36,14 +36,6 @@ const latestFailure = computed(() =>
     (o) => o.error && (!current.value || o.createdAt > current.value.createdAt),
   ),
 )
-const states: Record<string, string> = {
-  waiting_budget: 'Czeka na dostępny budżet',
-  queued: 'Czeka na wykonanie',
-  running: 'Trwa zbieranie źródeł i przygotowywanie raportu',
-  completed: 'Gotowy',
-  failed: 'Nie udało się przygotować raportu',
-  unknown: 'Przerwano — koszt wymaga sprawdzenia',
-}
 const date = (v: string) => new Date(v).toLocaleString('pl-PL')
 const money = (v: string) =>
   new Intl.NumberFormat('pl-PL', {
@@ -95,9 +87,8 @@ onBeforeUnmount(() => clearInterval(timer))
       Research wymaga klucza OpenAI na serwerze (OPENAI_API_KEY). Zapisane
       raporty pozostają dostępne.
     </p>
-    <p v-if="data?.ceiling" class="muted">
-      Maksymalna rezerwacja: {{ money(data.ceiling) }} ze wspólnego miesięcznego
-      budżetu AI. Do OpenAI trafia nazwa, rodzaj, strona i opis firmy.
+    <p v-if="data?.configured" class="muted">
+      Do OpenAI trafia nazwa, rodzaj, strona i opis firmy.
     </p>
     <p v-if="active" role="status" class="notice">{{ states[active.state] }}</p>
     <p v-if="latestFailure" role="alert" class="notice">

@@ -1,18 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
+import { AssignmentError } from '../ai/index.ts'
 import { transaction } from '../../lib/db.ts'
 import { CompanyConflict, CompanyNotFound } from './errors.ts'
 import { researchCommand } from './domain/research-report.ts'
 import {
-  checkResearchExecution,
-  isRefusal,
-  readResearchExecutions,
-  requestResearchExecution,
+  placeResearchAssignment,
+  researchConfigured,
 } from './infrastructure/adapters/research-ai.ts'
 import {
   companyResearchRows,
   insertResearch,
-  linkResearchExecution,
   lockCompanyResearch,
   lockResearchCommand,
   readResearchTarget,
@@ -23,13 +21,24 @@ import {
 export class ResearchConfigurationError extends Error {}
 
 /**
+ * Whether a research is still in progress, from Companies' own data alone:
+ * until an outcome is saved (T9-R04, T9-AC05).
+ * ASSUMPTION(oferty-pracy-sq2.10/ASM-1): also for research of the old way,
+ * which has no assignment; one whose old work ended without its end
+ * reaching Companies stays in progress until task oferty-pracy-sq2.11 ends
+ * it.
+ */
+const inProgress = (research: Record<string, unknown>) =>
+  research.finished_at === null
+
+/**
  * Requests basic research of a company. The same command gives the same
  * answer and creates nothing more; a changed command under the same
  * identifier is a conflict. A research of the company still in progress
  * is reused, and so is its latest published report unless the command asks
  * for a refresh. Otherwise a new research with the company's current
- * target is requested from AI in the same transaction, reserving the
- * budget or waiting for it.
+ * target is saved with the agent assignment placed for it, in one
+ * transaction (T9-R01): a refused assignment leaves neither.
  */
 export async function requestResearch(companyId: string, value: unknown) {
   if (!z.uuid().safeParse(companyId).success) throw new CompanyNotFound()
@@ -38,30 +47,22 @@ export async function requestResearch(companyId: string, value: unknown) {
   const fingerprint = createHash('sha256')
     .update(JSON.stringify({ companyId, ...command }))
     .digest('hex')
-  // Outside the transaction, as AI requires; a reused research needs none.
-  const check = await checkResearchExecution()
+  // No provider is called; a reused research needs no configuration.
+  const configured = researchConfigured()
   return transaction(async () => {
     const receipt = await lockResearchCommand(command.commandId)
     if (receipt) {
       if (receipt.fingerprint !== fingerprint) throw new CompanyConflict()
       return receipt.result
     }
-    // One research in progress per company: requests of a company are
-    // decided one at a time, from the stage of its research in AI.
+    // One research in progress per company (T9-R04): requests of a company
+    // are decided one at a time, from Companies' own records of research.
     // ASSUMPTION(oferty-pracy-0mq.22/ASM-1)
     await lockCompanyResearch(companyId)
     const company = await readResearchTarget(companyId)
     if (!company) throw new CompanyNotFound()
     const researches = await companyResearchRows(companyId)
-    const executions = await readResearchExecutions(
-      researches.map((r) => String(r.id)),
-    )
-    // In progress: AI work not finished yet, read from the public execution
-    // read as the research history reads it (researchCostState).
-    const active = researches.find((r) => {
-      const execution = executions.get(String(r.id))
-      return execution !== undefined && execution.finishedAt === null
-    })
+    const active = researches.find(inProgress)
     const complete = command.refresh
       ? undefined
       : researches
@@ -76,16 +77,17 @@ export async function requestResearch(companyId: string, value: unknown) {
     let result: { id: string; reused: boolean }
     if (previous) result = { id: String(previous.id), reused: true }
     else {
-      if (!check) throw new ResearchConfigurationError()
+      if (!configured) throw new ResearchConfigurationError()
       const id = randomUUID()
-      await insertResearch({ id, companyId, target: company })
+      let assignmentId: string
       try {
-        const requested = await requestResearchExecution(id, company, check)
-        await linkResearchExecution(id, requested.executionId)
+        assignmentId = await placeResearchAssignment(company)
       } catch (error) {
-        if (isRefusal(error)) throw new ResearchConfigurationError()
+        if (error instanceof AssignmentError)
+          throw new ResearchConfigurationError()
         throw error
       }
+      await insertResearch({ id, companyId, target: company, assignmentId })
       result = { id, reused: false }
     }
     await saveResearchReceipt(command.commandId, { fingerprint, result })

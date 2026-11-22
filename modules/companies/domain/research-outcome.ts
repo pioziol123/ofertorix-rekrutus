@@ -1,9 +1,12 @@
 import type { AiExecution, ExecutionCause } from '../../ai/index.ts'
+import type { ResearchViewState } from './research-view.ts'
 
 /**
  * What the owner sees of a research, chosen from the public state and
  * cause of its AI work alone (A14-AC12), never from how the work got there.
- * ASSUMPTION(oferty-pracy-0mq.22/ASM-2): the messages below.
+ * ASSUMPTION(oferty-pracy-0mq.22/ASM-2): the messages below. For research
+ * with an assignment, which has no state or cause of its own, only the
+ * messages of a rejected report and of a failed assignment apply.
  */
 
 /** Why Companies did not accept a report. */
@@ -31,6 +34,16 @@ export function endMessage(end: {
 }
 
 /**
+ * The message of research whose assignment failed (T9-R02): the receiver
+ * gets no cause, so the message names none; the details of the failure are
+ * in the AI assignments panel.
+ * ASSUMPTION(oferty-pracy-sq2.10/ASM-3): today's message of research that
+ * ended without a report for any other cause, with the pointer to the
+ * panel the Profile's message of a failed assignment has.
+ */
+export const failedAssignmentMessage = `Nie udało się uzyskać kompletnego raportu z dowodami. ${previousKept} Szczegóły są w panelu zleceń AI.`
+
+/**
  * The message of research whose AI work was retried: only research that
  * was in progress at the migration to AI, ended as interrupted with its
  * reservation released.
@@ -38,12 +51,8 @@ export function endMessage(end: {
 export const interruptedMessage =
   'Research przerwano przy zmianie wersji aplikacji, a rezerwację zwolniono. Ponowienie wymaga nowego żądania.'
 
-/** The states of research the owner sees. */
-export type ResearchViewState =
-  'waiting_budget' | 'queued' | 'running' | 'completed' | 'failed' | 'unknown'
-
 /**
- * The state of research from its AI work: waiting for budget, queued, in
+ * The state of research of the old way from its AI work: waiting for budget, queued, in
  * progress (running or delivering), completed, failed (failed, rejected or
  * retried) or unknown (uncertain, its cost stays reserved).
  */
@@ -68,7 +77,7 @@ export function researchViewState(
 }
 
 /**
- * The state of the cost: reserved while the work is in progress (none
+ * The state of the cost of research of the old way: reserved while the work is in progress (none
  * while it waits for budget), then settled, or unknown while its
  * reservation stays.
  */

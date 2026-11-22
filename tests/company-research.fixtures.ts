@@ -77,3 +77,34 @@ export const researchMigrations = [
   '1770000000010_companies',
   '1770000000011_company_research',
 ].sort()
+
+/**
+ * The agent price list of the model research's assignments use
+ * (`gpt-6-luna`), with caps the paid agent session takes: the whole input
+ * cap of the model, an output cap of at least 4000 tokens and the web
+ * search price per call.
+ */
+export const assignmentPricing: AiConfiguration = {
+  model: 'gpt-6-luna',
+  version: 'test',
+  inputUsdPerMillion: '1',
+  outputUsdPerMillion: '1',
+  usdPln: '4',
+  fxVersion: 'test',
+  maxInputTokens: 500000,
+  maxOutputTokens: 6000,
+  toolCallUsd: '0.01',
+  maxToolCalls: 3,
+}
+
+/** The schema of research with assignments (oferty-pracy-sq2.10). */
+export const researchAssignmentMigrations = [
+  ...researchMigrations,
+  '1770000000019_research_ai_executions',
+  '1770000000020_ai_execution_lease',
+  '1770000000026_ai_without_local_slot_and_lease',
+  '1770000000027_ai_assignments',
+  '1770000000030_ai_operation_exchange',
+  '1770000000031_ai_budget_default_limit',
+  '1770000000034_company_research_assignment',
+]

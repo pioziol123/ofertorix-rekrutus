@@ -5,15 +5,19 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { Pool } from 'pg'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { closePool, setPool } from '../lib/db.ts'
+import { closePool, db, setPool, transaction } from '../lib/db.ts'
 import { stopQueues } from '../lib/queues/index.ts'
-import { readExecutionHistory } from '../modules/ai/index.ts'
+import {
+  checkExecution,
+  readExecutionHistory,
+  requestExecution,
+} from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { budgetMonth } from '../modules/ai/domain/cost.ts'
 import {
   createCompany,
   readCompanyResearch,
-  requestResearch,
+  researchSettingsKey,
 } from '../modules/companies/index.ts'
 import { prepareAiQueues } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
@@ -126,9 +130,48 @@ integration('AI work carried out by the AI module plugin', () => {
     return child
   }
 
-  // The Profile (epic sq2, T7) and Matching (T8) no longer request AI work
-  // the old way; their work is delivered through assignments.
-  it('delivers the end of company research whose only attempt failed to the module that requested it (B6-AC01, B6-AC07)', async () => {
+  /**
+   * Research of the old way, as Companies requested it before it moved to
+   * assignments (epic sq2, T9): its row and its agent work, requested
+   * through the old contract in one transaction. No module requests the
+   * old way any more; its plugin still carries out work requested before.
+   */
+  async function oldWayResearch(companyId: string) {
+    const researchId = randomUUID()
+    const check = await checkExecution(researchSettingsKey, 'agent')
+    await transaction(async () => {
+      await db().query(
+        "INSERT INTO company_research(id,company_id,target,configuration,state) VALUES($1,$2,$3,'{}','requested')",
+        [researchId, companyId, { name: 'Research company' }],
+      )
+      const { executionId } = await requestExecution({
+        settingsKey: researchSettingsKey,
+        operationId: researchId,
+        mode: {
+          kind: 'agent',
+          tools: ['web_search'],
+          resultInstruction: 'Write the report from the evidence.',
+        },
+        instruction: 'Research the company.',
+        responseSchema: {
+          name: 'company_research',
+          schema: { type: 'object' },
+        },
+        input: JSON.stringify({ name: 'Research company' }),
+        check,
+      })
+      await db().query(
+        'UPDATE company_research SET execution_id=$2 WHERE id=$1',
+        [researchId, executionId],
+      )
+    })
+    return researchId
+  }
+
+  // The Profile (epic sq2, T7), Matching (T8) and Companies (T9) no longer
+  // request AI work the old way; their work is delivered through
+  // assignments.
+  it('delivers the end of company research of the old way whose only attempt failed to the module that requested it (B6-AC01, B6-AC07)', async () => {
     const companyId = (
       await createCompany({
         commandId: randomUUID(),
@@ -138,27 +181,28 @@ integration('AI work carried out by the AI module plugin', () => {
         description: 'Owner supplied',
       })
     ).id
-    const research = await requestResearch(companyId, {
-      commandId: randomUUID(),
-      refresh: false,
-    })
+    const researchId = await oldWayResearch(companyId)
 
     worker = await startWorker()
 
     // The research's only attempt passed its time limit; the failure
-    // handler ended it and Companies' receiver took that end.
+    // handler ended it and Companies' receiver of the old way took that
+    // end.
     const operation = async () =>
       (await readCompanyResearch(companyId)).operations.find(
-        (o) => o.id === research.id,
+        (o) => o.id === researchId,
       )
     await waitFor(
       async () => (await operation())?.state === 'unknown',
       60_000,
       'the end of the research to reach Companies',
     )
-    expect(await readExecutionHistory(research.id)).toMatchObject([
+    expect(await readExecutionHistory(researchId)).toMatchObject([
       { state: 'uncertain', cause: 'unknown' },
     ])
-    expect(await operation()).toMatchObject({ report: null })
+    expect(await operation()).toMatchObject({
+      report: null,
+      error: expect.any(String),
+    })
   }, 150_000)
 })

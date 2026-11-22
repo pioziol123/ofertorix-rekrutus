@@ -7,12 +7,10 @@
  * Fixed in code; how a requesting module's preferences choose an executor
  * belongs to epic oferty-pracy-334.
  *
- * The Profile prepares its proposals (task oferty-pracy-sq2.8) and Matching
- * assesses offers (task oferty-pracy-sq2.9) through assignments, each with
- * the executor and parameters its old settings in `client-settings.ts`
- * give. Companies still requests AI work the old way with those settings
- * and adds its entry here when it moves to assignments (task
- * oferty-pracy-sq2.10).
+ * The Profile prepares its proposals (task oferty-pracy-sq2.8), Matching
+ * assesses offers (task oferty-pracy-sq2.9) and Companies research
+ * companies (task oferty-pracy-sq2.10) through assignments, each with the
+ * executor and parameters its old settings in `client-settings.ts` give.
  */
 export const assignmentSettings: Readonly<Record<string, unknown>> = {
   profile: {
@@ -24,5 +22,10 @@ export const assignmentSettings: Readonly<Record<string, unknown>> = {
     executor: 'openai',
     parameters: { model: 'gpt-6-luna', reasoningEffort: 'low' },
     requestingModule: 'Dopasowanie',
+  },
+  research: {
+    executor: 'openai',
+    parameters: { model: 'gpt-6-luna', reasoningEffort: 'low' },
+    requestingModule: 'Firmy',
   },
 }

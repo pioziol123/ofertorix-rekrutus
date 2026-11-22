@@ -16,3 +16,8 @@ export {
   researchTopicLabels,
   researchTopics,
 } from './domain/research-report.ts'
+export {
+  researchActiveStates,
+  researchStateLabels,
+  type ResearchViewState,
+} from './domain/research-view.ts'

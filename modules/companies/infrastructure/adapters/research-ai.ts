@@ -1,14 +1,11 @@
 import { z } from 'zod'
 import {
-  AiRequestError,
-  checkExecution,
+  canPlaceAssignments,
+  placeAssignment,
   type AgentTool,
   readLatestExecutions,
-  readReservation,
-  requestExecution,
   type AiExecution,
-  type ExecutionCheck,
-  type RequestedExecution,
+  type AssignmentReceiver,
   type ResultReceiver,
 } from '../../../ai/index.ts'
 import {
@@ -16,18 +13,23 @@ import {
   type ResearchTarget,
 } from '../../domain/research-report.ts'
 import {
+  endFailedResearch,
   recordResearchEnd,
   recordResearchResult,
+  takeResearchResult,
 } from '../../receive-research.ts'
 
 /**
  * Companies' integration with the AI module: it translates a research
- * request into the instructions, the response schema and the input of
- * agent work with web search, and passes AI's outcomes to Companies'
- * operations. Companies know no provider.
+ * request into an agent assignment with web search, its instructions, the
+ * response format and the input, and passes the end of the assignment to
+ * Companies' operations. Companies know no provider.
  */
 
-/** The key under which AI keeps the settings of Companies' research. */
+/**
+ * The settings name under which AI keeps the settings of Companies'
+ * assignments, and of its research of the old way.
+ */
 export const researchSettingsKey = 'research'
 
 /**
@@ -57,72 +59,73 @@ export function researchResponseSchema() {
 }
 
 /**
- * The check before a request, outside any transaction; null when research
- * cannot be requested now.
+ * Whether research can be requested now (T1-R08): no provider is called.
  */
-export async function checkResearchExecution(): Promise<ExecutionCheck | null> {
-  try {
-    // The check in agent mode, the mode the request reserves in.
-    // ASSUMPTION(oferty-pracy-0mq.22/ASM-3)
-    return await checkExecution(researchSettingsKey, 'agent')
-  } catch (error) {
-    if (isRefusal(error)) return null
-    throw error
-  }
+export function researchConfigured(): boolean {
+  return canPlaceAssignments(researchSettingsKey, 'agent')
 }
 
 /**
- * Requests the AI work of one research in the caller's transaction. The
- * research is the operation.
+ * Places the agent assignment with web search that researches a company,
+ * in the caller's transaction (T9-R01), and returns its identifier. The
+ * label is the company's name for the owner; the input is the target fixed
+ * for the research.
  */
-export function requestResearchExecution(
-  researchId: string,
+export async function placeResearchAssignment(
   target: ResearchTarget,
-  check: ExecutionCheck,
-): Promise<RequestedExecution> {
-  return requestExecution({
-    settingsKey: researchSettingsKey,
-    operationId: researchId,
-    mode: { kind: 'agent', tools, resultInstruction: synthesisInstruction },
+): Promise<string> {
+  const { assignmentId } = await placeAssignment({
+    settingsName: researchSettingsKey,
+    type: 'agent',
+    label: target.name,
     instruction: searchInstruction,
-    responseSchema: researchResponseSchema(),
     input: JSON.stringify(target),
-    check,
+    responseFormat: researchResponseSchema(),
+    agent: { tools, resultInstruction: synthesisInstruction },
   })
+  return assignmentId
 }
 
 /**
- * The most one research reserves, in PLN; null when research cannot be
- * requested now.
+ * The receiver of Companies' assignments (T6-R01). It runs in the AI
+ * module's transaction that saves the assignment's final status, so
+ * Companies' saves and that status commit together. It takes every result
+ * without an error: a report that fails Companies' own check is Companies'
+ * matter (T9-R02). It follows the three rules of the receiver (T6-R09): it
+ * changes only a research whose outcome is not saved yet, so a repeated
+ * call has no effect; it uses only its arguments and Companies' own data;
+ * and it relies on no moment of the end.
  */
-export function researchReservation(): string | null {
-  // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reservation read.
-  return readReservation(researchSettingsKey, 'agent')
+export const researchAssignmentReceiver: AssignmentReceiver = {
+  async receiveResult({ assignmentId, result, materials }) {
+    // ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the agent's materials are the
+    // evidence the report is validated against.
+    await takeResearchResult(assignmentId, result, materials ?? [])
+  },
+  async receiveFailure({ assignmentId }) {
+    await endFailedResearch(assignmentId)
+  },
 }
 
-/** The latest AI work of each research, by research. */
+/**
+ * The latest AI work of each research of the old way, by research, for the
+ * company view until task oferty-pracy-sq2.11.
+ */
 export async function readResearchExecutions(
   researchIds: string[],
 ): Promise<Map<string, AiExecution>> {
+  if (!researchIds.length) return new Map()
   // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the latest work of many
   // operations in one read.
   const executions = await readLatestExecutions(researchIds)
   return new Map(executions.map((e) => [e.operationId, e]))
 }
 
-/** An AI refusal of research the owner can fix by configuring it. */
-export function isRefusal(error: unknown): boolean {
-  return (
-    error instanceof AiRequestError &&
-    (error.code === 'not_configured' ||
-      error.code === 'unsupported_mode' ||
-      error.code === 'provider_unavailable')
-  )
-}
-
 /**
- * The receiver of research outcomes. It runs in AI's delivery transaction,
- * so publication and settlement commit together, and a failed delivery
+ * The receiver of research outcomes of the old way, for research requested
+ * before Companies moved to assignments; it goes with the old way (task
+ * oferty-pracy-sq2.11). It runs in AI's delivery transaction, so
+ * publication and settlement commit together, and a failed delivery
  * leaves none of its writes, which lets it take the same outcome again.
  */
 export const researchReceiver: ResultReceiver = {

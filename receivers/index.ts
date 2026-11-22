@@ -9,13 +9,18 @@
  *
  * Each requesting module that moved to assignments has its receiver below,
  * imported from the module's public entry: the Profile from task
- * oferty-pracy-sq2.8 and Matching from oferty-pracy-sq2.9; task
- * oferty-pracy-sq2.10 adds Companies. A second registration of a settings name throws at start.
+ * oferty-pracy-sq2.8, Matching from oferty-pracy-sq2.9 and Companies from
+ * oferty-pracy-sq2.10. A second registration of a settings name throws at
+ * start.
  */
 import {
   registerAssignmentReceiver,
   type AssignmentReceiver,
 } from '../modules/ai/index.ts'
+import {
+  researchAssignmentReceiver,
+  researchSettingsKey,
+} from '../modules/companies/index.ts'
 import {
   assessmentAssignmentReceiver,
   assessmentSettingsKey,
@@ -28,6 +33,7 @@ import {
 const receivers: Readonly<Record<string, AssignmentReceiver>> = {
   [proposalSettingsKey]: proposalAssignmentReceiver,
   [assessmentSettingsKey]: assessmentAssignmentReceiver,
+  [researchSettingsKey]: researchAssignmentReceiver,
 }
 
 let registered = false

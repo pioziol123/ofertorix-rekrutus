@@ -7,7 +7,8 @@ import type {
 /**
  * Companies' records of research: the company it is about, the target
  * fixed at the request, the published report or the owner's message, and
- * the link to its AI execution. The stage and cost of the work live in AI.
+ * the identifier of its AI assignment, or, for research of the old way, the
+ * link to its AI execution.
  */
 
 /** Locks a research for its outcome, until the transaction ends. */
@@ -19,6 +20,21 @@ export async function lockResearch(researchId: string) {
     )
   ).rows[0]
   return row ? { id: row.id as string, published: row.result !== null } : null
+}
+
+/**
+ * Locks the research of an assignment for its end, until the transaction
+ * ends; null when no research keeps the assignment. A research has ended
+ * once Companies saved its outcome.
+ */
+export async function lockAssignmentResearch(assignmentId: string) {
+  const row = (
+    await db().query(
+      'SELECT id,finished_at FROM company_research WHERE assignment_id=$1 FOR UPDATE',
+      [assignmentId],
+    )
+  ).rows[0]
+  return row ? { id: row.id as string, ended: row.finished_at !== null } : null
 }
 
 /** Saves the report Companies published, or the owner's message. */
@@ -33,30 +49,22 @@ export async function saveResearchOutcome(
 }
 
 /**
- * Saves a requested research with its target; its state keeps only
- * Companies' meaning, and its configuration, a read-only history of the
- * price list research had before AI kept its settings, is empty.
+ * Saves a requested research with its target and the identifier of the
+ * assignment placed for it (T9-R01); its state keeps only Companies'
+ * meaning, and its configuration, a read-only history of the price list
+ * research had before AI kept its settings, is empty.
  * ASSUMPTION(oferty-pracy-0mq.22/ASM-1)
  */
 export async function insertResearch(research: {
   id: string
   companyId: string
   target: unknown
+  assignmentId: string
 }) {
   await db().query(
-    "INSERT INTO company_research(id,company_id,target,configuration,state) VALUES($1,$2,$3,'{}','requested')",
-    [research.id, research.companyId, research.target],
+    "INSERT INTO company_research(id,company_id,target,configuration,state,assignment_id) VALUES($1,$2,$3,'{}','requested',$4)",
+    [research.id, research.companyId, research.target, research.assignmentId],
   )
-}
-
-export async function linkResearchExecution(
-  researchId: string,
-  executionId: string,
-) {
-  await db().query('UPDATE company_research SET execution_id=$2 WHERE id=$1', [
-    researchId,
-    executionId,
-  ])
 }
 
 /** Every research of a company, newest first. */

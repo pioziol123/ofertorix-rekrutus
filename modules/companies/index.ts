@@ -12,9 +12,12 @@ export {
 } from './request-research.ts'
 export { readCompanyResearch } from './read-research.ts'
 
-// Composition: where the worker registers the receiver of research
-// outcomes.
+// Composition: the receiver of the assignments of research, which the
+// shared registration of receivers registers, and the receiver of research
+// outcomes of the old way, which the AI module plugin registers until task
+// oferty-pracy-sq2.11.
 export {
+  researchAssignmentReceiver,
   researchReceiver,
   researchSettingsKey,
 } from './infrastructure/adapters/research-ai.ts'

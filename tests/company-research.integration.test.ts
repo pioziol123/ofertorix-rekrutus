@@ -11,39 +11,43 @@ import {
   it,
   vi,
 } from 'vitest'
-import { closePool, setPool } from '../lib/db.ts'
-// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { budgetMonth } from '../modules/ai/domain/cost.ts'
+import { closePool, setPool, transaction } from '../lib/db.ts'
+import { createQueue } from '../lib/queues/index.ts'
 import {
-  readExecutionHistory,
-  fundWaitingExecutions,
-  registerResultReceiver,
-  runExecution,
+  failAssignmentsPastTimeLimit,
+  runOperation,
 } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { openAiProvider } from '../modules/ai/infrastructure/adapters/openai.ts'
+import {
+  openAiExecutor,
+  openAiOperationJob,
+} from '../modules/ai/executors/openai.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { registerProviderAdapter } from '../modules/ai/provider-registry.ts'
+import { registerExecutor } from '../modules/ai/executors/registry.ts'
+// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
+import { citedMaterials } from '../modules/ai/infrastructure/adapters/openai-agent.ts'
 import {
   createCompany,
   CompanyConflict,
   readCompanyResearch,
   requestResearch,
-  researchReceiver,
-  researchSettingsKey,
+  researchAssignmentReceiver,
   ResearchConfigurationError,
 } from '../modules/companies/index.ts'
+import { researchStateLabels } from '../modules/companies/view.ts'
+import { registerAssignmentReceivers } from '../receivers/index.ts'
 import {
+  assignmentPricing,
   draft,
-  pricing,
-  researchMigrations,
+  researchAssignmentMigrations,
   searchResponse,
   synthesisResponse,
 } from './company-research.fixtures.ts'
 import { aiQueue } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
 
-// The settings and price lists AI keeps in code, replaced for the test.
+// The price lists AI keeps in code, replaced for the test; the settings of
+// research's assignments are the application's own.
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/client-settings.ts',
@@ -55,43 +59,80 @@ vi.mock(
   () => import('./ai-test-configuration.ts'),
 )
 
+const inProgress = researchStateLabels.running
+const failed = researchStateLabels.failed
+const failedAssignment =
+  'Nie udało się uzyskać kompletnego raportu z dowodami. Poprzedni raport pozostaje dostępny. Szczegóły są w panelu zleceń AI.'
+
 /**
- * Company research through the AI contract, with OpenAI simulated by its
- * transport (AC-AC01, E04-AC01–AC04): the agent adapter searches and
- * writes the report, Companies validate and publish it.
+ * Company research through one agent assignment of the AI module (task
+ * oferty-pracy-sq2.10, T9), with OpenAI simulated by the paid executor's
+ * transport: the agent session searches and writes the report, Companies'
+ * receiver validates and publishes it.
  */
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
 integration(
-  'company research through the AI contract in isolated PostgreSQL',
+  'company research through AI assignments in isolated PostgreSQL',
   () => {
     const schema = `research_test_${randomUUID().replaceAll('-', '')}`
     let admin: Pool, pool: Pool, companyId: string
     const queue = aiQueue()
     /** The simulated transport of OpenAI; each test sets its answers. */
-    let fetcher = vi.fn<typeof fetch>()
+    let provider: typeof fetch = () => {
+      throw new Error('Unexpected provider call')
+    }
     const command = (refresh = false) => ({ commandId: randomUUID(), refresh })
-    const mockedProvider = () =>
-      vi
-        .fn<typeof fetch>()
-        .mockResolvedValueOnce(Response.json(searchResponse()))
-        .mockResolvedValueOnce(Response.json(synthesisResponse()))
-    const count = async (sql: string) =>
-      (await pool.query(sql)).rows[0].n as number
-    const executionOf = async (researchId: string) =>
+    const answering = (...responses: unknown[]) => {
+      const transport = vi.fn<typeof fetch>()
+      for (const response of responses)
+        transport.mockResolvedValueOnce(Response.json(response))
+      return transport
+    }
+    const valid = () => answering(searchResponse(), synthesisResponse())
+    const count = async (table: string) =>
+      (await pool.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0]
+        .n as number
+    const assignmentIdOf = async (researchId: string) =>
       (
         await pool.query(
-          'SELECT execution_id FROM company_research WHERE id=$1',
+          'SELECT assignment_id FROM company_research WHERE id=$1',
           [researchId],
         )
-      ).rows[0].execution_id as string
-    /** Runs the queued AI work of the research with the given transport. */
-    async function execute(researchId: string, transport: typeof fetch) {
-      fetcher = transport as ReturnType<typeof vi.fn<typeof fetch>>
-      await runExecution({ executionId: await executionOf(researchId) })
+      ).rows[0].assignment_id as string
+    const assignmentOf = async (researchId: string) =>
+      (
+        await pool.query(
+          `SELECT a.id,a.settings_name,a.type,a.label,a.instruction,a.input,
+            a.response_format,a.agent_options,a.status,a.failure_reason
+           FROM company_research r JOIN ai_assignments a ON a.id=r.assignment_id
+           WHERE r.id=$1`,
+          [researchId],
+        )
+      ).rows[0]
+    /**
+     * Carries out the pending operations of a research's assignment, as
+     * the worker would, with the provider answering by the transport.
+     */
+    async function carryOut(researchId: string, transport: typeof fetch) {
+      provider = transport
+      const pending = (
+        await pool.query(
+          "SELECT id FROM ai_operations WHERE assignment_id=$1 AND state='pending' ORDER BY ordinal",
+          [await assignmentIdOf(researchId)],
+        )
+      ).rows
+      for (const { id } of pending) await runOperation({ operationId: id })
     }
     const operation = async (id: string) =>
       (await readCompanyResearch(companyId)).operations.find((o) => o.id === id)
+    /** Companies' rows of research, for comparing data before and after. */
+    const researchRows = async () =>
+      (
+        await pool.query(
+          'SELECT id,state,result,error,finished_at,assignment_id FROM company_research ORDER BY id',
+        )
+      ).rows
 
     beforeAll(async () => {
       admin = new Pool({ connectionString: process.env.DATABASE_URL })
@@ -103,29 +144,31 @@ integration(
       })
       setPool(pool)
       const sql: string[] = []
-      for (const migration of [
-        ...researchMigrations,
-        '1770000000019_research_ai_executions',
-        '1770000000020_ai_execution_lease',
-        '1770000000026_ai_without_local_slot_and_lease',
-      ])
+      for (const migration of researchAssignmentMigrations)
         createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
           sql: (s: string) => sql.push(s),
         })
       await pool.query(sql.join('\n'))
+      // The old way's queues and the paid executor's queue share the
+      // test's queue schema.
       await queue.start()
-      registerProviderAdapter(
-        openAiProvider((input, init) => fetcher(input, init)),
-      )
-      registerResultReceiver(researchSettingsKey, researchReceiver)
+      await createQueue(openAiOperationJob.queue, 'exclusivity')
+      // The receivers of the shared registration.
+      registerAssignmentReceivers()
     })
     beforeEach(async () => {
+      vi.unstubAllEnvs()
       vi.stubEnv('OPENAI_API_KEY', 'mock-key-never-send')
-      usePricing('research', pricing, 'agent')
+      usePricing('research', assignmentPricing, 'agent')
+      // The paid executor with the test's price list, on the provider
+      // simulated by the transport each test sets.
+      registerExecutor(openAiExecutor((input, init) => provider(input, init)))
+      provider = () => {
+        throw new Error('Unexpected provider call')
+      }
       await queue.reset()
-      fetcher = vi.fn<typeof fetch>()
       await pool.query(
-        'TRUNCATE company_research_commands,company_research,ai_attempts,ai_executions,ai_budget_months,company_commands,companies CASCADE',
+        'TRUNCATE company_research_commands,company_research,ai_operation_exchange,ai_operations,ai_assignments,ai_attempts,ai_executions,ai_budget_months,company_commands,companies CASCADE',
       )
       companyId = (
         await createCompany({
@@ -147,7 +190,49 @@ integration(
       }
     })
 
-    it('E04-AC01: deduplicates concurrent commands and rejects a changed command payload without another reservation', async () => {
+    it('T9-AC01: places one agent assignment with web search, labelled with the company name, and stores its identifier with the research', async () => {
+      const research = await requestResearch(companyId, command())
+      expect(research.reused).toBe(false)
+      expect(await count('ai_assignments')).toBe(1)
+      expect(await assignmentOf(research.id)).toMatchObject({
+        settings_name: 'research',
+        type: 'agent',
+        label: 'Research company',
+        input: JSON.stringify({
+          name: 'Research company',
+          kind: 'brand',
+          website: 'https://company.example',
+          description: 'Owner supplied',
+        }),
+        response_format: { name: 'company_research' },
+        agent_options: {
+          tools: ['web_search'],
+          resultInstruction: expect.stringContaining(
+            'basic company research report',
+          ),
+        },
+        status: 'in_progress',
+      })
+      // Nothing is requested through the old way.
+      expect(await count('ai_executions')).toBe(0)
+      expect(await queue.executionJobs()).toHaveLength(0)
+    })
+
+    it('T9-AC01, T9-R04: a second request for the same company while the first is in progress places nothing, also when it asks for a refresh', async () => {
+      const first = await requestResearch(companyId, command())
+      expect(await requestResearch(companyId, command())).toEqual({
+        id: first.id,
+        reused: true,
+      })
+      expect(await requestResearch(companyId, command(true))).toEqual({
+        id: first.id,
+        reused: true,
+      })
+      expect(await count('ai_assignments')).toBe(1)
+      expect(await count('company_research')).toBe(1)
+    })
+
+    it('T9-AC01, E04-AC01: deduplicates concurrent commands and rejects a changed command payload without another assignment', async () => {
       const value = command()
       const same = await Promise.all([
         requestResearch(companyId, value),
@@ -165,67 +250,237 @@ integration(
       await expect(
         requestResearch(companyId, { ...value, refresh: true }),
       ).rejects.toBeInstanceOf(CompanyConflict)
-      expect(await queue.executionJobs()).toHaveLength(1)
-      expect(await count('SELECT count(*)::int AS n FROM ai_attempts')).toBe(1)
+      expect(await count('ai_assignments')).toBe(1)
     })
 
-    it('AC-AC01: executes one paid research only, settles both steps and reuses the published report without current configuration', async () => {
-      const op = await requestResearch(companyId, command())
-      const executionId = await executionOf(op.id)
-      fetcher = mockedProvider()
-      await queue.work()
-      // Another job of the ended research calls the provider no more.
-      await runExecution({ executionId })
-      expect(fetcher).toHaveBeenCalledTimes(2)
-      expect(await operation(op.id)).toMatchObject({
+    it('T9-AC02: a valid report is saved with its sources and the assignment succeeds', async () => {
+      const research = await requestResearch(companyId, command())
+      const transport = valid()
+      await carryOut(research.id, transport)
+      expect(transport).toHaveBeenCalledTimes(2)
+      expect((await assignmentOf(research.id)).status).toBe('succeeded')
+      const { accessedAt: _at, ...source } =
+        citedMaterials(searchResponse())[0]!.sources[0]!
+      expect(await operation(research.id)).toMatchObject({
         state: 'completed',
-        cost: '0.073680',
-        reserved: '0.536000',
-        costState: 'settled',
         error: null,
-        report: { claims: expect.any(Array) },
-      })
-      // The cost covers both steps, the search with its call price.
-      const attempt = (await pool.query('SELECT * FROM ai_attempts')).rows[0]
-      expect(attempt).toMatchObject({
-        state: 'settled',
-        response_id: 'search-id,synthesis-id',
-        usage: { input_tokens: 8300, output_tokens: 120, tool_calls: 1 },
-      })
-      // The agent's step log keeps the usage of each step.
-      const state = (
-        await pool.query('SELECT adapter_state FROM ai_executions')
-      ).rows[0].adapter_state
-      expect(state.steps).toMatchObject([
-        {
-          step: 'search',
-          status: 'completed',
-          usage: { inputTokens: 100, outputTokens: 50, toolCalls: 1 },
+        report: {
+          identity: draft().identity,
+          claims: expect.arrayContaining([
+            expect.objectContaining({
+              topic: 'activity',
+              kind: 'fact',
+              sources: [expect.objectContaining(source)],
+            }),
+          ]),
         },
-        {
-          step: 'synthesis',
-          status: 'completed',
-          usage: { inputTokens: 200, outputTokens: 70, toolCalls: 0 },
+      })
+      // The synthesis was given the target and the cited evidence.
+      expect(
+        JSON.parse(JSON.parse(String(transport.mock.calls[1]![1]!.body)).input),
+      ).toMatchObject({
+        target: { name: 'Research company' },
+        evidence: [{ id: 0, text: 'Project uses PHP.' }],
+      })
+    })
+
+    it.each([
+      [
+        'a fabricated quote',
+        () => {
+          const fabricated = draft()
+          fabricated.claims[0]!.evidence = [
+            { id: 0, quote: 'Project uses Go.' },
+          ]
+          return fabricated
         },
-      ])
-      usePricing('research', null)
+        'Nie udało się uzyskać kompletnego raportu z dowodami (validation). Poprzedni raport pozostaje dostępny.',
+      ],
+      [
+        'only unknowns',
+        () => ({
+          ...draft(),
+          claims: draft().claims.map((claim) => ({
+            ...claim,
+            kind: 'unknown' as const,
+            evidence: [],
+          })),
+        }),
+        'Raport nie zawiera żadnych ustaleń popartych źródłami. Nie uznano go za gotowy research. Poprzedni raport pozostaje dostępny. Ponowienie wymaga nowego żądania i kosztu.',
+      ],
+    ])(
+      'T9-AC02: a report with %s gives failed research with the assignment succeeded, and keeps the previous report',
+      async (_case, report, message) => {
+        const original = await requestResearch(companyId, command())
+        await carryOut(original.id, valid())
+        const refreshed = await requestResearch(companyId, command(true))
+        expect(refreshed.reused).toBe(false)
+        const synthesized = synthesisResponse()
+        synthesized.output[0]!.content[0]!.text = JSON.stringify(report())
+        await carryOut(refreshed.id, answering(searchResponse(), synthesized))
+        expect((await assignmentOf(refreshed.id)).status).toBe('succeeded')
+        expect(await operation(refreshed.id)).toMatchObject({
+          state: 'failed',
+          report: null,
+          error: message,
+        })
+        expect(await operation(original.id)).toMatchObject({
+          state: 'completed',
+          report: { claims: expect.any(Array) },
+        })
+        // Ended research is not in progress: the published report is
+        // reused, and a refresh places a new assignment.
+        expect(await requestResearch(companyId, command())).toEqual({
+          id: original.id,
+          reused: true,
+        })
+        expect((await requestResearch(companyId, command(true))).reused).toBe(
+          false,
+        )
+      },
+    )
+
+    it('T9-AC03: shows the texts of T9-R03 for research with an assignment in each status, with no amount', async () => {
+      const shown = async (id: string) => {
+        const view = await readCompanyResearch(companyId)
+        expect(view).not.toHaveProperty('ceiling')
+        const research = view.operations.find((o) => o.id === id)!
+        // No amount for research with an assignment.
+        expect(research).toMatchObject({
+          reserved: null,
+          cost: null,
+          costState: null,
+        })
+        return researchStateLabels[research.state]
+      }
+      // In progress, nothing carried out yet.
+      const research = await requestResearch(companyId, command())
+      expect(await shown(research.id)).toBe(inProgress)
+      // Needs attention: the provider refused the request.
+      await carryOut(
+        research.id,
+        vi
+          .fn<typeof fetch>()
+          .mockResolvedValueOnce(new Response('{}', { status: 400 })),
+      )
+      expect((await assignmentOf(research.id)).status).toBe('needs_attention')
+      expect(await shown(research.id)).toBe(inProgress)
+      // Failed: the time limit ended it.
+      const assignmentId = await assignmentIdOf(research.id)
+      await pool.query(
+        `UPDATE ai_assignments SET placed_at=now()-interval '8 days',
+          deadline=now()-interval '1 day' WHERE id=$1`,
+        [assignmentId],
+      )
+      await failAssignmentsPastTimeLimit()
+      expect((await assignmentOf(research.id)).status).toBe('failed')
+      expect(await shown(research.id)).toBe(failed)
+      // Succeeded and published.
+      const published = await requestResearch(companyId, command())
+      await carryOut(published.id, valid())
+      expect((await assignmentOf(published.id)).status).toBe('succeeded')
+      expect(await shown(published.id)).toBe(researchStateLabels.completed)
+      // Succeeded with a report that failed Companies' check.
+      const rejected = await requestResearch(companyId, command(true))
+      const synthesized = synthesisResponse()
+      synthesized.output[0]!.content[0]!.text = JSON.stringify({
+        ...draft(),
+        claims: [],
+      })
+      await carryOut(rejected.id, answering(searchResponse(), synthesized))
+      expect((await assignmentOf(rejected.id)).status).toBe('succeeded')
+      expect(await shown(rejected.id)).toBe(failed)
+    })
+
+    it('T9-AC07: after a failure reaches the receiver the research shows as failed, and new research of the same company can be requested', async () => {
+      const research = await requestResearch(companyId, command())
+      await pool.query(
+        `UPDATE ai_assignments SET placed_at=now()-interval '8 days',
+          deadline=now()-interval '1 day' WHERE id=$1`,
+        [await assignmentIdOf(research.id)],
+      )
+      await failAssignmentsPastTimeLimit()
+      expect(await assignmentOf(research.id)).toMatchObject({
+        status: 'failed',
+        failure_reason: 'time_limit',
+      })
+      expect(await operation(research.id)).toMatchObject({
+        state: 'failed',
+        report: null,
+        error: failedAssignment,
+      })
+      const again = await requestResearch(companyId, command())
+      expect(again.reused).toBe(false)
+      expect(await count('ai_assignments')).toBe(2)
+      expect(await operation(again.id)).toMatchObject({ state: 'running' })
+    })
+
+    it('T9-AC08: the receiver called twice with the same result and twice with the same failure leaves the same data as after one call', async () => {
+      const materials = citedMaterials(searchResponse())
+      const succeeded = await requestResearch(companyId, command())
+      const result = {
+        assignmentId: await assignmentIdOf(succeeded.id),
+        result: draft(),
+        materials,
+      }
+      await transaction(() => researchAssignmentReceiver.receiveResult(result))
+      const once = await researchRows()
+      expect(once[0]).toMatchObject({ result: { claims: expect.any(Array) } })
+      await transaction(() => researchAssignmentReceiver.receiveResult(result))
+      expect(await researchRows()).toEqual(once)
+
+      const ended = await requestResearch(companyId, command(true))
+      const failure = { assignmentId: await assignmentIdOf(ended.id) }
+      await transaction(() =>
+        researchAssignmentReceiver.receiveFailure(failure),
+      )
+      const afterFailure = await researchRows()
+      expect(afterFailure.find((r) => r.id === ended.id)).toMatchObject({
+        result: null,
+        error: failedAssignment,
+      })
+      await transaction(() =>
+        researchAssignmentReceiver.receiveFailure(failure),
+      )
+      expect(await researchRows()).toEqual(afterFailure)
+      // A result after the failure, and a failure after the result, change
+      // nothing either.
+      await transaction(() =>
+        researchAssignmentReceiver.receiveResult({
+          ...failure,
+          result: draft(),
+          materials,
+        }),
+      )
+      await transaction(() =>
+        researchAssignmentReceiver.receiveFailure({
+          assignmentId: result.assignmentId,
+        }),
+      )
+      expect(await researchRows()).toEqual(afterFailure)
+    })
+
+    it('T9-AC04: reuses the published report without current configuration', async () => {
+      const research = await requestResearch(companyId, command())
+      await carryOut(research.id, valid())
+      vi.stubEnv('OPENAI_API_KEY', '')
       expect(await requestResearch(companyId, command())).toEqual({
-        id: op.id,
+        id: research.id,
         reused: true,
       })
-      expect(await queue.executionJobs()).toHaveLength(1)
-      expect(await count('SELECT count(*)::int AS n FROM ai_attempts')).toBe(1)
+      expect(await count('ai_assignments')).toBe(1)
     })
 
-    it('E04-AC01: keeps both published versions after a successful explicit refresh', async () => {
+    it('T9-AC04, E04-AC01: keeps both published versions after a successful explicit refresh', async () => {
       const first = await requestResearch(companyId, command())
-      await execute(first.id, mockedProvider())
+      await carryOut(first.id, valid())
       await pool.query(
         "UPDATE companies SET name='Changed owner name' WHERE id=$1",
         [companyId],
       )
       const second = await requestResearch(companyId, command(true))
-      await execute(second.id, mockedProvider())
+      const transport = valid()
+      await carryOut(second.id, transport)
       const operations = (await readCompanyResearch(companyId)).operations
       expect(operations).toHaveLength(2)
       expect(operations.find((o) => o.id === first.id)).toMatchObject({
@@ -238,7 +493,8 @@ integration(
         target: { name: 'Changed owner name' },
         report: { claims: expect.any(Array) },
       })
-      expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body)).input).toBe(
+      expect((await assignmentOf(second.id)).label).toBe('Changed owner name')
+      expect(JSON.parse(String(transport.mock.calls[0]![1]!.body)).input).toBe(
         JSON.stringify({
           name: 'Changed owner name',
           kind: 'brand',
@@ -250,313 +506,22 @@ integration(
         id: second.id,
         reused: true,
       })
-      expect(await queue.executionJobs()).toHaveLength(2)
-      expect(await count('SELECT count(*)::int AS n FROM ai_attempts')).toBe(2)
+      expect(await count('ai_assignments')).toBe(2)
     })
 
-    it('E04-AC04: keeps the previous published version and target when a refresh ends with an unknown outcome, and never sends again', async () => {
-      const original = await requestResearch(companyId, command())
-      await execute(original.id, mockedProvider())
-      await pool.query(
-        "UPDATE companies SET name='Changed owner name' WHERE id=$1",
-        [companyId],
-      )
-      const refreshed = await requestResearch(companyId, command(true))
-      expect(refreshed.id).not.toBe(original.id)
-      const failing = vi
-        .fn<typeof fetch>()
-        .mockRejectedValue(new Error('Ambiguous transport failure'))
-      await execute(refreshed.id, failing)
-      await execute(refreshed.id, failing)
-      await queue.work()
-      expect(failing).toHaveBeenCalledTimes(1)
-      const operations = (await readCompanyResearch(companyId)).operations
-      expect(operations.find((o) => o.id === original.id)).toMatchObject({
-        state: 'completed',
-        target: { name: 'Research company' },
-        report: { claims: expect.any(Array) },
-      })
-      expect(operations.find((o) => o.id === refreshed.id)).toMatchObject({
-        state: 'unknown',
-        target: { name: 'Changed owner name' },
-        report: null,
-        cost: null,
-        costState: 'unknown',
-        reserved: '0.536000',
-        error: expect.any(String),
-      })
-      expect(await requestResearch(companyId, command())).toEqual({
-        id: original.id,
-        reused: true,
-      })
-    })
-
-    it.each(['uncited search', 'all-unknown synthesis'])(
-      'E04-AC02: settles a failed %s refresh and preserves the previous report without retrying',
-      async (failure) => {
-        const original = await requestResearch(companyId, command())
-        await execute(original.id, mockedProvider())
-        const refreshed = await requestResearch(companyId, command(true))
-        const searched = searchResponse()
-        const synthesized = synthesisResponse()
-        if (failure === 'uncited search')
-          searched.output[1]!.content![0]!.annotations = []
-        else
-          synthesized.output[0]!.content[0]!.text = JSON.stringify({
-            ...draft(),
-            claims: draft().claims.map((claim) => ({
-              ...claim,
-              kind: 'unknown',
-              evidence: [],
-            })),
-          })
-        const transport = vi
-          .fn<typeof fetch>()
-          .mockResolvedValueOnce(Response.json(searched))
-          .mockResolvedValueOnce(Response.json(synthesized))
-        await execute(refreshed.id, transport)
-        await execute(refreshed.id, transport)
-        const calls = failure === 'uncited search' ? 1 : 2
-        const cost = failure === 'uncited search' ? '0.072600' : '0.073680'
-        expect(transport).toHaveBeenCalledTimes(calls)
-        const operations = (await readCompanyResearch(companyId)).operations
-        expect(operations.find((op) => op.id === refreshed.id)).toMatchObject({
-          state: 'failed',
-          report: null,
-          costState: 'settled',
-          cost,
-          error:
-            failure === 'uncited search'
-              ? expect.stringContaining('Nie przygotowano raportu')
-              : expect.stringContaining('Nie uznano go za gotowy research'),
-        })
-        expect(operations.find((op) => op.id === original.id)).toMatchObject({
-          state: 'completed',
-          report: { claims: expect.any(Array) },
-        })
-        expect(await requestResearch(companyId, command())).toEqual({
-          id: original.id,
-          reused: true,
-        })
-        expect(await queue.executionJobs()).toHaveLength(2)
-      },
-    )
-
-    it('E04-AC02: rejects a report with a fabricated quote, settles it and keeps the previous report', async () => {
-      const original = await requestResearch(companyId, command())
-      await execute(original.id, mockedProvider())
-      const refreshed = await requestResearch(companyId, command(true))
-      const synthesized = synthesisResponse()
-      const fabricated = draft()
-      fabricated.claims[0]!.evidence = [{ id: 0, quote: 'Project uses Go.' }]
-      synthesized.output[0]!.content[0]!.text = JSON.stringify(fabricated)
-      await execute(
-        refreshed.id,
-        vi
-          .fn<typeof fetch>()
-          .mockResolvedValueOnce(Response.json(searchResponse()))
-          .mockResolvedValueOnce(Response.json(synthesized)),
-      )
-      expect(await operation(refreshed.id)).toMatchObject({
-        state: 'failed',
-        report: null,
-        costState: 'settled',
-        cost: '0.073680',
-        error:
-          'Nie udało się uzyskać kompletnego raportu z dowodami (validation). Poprzedni raport pozostaje dostępny.',
-      })
-      expect(await readExecutionHistory(refreshed.id)).toMatchObject([
-        { state: 'rejected', rejectionReason: 'invalid_report' },
-      ])
-      expect(await requestResearch(companyId, command())).toEqual({
-        id: original.id,
-        reused: true,
-      })
-    })
-
-    it('E04-AC03: keeps the measured search when the synthesis fails after it, leaves the cost unknown and publishes nothing', async () => {
-      const op = await requestResearch(companyId, command())
-      await execute(
-        op.id,
-        vi
-          .fn<typeof fetch>()
-          .mockResolvedValueOnce(Response.json(searchResponse()))
-          .mockRejectedValueOnce(new Error('Disconnected after submission')),
-      )
-      expect(await operation(op.id)).toMatchObject({
-        state: 'unknown',
-        report: null,
-        cost: null,
-        costState: 'unknown',
-        reserved: '0.536000',
-      })
-      const attempt = (await pool.query('SELECT * FROM ai_attempts')).rows[0]
-      expect(attempt).toMatchObject({
-        state: 'unknown',
-        actual_pln: null,
-        response_id: 'search-id',
-        usage: { input_tokens: 8100, output_tokens: 50, tool_calls: 1 },
-      })
-      const state = (
-        await pool.query('SELECT adapter_state FROM ai_executions')
-      ).rows[0].adapter_state
-      expect(state.steps).toMatchObject([
-        { step: 'search', status: 'completed', responseId: 'search-id' },
-        { step: 'synthesis', status: 'unknown', responseId: null },
-      ])
-    })
-
-    it('shares the budget with other AI work and includes the search price before funding waiting research', async () => {
-      const month = budgetMonth()
-      await pool.query(
-        'INSERT INTO ai_budget_months(month,limit_pln) VALUES($1,1)',
-        [month],
-      )
-      const importId = randomUUID()
-      await pool.query(
-        "INSERT INTO profile_imports(id,kind,status) VALUES($1,'text','ready')",
-        [importId],
-      )
-      await pool.query(
-        "INSERT INTO ai_attempts(id,import_id,text_revision,month,attempt,generation,operation_type,state,reserved_pln,configuration) VALUES($1,$2,0,$3,1,$4,'profile','unknown',0.5,$5)",
-        [randomUUID(), importId, month, randomUUID(), pricing],
-      )
-      const op = await requestResearch(companyId, command())
-      // Tokens alone cost .416, but the .12 search price makes .536 exceed
-      // the remaining .5.
-      expect(await operation(op.id)).toMatchObject({
-        state: 'waiting_budget',
-        reserved: null,
-      })
-      expect(await queue.executionJobs()).toHaveLength(0)
-      await fundWaitingExecutions()
-      expect(await queue.executionJobs()).toHaveLength(0)
-      await pool.query(
-        'UPDATE ai_budget_months SET limit_pln=2 WHERE month=$1',
-        [month],
-      )
-      await fundWaitingExecutions()
-      expect(await operation(op.id)).toMatchObject({
-        state: 'queued',
-        reserved: '0.536000',
-      })
-      expect(
-        await count(
-          "SELECT count(*)::int AS n FROM ai_attempts WHERE operation_type='execution'",
-        ),
-      ).toBe(1)
-      expect(await queue.executionJobs()).toHaveLength(1)
-    })
-
-    it('E04-AC04, B6-AC05, B6-AC06: a new attempt that finds research running between its steps ends it as uncertain with the cause unknown and its whole reservation, and never starts a new search; the returning process changes nothing', async () => {
-      const op = await requestResearch(companyId, command())
-      const executionId = await executionOf(op.id)
-      // The attempt finishes the search and stops before the synthesis
-      // comes back; its job's attempt ends meanwhile.
-      let release!: () => void, entered!: () => void
-      const gate = new Promise<void>((resolve) => (release = resolve))
-      const between = new Promise<void>((resolve) => (entered = resolve))
-      const transport = vi
-        .fn<typeof fetch>()
-        .mockResolvedValueOnce(Response.json(searchResponse()))
-        .mockImplementationOnce(async () => {
-          entered()
-          await gate
-          return Response.json(synthesisResponse())
-        })
-      const lost = execute(op.id, transport)
-      await between
-      // The next attempt of the job finds the research running.
-      await queue.reset()
-      await runExecution({ executionId })
-      expect(transport).toHaveBeenCalledTimes(2)
-      // The end reaches Companies through the delivery job it sent.
-      expect(await queue.executionJobs()).toEqual([executionId])
-      await queue.work()
-      const ended = {
-        state: 'unknown',
-        report: null,
-        cost: null,
-        costState: 'unknown',
-        reserved: '0.536000',
-        error: expect.any(String),
-      }
-      expect(await operation(op.id)).toMatchObject(ended)
-      expect(await readExecutionHistory(op.id)).toMatchObject([
-        { state: 'uncertain', cause: 'unknown' },
-      ])
-      // The returning process publishes nothing and changes nothing, and
-      // the responses it received are in the execution's archive.
-      release()
-      await lost
-      await queue.work()
-      expect(transport).toHaveBeenCalledTimes(2)
-      expect(await operation(op.id)).toMatchObject(ended)
-      expect(await readExecutionHistory(op.id)).toMatchObject([
-        { state: 'uncertain', cause: 'unknown' },
-      ])
-      expect(
-        (
-          await pool.query(
-            'SELECT kind,artifact_key,content FROM matching_batch_artifacts WHERE operation_id=$1 ORDER BY artifact_key',
-            [executionId],
-          )
-        ).rows,
-      ).toEqual([
-        {
-          kind: 'output',
-          artifact_key: 'search',
-          content: JSON.stringify(searchResponse()),
-        },
-        {
-          kind: 'output',
-          artifact_key: 'synthesis',
-          content: JSON.stringify(synthesisResponse()),
-        },
-      ])
-      expect(await count('SELECT count(*)::int AS n FROM ai_attempts')).toBe(1)
-    })
-
-    it('sends nothing more for research that ended elsewhere while it searched, and does not overwrite that end', async () => {
-      const op = await requestResearch(companyId, command())
-      const executionId = await executionOf(op.id)
-      const transport = vi
-        .fn<typeof fetch>()
-        .mockImplementationOnce(async () => {
-          // The execution ended elsewhere meanwhile.
-          await pool.query(
-            "UPDATE ai_executions SET state='failed',cause='unknown',finished_at=now() WHERE id=$1",
-            [executionId],
-          )
-          return Response.json(searchResponse())
-        })
-        .mockResolvedValueOnce(Response.json(synthesisResponse()))
-      await execute(op.id, transport)
-      expect(transport).toHaveBeenCalledTimes(1)
-      expect(await operation(op.id)).toMatchObject({
-        state: 'failed',
-        report: null,
-        error: null,
-      })
-    })
-
-    it('refuses a new research without the research settings, before anything is saved', async () => {
-      usePricing('research', null)
+    it('refuses a new research without the configuration of its executor, before anything is saved', async () => {
+      vi.stubEnv('OPENAI_API_KEY', '')
       await expect(
         requestResearch(companyId, command()),
       ).rejects.toBeInstanceOf(ResearchConfigurationError)
-      expect(
-        await count('SELECT count(*)::int AS n FROM company_research'),
-      ).toBe(0)
-      expect(await readCompanyResearch(companyId)).toMatchObject({
+      expect(await count('company_research')).toBe(0)
+      expect(await count('ai_assignments')).toBe(0)
+      expect(await readCompanyResearch(companyId)).toEqual({
         configured: false,
-        ceiling: null,
+        operations: [],
       })
-      usePricing('research', pricing, 'agent')
-      expect(await readCompanyResearch(companyId)).toMatchObject({
-        configured: true,
-        ceiling: '0.536000',
-      })
+      vi.stubEnv('OPENAI_API_KEY', 'mock-key-never-send')
+      expect((await readCompanyResearch(companyId)).configured).toBe(true)
     })
   },
 )

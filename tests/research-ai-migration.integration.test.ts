@@ -10,7 +10,11 @@ import {
   readCompanyResearch,
   requestResearch,
 } from '../modules/companies/index.ts'
-import { pricing, researchMigrations } from './company-research.fixtures.ts'
+import {
+  assignmentPricing,
+  pricing,
+  researchMigrations,
+} from './company-research.fixtures.ts'
 import { aiQueue } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
 
@@ -311,25 +315,41 @@ integration('migration of the research history to AI executions', () => {
     ).toBe(0)
   })
 
-  it('lets a company whose research was in progress at the deploy request it again, and reuses the published report of another', async () => {
+  it('sq2.10 ASM-1: reuses research of the old way that was in progress at the deploy, as Companies records no outcome for it, and places nothing', async () => {
     vi.stubEnv('OPENAI_API_KEY', 'mock-key-never-send')
-    usePricing('research', pricing, 'agent')
-    // The later AI migrations run before current AI code does.
+    usePricing('research', assignmentPricing, 'agent')
+    // The later migrations run before current code does.
     await migrate(pool, [
       '1770000000020_ai_execution_lease',
       '1770000000026_ai_without_local_slot_and_lease',
+      '1770000000027_ai_assignments',
+      '1770000000030_ai_operation_exchange',
+      '1770000000031_ai_budget_default_limit',
+      '1770000000034_company_research_assignment',
     ])
     await queue.start()
-    const again = await requestResearch(companies[1]!, {
-      commandId: randomUUID(),
-      refresh: false,
-    })
-    expect(again.reused).toBe(false)
+    // The view still shows it failed, from the old way's record, until task
+    // oferty-pracy-sq2.11 ends it in Companies too.
+    expect((await readCompanyResearch(companies[1]!)).operations).toMatchObject(
+      [{ id: ids.waiting, state: 'failed' }],
+    )
+    for (const [company, id] of [
+      [1, ids.waiting],
+      [0, ids.running],
+    ] as const)
+      expect(
+        await requestResearch(companies[company]!, {
+          commandId: randomUUID(),
+          refresh: true,
+        }),
+      ).toEqual({ id, reused: true })
     expect(
-      await requestResearch(companies[0]!, {
-        commandId: randomUUID(),
-        refresh: false,
-      }),
-    ).toEqual({ id: ids.completed, reused: true })
+      (await pool.query('SELECT count(*)::int AS n FROM ai_assignments'))
+        .rows[0].n,
+    ).toBe(0)
+    expect(
+      (await pool.query('SELECT count(*)::int AS n FROM ai_executions')).rows[0]
+        .n,
+    ).toBe(Object.keys(ids).length)
   })
 })
