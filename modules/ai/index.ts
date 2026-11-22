@@ -71,3 +71,12 @@ export {
   type AssignmentResultDelivery,
 } from './assignments/assignment-receiver.ts'
 export { failAssignmentsPastTimeLimit } from './assignments/fail-assignments-past-time-limit.ts'
+
+// The reads of the AI assignments panel (T11): the list of assignments
+// 50 at a time, the details of one with its operations and cost figures,
+// and the count of assignments needing attention for the navigation. Only
+// the panel's reads give causes, reasons and costs of assignments. Their
+// shapes and texts are in `view.ts`.
+export { readAssignmentList } from './assignments/read-assignment-list.ts'
+export { readAssignmentDetails } from './assignments/read-assignment-details.ts'
+export { countAssignmentsNeedingAttention } from './assignments/count-assignments-needing-attention.ts'

@@ -5,6 +5,7 @@ import type {
   ResponseFormat,
 } from '../../assignments/assignment.ts'
 import type { AgentTool } from '../../domain/agent-tools.ts'
+import type { AssignmentFailureReason } from '../../domain/panel.ts'
 import type { ExecutorParameters } from '../../executors/declaration.ts'
 import type { OperationOrigin } from './operations.ts'
 
@@ -185,7 +186,7 @@ export async function setSucceeded(
  * "Contract: the closed lists"; ZA-R05): rejected by the owner, time limit
  * exceeded, result not taken.
  */
-export type FailureReason = 'rejected' | 'time_limit' | 'delivery_failed'
+export type FailureReason = AssignmentFailureReason
 
 /**
  * Ends an assignment in progress as failed with the reason at `at`; false,

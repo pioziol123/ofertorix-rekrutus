@@ -373,6 +373,22 @@ export async function operationsWaitingForBudget(): Promise<
   ).rows
 }
 
+/**
+ * The budget charge of the operations of a group (ZA-R04), as SQL over
+ * `ai_operations` columns: per started operation, the actual cost when
+ * known and the potential cost otherwise; an operation that never started
+ * charges nothing. The cost figures and the panel's list share it.
+ */
+export const operationsCharge = `coalesce(sum(coalesce(actual_cost,potential_cost))
+          FILTER (WHERE budget_month IS NOT NULL),0)::numeric(16,6)::text`
+
+/**
+ * Whether an operation's actual cost is unknown, as an SQL condition over
+ * `ai_operations` columns: it started, ended and has no actual cost.
+ */
+export const unknownActualCost = `started_at IS NOT NULL AND actual_cost IS NULL
+          AND state IN ('succeeded','failed','uncertain')`
+
 /** The cost figures of an assignment (T3-R08), amounts in złoty. */
 export type AssignmentCostRow = {
   potential: string
@@ -393,10 +409,8 @@ export async function readAssignmentCostRow(
     await db().query<AssignmentCostRow>(
       `SELECT coalesce(sum(potential_cost),0)::numeric(16,6)::text AS potential,
         coalesce(sum(actual_cost),0)::numeric(16,6)::text AS actual,
-        coalesce(sum(coalesce(actual_cost,potential_cost))
-          FILTER (WHERE budget_month IS NOT NULL),0)::numeric(16,6)::text AS charge,
-        (count(*) FILTER (WHERE started_at IS NOT NULL AND actual_cost IS NULL
-          AND state IN ('succeeded','failed','uncertain')))::int AS unknown
+        ${operationsCharge} AS charge,
+        (count(*) FILTER (WHERE ${unknownActualCost}))::int AS unknown
        FROM ai_operations WHERE assignment_id=$1`,
       [assignmentId],
     )

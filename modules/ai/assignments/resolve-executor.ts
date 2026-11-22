@@ -17,6 +17,20 @@ const settingsSchema = z
   })
   .strict()
 
+/**
+ * The requesting module's display name under a settings name (T11-R05);
+ * the settings name itself when the table no longer holds valid settings
+ * under it, so an assignment placed under them is still shown.
+ */
+export function requestingModuleName(settingsName: string): string {
+  const parsed = settingsSchema.safeParse(
+    Object.hasOwn(assignmentSettings, settingsName)
+      ? assignmentSettings[settingsName]
+      : undefined,
+  )
+  return parsed.success ? parsed.data.requestingModule : settingsName
+}
+
 /** The executor found for a settings name and a type, with its offer. */
 export type ResolvedExecutor = {
   executor: Executor
