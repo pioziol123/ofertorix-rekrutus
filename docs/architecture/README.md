@@ -60,8 +60,7 @@ flowchart LR
   Web -->|"Saves and serves CV originals"| Files
   Worker -->|"Reads files for text extraction"| Files
   Worker -->|"Fetches ads over HTTP(S)"| Boards
-  Worker -.->|"Calls the Responses, Files and Batch APIs over HTTPS"| OpenAI
-  Web -.->|"Checks the model over HTTP(S)"| Ollama
+  Worker -.->|"Calls the Responses API over HTTPS"| OpenAI
   Worker -.->|"Generates a profile proposal over HTTP(S)"| Ollama
 
   classDef internal fill:#dbeafe,stroke:#2563eb,color:#172554

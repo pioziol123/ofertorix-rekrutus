@@ -14,7 +14,7 @@ The `modules/ai/` module carries out the AI work the other modules ask for, as *
 | Registration of receivers | [receivers/index.ts](../../receivers/index.ts): each requesting module's receiver under its settings name; the web application, the periodic process, the worker and its pool processes run it at start.                                                            |
 | Periodic process          | [periodic/steps.ts](../../periodic/steps.ts): calls the operations waiting for the budget, the time limit and the daily ad syncs, in this order.                                                                                                                    |
 
-An assignment is in progress, needs attention, succeeded or failed; succeeded and failed are final. An operation is pending (waiting for the budget or for its executor), running, succeeded, failed or uncertain. A failed operation carries a cause from one closed list and whether it may be retried. A failed assignment records one reason for the owner: `rejected`, `time_limit` or `delivery_failed`. The requesting module sees only the status and never a cost, a cause or a reason.
+An assignment is in progress, needs attention, succeeded or failed; succeeded and failed are final. An operation is pending (waiting for the budget or for its executor), running, succeeded, failed or uncertain. A failed operation carries a cause from one closed list and whether it may be retried. A failed assignment records one reason for the owner: `rejected`, `time_limit` or `delivery_failed`. The requesting module sees only the status and never a cost of its assignments, a cause or a reason; the potential cost of a price list is readable for display (ASSUMPTION(oferty-pracy-sq2.11/ASM-2)).
 
 ## Public operations
 
