@@ -87,6 +87,8 @@ onBeforeUnmount(() => clearInterval(timer))
       Research wymaga klucza OpenAI na serwerze (OPENAI_API_KEY). Zapisane
       raporty pozostają dostępne.
     </p>
+    <!-- ASSUMPTION(oferty-pracy-sq2.10/ASM-2): no amount, not even the most
+      one research reserves; only what is sent to OpenAI. -->
     <p v-if="data?.configured" class="muted">
       Do OpenAI trafia nazwa, rodzaj, strona i opis firmy.
     </p>

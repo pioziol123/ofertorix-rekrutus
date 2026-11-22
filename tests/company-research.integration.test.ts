@@ -340,7 +340,7 @@ integration(
       },
     )
 
-    it('T9-AC03: shows the texts of T9-R03 for research with an assignment in each status, with no amount', async () => {
+    it('T9-AC03, sq2.10 ASM-2: shows the texts of T9-R03 for research with an assignment in each status, with no amount and no most one research reserves', async () => {
       const shown = async (id: string) => {
         const view = await readCompanyResearch(companyId)
         expect(view).not.toHaveProperty('ceiling')
