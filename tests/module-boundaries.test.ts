@@ -180,6 +180,12 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
       [
         'lib/contact-details.ts',
         'lib/db.ts',
+        // The time library (oferty-pracy-nq3.6).
+        'lib/time/arithmetic.ts',
+        'lib/time/calendar.ts',
+        'lib/time/display.ts',
+        'lib/time/index.ts',
+        'lib/time/polish-zone.ts',
         // The queue library (oferty-pracy-2ba.1).
         'lib/queues/configuration.ts',
         'lib/queues/connection.ts',
@@ -197,6 +203,31 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
         'lib/workers/worker.ts',
       ].sort(),
     )
+  })
+
+  it('keeps Temporal and the time zone inside the time library (T6-AC08)', () => {
+    const code = ['lib', 'modules', 'server', 'app', 'worker', 'periodic']
+      .flatMap(files)
+      .filter((file) => !isTest(file))
+    const temporal = code.filter((file) =>
+      readFileSync(join(root, file), 'utf8').includes('temporal-polyfill'),
+    )
+    expect(temporal).toEqual(['lib/time/polish-zone.ts'])
+    const zone = files('lib/time').filter((file) =>
+      readFileSync(join(root, file), 'utf8').includes("'Europe/Warsaw'"),
+    )
+    expect(zone).toEqual(['lib/time/polish-zone.ts'])
+  })
+
+  it('leaves the Sources module no Polish time outside the time library (T6-AC06)', () => {
+    const own = files('modules/sources')
+      .filter((file) => !isTest(file))
+      .filter((file) =>
+        /Europe\/Warsaw|timeZone|toLocale|Intl\.DateTimeFormat|AT TIME ZONE|date_trunc/.test(
+          readFileSync(join(root, file), 'utf8'),
+        ),
+      )
+    expect(own).toEqual([])
   })
 
   it('leaves the worker entry only the worker library: no module, no queue client, no timer (B6-AC08, B6-AC10)', () => {

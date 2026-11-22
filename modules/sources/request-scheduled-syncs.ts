@@ -13,7 +13,7 @@ import type { AdmittedRun } from './sync-run-state.ts'
 /**
  * Requests the sync of every enabled scheduled source once per schedule
  * occurrence: the source and the schedule day, which starts at the
- * configured hour in Europe/Warsaw (A16-R03). Checking an occurrence again,
+ * configured hour in Polish time (A16-R03). Checking an occurrence again,
  * also from several workers at once, requests nothing more: the check and
  * the request hold the occurrence's transaction lock. Only a run the
  * schedule requested counts; a manual run of the same day does not hold the
