@@ -26,7 +26,8 @@
     "jobspy:status": "tsx scripts/jobspy-status.ts",
     "himalayas:sync": "tsx scripts/himalayas-sync.ts",
     "polish:sync": "tsx scripts/polish-sync.ts",
-    "polish:status": "tsx scripts/polish-status.ts"
+    "polish:status": "tsx scripts/polish-status.ts",
+    "git:dashboard": "node scripts/git-dashboard.mjs"
   },
   "dependencies": {
     "@nuxt/ui": "4.12.0",
