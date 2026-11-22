@@ -45,8 +45,7 @@ export type { AgentMaterial, AgentSource } from './domain/agent-material.ts'
 export { safeSourceUrl } from './domain/source-url.ts'
 
 // The budget by month with the amounts carried from before the deployment
-// (T3-R09, T10-R01), for the budget card of the profile page (T10-R06) and,
-// from task oferty-pracy-sq2.14, the panel.
+// (T3-R09, T10-R01), for the budget card of the profile page (T10-R06).
 export {
   readMonthlyBudgets,
   type MonthlyBudget,
@@ -88,3 +87,14 @@ export { countAssignmentsNeedingAttention } from './assignments/count-assignment
 // outcome's shape and texts are in `view.ts`.
 export { retryAssignment } from './assignments/retry-assignment.ts'
 export { rejectAssignment } from './assignments/reject-assignment.ts'
+
+// The panel's budget view and the owner's two limits (T13): the current
+// month's figures with the earlier months and the default limit, the limit
+// of the current month and the limit a new month starts with. Their
+// shapes and the check of an amount are in `view.ts`.
+export { readBudget } from './assignments/read-budget.ts'
+export {
+  BudgetLimitError,
+  setCurrentMonthLimit,
+  setDefaultLimit,
+} from './assignments/set-budget-limits.ts'

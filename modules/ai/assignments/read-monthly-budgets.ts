@@ -1,4 +1,3 @@
-import { decimal, money } from '../domain/money.ts'
 import { readMonthBudgetRows } from '../infrastructure/persistence/month-budgets.ts'
 
 /** The budget of one month of assignments' operations, in złoty. */
@@ -25,11 +24,17 @@ export type MonthlyBudget = {
  * Every month that has a budget, newest first, with its limit and the
  * amounts settled and held, the carried ones of the earlier records
  * included (T3-R09, T10-R01). The budget card of the profile page reads it
- * (T10-R06); the panel from task oferty-pracy-sq2.14.
+ * (T10-R06); the panel's budget view reads the same months through
+ * `readBudget` (T13-R01), so the two show the same figures.
  */
 export async function readMonthlyBudgets(): Promise<MonthlyBudget[]> {
-  return (await readMonthBudgetRows()).map((row) => ({
-    ...row,
-    charge: money(decimal(row.settled) + decimal(row.held)),
-  }))
+  return (await readMonthBudgetRows()).map(
+    ({ month, limit, settled, held, charge }) => ({
+      month,
+      limit,
+      settled,
+      held,
+      charge,
+    }),
+  )
 }

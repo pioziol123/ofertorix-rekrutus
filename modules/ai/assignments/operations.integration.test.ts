@@ -34,10 +34,14 @@ import {
 import { registerExecutor } from '../executors/registry.ts'
 import {
   endFailedOperation,
+  BudgetLimitError,
   placeAssignment,
+  readBudget,
   readMonthlyBudgets,
   registerAssignmentReceiver,
   runOperation,
+  setCurrentMonthLimit,
+  setDefaultLimit,
   type AssignmentRequest,
 } from '../index.ts'
 import { endOperation } from './end-operation.ts'
@@ -1156,6 +1160,186 @@ integration('starting and ending operations on a real database', () => {
       expect(await jobs()).toEqual([])
       expect((await operationOf(waiting)).waits_for).toBe('budget')
       expect(calls).toHaveLength(0)
+    })
+  })
+
+  describe('budget management (T13)', () => {
+    const october = new Date('2026-10-15T12:00:00Z')
+    const november = new Date('2026-11-15T12:00:00Z')
+    const december = new Date('2026-12-15T12:00:00Z')
+    /** Places an assignment and starts its operation at `at`. */
+    const started = async (at: Date, settingsName = 'cheap') => {
+      const operationId = await operationIdOf(await place(settingsName))
+      return { operationId, start: await startOperation(operationId, at) }
+    }
+    const limitOf = async (month: string) =>
+      (
+        await pool.query(
+          'SELECT limit_pln::text AS "limit" FROM ai_budget_months WHERE month=$1',
+          [month],
+        )
+      ).rows[0]?.limit as string | undefined
+    const defaultLimit = async () =>
+      (
+        await pool.query(
+          'SELECT limit_pln::text AS l FROM ai_budget_default_limit',
+        )
+      ).rows[0].l as string
+
+    it('T13-AC01: for a month with a settled, a running and an unknown-cost operation and a carried amount, returns the figures of T13-R01, and what remains is the limit less the charge or zero', async () => {
+      await started(october)
+      const settled = await started(november)
+      await endOperation(
+        settled.operationId,
+        { kind: 'result', content: {}, usage },
+        november,
+      )
+      await started(november)
+      const unknown = await started(november)
+      await endOperation(
+        unknown.operationId,
+        { kind: 'result', content: {}, usage: unknownUsage() },
+        november,
+      )
+      // An operation that never started charges nothing.
+      await place()
+      await pool.query(
+        `UPDATE ai_budget_months SET carried_settled=0.5,carried_held=0.25
+         WHERE month='2026-11'`,
+      )
+      const current = {
+        month: '2026-11',
+        limit: '100.000000',
+        spent: '0.500080',
+        running: '0.008000',
+        unknownCost: '0.008000',
+        unknownCount: 1,
+        carriedSettled: '0.500000',
+        carriedHeld: '0.250000',
+        charge: '0.766080',
+        remaining: '99.233920',
+      }
+      expect(await readBudget(november)).toEqual({
+        current,
+        earlier: [
+          { month: '2026-10', limit: '100.000000', charge: '0.008000' },
+        ],
+        defaultLimit: '100.000000',
+      })
+      // The profile page's budget card: the same limit, and amounts that add
+      // up to the same charge (T13-R05).
+      const [card] = await readMonthlyBudgets()
+      expect(card).toEqual({
+        month: '2026-11',
+        limit: '100.000000',
+        settled: current.spent,
+        held: '0.266000',
+        charge: current.charge,
+      })
+      await setCurrentMonthLimit('0,70', november)
+      expect((await readBudget(november)).current).toEqual({
+        ...current,
+        limit: '0.700000',
+        remaining: '0.000000',
+      })
+    })
+
+    it('shows a current month without a budget with the default limit and nothing charged, creating nothing', async () => {
+      await pool.query('UPDATE ai_budget_default_limit SET limit_pln=40')
+      expect(await readBudget(november)).toEqual({
+        current: {
+          month: '2026-11',
+          limit: '40.000000',
+          spent: '0.000000',
+          running: '0.000000',
+          unknownCost: '0.000000',
+          unknownCount: 0,
+          carriedSettled: '0.000000',
+          carriedHeld: '0.000000',
+          charge: '0.000000',
+          remaining: '40.000000',
+        },
+        earlier: [],
+        defaultLimit: '40.000000',
+      })
+      expect(await limitOf('2026-11')).toBeUndefined()
+    })
+
+    it('T13-AC02: setting the current limit changes the current month only; below the charge it is accepted and no paid operation starts; the next month starts with the default limit', async () => {
+      await started(october)
+      await setCurrentMonthLimit('20', november)
+      expect(await limitOf('2026-11')).toBe('20.000000')
+      expect(await limitOf('2026-10')).toBe('100.000000')
+      expect(await started(november)).toMatchObject({ start: 'started' })
+      // Below what the month already charged (0.008 PLN).
+      await setCurrentMonthLimit('0', november)
+      expect(await limitOf('2026-11')).toBe('0.000000')
+      expect((await readBudget(november)).current).toMatchObject({
+        limit: '0.000000',
+        charge: '0.008000',
+        remaining: '0.000000',
+      })
+      expect(await started(november)).toMatchObject({
+        start: 'waits_for_budget',
+      })
+      expect(await started(november, 'free')).toMatchObject({
+        start: 'started',
+      })
+      expect(calls).toHaveLength(0)
+      // A month that keeps room passes none of it on.
+      await setCurrentMonthLimit('500', november)
+      expect(await started(december)).toMatchObject({ start: 'started' })
+      expect(await limitOf('2026-12')).toBe('100.000000')
+      expect(await limitOf('2026-11')).toBe('500.000000')
+    })
+
+    it('T13-R06: after the owner raises the current limit, the next pass of the periodic process sends the operation that waited for the budget', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(november)
+      await setCurrentMonthLimit('0')
+      const waiting = await started(november)
+      expect(waiting.start).toBe('waits_for_budget')
+      await admin.query(`DELETE FROM ${queueSchema}.job`)
+      await runPass([budgetStep], fail)
+      expect(await jobs()).toEqual([])
+      await setCurrentMonthLimit('1')
+      await runPass([budgetStep], fail)
+      expect(await jobs()).toEqual([
+        { name: paidJob.queue, operationId: waiting.operationId },
+      ])
+      for (const job of await jobs()) await runOperation(job)
+      const { rows } = await pool.query(
+        'SELECT state FROM ai_operations WHERE id=$1',
+        [waiting.operationId],
+      )
+      expect(rows[0].state).toBe('succeeded')
+    })
+
+    it('T13-AC03: setting the default limit changes the limit of a month created afterwards and not the current one; without a change a new month starts with 100 PLN', async () => {
+      expect(migratedDefault).toBe('100.000000')
+      await started(october)
+      expect(await limitOf('2026-10')).toBe('100.000000')
+      await started(november)
+      await setDefaultLimit('250.5')
+      expect(await defaultLimit()).toBe('250.500000')
+      expect(await limitOf('2026-11')).toBe('100.000000')
+      expect((await readBudget(november)).defaultLimit).toBe('250.500000')
+      await started(december)
+      expect(await limitOf('2026-12')).toBe('250.500000')
+    })
+
+    it('T13-AC04: a text, a negative amount and an amount with three decimal places are each refused with a message and change nothing', async () => {
+      await started(november)
+      for (const typed of ['sto', '-5', '12,345']) {
+        const current = setCurrentMonthLimit(typed, november)
+        await expect(current).rejects.toBeInstanceOf(BudgetLimitError)
+        await expect(current).rejects.toThrow(/\S/)
+        await expect(setDefaultLimit(typed)).rejects.toBeInstanceOf(
+          BudgetLimitError,
+        )
+      }
+      expect(await limitOf('2026-11')).toBe('100.000000')
+      expect(await defaultLimit()).toBe('100.000000')
     })
   })
 })
