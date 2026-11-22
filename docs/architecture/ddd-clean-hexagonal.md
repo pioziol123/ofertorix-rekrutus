@@ -1,6 +1,6 @@
 # DDD, Clean Architecture and Hexagonal Architecture in a module
 
-This document says how the three approaches are applied inside one module of this system. It selects ten rules, and for each gives the rule, why it exists, when to apply it and when to leave it out, an example and an anti-example. Every example comes from the AI module (`modules/ai/`), which was brought to these rules in [pull request #PR_NUMBER](PR_URL); each rule ends with what that change did.
+This document says how the three approaches are applied inside one module of this system. It selects ten rules, and for each gives the rule, why it exists, when to apply it and when to leave it out, an example and an anti-example. The examples come from the AI module (`modules/ai/`) and the code that meets it, and the AI module was brought to these rules in [pull request #1](https://github.com/pioziol123/ofertorix-rekrutus/pull/1); each rule ends with what that change did.
 
 Read it before designing or reviewing a change inside a module: where a new file goes, what it may import, where a rule is written, and whether an integration needs a contract of its own. It builds on the binding [architecture and coding rules](moduly-i-zasady-kodu.md) and does not repeat them: those rules say what must hold between modules and name the patterns, this document shows how the patterns look in code and where each stops being worth its cost. Where the two disagree, the binding rules win.
 
@@ -18,7 +18,7 @@ The three approaches answer different questions about the same code, so a module
 
 ## The layers of a module
 
-A module has up to four layers. A file's directory says which layer it belongs to, and the layer says what the file may import from its own module.
+A file's directory says which layer of its module it belongs to, and the layer says what the file may import from that module.
 
 ```text
 modules/<module>/
@@ -35,12 +35,13 @@ modules/<module>/
 
 | Layer | Holds | May import from its module |
 | --- | --- | --- |
-| `domain/` | Closed lists, value types, pure functions that decide or calculate. | `domain/` only. Nothing outside the module, no platform code (`node:`, environment). |
-| `ports/` | Types of the contracts an operation calls and something else implements. | `domain/`, `ports/`. From outside the module, types only. |
+| `domain/` | Closed lists, value types, pure functions that decide or calculate. | `domain/` only. From outside the module only a library that does no input or output, such as the schema library; no shared infrastructure, no other module, no platform code (`node:`, environment). |
+| `ports/` | Types of the contracts an operation calls and something else implements. | `domain/`, `ports/`. From outside the module, types only, and no platform code. |
 | Operations | The use cases: read, decide by the domain, write, call a port. | `domain/`, `ports/`, other operations, `infrastructure/persistence/`, and from `infrastructure/adapters/` only `registry.ts`. |
-| `infrastructure/adapters/`, `infrastructure/persistence/` | Code that knows a technology: a provider's protocol, SQL. | `domain/`, `ports/`, and files of its own directory. No operation, and adapters and persistence do not import each other. |
+| `infrastructure/adapters/`, `infrastructure/persistence/` | Code the operations call that knows a technology: a provider's protocol, SQL. | `domain/`, `ports/`, and files of its own directory. No operation, and adapters and persistence do not import each other. |
+| Other directories of `infrastructure/` (`http/`, `worker/`, `cli/`) | Entry points that live in the module: code that calls the operations, including an implementation of another module's port ([rule 10](#10-a-port-another-module-implements-turns-the-dependency-around)). | `domain/`, `ports/`, operations, and files of these directories. |
 
-Imports point inward: from the infrastructure and the operations towards the domain. The one arrow that points outward, an operation importing its repository, is this project's decision and is explained under [rule 9](#9-add-a-port-only-where-the-outside-varies-or-is-not-yours). The directories `domain/`, `ports/` and `infrastructure/` are optional: a module adds one when it has something to put there, as the binding rules say for [the module directory](moduly-i-zasady-kodu.md#module-directory).
+Imports point inward: from the infrastructure and the operations towards the domain. Two arrows point outward, both from an operation and both this project's decision: to its repository, explained under [rule 9](#9-add-a-port-only-where-the-outside-varies-or-is-not-yours), and to the registry of its adapters, explained under [rule 8](#8-a-port-belongs-to-the-inside-an-adapter-to-the-outside). No file imports its own module's `index.ts` or `view.ts`. Test files are not checked: a test may reach any layer. The directories `domain/`, `ports/` and `infrastructure/` are optional: a module adds one when it has something to put there, as the binding rules say for [the module directory](moduly-i-zasady-kodu.md#module-directory).
 
 ## How to read a rule
 
@@ -56,7 +57,7 @@ Each rule has the same parts. **Rule** is the statement to check a change agains
 
 **Apply when.** Always, in a layered module. When a file in `domain/` needs a type that lives further out, the type is in the wrong place: move the type inward, do not import outward. A concept used on both sides of a contract (a cause, a usage, a price list) belongs to the domain, and the port refers to it.
 
-**Example.** The read object of the panel names the status, the type and the cause of an assignment. All three are domain concepts, so [`domain/panel.ts`](../../modules/ai/domain/panel.ts) imports them from its own layer:
+**Example.** The read object of the panel names the status and the type of an assignment and the cause of an operation's end. All three are domain concepts, so [`domain/panel.ts`](../../modules/ai/domain/panel.ts) imports them from its own layer:
 
 ```ts
 // modules/ai/domain/panel.ts
@@ -88,7 +89,7 @@ import type { OperationOrigin } from '../infrastructure/persistence/operations.t
 
 **Why.** A decision buried between a query and a write can only be checked by running the database. As a function of facts it is read in one place, tested in milliseconds for every case, and reused by another operation or by a view.
 
-**Apply when.** The outcome depends on a comparison of values the operation already holds or can read first: a status, a count against a limit, a deadline. Leave the rule in the query when it selects a set of rows, see [rule 4](#4-a-rule-has-one-owner). A fact that is itself a comparison the database makes more exactly, such as a deadline against a moment, is read as a fact (`withinTimeLimit`) and passed in.
+**Apply when.** The outcome depends on a comparison of values the operation already holds or can read first: a status, a count against a limit, a deadline. Leave the rule in the query when it selects a set of rows, see [rule 4](#4-a-rule-has-one-owner). A fact may itself be a comparison the repository made: Retry reads `withinTimeLimit` in the query that locks the row ([rule 4](#4-a-rule-has-one-owner)).
 
 **Example.** What follows the end of an operation is decided by [`nextStep`](../../modules/ai/domain/next-step.ts) from passed facts. The operation reads the facts, asks, and acts:
 
@@ -130,7 +131,7 @@ if (rows[0].again && outcome.retryable) await insertPendingOperation(...)
 else await db().query(`UPDATE ai_assignments SET status='needs_attention' ...`)
 ```
 
-**In the AI module.** `nextStep` and the cost rules ([`operation-cost.ts`](../../modules/ai/domain/operation-cost.ts), [`request-size.ts`](../../modules/ai/domain/request-size.ts)) were pure already but lived among the operations; they moved to `domain/`, and `nextStep` got a [unit test](../../modules/ai/domain/next-step.test.ts) of every branch that needs no database.
+**In the AI module.** `nextStep` and the cost rules ([`operation-cost.ts`](../../modules/ai/domain/operation-cost.ts), [`request-size.ts`](../../modules/ai/domain/request-size.ts)) were pure already but lived among the operations; they moved to `domain/`, and `nextStep` got a [unit test](../../modules/ai/domain/next-step.test.ts) of every branch that needs no database. The operation also lost an early return that repeated the first two branches of the rule, and the size of a request is measured without Node's `Buffer`, so the domain runs no platform code.
 
 ### 3. An entry point translates, the operation decides
 
@@ -175,7 +176,7 @@ export default apiHandler(async (event) => {
 
 **Why.** Two copies agree on the day they are written. After the next change the panel offers an action that does nothing, or hides one that would work, and no test fails, because each copy passes its own test. The binding rules name the general cost: [a fixed list with two owners](moduly-i-zasady-kodu.md#costs-of-design-decisions).
 
-**Apply when.** A rule is evaluated for one aggregate that is already loaded: write it as a domain function ([rule 2](#2-facts-in-decision-out)) and let the write follow the decision. When a rule selects a set of rows, such as "every assignment past its time limit", it stays in the repository's query, and then the query is its only owner: the operation does not restate it. A write that follows a decision is made under the lock the decision was read under ([rule 5](#5-an-aggregate-changes-through-its-root-and-is-known-outside-by-its-identifier)), so it need not state the rule again. A write may keep a guard on the one state the decision started from (`WHERE status='in_progress'`), so that a write which lost a race changes nothing; a guard that spells out the whole rule, a list of statuses or a deadline, is the second owner.
+**Apply when.** A rule is evaluated for one aggregate that is already loaded: write it as a domain function ([rule 2](#2-facts-in-decision-out)) and let the write follow the decision. When a rule selects a set of rows, such as "every assignment past its time limit", it stays in the repository's query, and then the query is its only owner: the operation does not restate it. A write that follows a decision is made under the lock the decision was read under ([rule 5](#5-an-aggregate-changes-through-its-root-and-is-known-outside-by-its-identifier)), so it need not state the rule again. A write may keep a guard on the one state the decision started from (`WHERE status='in_progress'`), so that a write which lost a race changes nothing; a guard that spells out the whole rule, a list of statuses or a deadline, is the second owner. Where no lock is held, as when background work is taken up, the conditional change of state the [database access rules](moduly-i-zasady-kodu.md#database-access) ask for remains the protection.
 
 **Example.** One function says which actions the owner may take. The panel offers the buttons by it, and Retry and Reject decide by it:
 
@@ -213,11 +214,11 @@ reject: assignment.status === 'in_progress' || assignment.status === 'needs_atte
  WHERE id=$1 AND status IN ('in_progress','needs_attention')`
 ```
 
-**In the AI module.** [`ownerActions`](../../modules/ai/domain/assignment.ts) became the owner. The panel's `assignmentActions` calls it, [`retryAssignment`](../../modules/ai/assignments/retry-assignment.ts) and [`rejectAssignment`](../../modules/ai/assignments/reject-assignment.ts) call it with the status and the deadline read under the row lock, and the two writes lost their copies of the rule. The rule of the time limit stays where it was, in one SQL condition used by both the selection and the write, and the module's other writes keep their guard on `in_progress`.
+**In the AI module.** [`ownerActions`](../../modules/ai/domain/assignment.ts) became the owner. The panel's `assignmentActions` calls it, [`retryAssignment`](../../modules/ai/assignments/retry-assignment.ts) and [`rejectAssignment`](../../modules/ai/assignments/reject-assignment.ts) call it with the status and the deadline read under the row lock, and the two writes lost their copies of the rule. The rule of the time limit stays where it was, in one SQL condition used by both the selection and the write, and the module's other writes keep their guard on `in_progress`. One difference remains and is accepted: the page offers Retry from the whole seconds left when it was read, the action decides from the deadline at the moment it runs, so a page read in the last second, or left open, can show a button that the action answers with "Zlecenie zmieniło stan".
 
 ### 5. An aggregate changes through its root and is known outside by its identifier
 
-**Rule.** The data that must stay consistent together forms one aggregate. An operation that changes it locks the root's row, decides from what it read under the lock, and saves every part of the change in the same transaction. Code outside the module keeps the aggregate's identifier and asks the owner; it keeps no copy of its state. The binding rules give the definition: [an aggregate protects state that must change together](moduly-i-zasady-kodu.md#an-aggregate-protects-state-that-must-change-together).
+**Rule.** The data that must stay consistent together forms one aggregate. An operation that changes it locks the root's row, decides from what it read under the lock, and saves every part of the change in the same transaction. Code outside the module keeps the aggregate's identifier and asks the owner; a copy of its state is [a cost that needs a recorded reason](moduly-i-zasady-kodu.md#costs-of-design-decisions). The binding rules give the definition: [an aggregate protects state that must change together](moduly-i-zasady-kodu.md#an-aggregate-protects-state-that-must-change-together).
 
 **Why.** An assignment and its operations make sense only together: an assignment in progress always has work under way, an operation that waits, runs or holds a result to deliver. Two writers that each change a part can leave an assignment in progress with nothing under way, which the owner sees as work that never ends.
 
@@ -282,7 +283,7 @@ export type PriceList = AiConfiguration
 export type FailureReason = AssignmentFailureReason
 ```
 
-**In the AI module.** `AiConfiguration` became `PriceList` in `domain/price-list.ts`; the alias `FailureReason` and the re-exports of the operation states through the panel were removed; the frozen content of an assignment got one name, `AssignmentContent`.
+**In the AI module.** `AiConfiguration` became `PriceList` in `domain/price-list.ts`; the alias `FailureReason` and the re-exports of the operation states through the panel were removed; the frozen content of an assignment, until then named after its reader (`ExecutorContent`), is `AssignmentContent`.
 
 ### 7. A value with rules has one owner of its representation
 
@@ -292,7 +293,7 @@ export type FailureReason = AssignmentFailureReason
 
 **Apply when.** The same checks or conversions would otherwise be repeated wherever the value is used. Leave a plain primitive when the value has no rule of its own, such as a label the module never interprets.
 
-**Example.** The amounts are written and read only through [`domain/money.ts`](../../modules/ai/domain/money.ts):
+**Example.** The cost rules create and add amounts only through [`domain/money.ts`](../../modules/ai/domain/money.ts):
 
 ```ts
 // modules/ai/domain/operation-cost.ts
@@ -313,11 +314,11 @@ return priceList === null ? '0.000000' : attemptCeiling(priceList)
 
 ### 8. A port belongs to the inside, an adapter to the outside
 
-**Rule.** A port is a contract written in the module's own terms. It lives in `ports/` and refers only to the domain. Each adapter is a submodule of `infrastructure/adapters/` that implements it. One file, `infrastructure/adapters/registry.ts`, assembles the adapters; operations ask the registry and import no adapter. The binding rules give the pattern: [interchangeable executors use a shared contract](moduly-i-zasady-kodu.md#interchangeable-executors-use-a-shared-contract).
+**Rule.** A port is a contract written in the module's own terms. It lives in `ports/` and refers to the domain, and to a type of the shared infrastructure only where the contract hands one over, as the executor contract names the job of the executor's queue. Each adapter is a submodule of `infrastructure/adapters/` that implements it. One file, `infrastructure/adapters/registry.ts`, assembles the adapters; operations ask the registry and import no adapter. The binding rules give the pattern: [interchangeable executors use a shared contract](moduly-i-zasady-kodu.md#interchangeable-executors-use-a-shared-contract).
 
 **Why.** The contract says what the module needs, so it must not change when a provider does. A contract kept among the adapters reads as theirs, picks up their vocabulary, and makes every operation import from the technology's directory.
 
-**Apply when.** The module has a port, see [rule 9](#9-add-a-port-only-where-the-outside-varies-or-is-not-yours) for when it should. The registry is the place where the choice of implementation is made; in a test it is also where a simulated adapter replaces a real one.
+**Apply when.** The module has a port, see [rule 9](#9-add-a-port-only-where-the-outside-varies-or-is-not-yours) for when it should. The registry is the place where the choice of implementation is made; in a test it is also where a simulated adapter replaces a real one. An operation imports the registry although it lies in the infrastructure: executors are found by a name stored with the assignment, so something must map the name to the implementation, and the registry returns the port's type and nothing of a technology.
 
 **Example.**
 
@@ -339,7 +340,7 @@ const executor = findExecutor(operation.executor)
 return executor.carryOut({ content, parameters, state, exchange, saveState })
 ```
 
-**Anti-example.** Before the pull request the contract lay beside its implementations in `executors/`, and it took its price list from the configuration. An invented step further shows what that layout invites:
+**Anti-example.** Before the pull request the contract lay beside its implementations in `executors/`, and it took its price list from the catalog of models. An invented step further shows what that layout invites:
 
 ```ts
 // modules/ai/executors/declaration.ts, before: the contract among the adapters
@@ -358,7 +359,7 @@ const outcome = await openAiExecutor().carryOut(work)
 
 **Why.** A port costs a type, a registry and an indirection on every reading of the code. Where nothing varies it is [a feature without a consumer](moduly-i-zasady-kodu.md#costs-of-design-decisions): nothing checks that the abstraction fits the second case, which usually needs a different one.
 
-**Apply when.** Check the three conditions when adding an integration, and again when a second implementation appears: that is the moment to extract the port, with two real cases to shape it. The module's own database gets no port. The repositories are called directly, the [database access rules](moduly-i-zasady-kodu.md#database-access) give the shared transaction, and tests run on a real PostgreSQL in an isolated schema, so no second implementation exists or is planned. This is the one outward import the [layers](#the-layers-of-a-module) allow.
+**Apply when.** Check the three conditions when adding an integration, and again when a second implementation appears: that is the moment to extract the port, with two real cases to shape it. The module's own database gets no port. The repositories are called directly, the [database access rules](moduly-i-zasady-kodu.md#database-access) give the shared transaction, and tests run on a real PostgreSQL in an isolated schema, so no second implementation exists or is planned. This is why the [layers](#the-layers-of-a-module) let an operation import its repository.
 
 **Example.** The AI module has two ports and both meet a condition: executors come in two implementations and are paid, and receivers are implemented by other modules. Its repositories have none:
 
@@ -384,7 +385,7 @@ export const inMemoryAssignments: AssignmentRepository = { /* … */ }
 
 ### 10. A port another module implements turns the dependency around
 
-**Rule.** When a module must tell other modules about something, it defines the contract of the listener in its `ports/` and exports it. Each other module implements the contract in its own `infrastructure/adapters/`, and a composition file outside the modules connects them. The module that defines the contract imports none of its listeners.
+**Rule.** When a module must tell other modules about something, it defines the contract of the listener in its `ports/` and exports it. Each other module implements the contract as one of its entry points ([rule 3](#3-an-entry-point-translates-the-operation-decides)): the implementation turns the call into the module's own operation. A composition file outside the modules connects them. The module that defines the contract imports none of its listeners.
 
 **Why.** The AI module ends assignments of the Profile, Matching and Companies. If it called them by name, every new requesting module would be a change of the AI module, and the modules would import each other in a circle.
 
@@ -410,7 +411,13 @@ export const proposalAssignmentReceiver: AssignmentReceiver = {
 }
 
 // receivers/index.ts
-registerAssignmentReceiver(proposalSettingsKey, proposalAssignmentReceiver)
+const receivers: Readonly<Record<string, AssignmentReceiver>> = {
+  [proposalSettingsKey]: proposalAssignmentReceiver,
+  [assessmentSettingsKey]: assessmentAssignmentReceiver,
+  [researchSettingsKey]: researchAssignmentReceiver,
+}
+for (const [settingsName, receiver] of Object.entries(receivers))
+  registerAssignmentReceiver(settingsName, receiver)
 ```
 
 **Anti-example** (invented). The AI module knows who asked and calls back by name:
@@ -424,7 +431,7 @@ if (delivery.settingsName === 'profile') await takeAssignmentResult(id, result)
 else if (delivery.settingsName === 'matching') await publishAssessment(id, result)
 ```
 
-**In the AI module.** The contract was already the module's and already exported. The pull request separated it from the registration: the types are in `ports/assignment-receiver.ts`, and the in-process registration stays with the operations in [`assignments/assignment-receiver.ts`](../../modules/ai/assignments/assignment-receiver.ts).
+**In the AI module.** The contract was already the module's and already exported. The pull request separated it from the registration: the types are in `ports/assignment-receiver.ts`, and the in-process registration stays with the operations in [`assignments/assignment-receiver.ts`](../../modules/ai/assignments/assignment-receiver.ts). The receivers of the Profile, Matching and Companies still sit in their `infrastructure/adapters/`, in the file that also places the assignment; each moves to the module's entry points when its module is brought to these rules.
 
 ## The adapter's side of the contract
 

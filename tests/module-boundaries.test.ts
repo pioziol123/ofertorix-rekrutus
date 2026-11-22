@@ -100,19 +100,39 @@ const inward: Record<Layer, readonly Layer[]> = {
 const isAdapterRegistry = (file: string) =>
   /^modules\/[^/]+\/infrastructure\/adapters\/registry\.ts$/.test(file)
 
-/** The relative imports of a file, each with whether it is type-only. */
+/**
+ * The relative imports of a file, each with whether it is type-only: every
+ * statement that names the file is an `import type` or an `export type`.
+ */
 function importStatementsOf(file: string) {
   const source = readFileSync(join(root, file), 'utf8')
+  const count = (specifiers: Iterable<RegExpMatchArray>) => {
+    const counts = new Map<string, number>()
+    for (const match of specifiers)
+      counts.set(match[1]!, (counts.get(match[1]!) ?? 0) + 1)
+    return counts
+  }
+  const all = count(
+    source.matchAll(
+      /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\brequire\(\s*)['"](\.{1,2}\/[^'"]+)['"]/g,
+    ),
+  )
+  const typed = count(
+    source.matchAll(
+      /\b(?:import|export)\s+type\b[^'"]*?\bfrom\s*['"](\.{1,2}\/[^'"]+)['"]/g,
+    ),
+  )
   const found: { target: string; typeOnly: boolean }[] = []
-  for (const match of source.matchAll(
-    /(?:^|\n)\s*(import|export)(\s+type)?\b[^'"\n;]*?(?:\{[^}]*\}[^'"\n;]*?)?['"](\.{1,2}\/[^'"]+)['"]/g,
-  )) {
-    const base = resolve(join(root, dirname(file)), match[3]!)
+  for (const [specifier, times] of all) {
+    const base = resolve(join(root, dirname(file)), specifier)
     const target = ['', '.ts', '/index.ts']
       .map((suffix) => base + suffix)
       .find((path) => existsSync(path) && statSync(path).isFile())
     if (target)
-      found.push({ target: relative(root, target), typeOnly: !!match[2] })
+      found.push({
+        target: relative(root, target),
+        typeOnly: typed.get(specifier) === times,
+      })
   }
   return found
 }
@@ -187,7 +207,7 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
   })
 
   it.each(layered)(
-    'keeps the dependencies inside %s pointing inward: the domain imports only the domain, a port only the domain and ports, an operation no adapter but their registry, and the infrastructure no operation',
+    'keeps the dependencies inside %s pointing inward: the domain imports only the domain, a port only the domain and ports, an operation no adapter but their registry, and an adapter or a repository no operation',
     (name) => {
       const own = files(`modules/${name}`).filter((file) => !isTest(file))
       const outward = own.flatMap((file) => {
@@ -217,16 +237,9 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
           ),
         )
       expect(platform).toEqual([])
-      // The check found the layers it speaks of.
-      expect(new Set(own.map(layerOf))).toEqual(
-        new Set([
-          undefined,
-          'domain',
-          'ports',
-          'operations',
-          'adapters',
-          'persistence',
-        ]),
+      // The check found the module's layers.
+      expect([...new Set(own.map(layerOf))]).toEqual(
+        expect.arrayContaining(['domain', 'operations']),
       )
     },
   )

@@ -80,7 +80,7 @@ infrastructure/
 └── cli/           # CLI commands
 ```
 
-An operation combines reading, domain rules and writing. Domain rules work on passed data. Code in `persistence/` knows the data schema of its own module. An adapter translates data into the contract defined next to the operation that uses it.
+An operation combines reading, domain rules and writing. Domain rules work on passed data. Code in `persistence/` knows the data schema of its own module. An adapter translates data into the contract its operation uses: a contract in `ports/`, or, where no port is warranted, the adapter's own exported function written in the module's terms.
 
 Which of these directories may import which, when a contract earns a place in `ports/`, and how the rules below look in code, with an example and an anti-example each, is in the guidelines for [DDD, Clean Architecture and Hexagonal Architecture in a module](ddd-clean-hexagonal.md).
 

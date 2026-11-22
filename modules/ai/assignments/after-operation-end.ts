@@ -41,8 +41,6 @@ export type EndedOperation = {
  * the next job throws and the caller's transaction rolls back.
  */
 export async function afterOperationEnd(ended: EndedOperation): Promise<void> {
-  if (ended.assignmentStatus !== 'in_progress' || ended.state === 'succeeded')
-    return
   const operations = await readAssignmentOperations(ended.assignmentId)
   const deadlinePassed = operations.deadline <= ended.now
   switch (nextStep(ended, { ...operations, deadlinePassed })) {

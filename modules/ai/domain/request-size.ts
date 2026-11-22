@@ -16,13 +16,13 @@ export function exceedsPriceList(
 ): boolean {
   const size =
     measured ??
-    Buffer.byteLength(
+    new TextEncoder().encode(
       JSON.stringify({
         instructions: content.instruction,
         input: content.input,
         schema: content.responseFormat,
         resultInstruction: content.agent?.resultInstruction,
       }),
-    )
+    ).length
   return size > priceList.maxInputTokens
 }
