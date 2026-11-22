@@ -67,6 +67,7 @@ We add a subdirectory when there is something to gather in it and its responsibi
 | --- | --- | --- |
 | `operations/` | The module has several use cases and it is worth gathering their entry points in one place. | `confirm-profile.ts`, `apply-cv-proposal.ts` |
 | `domain/` | The module has rules that can be expressed from the passed data, without reading the database or calling a service. | Calculating the rating from scores and weights, checking that a salary range is valid |
+| `ports/` | The module has a contract that its operations call and something else implements: interchangeable adapters, or another module. | The executor contract and the receiver contract of the AI module |
 
 `infrastructure/` contains the code that connects the module's operations with the database, external services and execution mechanisms. We add subdirectories matching what the module uses.
 
@@ -80,6 +81,8 @@ infrastructure/
 ```
 
 An operation combines reading, domain rules and writing. Domain rules work on passed data. Code in `persistence/` knows the data schema of its own module. An adapter translates data into the contract defined next to the operation that uses it.
+
+Which of these directories may import which, when a contract earns a place in `ports/`, and how the rules below look in code, with an example and an anti-example each, is in the guidelines for [DDD, Clean Architecture and Hexagonal Architecture in a module](ddd-clean-hexagonal.md).
 
 A controller, worker handler or CLI command passes data to the module's public operation and handles its result. When several modules write data in one transaction, the coordinating operation calls their public operations inside a shared transactional operation. The transaction context passes implicitly, and each module performs its own write. [Database access](#database-access)
 
