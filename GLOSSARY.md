@@ -46,6 +46,21 @@ An ad sync that checked all ads in the set scope of a source, finished with no m
 **Incomplete source sync** (niepełna synchronizacja źródła):
 An ad sync that fetched only part of the set scope; the valid results stay available, and the absence of the other ads does not show that they are unavailable.
 
+**Failed sync** (synchronizacja nieudana):
+An ad sync that ended without fetching any ad; the availability of the source's ads does not change.
+
+**Unfinished sync** (synchronizacja niezakończona):
+An ad sync that is waiting to start or still fetching; a source has at most one at a time.
+
+**Finished sync** (synchronizacja zakończona):
+An ad sync that ended as complete, incomplete or failed.
+
+**New ad of a sync** (nowe ogłoszenie synchronizacji):
+An ad that the source showed for the first time in this sync.
+
+**Changed ad of a sync** (zmienione ogłoszenie synchronizacji):
+An ad already known from earlier syncs of the source whose content this sync saw in a new form.
+
 **Organisation** (organizacja):
 A specific entity, e.g. a Polish or German company; it may be linked to other organisations through a shared brand or group.
 
