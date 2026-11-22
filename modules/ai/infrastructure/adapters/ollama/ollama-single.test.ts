@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { actualCost } from '../assignments/operation-cost.ts'
-import type { ExecutorContent, OperationWork } from './declaration.ts'
+import { actualCost } from '../../../domain/operation-cost.ts'
+import type { AssignmentContent } from '../../../domain/assignment.ts'
+import type { OperationWork } from '../../../ports/executor.ts'
 import { ollamaExecutor } from './ollama.ts'
 
 /**
@@ -17,7 +18,7 @@ const endpoint = {
   credentialEnv: 'LOCAL_AI_TOKEN',
 }
 const parameters = { model: 'gpt-oss:20b' }
-const content: ExecutorContent = {
+const content: AssignmentContent = {
   type: 'single',
   instruction: 'Extract professional facts',
   input: 'PHP professional',

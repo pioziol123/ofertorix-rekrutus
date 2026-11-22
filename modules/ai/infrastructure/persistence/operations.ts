@@ -3,21 +3,18 @@ import type {
   AssignmentStatus,
   AssignmentType,
   ResponseFormat,
-} from '../../assignments/assignment.ts'
+} from '../../domain/assignment.ts'
 import type { AgentTool } from '../../domain/agent-tools.ts'
 import type {
   EndedOperationState,
+  OperationCause,
+  OperationOrigin,
   OperationState,
   OperationWait,
-} from '../../domain/operation-state.ts'
-import type {
-  ExecutorParameters,
-  PriceList,
-} from '../../executors/declaration.ts'
-import type { ExecutorUsage, OperationCause } from '../../executors/outcome.ts'
-
-/** Whether an operation was added without the owner or by the owner. */
-export type OperationOrigin = 'automatic' | 'manual'
+} from '../../domain/operation.ts'
+import type { ExecutorParameters } from '../../ports/executor.ts'
+import type { PriceList } from '../../domain/price-list.ts'
+import type { ExecutorUsage } from '../../domain/usage.ts'
 
 /** A running operation with the frozen content of its assignment. */
 export type RunningOperation = {

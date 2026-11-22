@@ -1,4 +1,5 @@
-import { AssignmentError, type AssignmentType } from './assignment.ts'
+import { AssignmentError } from './assignment.ts'
+import type { AssignmentType } from '../domain/assignment.ts'
 import { resolveExecutor } from './resolve-executor.ts'
 
 /**

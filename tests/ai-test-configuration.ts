@@ -1,11 +1,12 @@
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import type { AiCatalog, AiConfiguration } from '../modules/ai/model-catalog.ts'
+import type { AiCatalog } from '../modules/ai/infrastructure/adapters/model-catalog.ts'
+import type { PriceList } from '../modules/ai/domain/price-list.ts'
 
 /**
  * A test replacement for the price lists AI keeps in code. A test file
  * swaps it in with
  *
- *   vi.mock('../modules/ai/model-catalog.ts', () => import('./ai-test-configuration.ts'))
+ *   vi.mock('../modules/ai/infrastructure/adapters/model-catalog.ts', () => import('./ai-test-configuration.ts'))
  *
  * and then gives the model of its settings the price list it needs.
  */
@@ -31,7 +32,7 @@ export const aiCatalog: AiCatalog = {
  * settings of assignments use.
  */
 export function usePricing(
-  pricing: AiConfiguration,
+  pricing: PriceList,
   type: 'single' | 'agent' | ('single' | 'agent')[] = 'single',
 ) {
   const model = pricing.model

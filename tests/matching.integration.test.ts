@@ -51,7 +51,7 @@ import {
 // settings of assignments are the application's own.
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
-  '../modules/ai/model-catalog.ts',
+  '../modules/ai/infrastructure/adapters/model-catalog.ts',
   () => import('./ai-test-configuration.ts'),
 )
 

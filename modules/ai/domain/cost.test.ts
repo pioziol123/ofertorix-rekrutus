@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AiConfiguration } from '../model-catalog.ts'
+import type { PriceList } from './price-list.ts'
 import {
   attemptCeiling,
   budgetMonth,
@@ -8,7 +8,7 @@ import {
   toolCallFee,
 } from './cost.ts'
 
-const config: AiConfiguration = {
+const config: PriceList = {
   model: 'gpt-test',
   version: 'prices-1',
   inputUsdPerMillion: '1.5',
@@ -62,7 +62,7 @@ describe('E01-AC02: cost arithmetic in millionths', () => {
 describe('the cost of agent work with a paid tool, as research was settled (0mq.22)', () => {
   // The price list research had: 1 USD per million tokens each way, 4 PLN
   // per USD, web search at 0.01 USD per call, at most three calls.
-  const agent: AiConfiguration = {
+  const agent: PriceList = {
     model: 'gpt-4.1-mini',
     version: 'test',
     inputUsdPerMillion: '1',
@@ -104,7 +104,7 @@ describe('the cost of agent work with a paid tool, as research was settled (0mq.
 })
 
 describe('the budget month and the charge ceiling', () => {
-  const config: AiConfiguration = {
+  const config: PriceList = {
     model: 'test',
     version: 'v1',
     inputUsdPerMillion: '1',

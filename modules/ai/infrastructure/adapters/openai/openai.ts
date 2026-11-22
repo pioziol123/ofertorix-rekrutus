@@ -1,18 +1,18 @@
-import { defineJob } from '../../../lib/queues/index.ts'
+import { defineJob } from '../../../../../lib/queues/index.ts'
 import { hasCredentials } from '../configuration.ts'
-import { agentTools } from '../domain/agent-tools.ts'
+import { agentTools } from '../../../domain/agent-tools.ts'
 import { agentFits } from './openai-search.ts'
 import { aiCatalog, type CatalogModel } from '../model-catalog.ts'
 import type {
   Executor,
   ExecutorParameters,
   OperationJobData,
-  PriceList,
   ServiceOffer,
-} from './declaration.ts'
+} from '../../../ports/executor.ts'
+import type { PriceList } from '../../../domain/price-list.ts'
 import { carryOutSession, sessionMaterials } from './openai-agent-session.ts'
 import { carryOutSingle, singleBody } from './openai-single.ts'
-import { withinMaxRunTime } from './run.ts'
+import { withinMaxRunTime } from '../run.ts'
 
 const provider = 'openai'
 

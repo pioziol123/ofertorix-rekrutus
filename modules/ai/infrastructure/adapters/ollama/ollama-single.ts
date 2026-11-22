@@ -1,14 +1,17 @@
 import type { AiEndpoint } from '../configuration.ts'
-import { record, tokenCount } from '../infrastructure/adapters/response.ts'
-import type { ExecutorContent, ExecutorParameters } from './declaration.ts'
-import type { ExecutorOutcome } from './outcome.ts'
+import { record, tokenCount } from '../response.ts'
+import type { AssignmentContent } from '../../../domain/assignment.ts'
+import type {
+  ExecutorParameters,
+  ExecutorOutcome,
+} from '../../../ports/executor.ts'
 import {
   errorAnswer,
   failedBeforeSending,
   resultContent,
   timeLimitPassed,
   type Run,
-} from './run.ts'
+} from '../run.ts'
 
 /**
  * The local executor's single answer on Ollama's native protocol, the
@@ -79,7 +82,7 @@ const ok = (status: number) => status >= 200 && status < 300
 /** Carries out a local single answer on the model of the parameters. */
 export async function carryOutLocalSingle(
   run: Run,
-  content: ExecutorContent,
+  content: AssignmentContent,
   parameters: ExecutorParameters,
   local: LocalModel,
   fetcher: typeof fetch,

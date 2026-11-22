@@ -1,9 +1,10 @@
-import { record, tokenCount } from '../infrastructure/adapters/response.ts'
+import { record, tokenCount } from '../response.ts'
+import type { AssignmentContent } from '../../../domain/assignment.ts'
 import type {
-  ExecutorContent,
   ExecutorParameters,
-  PriceList,
-} from './declaration.ts'
+  ExecutorOutcome,
+} from '../../../ports/executor.ts'
+import type { PriceList } from '../../../domain/price-list.ts'
 import {
   contextExceeded,
   openAiKey,
@@ -11,14 +12,14 @@ import {
   responsesHeaders,
   responsesUrl,
 } from './openai-protocol.ts'
-import { nothingSent, type ExecutorOutcome } from './outcome.ts'
+import { nothingSent } from '../../../domain/usage.ts'
 import {
   errorAnswer,
   failedBeforeSending,
   resultContent,
   timeLimitPassed,
   type Run,
-} from './run.ts'
+} from '../run.ts'
 
 /** The limit of the one request of a paid single answer (T2-R06). */
 const requestLimitMs = 90_000
@@ -31,7 +32,7 @@ const requestLimitMs = 90_000
  * body asks for no format, and the result is the text.
  */
 export function singleBody(
-  content: ExecutorContent,
+  content: AssignmentContent,
   parameters: ExecutorParameters,
   maxOutputTokens: number,
 ): string {
@@ -84,7 +85,7 @@ const failed = (
  */
 export async function carryOutSingle(
   run: Run,
-  content: ExecutorContent,
+  content: AssignmentContent,
   parameters: ExecutorParameters,
   priceList: PriceList | null,
   fetcher: typeof fetch,

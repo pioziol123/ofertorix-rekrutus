@@ -1,4 +1,31 @@
 /**
+ * The state of an operation (ZA-R02): pending, running, succeeded, failed
+ * or uncertain. The one closed list of operation states in code; the
+ * operation table checks its state column against the same values.
+ */
+export const operationStates = [
+  'pending',
+  'running',
+  'succeeded',
+  'failed',
+  'uncertain',
+] as const
+export type OperationState = (typeof operationStates)[number]
+
+/** The states in which an operation has ended. */
+export type EndedOperationState = Exclude<OperationState, 'pending' | 'running'>
+
+/**
+ * What a pending operation waits for: the budget or its executor. The one
+ * closed list in code; the operation table checks its column against it.
+ */
+export const operationWaits = ['budget', 'executor'] as const
+export type OperationWait = (typeof operationWaits)[number]
+
+/** Whether an operation was added without the owner or by the owner. */
+export type OperationOrigin = 'automatic' | 'manual'
+
+/**
  * The causes of an operation that ended without a result, one closed list
  * of the AI module, the same for every executor (solution design of epic
  * sq2, "Contract: the closed lists"). The operation table checks its cause
@@ -38,47 +65,3 @@ export type OperationCause = (typeof operationCauses)[number]
 
 /** The causes an executor reports; `not_started` is assignment handling's. */
 export type ExecutorCause = Exclude<OperationCause, 'not_started'>
-
-/**
- * The usage an executor knows: the input tokens, the output tokens and the
- * calls of a paid tool, each a count or null when unknown, and whether
- * anything was sent to the provider (T2-R04).
- */
-export type ExecutorUsage = {
-  sent: boolean
-  inputTokens: number | null
-  outputTokens: number | null
-  toolCalls: number | null
-}
-
-/**
- * The one outcome of an operation (T2-R03): a result, an ordinary failure
- * (`retryable`), a non-retryable failure, or uncertain when the executor
- * cannot tell how the work ended. The content of a result is a JSON value
- * when the assignment gave a response format, otherwise the text.
- */
-export type ExecutorOutcome =
-  | { kind: 'result'; content: unknown; usage: ExecutorUsage }
-  | {
-      kind: 'failed'
-      retryable: boolean
-      cause: ExecutorCause
-      usage: ExecutorUsage
-    }
-  | { kind: 'uncertain'; cause: ExecutorCause; usage: ExecutorUsage }
-
-/** Nothing was sent: the usage of a cost of zero. */
-export const nothingSent = (): ExecutorUsage => ({
-  sent: false,
-  inputTokens: 0,
-  outputTokens: 0,
-  toolCalls: 0,
-})
-
-/** Something was sent whose usage is not known. */
-export const unknownUsage = (): ExecutorUsage => ({
-  sent: true,
-  inputTokens: null,
-  outputTokens: null,
-  toolCalls: null,
-})

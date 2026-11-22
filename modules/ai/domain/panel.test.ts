@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import { assignmentStatuses, assignmentTypes } from './assignment.ts'
 import {
-  assignmentStatuses,
-  assignmentTypes,
-} from '../assignments/assignment.ts'
-import { operationCauses } from '../executors/outcome.ts'
-import { operationStates, operationWaits } from './operation-state.ts'
+  operationCauses,
+  operationStates,
+  operationWaits,
+} from './operation.ts'
 import {
   actionFailedText,
   actionOutcomeText,

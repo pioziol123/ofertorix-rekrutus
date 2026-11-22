@@ -1,6 +1,6 @@
-import type { Executor } from './declaration.ts'
-import { ollamaExecutor } from './ollama.ts'
-import { openAiExecutor } from './openai.ts'
+import type { Executor } from '../../ports/executor.ts'
+import { ollamaExecutor } from './ollama/ollama.ts'
+import { openAiExecutor } from './openai/openai.ts'
 
 type OperationJob = Executor['job']
 

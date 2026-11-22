@@ -1,5 +1,5 @@
 import { transaction } from '../../../lib/db.ts'
-import { findExecutor } from '../executors/registry.ts'
+import { findExecutor } from '../infrastructure/adapters/registry.ts'
 import {
   lockResultToDeliver,
   setFailedInProgress,

@@ -2,7 +2,7 @@ import { transaction } from '../../../lib/db.ts'
 import { sendJob } from '../../../lib/queues/index.ts'
 import { budgetMonth } from '../domain/cost.ts'
 import { decimal } from '../domain/money.ts'
-import { findExecutor } from '../executors/registry.ts'
+import { findExecutor } from '../infrastructure/adapters/registry.ts'
 import { monthRoom } from '../infrastructure/persistence/month-budgets.ts'
 import {
   changeWait,

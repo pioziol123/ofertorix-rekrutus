@@ -1,9 +1,9 @@
-import type { AiConfiguration } from '../model-catalog.ts'
+import type { PriceList } from './price-list.ts'
 import { ceil, decimal, million, money } from './money.ts'
 
 /** The PLN cost of the given token usage, rounded up at each step. */
 export function chargeCeiling(
-  config: AiConfiguration,
+  config: PriceList,
   input: number,
   output: number,
 ): string {
@@ -27,7 +27,7 @@ export function chargeCeiling(
  * up once; zero when the price list covers no paid tool.
  * ASSUMPTION(oferty-pracy-0mq.22/ASM-4)
  */
-export function toolCallFee(config: AiConfiguration, calls: number): string {
+export function toolCallFee(config: PriceList, calls: number): string {
   if (!Number.isSafeInteger(calls) || calls < 0)
     throw new Error('Invalid tool calls')
   if (!config.toolCallUsd) return money(0n)
@@ -44,7 +44,7 @@ export function toolCallFee(config: AiConfiguration, calls: number): string {
  * rounded up on its own and then added.
  */
 export function chargeCost(
-  config: AiConfiguration,
+  config: PriceList,
   usage: { input: number; output: number; toolCalls: number },
 ): string {
   return money(
@@ -67,7 +67,7 @@ export function budgetMonth(now = new Date()): string {
  * The reservation of one attempt: the cost of its recorded token caps and
  * of the most calls of its paid tool.
  */
-export function attemptCeiling(config: AiConfiguration): string {
+export function attemptCeiling(config: PriceList): string {
   return chargeCost(config, {
     input: config.maxInputTokens,
     output: config.maxOutputTokens,

@@ -8,9 +8,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { checkSpecSync, documentPaths } from '../scripts/spec-sync.ts'
 
 const git = (cwd: string, ...args: string[]) =>
-  execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], {
-    cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim()
+  execFileSync(
+    'git',
+    ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args],
+    {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  ).trim()
 
 const PRD = 'docs/specs/x/PRD.md'
 const REQ = 'docs/specs/x/requirements.md'
@@ -25,13 +31,19 @@ const write = (path: string, content: string) => {
 
 /** Branches, HEAD, index and working-tree status of the owner's copy. */
 const snapshot = () => ({
-  refs: git(owner, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads'),
+  refs: git(
+    owner,
+    'for-each-ref',
+    '--format=%(refname) %(objectname)',
+    'refs/heads',
+  ),
   head: git(owner, 'symbolic-ref', '-q', 'HEAD'),
   index: git(owner, 'ls-files', '--stage'),
   status: git(owner, 'status', '--porcelain=v1', '--untracked-files=all'),
   // Blob ids of every working file, tracked or not, so a content change counts too.
   files: git(owner, 'ls-files', '--cached', '--others', '-z')
-    .split('\0').filter(Boolean)
+    .split('\0')
+    .filter(Boolean)
     .map((path) => `${path} ${git(owner, 'hash-object', '--', path)}`),
 })
 
@@ -52,16 +64,28 @@ afterEach(() => rmSync(base, { recursive: true, force: true }))
 
 describe('checkSpecSync', () => {
   it('U1-AC04: succeeds when every document is identical at the exchange point', () => {
-    expect(checkSpecSync({ repoDir: owner, paths: [PRD, REQ] })).toEqual({ ok: true })
+    expect(checkSpecSync({ repoDir: owner, paths: [PRD, REQ] })).toEqual({
+      ok: true,
+    })
   })
 
-  it('U1-AC01: lists a document that exists only in the owner\'s copy as missing', () => {
+  it("U1-AC01: lists a document that exists only in the owner's copy as missing", () => {
     write('docs/specs/x/solution-design.md', '# SD\n')
     git(owner, 'add', '.')
     git(owner, 'commit', '--quiet', '-m', 'sd')
-    expect(checkSpecSync({ repoDir: owner, paths: [PRD, 'docs/specs/x/solution-design.md'] })).toEqual({
+    expect(
+      checkSpecSync({
+        repoDir: owner,
+        paths: [PRD, 'docs/specs/x/solution-design.md'],
+      }),
+    ).toEqual({
       ok: false,
-      mismatches: [{ path: 'docs/specs/x/solution-design.md', reason: 'missing at the exchange point' }],
+      mismatches: [
+        {
+          path: 'docs/specs/x/solution-design.md',
+          reason: 'missing at the exchange point',
+        },
+      ],
     })
   })
 
@@ -69,14 +93,16 @@ describe('checkSpecSync', () => {
     write(REQ, '# Requirements\n\nR-01\n')
     git(owner, 'commit', '--quiet', '-am', 'edit')
     expect(checkSpecSync({ repoDir: owner, paths: [PRD, REQ] })).toEqual({
-      ok: false, mismatches: [{ path: REQ, reason: 'different content' }],
+      ok: false,
+      mismatches: [{ path: REQ, reason: 'different content' }],
     })
   })
 
   it('U1-AC03: lists a document with an uncommitted change as different', () => {
     write(PRD, '# PRD\n\nchanged\n')
     expect(checkSpecSync({ repoDir: owner, paths: [PRD, REQ] })).toEqual({
-      ok: false, mismatches: [{ path: PRD, reason: 'different content' }],
+      ok: false,
+      mismatches: [{ path: PRD, reason: 'different content' }],
     })
   })
 
@@ -87,13 +113,17 @@ describe('checkSpecSync', () => {
     git(other, 'commit', '--quiet', '-am', 'other')
     git(other, 'push', '--quiet', 'origin', 'HEAD:main')
     expect(checkSpecSync({ repoDir: owner, paths: [PRD] })).toEqual({
-      ok: false, mismatches: [{ path: PRD, reason: 'different content' }],
+      ok: false,
+      mismatches: [{ path: PRD, reason: 'different content' }],
     })
   })
 
   it('reports a linked document missing from disk', () => {
-    expect(checkSpecSync({ repoDir: owner, paths: ['docs/specs/x/nope.md'] })).toEqual({
-      ok: false, mismatches: [{ path: 'docs/specs/x/nope.md', reason: 'no file on disk' }],
+    expect(
+      checkSpecSync({ repoDir: owner, paths: ['docs/specs/x/nope.md'] }),
+    ).toEqual({
+      ok: false,
+      mismatches: [{ path: 'docs/specs/x/nope.md', reason: 'no file on disk' }],
     })
   })
 
@@ -101,10 +131,12 @@ describe('checkSpecSync', () => {
     git(owner, 'remote', 'set-url', 'origin', join(base, 'does-not-exist.git'))
     const result = checkSpecSync({ repoDir: owner, paths: [PRD] })
     expect(result.ok).toBe(false)
-    expect('fetchError' in result && result.fetchError).toMatch(/does-not-exist\.git/)
+    expect('fetchError' in result && result.fetchError).toMatch(
+      /does-not-exist\.git/,
+    )
   })
 
-  it('U1-AC06: leaves branches, index and files of the owner\'s copy as they were', () => {
+  it("U1-AC06: leaves branches, index and files of the owner's copy as they were", () => {
     git(owner, 'switch', '--quiet', '-c', 'feature')
     write(PRD, '# PRD\n\nwip\n')
     write('notes.txt', 'untracked\n')
@@ -118,6 +150,8 @@ describe('checkSpecSync', () => {
 
 describe('documentPaths', () => {
   it('drops anchors, empty links and duplicates', () => {
-    expect(documentPaths([PRD, `${REQ}#u1`, undefined, ' ', `${REQ}#u2`])).toEqual([PRD, REQ])
+    expect(
+      documentPaths([PRD, `${REQ}#u1`, undefined, ' ', `${REQ}#u2`]),
+    ).toEqual([PRD, REQ])
   })
 })

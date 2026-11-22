@@ -65,6 +65,58 @@ const application = [
   .flatMap(files)
   .filter((file) => !isTest(file))
 
+// The layers inside a module and the directions its files may import in
+// (docs/architecture/ddd-clean-hexagonal.md, "The layers of a module"). The
+// check covers the modules already brought to the guidelines; a module
+// joins the list in the change that brings it there.
+const layered = ['ai'] as const
+
+type Layer =
+  'domain' | 'ports' | 'operations' | 'adapters' | 'persistence' | 'driving'
+
+/** The layer of a module's file; undefined for its entries and other files. */
+function layerOf(file: string): Layer | undefined {
+  const inside = /^modules\/[^/]+\/(.+\.ts)$/.exec(file)?.[1]
+  if (!inside || /^(index|view)\.ts$/.test(inside)) return undefined
+  if (inside.startsWith('domain/')) return 'domain'
+  if (inside.startsWith('ports/')) return 'ports'
+  if (inside.startsWith('infrastructure/adapters/')) return 'adapters'
+  if (inside.startsWith('infrastructure/persistence/')) return 'persistence'
+  if (inside.startsWith('infrastructure/')) return 'driving'
+  return 'operations'
+}
+
+/** The layers of its own module a layer's files may import. */
+const inward: Record<Layer, readonly Layer[]> = {
+  domain: ['domain'],
+  ports: ['domain', 'ports'],
+  operations: ['domain', 'ports', 'operations', 'persistence'],
+  adapters: ['domain', 'ports', 'adapters'],
+  persistence: ['domain', 'ports', 'persistence'],
+  driving: ['domain', 'ports', 'operations', 'driving'],
+}
+
+/** The place that assembles a module's adapters, which operations may ask. */
+const isAdapterRegistry = (file: string) =>
+  /^modules\/[^/]+\/infrastructure\/adapters\/registry\.ts$/.test(file)
+
+/** The relative imports of a file, each with whether it is type-only. */
+function importStatementsOf(file: string) {
+  const source = readFileSync(join(root, file), 'utf8')
+  const found: { target: string; typeOnly: boolean }[] = []
+  for (const match of source.matchAll(
+    /(?:^|\n)\s*(import|export)(\s+type)?\b[^'"\n;]*?(?:\{[^}]*\}[^'"\n;]*?)?['"](\.{1,2}\/[^'"]+)['"]/g,
+  )) {
+    const base = resolve(join(root, dirname(file)), match[3]!)
+    const target = ['', '.ts', '/index.ts']
+      .map((suffix) => base + suffix)
+      .find((path) => existsSync(path) && statSync(path).isFile())
+    if (target)
+      found.push({ target: relative(root, target), typeOnly: !!match[2] })
+  }
+  return found
+}
+
 describe('module directories (A12-AC01, A12-AC02)', () => {
   it.each(modules)('%s has a public entry and a description', (name) => {
     expect(existsSync(join(root, 'modules', name, 'index.ts'))).toBe(true)
@@ -133,6 +185,51 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
       )
     expect(reads).toEqual([])
   })
+
+  it.each(layered)(
+    'keeps the dependencies inside %s pointing inward: the domain imports only the domain, a port only the domain and ports, an operation no adapter but their registry, and the infrastructure no operation',
+    (name) => {
+      const own = files(`modules/${name}`).filter((file) => !isTest(file))
+      const outward = own.flatMap((file) => {
+        const layer = layerOf(file)
+        if (!layer) return []
+        return importStatementsOf(file)
+          .filter(({ target, typeOnly }) => {
+            if (moduleOf(target) !== name)
+              // Outside the module: nothing for the domain, types alone
+              // for a port; the other layers follow the rules above.
+              return layer === 'domain' || (layer === 'ports' && !typeOnly)
+            const reached = layerOf(target)
+            if (!reached) return true // the module's own entry
+            if (layer === 'operations' && isAdapterRegistry(target))
+              return false
+            return !inward[layer].includes(reached)
+          })
+          .map(({ target }) => `${file} -> ${target}`)
+      })
+      expect(outward).toEqual([])
+      // The domain and the ports run no platform code either.
+      const platform = own
+        .filter((file) => ['domain', 'ports'].includes(layerOf(file) ?? ''))
+        .filter((file) =>
+          /from\s+['"]node:|process\.env/.test(
+            readFileSync(join(root, file), 'utf8'),
+          ),
+        )
+      expect(platform).toEqual([])
+      // The check found the layers it speaks of.
+      expect(new Set(own.map(layerOf))).toEqual(
+        new Set([
+          undefined,
+          'domain',
+          'ports',
+          'operations',
+          'adapters',
+          'persistence',
+        ]),
+      )
+    },
+  )
 
   it('leaves in scripts only startup scripts, tooling and the helper tools the design keeps there (0mq.12 ASM-2)', () => {
     const listed = readdirSync(join(root, 'scripts')).sort()

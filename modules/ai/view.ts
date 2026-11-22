@@ -20,10 +20,9 @@ export {
   timeLeftText,
   type AssignmentActionOutcome,
   type AssignmentDetails,
-  type AssignmentFailureReason,
   type AssignmentListPage,
   type AssignmentRow,
   type OperationDetails,
-  type OperationState,
-  type OperationWait,
 } from './domain/panel.ts'
+export type { OperationState, OperationWait } from './domain/operation.ts'
+export type { AssignmentFailureReason } from './domain/assignment.ts'

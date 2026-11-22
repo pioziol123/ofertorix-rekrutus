@@ -23,12 +23,9 @@ import {
   type AssignmentErrorCode,
   type AssignmentRequest,
 } from '../index.ts'
-import type {
-  Executor,
-  OperationJobData,
-  PriceList,
-} from '../executors/declaration.ts'
-import { registerExecutor } from '../executors/registry.ts'
+import type { Executor, OperationJobData } from '../ports/executor.ts'
+import type { PriceList } from '../domain/price-list.ts'
+import { registerExecutor } from '../infrastructure/adapters/registry.ts'
 
 // The settings of requesting modules in this test: names a test defines,
 // on test executors. A test may change them after placing.

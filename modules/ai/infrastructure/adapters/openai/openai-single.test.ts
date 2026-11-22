@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { actualCost } from '../assignments/operation-cost.ts'
+import { actualCost } from '../../../domain/operation-cost.ts'
 import { aiCatalog } from '../model-catalog.ts'
-import type { ExecutorContent, OperationWork } from './declaration.ts'
+import type { AssignmentContent } from '../../../domain/assignment.ts'
+import type { OperationWork } from '../../../ports/executor.ts'
 import { openAiExecutor } from './openai.ts'
 
 /**
@@ -14,7 +15,7 @@ import { openAiExecutor } from './openai.ts'
 const priceList = aiCatalog.models.find((m) => m.model === 'gpt-6-luna')!.prices
   .single!
 const parameters = { model: 'gpt-6-luna', reasoningEffort: 'low' }
-const content: ExecutorContent = {
+const content: AssignmentContent = {
   type: 'single',
   instruction: 'Assess the offer.',
   input: 'Ad text',
@@ -33,7 +34,7 @@ const content: ExecutorContent = {
 /** The work of one operation, keeping what the writers were given. */
 function operation(
   overrides: Partial<OperationWork> = {},
-  of: ExecutorContent = content,
+  of: AssignmentContent = content,
 ) {
   const exchange: ['request' | 'response', string][] = []
   const work: OperationWork = {
@@ -72,7 +73,7 @@ const transportError = (code: string) =>
 const run = async (
   fetcher: typeof fetch,
   overrides: Partial<OperationWork> = {},
-  of?: ExecutorContent,
+  of?: AssignmentContent,
 ) => {
   const { work, exchange } = operation(overrides, of)
   const outcome = await openAiExecutor(fetcher).carryOut(work)

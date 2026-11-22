@@ -1,15 +1,15 @@
-import { defineJob } from '../../../lib/queues/index.ts'
+import { defineJob } from '../../../../../lib/queues/index.ts'
 import { resolveEndpoint } from '../configuration.ts'
-import { localFetch } from '../infrastructure/adapters/local-http.ts'
+import { localFetch } from './local-http.ts'
 import { aiCatalog } from '../model-catalog.ts'
 import type {
   Executor,
   ExecutorParameters,
   OperationJobData,
-} from './declaration.ts'
+} from '../../../ports/executor.ts'
 import { carryOutLocalSingle, type LocalModel } from './ollama-single.ts'
-import { nothingSent } from './outcome.ts'
-import { withinMaxRunTime } from './run.ts'
+import { nothingSent } from '../../../domain/usage.ts'
+import { withinMaxRunTime } from '../run.ts'
 
 /**
  * The job of the local executor's operations: exclusivity on a constant

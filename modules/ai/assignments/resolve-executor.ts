@@ -4,10 +4,11 @@ import type {
   ExecutorParameters,
   ServiceDeclaration,
   ServiceOffer,
-} from '../executors/declaration.ts'
-import { findExecutor } from '../executors/registry.ts'
+} from '../ports/executor.ts'
+import { findExecutor } from '../infrastructure/adapters/registry.ts'
 import { assignmentSettings } from './assignment-settings.ts'
-import { AssignmentError, type AssignmentType } from './assignment.ts'
+import { AssignmentError } from './assignment.ts'
+import type { AssignmentType } from '../domain/assignment.ts'
 
 const settingsSchema = z
   .object({

@@ -33,7 +33,7 @@ import { migrate, pricing } from '../../tests/matching-ai.fixtures.ts'
 // The price lists AI keeps in code, replaced for the test.
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
-  '../ai/model-catalog.ts',
+  '../ai/infrastructure/adapters/model-catalog.ts',
   () => import('../../tests/ai-test-configuration.ts'),
 )
 const integration =

@@ -1,4 +1,4 @@
-import type { OperationJobData } from '../executors/declaration.ts'
+import type { OperationJobData } from '../ports/executor.ts'
 import { carryOutOperation } from './carry-out-operation.ts'
 import { deliverResult } from './deliver-result.ts'
 import { endOperation } from './end-operation.ts'

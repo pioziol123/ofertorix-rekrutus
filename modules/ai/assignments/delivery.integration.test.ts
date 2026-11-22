@@ -24,10 +24,10 @@ import type {
   Executor,
   OperationJobData,
   OperationWork,
-  PriceList,
-} from '../executors/declaration.ts'
-import type { ExecutorOutcome } from '../executors/outcome.ts'
-import { registerExecutor } from '../executors/registry.ts'
+  ExecutorOutcome,
+} from '../ports/executor.ts'
+import type { PriceList } from '../domain/price-list.ts'
+import { registerExecutor } from '../infrastructure/adapters/registry.ts'
 import {
   endFailedOperation,
   placeAssignment,
