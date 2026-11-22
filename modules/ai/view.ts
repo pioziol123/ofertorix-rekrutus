@@ -7,13 +7,10 @@
 export {
   actualCostText,
   amountText,
-  assignmentPageSize,
   assignmentStatusLabels,
   assignmentTypeLabels,
   failureReasonLabels,
-  operationCauseLabels,
   operationCauseText,
-  operationStateLabels,
   operationStateText,
   parametersText,
   timeLeftText,

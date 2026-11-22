@@ -9,8 +9,13 @@ import type {
 } from '../../domain/operation-state.ts'
 import type { AssignmentFailureReason } from '../../domain/panel.ts'
 import type { OperationCause } from '../../executors/outcome.ts'
-import type { OperationOrigin } from './operations.ts'
-import { operationsCharge, unknownActualCost } from './operations.ts'
+import {
+  operationsCharge,
+  operationsCostColumns,
+  unknownActualCost,
+  type AssignmentCostRow,
+  type OperationOrigin,
+} from './operations.ts'
 
 /**
  * The position of a row in the panel's order: needing attention first
@@ -81,28 +86,15 @@ export async function readAssignmentListRows(
   return rows.map(toListRow)
 }
 
-/** One assignment in the panel's order, without row locks; else null. */
-export async function readAssignmentRow(
-  id: string,
-): Promise<AssignmentListRow | null> {
-  const row = (
-    await db().query<RawListRow>(
-      `SELECT ${listColumns} FROM ai_assignments a WHERE a.id=$1`,
-      [id],
-    )
-  ).rows[0]
-  return row ? toListRow(row) : null
-}
-
 /** One operation as the details read it, without its result or exchange. */
 export type OperationDetailsRow = {
   ordinal: number
   origin: OperationOrigin
   state: OperationState
   waitsFor: OperationWait | null
-  pendingSince: Date
-  startedAt: Date | null
-  finishedAt: Date | null
+  pendingSince: string
+  startedAt: string | null
+  finishedAt: string | null
   potentialCost: string | null
   actualCost: string | null
   actualCostUnknown: boolean
@@ -110,34 +102,52 @@ export type OperationDetailsRow = {
   retryable: boolean | null
 }
 
-/** The operations of an assignment from the first, without row locks. */
-export async function readOperationDetailsRows(
-  assignmentId: string,
-): Promise<OperationDetailsRow[]> {
-  return (
-    await db().query<OperationDetailsRow>(
-      `SELECT ordinal,origin,state,waits_for AS "waitsFor",
-        pending_since AS "pendingSince",started_at AS "startedAt",
-        finished_at AS "finishedAt",
-        potential_cost::numeric(16,6)::text AS "potentialCost",
-        actual_cost::numeric(16,6)::text AS "actualCost",
-        (${unknownActualCost}) AS "actualCostUnknown",cause,retryable
-       FROM ai_operations WHERE assignment_id=$1 ORDER BY ordinal`,
-      [assignmentId],
-    )
-  ).rows
+/** One assignment with everything its details show, read at one moment. */
+export type AssignmentDetailsRow = AssignmentListRow & {
+  executorParameters: Record<string, string | null>
+  cost: AssignmentCostRow
+  operations: OperationDetailsRow[]
 }
 
-/** The frozen executor parameters of an assignment. */
-export async function readExecutorParameters(
-  assignmentId: string,
-): Promise<Record<string, string | null>> {
-  return (
-    await db().query<{ parameters: Record<string, string | null> }>(
-      'SELECT executor_parameters AS parameters FROM ai_assignments WHERE id=$1',
-      [assignmentId],
+const utc = (column: string) =>
+  `to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`
+
+/**
+ * One assignment with its row data, frozen executor parameters, cost
+ * figures and operations from the first, in one statement, so every part
+ * comes from the same snapshot of committed state; without row locks.
+ * Null for an unknown identifier. Holds no request, raw response or result.
+ */
+export async function readAssignmentDetailsRow(
+  id: string,
+): Promise<AssignmentDetailsRow | null> {
+  const row = (
+    await db().query<
+      RawListRow & {
+        executorParameters: Record<string, string | null>
+        cost: AssignmentCostRow
+        operations: OperationDetailsRow[]
+      }
+    >(
+      `SELECT ${listColumns},a.executor_parameters AS "executorParameters",
+        (SELECT row_to_json(c) FROM (SELECT ${operationsCostColumns}
+          FROM ai_operations WHERE assignment_id=a.id) c) AS cost,
+        (SELECT coalesce(json_agg(o ORDER BY o.ordinal),'[]') FROM (
+          SELECT ordinal,origin,state,waits_for AS "waitsFor",
+           ${utc('pending_since')} AS "pendingSince",
+           ${utc('started_at')} AS "startedAt",
+           ${utc('finished_at')} AS "finishedAt",
+           potential_cost::numeric(16,6)::text AS "potentialCost",
+           actual_cost::numeric(16,6)::text AS "actualCost",
+           (${unknownActualCost}) AS "actualCostUnknown",cause,retryable
+          FROM ai_operations WHERE assignment_id=a.id) o) AS operations
+       FROM ai_assignments a WHERE a.id=$1`,
+      [id],
     )
-  ).rows[0]!.parameters
+  ).rows[0]
+  if (!row) return null
+  const { executorParameters, cost, operations, ...listRow } = row
+  return { ...toListRow(listRow), executorParameters, cost, operations }
 }
 
 /** The number of assignments needing attention, without row locks. */

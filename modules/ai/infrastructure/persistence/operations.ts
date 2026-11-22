@@ -403,6 +403,17 @@ export type AssignmentCostRow = {
 }
 
 /**
+ * The cost figures of a group of operations as an SQL select list over
+ * `ai_operations` columns: `potential`, `actual`, `charge` and
+ * `unknown`, as described at readAssignmentCostRow. The cost read and the
+ * panel's details share it.
+ */
+export const operationsCostColumns = `coalesce(sum(potential_cost),0)::numeric(16,6)::text AS potential,
+        coalesce(sum(actual_cost),0)::numeric(16,6)::text AS actual,
+        ${operationsCharge} AS charge,
+        (count(*) FILTER (WHERE ${unknownActualCost}))::int AS unknown`
+
+/**
  * The cost figures of an assignment from its operations: the sum of the
  * potential costs, of the known actual costs, the budget charge (ZA-R04)
  * and the number of ended operations that started and have no actual cost.
@@ -412,10 +423,7 @@ export async function readAssignmentCostRow(
 ): Promise<AssignmentCostRow> {
   return (
     await db().query<AssignmentCostRow>(
-      `SELECT coalesce(sum(potential_cost),0)::numeric(16,6)::text AS potential,
-        coalesce(sum(actual_cost),0)::numeric(16,6)::text AS actual,
-        ${operationsCharge} AS charge,
-        (count(*) FILTER (WHERE ${unknownActualCost}))::int AS unknown
+      `SELECT ${operationsCostColumns}
        FROM ai_operations WHERE assignment_id=$1`,
       [assignmentId],
     )
