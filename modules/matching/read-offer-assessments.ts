@@ -6,7 +6,7 @@ import {
 } from './infrastructure/adapters/assessment-ai.ts'
 import {
   assessmentState,
-  failedAssignmentMessage,
+  endedAtDeploymentMessage,
 } from './domain/assessment-state.ts'
 import { assignmentsWithoutOutcome } from './infrastructure/persistence/assessment-requests.ts'
 import { latestOfAds } from './infrastructure/persistence/ratings.ts'
@@ -32,7 +32,8 @@ export async function decorateMatching(
   const activeId = (await activeProfileVersion())?.id ?? null
   const ids = offers.map((o) => o.id)
   const current = await currentAdVersions(ids)
-  const rows = await latestOfAds(ids, failedAssignmentMessage)
+  // ASSUMPTION(oferty-pracy-sq2.11/ASM-1): which earlier requests it shows.
+  const rows = await latestOfAds(ids, endedAtDeploymentMessage)
   // Ads the Sources read no longer knows get no summary, as before.
   const byId = new Map(
     rows.filter((row) => current.has(row.id)).map((row) => [row.id, row]),

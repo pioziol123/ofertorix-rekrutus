@@ -36,18 +36,19 @@ export function researchState(saved: {
  * Whether the company's research history shows a research (T10-R08):
  * every research with an assignment; research made before the deployment
  * of assignments only with a saved report, or when the deployment ended it
- * as failed (T10-R02), which saved the message of a failed assignment,
- * `failedMessage`. Earlier research that ended without a report is not
- * shown.
- * ASSUMPTION(oferty-pracy-sq2.11/ASM-1): the message of a failed
- * assignment tells research the deployment ended from research that ended
- * before it, which the old way's receiver never gave that message.
+ * as failed (T10-R02), which saved its own message, `deploymentMessage`.
+ * Earlier research that ended without a report is not shown.
+ * ASSUMPTION(oferty-pracy-sq2.11/ASM-1): that message, which nothing else
+ * writes, tells research the deployment ended from research that ended
+ * before it.
  */
 export function shownResearch(
   research: { assignment: boolean; report: boolean; message: string | null },
-  failedMessage: string,
+  deploymentMessage: string,
 ): boolean {
   return (
-    research.assignment || research.report || research.message === failedMessage
+    research.assignment ||
+    research.report ||
+    research.message === deploymentMessage
   )
 }

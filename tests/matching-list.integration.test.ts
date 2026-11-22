@@ -313,7 +313,14 @@ integration('list matching projections in isolated PostgreSQL', () => {
       state: 'completed',
       scoreId: score,
     })
-    // The migration step ends it with the message of a failed assignment.
+    // The migration step ends it with the message of work ended at the
+    // deployment, which keeps it in the list (sq2.11 ASM-1).
+    // An earlier request with a failed assignment's message stays hidden.
+    await request('running', '2026-01-02T12:00:00Z', null, {
+      oldWay: true,
+      error:
+        'Ocena nie została wykonana. Poprzednie wyniki pozostały bez zmian. Szczegóły są w panelu zleceń AI.',
+    })
     expect(await failAssessmentsOfOldWay()).toBe(1)
     expect((await decorateMatching(offers()))[0]!.assessment).toMatchObject({
       requestId: waiting,

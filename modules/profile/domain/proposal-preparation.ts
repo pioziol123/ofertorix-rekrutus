@@ -9,11 +9,22 @@ export const assignmentInProgress = 'ai_running'
  * The owner's message after the assignment of a preparation failed
  * (T7-R04), whatever made it fail; the details are in the AI assignments
  * panel. A proposal the Profile's own check refuses keeps its message of
- * the check. A preparation of the old way unfinished at the deployment of
- * assignments ends with it too (T10-R02).
+ * the check.
  */
 export const failedAssignmentMessage =
   'Nie udało się przygotować propozycji. Profil pozostaje bez zmian. Szczegóły są w panelu zleceń AI.'
+
+/**
+ * The owner's message of a preparation of the old way that was unfinished
+ * at the deployment of assignments, which the migration step ends as
+ * failed (T10-R02). It has no assignment, so it does not point to the AI
+ * assignments panel, whose history starts empty (T10-R03).
+ * ASSUMPTION(oferty-pracy-sq2.11/ASM-3): the wording, after the message
+ * research had for work interrupted by an earlier change of the
+ * application.
+ */
+export const endedAtDeploymentMessage =
+  'Przygotowanie propozycji przerwano przy zmianie wersji aplikacji. Profil pozostaje bez zmian. Ponowienie wymaga nowego żądania.'
 
 /**
  * The import statuses with which preparations of the old way were in

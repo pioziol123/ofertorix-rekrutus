@@ -399,6 +399,43 @@ integration('starting and ending operations on a real database', () => {
     expect(calls).toHaveLength(1)
   })
 
+  it('counts the amounts carried from before the deployment against the room: an operation the carried settled and held amounts leave no room for waits for the budget, and is sent once the limit is raised (T10-R01, T3-R02, T3-R05)', async () => {
+    const month = budgetMonth(new Date())
+    // Limit 1.000; carried 0.600 settled and 0.395 held leave 0.005,
+    // less than the 0.008 one cheap operation holds.
+    await setLimit(month, '1.000000')
+    await pool.query(
+      'UPDATE ai_budget_months SET carried_settled=0.6,carried_held=0.395 WHERE month=$1',
+      [month],
+    )
+    const assignmentId = await place('cheap')
+    const operationId = await operationIdOf(assignmentId)
+    expect(await startOperation(operationId)).not.toBe('started')
+    expect(await operationOf(assignmentId)).toMatchObject({
+      state: 'pending',
+      waits_for: 'budget',
+      budget_month: null,
+    })
+    await admin.query(`DELETE FROM ${queueSchema}.job`)
+    // Still no room: the pass leaves it waiting.
+    await runPass([budgetStep], fail)
+    expect(await jobs()).toEqual([])
+    // Raised by 0.003 the room is 0.008, exactly the operation's cost.
+    await setLimit(month, '1.003000')
+    await runPass([budgetStep], fail)
+    expect(await jobs()).toEqual([{ name: paidJob.queue, operationId }])
+    expect(await startOperation(operationId)).toBe('started')
+    expect(await readMonthlyBudgets()).toEqual([
+      {
+        month,
+        limit: '1.003000',
+        settled: '0.600000',
+        held: '0.403000',
+        charge: '1.003000',
+      },
+    ])
+  })
+
   describe('room appears (T3-R05)', () => {
     it('after the limit is raised, a pass of the periodic process sends the waiting operations oldest first as far as the room reaches and leaves the rest waiting (T3-AC05)', async () => {
       const month = budgetMonth(new Date())

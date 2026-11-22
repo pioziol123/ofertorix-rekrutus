@@ -65,6 +65,9 @@ const formatMessage =
   'Odpowiedź AI ma nieprawidłowy format danych. Profil pozostaje bez zmian.'
 const failedMessage =
   'Nie udało się przygotować propozycji. Profil pozostaje bez zmian. Szczegóły są w panelu zleceń AI.'
+/** The message of a preparation ended at the deployment (sq2.11 ASM-3). */
+const deploymentMessage =
+  'Przygotowanie propozycji przerwano przy zmianie wersji aplikacji. Profil pozostaje bez zmian. Ponowienie wymaga nowego żądania.'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip
@@ -492,19 +495,20 @@ integration(
         ).rejects.toThrow('already pending')
         expect(await count('ai_assignments')).toBe(0)
         // The deployment ends every preparation of the old way with the
-        // message of a failed assignment, and a new one can be requested.
+        // message of work ended at the deployment (sq2.11 ASM-3), and a new
+        // one can be requested.
         const { assignmentId } = await requested()
         expect(await failPreparationsOfOldWay()).toBe(3)
         for (const id of Object.values(old)) {
           expect(await importOf(id)).toMatchObject({
             status: 'needs_attention',
             proposal: null,
-            error: failedMessage,
+            error: deploymentMessage,
             assignment_id: null,
           })
           expect(await shown(id)).toEqual({
             label: 'Wymaga sprawdzenia',
-            message: failedMessage,
+            message: deploymentMessage,
           })
         }
         // A preparation with an assignment is left to its receiver.

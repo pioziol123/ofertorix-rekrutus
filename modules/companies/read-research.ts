@@ -4,7 +4,7 @@ import type {
   ResearchReport,
   ResearchTarget,
 } from './domain/research-report.ts'
-import { failedAssignmentMessage } from './domain/research-outcome.ts'
+import { endedAtDeploymentMessage } from './domain/research-outcome.ts'
 import { researchState, shownResearch } from './domain/research-view.ts'
 import { researchConfigured } from './infrastructure/adapters/research-ai.ts'
 import {
@@ -40,7 +40,7 @@ export async function readCompanyResearch(companyId: string) {
             report: r.result !== null,
             message: r.error as string | null,
           },
-          failedAssignmentMessage,
+          endedAtDeploymentMessage,
         ),
       )
       .map((r) => ({

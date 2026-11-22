@@ -568,14 +568,14 @@ integration('the deployment of AI assignments on earlier records', () => {
     expect(columns).toEqual([])
   })
 
-  it('T10-AC02: shows the unfinished preparations as failed with the message of a failed assignment, and leaves the ended one as it was', async () => {
+  it('T10-AC02, sq2.11 ASM-3: shows the unfinished preparations as failed with the message of work ended at the deployment, which points to no panel, and leaves the ended one as it was', async () => {
     for (const id of [imports.queued, imports.waitingBudget, imports.running]) {
       const preparation = (await readImport(id))!
       expect(importStatusLabel(preparation.status as string)).toBe(
         'Wymaga sprawdzenia',
       )
       expect(preparation.error).toBe(
-        'Nie udało się przygotować propozycji. Profil pozostaje bez zmian. Szczegóły są w panelu zleceń AI.',
+        'Przygotowanie propozycji przerwano przy zmianie wersji aplikacji. Profil pozostaje bez zmian. Ponowienie wymaga nowego żądania.',
       )
     }
     expect((await readImport(imports.prepared))!.status).toBe('proposal')
@@ -590,7 +590,13 @@ integration('the deployment of AI assignments on earlier records', () => {
   it('T10-AC02, T10-AC06, sq2.11 ASM-1: shows the unfinished assessment as failed, and an offer assessed before still shows its assessment, with no cost, no entry of earlier work without an assessment and no exchange view', async () => {
     const assessing = await readMatching(ads.assessing)
     expect(assessing.history).toMatchObject([
-      { id: requests.unfinished, state: 'failed', assignment: false },
+      {
+        id: requests.unfinished,
+        state: 'failed',
+        assignment: false,
+        error:
+          'Ocenę przerwano przy zmianie wersji aplikacji. Poprzednie wyniki pozostały bez zmian. Ponowienie wymaga nowego żądania.',
+      },
     ])
     expect(matchingDetailLabels[assessing.history[0]!.state]).toBe(
       'Ocena nie powiodła się',
@@ -623,7 +629,12 @@ integration('the deployment of AI assignments on earlier records', () => {
   it('T10-AC02, T10-AC07, sq2.11 ASM-1: shows the unfinished research as failed, and a company with a report saved before still shows it, with no cost and no entry of earlier research without a report', async () => {
     const researching = await readCompanyResearch(companies.researching)
     expect(researching.operations).toMatchObject([
-      { id: research.unfinished, state: 'failed' },
+      {
+        id: research.unfinished,
+        state: 'failed',
+        error:
+          'Research przerwano przy zmianie wersji aplikacji. Poprzedni raport pozostaje dostępny. Ponowienie wymaga nowego żądania.',
+      },
     ])
     expect(researchStateLabels[researching.operations[0]!.state]).toBe(
       'Nie udało się przygotować raportu',

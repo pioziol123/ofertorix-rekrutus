@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { failedAssignmentMessage } from './research-outcome.ts'
+import {
+  endedAtDeploymentMessage,
+  failedAssignmentMessage,
+} from './research-outcome.ts'
 import {
   researchActiveStates,
   researchState,
@@ -83,7 +86,7 @@ describe('the research the company history shows after the deployment of assignm
     assignment: boolean
     report: boolean
     message: string | null
-  }) => shownResearch(research, failedAssignmentMessage)
+  }) => shownResearch(research, endedAtDeploymentMessage)
 
   it('shows every research with an assignment, whatever its outcome', () => {
     for (const research of [
@@ -100,15 +103,24 @@ describe('the research the company history shows after the deployment of assignm
       show({
         assignment: false,
         report: false,
-        message: failedAssignmentMessage,
+        message: endedAtDeploymentMessage,
       }),
     ).toBe(true)
+  })
+
+  it('ends research the deployment ended with a message of its own, which points to no panel (sq2.11 ASM-3)', () => {
+    expect(endedAtDeploymentMessage).toBe(
+      'Research przerwano przy zmianie wersji aplikacji. Poprzedni raport pozostaje dostępny. Ponowienie wymaga nowego żądania.',
+    )
+    expect(endedAtDeploymentMessage).not.toMatch(/panel/)
   })
 
   it('does not show earlier research that ended without a report before the deployment', () => {
     for (const message of [
       'Nie udało się uzyskać kompletnego raportu z dowodami. Poprzedni raport pozostaje dostępny.',
       'Usługa researchu zwróciła błąd HTTP. Koszt pozostaje zarezerwowany.',
+      // A failed assignment's message is not the deployment's.
+      failedAssignmentMessage,
       'Nie udało się uzyskać kompletnego raportu z dowodami (validation). Poprzedni raport pozostaje dostępny.',
       null,
     ])

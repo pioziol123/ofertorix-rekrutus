@@ -238,14 +238,14 @@ export async function ratingHistory(adId: string): Promise<RatingHistoryRow[]> {
 
 /**
  * The latest request the history shows and the current rating of each
- * given ad, in one query; `failedMessage` is the message of a failed
- * assignment (see `shownRequest`). An ad without either comes back with
+ * given ad, in one query; `deploymentMessage` is the message of an
+ * assessment the deployment ended (see `shownRequest`). An ad without either comes back with
  * nulls.
  * ASSUMPTION(oferty-pracy-sq2.11/ASM-1)
  */
 export async function latestOfAds(
   ids: readonly string[],
-  failedMessage: string,
+  deploymentMessage: string,
 ) {
   return (
     await db().query(
@@ -254,7 +254,7 @@ export async function latestOfAds(
     LEFT JOIN LATERAL (SELECT id,state,(result IS NOT NULL) AS assessed,(result IS NULL AND error IS NOT NULL) AS failed FROM matching_requests r WHERE r.ad_id=a.id AND ${shownRequest('r', '$2')} ORDER BY r.created_at DESC,r.id DESC LIMIT 1) l ON true
     LEFT JOIN matching_rating_heads rh ON rh.ad_id=a.id
     LEFT JOIN matching_rating_revisions s ON s.id=rh.revision_id`,
-      [ids, failedMessage],
+      [ids, deploymentMessage],
     )
   ).rows
 }

@@ -31,13 +31,26 @@ export function rejectionMessage(code: string): string {
 /**
  * The message of an assessment whose assignment failed (T8-R03): the
  * receiver gets no cause, so the message names none; the details of the
- * failure are in the AI assignments panel. An assessment of the old way
- * unfinished at the deployment of assignments ends with it too (T10-R02).
+ * failure are in the AI assignments panel.
  * ASSUMPTION(oferty-pracy-sq2.9/ASM-2): today's message of an assessment
  * that was not carried out, without the cause it can no longer name.
  */
 export const failedAssignmentMessage =
   'Ocena nie została wykonana. Poprzednie wyniki pozostały bez zmian. Szczegóły są w panelu zleceń AI.'
+
+/**
+ * The message of an assessment of the old way that was unfinished at the
+ * deployment of assignments, which the migration step ends as failed
+ * (T10-R02). It has no assignment, so it does not point to the AI
+ * assignments panel, whose history starts empty (T10-R03). Only such an
+ * assessment has it, so it also tells the views that the deployment ended
+ * it (ASSUMPTION(oferty-pracy-sq2.11/ASM-1)).
+ * ASSUMPTION(oferty-pracy-sq2.11/ASM-3): the wording, after the message
+ * research had for work interrupted by an earlier change of the
+ * application.
+ */
+export const endedAtDeploymentMessage =
+  'Ocenę przerwano przy zmianie wersji aplikacji. Poprzednie wyniki pozostały bez zmian. Ponowienie wymaga nowego żądania.'
 
 /**
  * What a refused assignment means to the owner, for a single assessment or

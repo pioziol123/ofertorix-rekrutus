@@ -6,7 +6,7 @@ import type {
 } from './domain/assessment.ts'
 import {
   assessmentState,
-  failedAssignmentMessage,
+  endedAtDeploymentMessage,
 } from './domain/assessment-state.ts'
 import type { MatchingState } from './domain/assessment-view.ts'
 import {
@@ -54,7 +54,8 @@ export type MatchingHistory = {
  */
 export async function readMatching(adId: string) {
   const activeId = (await activeProfileVersion())?.id ?? null
-  const rows = await requestHistoryOfAd(adId, failedAssignmentMessage)
+  // ASSUMPTION(oferty-pracy-sq2.11/ASM-1): which earlier requests it shows.
+  const rows = await requestHistoryOfAd(adId, endedAtDeploymentMessage)
   const requests = await withAdVersionState(
     rows.map(({ assignment_id: assignmentId, ...row }) => ({
       ...row,

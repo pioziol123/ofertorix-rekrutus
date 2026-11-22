@@ -16,15 +16,15 @@ import type {
 /**
  * The condition of a request the offer's history and list show, on the
  * request alias `r` and the query parameter `message` holding the
- * message of a failed assignment (T10-R08): every request with an
+ * message of an assessment the deployment ended (T10-R08): every request with an
  * assignment and every excluded one, which never reached AI; a request of
  * the old way, made before the deployment of assignments, only with a
  * saved assessment, or when the deployment ended it as failed (T10-R02),
  * which saved that message. Earlier AI work that ended without an
  * assessment is not shown.
- * ASSUMPTION(oferty-pracy-sq2.11/ASM-1): the message of a failed
- * assignment tells a request the deployment ended from one that ended
- * before it, which the old way's receivers never gave that message.
+ * ASSUMPTION(oferty-pracy-sq2.11/ASM-1): that message, which nothing else
+ * writes, tells a request the deployment ended from one that ended before
+ * it.
  */
 export const shownRequest = (r: string, message: string) =>
   `(${r}.assignment_id IS NOT NULL OR ${r}.state='excluded' OR ${r}.result IS NOT NULL OR ${r}.error=${message})`
@@ -186,20 +186,21 @@ export type AssessmentHistoryRow = {
 }
 
 /**
- * Every request of an ad its history shows, newest first; `failedMessage`
- * is the message of a failed assignment (see `shownRequest`).
+ * Every request of an ad its history shows, newest first;
+ * `deploymentMessage` is the message of an assessment the deployment
+ * ended (see `shownRequest`).
  * ASSUMPTION(oferty-pracy-sq2.11/ASM-1)
  */
 export async function requestHistoryOfAd(
   adId: string,
-  failedMessage: string,
+  deploymentMessage: string,
 ): Promise<AssessmentHistoryRow[]> {
   return (
     await db().query<AssessmentHistoryRow>(
       `SELECT r.id,r.state,r.assignment_id,r.result,r.calculation,r.error,r.created_at,r.updated_at,r.profile_version_id,r.ad_revision_id,r.input->'checks' AS checks,r.input->'criteria' AS criteria
        FROM matching_requests r WHERE r.ad_id=$1 AND ${shownRequest('r', '$2')}
        ORDER BY r.created_at DESC,r.id DESC`,
-      [adId, failedMessage],
+      [adId, deploymentMessage],
     )
   ).rows
 }
