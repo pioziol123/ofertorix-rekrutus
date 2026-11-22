@@ -96,7 +96,7 @@ export async function afterOperationEnd(ended: EndedOperation): Promise<void> {
   const deadlinePassed = operations.deadline <= ended.now
   switch (nextStep(ended, { ...operations, deadlinePassed })) {
     case 'next_operation':
-      return addNextOperation(ended.assignmentId, operations)
+      return addOperation(ended.assignmentId, operations, 'automatic')
     case 'needs_attention':
       await setNeedsAttention(ended.assignmentId)
       return
@@ -105,9 +105,20 @@ export async function afterOperationEnd(ended: EndedOperation): Promise<void> {
   }
 }
 
-async function addNextOperation(
+/**
+ * Adds an operation to an assignment after its last one: pending, waiting
+ * for the executor, with its job sent to the end of the executor's queue in
+ * the caller's transaction, so it carries out the same frozen content. An
+ * automatic one follows an ordinary failure (T4-R02); a manual one is the
+ * owner's Retry (T12-R01), and its failure never meets the retry rule of
+ * `nextStep` (T12-R02). The caller holds the lock on the assignment's row.
+ * When the process no longer knows the executor, it throws and the
+ * caller's transaction rolls back.
+ */
+export async function addOperation(
   assignmentId: string,
   operations: { executor: string; lastOrdinal: number },
+  origin: OperationOrigin,
 ): Promise<void> {
   const executor = findExecutor(operations.executor)
   if (!executor)
@@ -119,7 +130,7 @@ async function addNextOperation(
     id: operationId,
     assignmentId,
     ordinal: operations.lastOrdinal + 1,
-    origin: 'automatic',
+    origin,
   })
   await sendJob(executor.job, { operationId })
 }

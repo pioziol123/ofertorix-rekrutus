@@ -92,7 +92,7 @@ flowchart TB
     Profile["Professional profile<br/>[Nitro routes + TypeScript modules]<br/>Draft, versions, CV import, AI proposal"]
     Companies["Companies and research<br/>[Nitro routes + TypeScript modules]<br/>Company profiles, roles on offers, reports"]
     Sources["Source handling<br/>[Nitro routes + TypeScript modules]<br/>Import status and manual requests for Polish sources"]
-    Panel["AI assignments panel<br/>[Nitro routes + TypeScript modules]<br/>List and details of assignments, count needing attention"]
+    Panel["AI assignments panel<br/>[Nitro routes + TypeScript modules]<br/>List and details of assignments, count needing attention, Retry and Reject"]
   end
 
   Owner -->|"Opens views over HTTP"| UI
@@ -100,12 +100,12 @@ flowchart TB
   UI -->|"Manages the profile and uploads the CV, HTTP"| Profile
   UI -->|"Edits links and requests research, HTTP/JSON"| Companies
   UI -->|"Reads status or requests an import, HTTP/JSON"| Sources
-  UI -->|"Reads assignments and the count for the navigation, HTTP/JSON"| Panel
+  UI -->|"Reads assignments and the count for the navigation, retries or rejects one, HTTP/JSON"| Panel
   Offers -->|"Reads offers, saves assessments and requests matching"| DB
   Profile -->|"Saves versions and requests extraction or a proposal"| DB
   Companies -->|"Saves company profiles and requests research"| DB
   Sources -->|"Reads and requests runs"| DB
-  Panel -->|"Reads assignments, operations and costs"| DB
+  Panel -->|"Reads assignments, operations and costs; saves the owner's actions and sends the job of a retried operation"| DB
   Profile -->|"Saves and serves PDF / DOCX"| Files
   Profile -.->|"Checks the model before a request"| Ollama
 
@@ -122,7 +122,7 @@ flowchart TB
 | Professional profile | [Version confirmation](../../server/api/profile/confirm.post.ts), [CV import](../../server/api/profile/imports/index.post.ts), [proposal request](../../server/api/profile/imports/%5Bid%5D/prepare.post.ts), [profile storage](../../modules/profile/infrastructure/persistence/profile.ts) |
 | Companies and research | [Company list API](../../server/api/companies/index.get.ts), [links to an offer](../../server/api/companies/%5Bid%5D/links.post.ts), [research request](../../server/api/companies/%5Bid%5D/research.post.ts), [company commands](../../modules/companies/company-commands.ts), [company reads](../../modules/companies/read-companies.ts) |
 | Source handling | [Import request](../../server/api/sources/polish.post.ts), [Polish sources status](../../server/api/sources/polish.get.ts), [JobSpy status](../../server/api/sources/jobspy.get.ts) |
-| AI assignments panel | [List API](../../server/api/ai-assignments/index.get.ts), [details API](../../server/api/ai-assignments/%5Bid%5D.get.ts), [count needing attention](../../server/api/ai-assignments/needing-attention.get.ts), [AI module reads](../../modules/ai/index.ts) |
+| AI assignments panel | [List API](../../server/api/ai-assignments/index.get.ts), [details API](../../server/api/ai-assignments/%5Bid%5D.get.ts), [count needing attention](../../server/api/ai-assignments/needing-attention.get.ts), [Retry](../../server/api/ai-assignments/%5Bid%5D/retry.post.ts), [Reject](../../server/api/ai-assignments/%5Bid%5D/reject.post.ts), [AI module reads and actions](../../modules/ai/index.ts) |
 | Shared route handling | [Identifier validation, body limit, error mapping and queue client](../../server/utils/http.ts), used by the routes of every module |
 
 ### Worker

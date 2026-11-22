@@ -198,3 +198,51 @@ export function parametersText(
   if (!entries.length) return '—'
   return entries.map(([name, value]) => `${name}: ${value ?? '—'}`).join(', ')
 }
+
+/**
+ * What an owner's action on an assignment (T12) returns: whether it took
+ * effect and the assignment's status after it. An action the status no
+ * longer allows changes nothing and returns the current status (T12-R04).
+ */
+export type AssignmentActionOutcome = {
+  changed: boolean
+  status: AssignmentStatus
+}
+
+/**
+ * The owner's actions the details page offers for an assignment (T12-R01,
+ * T12-R03, T12-R05): Retry only while it needs attention and is within its
+ * time limit, Reject while it is not final.
+ */
+export function assignmentActions(assignment: {
+  status: AssignmentStatus
+  timeLeftSeconds: number | null
+}): { retry: boolean; reject: boolean } {
+  return {
+    retry:
+      assignment.status === 'needs_attention' &&
+      (assignment.timeLeftSeconds ?? 0) > 0,
+    reject:
+      assignment.status === 'in_progress' ||
+      assignment.status === 'needs_attention',
+  }
+}
+
+/**
+ * The message after an owner's action: "Zlecenie zmieniło stan" with the
+ * current status when it changed nothing (T12-R04); null when it took
+ * effect.
+ */
+export function actionOutcomeText(
+  outcome: AssignmentActionOutcome,
+): string | null {
+  if (outcome.changed) return null
+  return `Zlecenie zmieniło stan. Obecny status: ${assignmentStatusLabels[outcome.status]}.`
+}
+
+/** The message when an action could not be saved (T12-R06). */
+export const actionFailedText = {
+  retry: 'Nie udało się ponowić zlecenia. Zlecenie pozostaje bez zmian.',
+  reject:
+    'Nie udało się odrzucić zlecenia: moduł zlecający nie przyjął informacji o niepowodzeniu albo zapis się nie powiódł. Zlecenie pozostaje bez zmian; możesz odrzucić je ponownie.',
+} as const

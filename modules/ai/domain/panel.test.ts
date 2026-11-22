@@ -6,8 +6,11 @@ import {
 import { operationCauses } from '../executors/outcome.ts'
 import { operationStates, operationWaits } from './operation-state.ts'
 import {
+  actionFailedText,
+  actionOutcomeText,
   actualCostText,
   amountText,
+  assignmentActions,
   assignmentStatusLabels,
   assignmentTypeLabels,
   failureReasonLabels,
@@ -144,5 +147,44 @@ describe('one owner of the operation states and waits (architecture rules, costs
         .map((value) => value.replaceAll("'", ''))
     expect(list('state')).toEqual([...operationStates])
     expect(list('waits_for')).toEqual([...operationWaits])
+  })
+})
+
+describe("the owner's actions on the details page (T12-AC05)", () => {
+  it('offers Retry only while the assignment needs attention within its time limit, and Reject only while it is not final', () => {
+    const offered = (status: string, timeLeftSeconds: number | null) =>
+      assignmentActions({
+        status: status as Parameters<typeof assignmentActions>[0]['status'],
+        timeLeftSeconds,
+      })
+    expect(offered('needs_attention', 3600)).toEqual({
+      retry: true,
+      reject: true,
+    })
+    expect(offered('needs_attention', 0)).toEqual({
+      retry: false,
+      reject: true,
+    })
+    expect(offered('in_progress', 3600)).toEqual({
+      retry: false,
+      reject: true,
+    })
+    expect(offered('succeeded', null)).toEqual({ retry: false, reject: false })
+    expect(offered('failed', null)).toEqual({ retry: false, reject: false })
+  })
+
+  it('shows "Zlecenie zmieniło stan" with the current status after an action that changed nothing, and nothing after one that took effect (T12-R04)', () => {
+    expect(actionOutcomeText({ changed: false, status: 'succeeded' })).toBe(
+      'Zlecenie zmieniło stan. Obecny status: Udane.',
+    )
+    expect(actionOutcomeText({ changed: false, status: 'in_progress' })).toBe(
+      'Zlecenie zmieniło stan. Obecny status: W toku.',
+    )
+    expect(actionOutcomeText({ changed: true, status: 'failed' })).toBeNull()
+  })
+
+  it('tells the owner that a Reject which could not be saved changed nothing and may be used again (T12-R06)', () => {
+    expect(actionFailedText.reject).toContain('Nie udało się odrzucić zlecenia')
+    expect(actionFailedText.reject).toContain('ponownie')
   })
 })

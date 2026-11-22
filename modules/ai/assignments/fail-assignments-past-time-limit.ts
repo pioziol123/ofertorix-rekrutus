@@ -3,12 +3,8 @@ import {
   assignmentsPastTimeLimit,
   failPastTimeLimit,
 } from '../infrastructure/persistence/assignments.ts'
-import {
-  endNotStarted,
-  lockPendingOperations,
-} from '../infrastructure/persistence/operations.ts'
-import { afterOperationEnd } from './after-operation-end.ts'
 import { assignmentReceiver } from './assignment-receiver.ts'
+import { endPendingOperations } from './end-pending-operations.ts'
 
 /** Where the error of one assignment's end goes; the error log by default. */
 export type TimeLimitErrorLog = (message: string) => void
@@ -43,18 +39,7 @@ export async function failAssignmentsPastTimeLimit(
       const ended = await transaction(async () => {
         const assignment = await failPastTimeLimit(assignmentId, now)
         if (!assignment) return false
-        for (const operation of await lockPendingOperations(assignmentId)) {
-          await endNotStarted(operation.id, now)
-          await afterOperationEnd({
-            operationId: operation.id,
-            assignmentId,
-            assignmentStatus: 'failed',
-            state: 'failed',
-            retryable: false,
-            origin: operation.origin,
-            now,
-          })
-        }
+        await endPendingOperations(assignmentId, now)
         await assignmentReceiver(assignment.settingsName)?.receiveFailure({
           assignmentId,
         })

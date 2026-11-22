@@ -80,3 +80,11 @@ export { failAssignmentsPastTimeLimit } from './assignments/fail-assignments-pas
 export { readAssignmentList } from './assignments/read-assignment-list.ts'
 export { readAssignmentDetails } from './assignments/read-assignment-details.ts'
 export { countAssignmentsNeedingAttention } from './assignments/count-assignments-needing-attention.ts'
+
+// The owner's actions on one assignment in the panel (T12): Retry adds one
+// operation to an assignment needing attention within its time limit, and
+// Reject fails one not yet final, telling its receiver in the same save.
+// Both return whether they took effect and the current status; their
+// outcome's shape and texts are in `view.ts`.
+export { retryAssignment } from './assignments/retry-assignment.ts'
+export { rejectAssignment } from './assignments/reject-assignment.ts'

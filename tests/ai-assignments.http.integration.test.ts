@@ -12,7 +12,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 /**
  * T11-AC03 of epic sq2 (task oferty-pracy-sq2.12): the AI assignments
  * panel's routes and pages, and the navigation of every page with its
- * counter, against the built web server on an isolated schema.
+ * counter, and the owner's actions on the details page with their routes
+ * (T12-AC05, task oferty-pracy-sq2.13), against the built web server on an
+ * isolated schema.
  */
 
 const integration =
@@ -188,6 +190,80 @@ integration('AI assignments panel over HTTP (T11-AC03)', () => {
     expect(detailsPage).toContain('Oferta odrzucona')
     expect(detailsPage).toContain('Odrzucone przez właściciela')
     expect(detailsPage).toContain('Koszt obciążający budżet')
+  })
+
+  it('offers Retry with the time left only when the assignment needs attention, and Reject only while it is not final; an action that changed nothing returns the current status (T12-AC05)', async () => {
+    const actions = (html: string) => ({
+      retry: html.includes('data-testid="ai-retry"'),
+      reject: html.includes('data-testid="ai-reject"'),
+    })
+    const waiting = await assignment('needs_attention', 'Do ponowienia')
+    const running = await assignment('in_progress', 'W toku')
+    const done = await assignment('succeeded', 'Gotowe')
+    const failed = await assignment('failed', 'Odrzucone')
+
+    const waitingPage = await page(`/ai-assignments/${waiting}`)
+    expect(actions(waitingPage)).toEqual({ retry: true, reject: true })
+    expect(waitingPage).toMatch(
+      /data-testid="ai-retry-time-left"[^>]*>[^<]*Pozostały czas do limitu:\s*6 d 23 h/,
+    )
+    expect(actions(await page(`/ai-assignments/${running}`))).toEqual({
+      retry: false,
+      reject: true,
+    })
+    for (const id of [done, failed])
+      expect(actions(await page(`/ai-assignments/${id}`)), id).toEqual({
+        retry: false,
+        reject: false,
+      })
+    // Past its time limit an assignment needing attention offers no Retry.
+    await pool.query(
+      `UPDATE ai_assignments SET placed_at=now()-interval '8 days',
+        deadline=now()-interval '1 day' WHERE id=$1`,
+      [waiting],
+    )
+    expect(actions(await page(`/ai-assignments/${waiting}`))).toEqual({
+      retry: false,
+      reject: true,
+    })
+
+    const post = (id: string, action: string) =>
+      fetch(`${base}/api/ai-assignments/${id}/${action}`, {
+        method: 'POST',
+        headers: { origin: base },
+      })
+    const retried = await post(running, 'retry')
+    expect(retried.status).toBe(200)
+    expect(await retried.json()).toEqual({
+      changed: false,
+      status: 'in_progress',
+    })
+    expect(await (await post(done, 'reject')).json()).toEqual({
+      changed: false,
+      status: 'succeeded',
+    })
+    expect(await (await post(waiting, 'retry')).json()).toEqual({
+      changed: false,
+      status: 'needs_attention',
+    })
+    const rejected = await post(running, 'reject')
+    expect(await rejected.json()).toEqual({ changed: true, status: 'failed' })
+    expect(
+      (
+        await pool.query(
+          'SELECT status,failure_reason FROM ai_assignments WHERE id=$1',
+          [running],
+        )
+      ).rows[0],
+    ).toEqual({ status: 'failed', failure_reason: 'rejected' })
+    expect(await (await post(running, 'reject')).json()).toEqual({
+      changed: false,
+      status: 'failed',
+    })
+    for (const action of ['retry', 'reject']) {
+      expect((await post(randomUUID(), action)).status).toBe(404)
+      expect((await post('nonsense', action)).status).toBe(404)
+    }
   })
 
   it('answers 404 for an unknown assignment and an empty page for a foreign cursor', async () => {

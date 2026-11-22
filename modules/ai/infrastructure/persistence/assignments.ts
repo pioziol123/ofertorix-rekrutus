@@ -253,3 +253,62 @@ export async function failPastTimeLimit(
   ).rows[0]
   return row ?? null
 }
+
+/** An assignment's status and settings name, with its row locked. */
+export type LockedAssignment = {
+  status: AssignmentStatus
+  settingsName: string
+}
+
+/**
+ * Locks the assignment's row until the caller's transaction ends and gives
+ * its status and settings name; null for an unknown assignment.
+ */
+export async function lockAssignment(
+  assignmentId: string,
+): Promise<LockedAssignment | null> {
+  const row = (
+    await db().query<LockedAssignment>(
+      `SELECT status,settings_name AS "settingsName" FROM ai_assignments
+       WHERE id=$1 FOR UPDATE`,
+      [assignmentId],
+    )
+  ).rows[0]
+  return row ?? null
+}
+
+/**
+ * The owner's Retry (T12-R01): moves an assignment needing attention whose
+ * deadline has not passed at `now` back to in progress; its deadline stays.
+ * False, with nothing changed, when the status or the deadline no longer
+ * allows it (ZA-R03).
+ */
+export async function setInProgressForRetry(
+  assignmentId: string,
+  now: Date,
+): Promise<boolean> {
+  const changed = await db().query(
+    `UPDATE ai_assignments SET status='in_progress'
+     WHERE id=$1 AND status='needs_attention' AND deadline>$2`,
+    [assignmentId, now],
+  )
+  return changed.rowCount === 1
+}
+
+/**
+ * The owner's Reject (T12-R03): ends an assignment in progress or needing
+ * attention as failed with the reason `rejected` at `at`. False, with
+ * nothing changed, when it is already final (ZA-R03).
+ */
+export async function setRejected(
+  assignmentId: string,
+  at: Date,
+): Promise<boolean> {
+  const changed = await db().query(
+    `UPDATE ai_assignments SET status='failed',failure_reason='rejected',
+      finished_at=$2
+     WHERE id=$1 AND status IN ('in_progress','needs_attention')`,
+    [assignmentId, at],
+  )
+  return changed.rowCount === 1
+}

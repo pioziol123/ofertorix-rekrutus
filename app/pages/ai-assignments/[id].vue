@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import {
+  actionFailedText,
+  actionOutcomeText,
   actualCostText,
   amountText,
+  assignmentActions,
   assignmentStatusLabels,
   assignmentTypeLabels,
   failureReasonLabels,
@@ -9,10 +12,11 @@ import {
   operationStateText,
   parametersText,
   timeLeftText,
+  type AssignmentActionOutcome,
   type AssignmentDetails,
 } from '../../../modules/ai/view'
 const route = useRoute()
-const { data, error } = await useFetch<AssignmentDetails>(
+const { data, error, refresh } = await useFetch<AssignmentDetails>(
   () => `/api/ai-assignments/${route.params.id}`,
 )
 useHead({
@@ -24,6 +28,29 @@ const at = (value: string | null) =>
   value
     ? new Date(value).toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' })
     : '—'
+const actions = computed(() =>
+  data.value ? assignmentActions(data.value) : { retry: false, reject: false },
+)
+const busy = ref(false)
+const message = ref<string | null>(null)
+/** Runs an owner's action (T12) and shows its outcome with the new state. */
+async function act(action: 'retry' | 'reject') {
+  if (busy.value) return
+  busy.value = true
+  message.value = null
+  try {
+    const outcome = await $fetch<AssignmentActionOutcome>(
+      `/api/ai-assignments/${route.params.id}/${action}`,
+      { method: 'POST' },
+    )
+    message.value = actionOutcomeText(outcome)
+  } catch {
+    message.value = actionFailedText[action]
+  } finally {
+    await refresh()
+    busy.value = false
+  }
+}
 </script>
 <template>
   <div class="workspace">
@@ -79,6 +106,35 @@ const at = (value: string | null) =>
           <dt>Operacje o nieznanym koszcie</dt>
           <dd>{{ data.cost.unknownCosts }}</dd>
         </dl>
+        <div
+          v-if="actions.retry || actions.reject"
+          class="ai-actions"
+          data-testid="ai-actions"
+        >
+          <template v-if="actions.retry">
+            <UButton
+              :loading="busy"
+              data-testid="ai-retry"
+              @click="act('retry')"
+              >Ponów</UButton
+            >
+            <span class="muted" data-testid="ai-retry-time-left"
+              >Pozostały czas do limitu:
+              {{ timeLeftText(data.timeLeftSeconds) }}. Ponowienie go nie
+              przedłuża.</span
+            >
+          </template>
+          <UButton
+            v-if="actions.reject"
+            :loading="busy"
+            color="error"
+            variant="outline"
+            data-testid="ai-reject"
+            @click="act('reject')"
+            >Odrzuć</UButton
+          >
+        </div>
+        <p v-if="message" role="status" class="notice">{{ message }}</p>
         <h2>Operacje</h2>
         <p v-if="!data.operations.length" class="muted">
           Zlecenie nie ma operacji.

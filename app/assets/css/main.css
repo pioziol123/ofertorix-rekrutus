@@ -1175,3 +1175,11 @@ tbody tr.selected {
 .ai-facts dt {
   color: #6b7d6e;
 }
+.ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 18px;
+  font-size: 14px;
+}
