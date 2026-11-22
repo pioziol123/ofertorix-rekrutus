@@ -12,7 +12,6 @@
  */
 import { closePool } from '../lib/db.ts'
 import { deleteQueue, queueExists, stopQueues } from '../lib/queues/index.ts'
-import { requestUnfinishedExecutions } from '../modules/ai/index.ts'
 import { requestUnfinishedCvTextReadings } from '../modules/profile/index.ts'
 import { requestUnfinishedSyncRuns } from '../modules/sources/index.ts'
 
@@ -23,10 +22,6 @@ const carryOvers: Record<string, () => Promise<number>> = {
   // Every sync run queued or running gets one job: a queued one is carried
   // out, a running one taken over (B5-R08, B5-D03).
   'source-sync': requestUnfinishedSyncRuns,
-  // Every AI execution queued, running or waiting for delivery gets one
-  // job: a queued one is carried out, a running one ends as uncertain, one
-  // waiting for delivery is delivered (B6-R10, B6-D04).
-  'ai-execution': requestUnfinishedExecutions,
 }
 
 try {

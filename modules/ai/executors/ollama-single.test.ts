@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { actualCost } from '../assignments/operation-cost.ts'
-import { OllamaAdapter } from '../infrastructure/adapters/ollama.ts'
 import type { ExecutorContent, OperationWork } from './declaration.ts'
 import { ollamaExecutor } from './ollama.ts'
 
@@ -85,29 +84,40 @@ afterEach(() => {
 })
 
 describe('T2-AC04: the local single answer sends the requests of the old way', () => {
+  // The requests the old adapter sent, pinned when the old way was removed
+  // (task oferty-pracy-sq2.11), while the comparison with it still passed.
   it('asks for the models, then sends the same chat request as the old adapter, and returns the result at no cost', async () => {
     const now = answers(tags(), Response.json(completion()))
-    const before = answers(tags(), Response.json(completion()))
     const { outcome, cost } = await run(now)
-    await new OllamaAdapter(before, {
-      url: endpoint.url,
-      numCtx: 32768,
-      credential: () => 'local-secret',
-    }).generate({
-      model: 'gpt-oss:20b',
-      instructions: content.instruction,
-      input: content.input,
-      output: content.responseFormat!,
-    })
-    expect(now.mock.calls.map((call) => call[0])).toEqual(
-      before.mock.calls.map((call) => call[0]),
-    )
-    for (const [index, call] of now.mock.calls.entries()) {
-      const old = before.mock.calls[index]!
-      expect(call[1]!.method).toBe(old[1]!.method)
-      expect(call[1]!.headers).toEqual(old[1]!.headers)
-      expect(call[1]!.body).toBe(old[1]!.body)
-    }
+    expect(
+      now.mock.calls.map(([url, init]) => ({
+        url,
+        method: init!.method,
+        headers: init!.headers,
+        body: init!.body,
+      })),
+    ).toMatchInlineSnapshot(`
+      [
+        {
+          "body": undefined,
+          "headers": {
+            "Authorization": "Bearer local-secret",
+            "Content-Type": "application/json",
+          },
+          "method": undefined,
+          "url": "http://local.test/api/tags",
+        },
+        {
+          "body": "{"model":"gpt-oss:20b","stream":false,"truncate":false,"shift":false,"messages":[{"role":"system","content":"Extract professional facts"},{"role":"user","content":"PHP professional"}],"format":{"type":"object","additionalProperties":false,"properties":{"summary":{"type":"string"}},"required":["summary"]},"options":{"num_ctx":32768}}",
+          "headers": {
+            "Authorization": "Bearer local-secret",
+            "Content-Type": "application/json",
+          },
+          "method": "POST",
+          "url": "http://local.test/api/chat",
+        },
+      ]
+    `)
     expect(outcome).toEqual({
       kind: 'result',
       content: { summary: 'PHP' },

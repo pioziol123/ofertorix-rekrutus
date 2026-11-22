@@ -1,4 +1,4 @@
-import type { AgentTool } from '../domain/execution-mode.ts'
+import type { AgentTool } from '../domain/agent-tools.ts'
 
 /**
  * The status of an assignment as requesting modules see it (ZA-R01):

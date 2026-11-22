@@ -21,7 +21,7 @@ import {
   type MatchingInput,
 } from '../modules/matching/domain/assessment.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { readBatchArchive } from '../modules/matching/read-assessment-archive.ts'
+import { readAssessmentExchange } from '../modules/matching/read-assessment-exchange.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { enqueueMatching } from '../modules/matching/request-assessment.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
@@ -49,11 +49,6 @@ import {
 
 // The price lists AI keeps in code, replaced for the test; Matching's
 // settings of assignments are the application's own.
-// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-vi.mock(
-  '../modules/ai/client-settings.ts',
-  () => import('./ai-test-configuration.ts'),
-)
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/model-catalog.ts',
@@ -92,7 +87,7 @@ integration(
     beforeEach(async () => {
       vi.unstubAllEnvs()
       vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-      usePricing('matching', pricing)
+      usePricing(pricing)
       provider = new SimulatedProvider().register()
       await pool.query(`TRUNCATE ${assessmentTables} CASCADE`)
       ;({ ad, revision } = await insertAd(pool))
@@ -153,7 +148,6 @@ integration(
       const stored = await row(request.id)
       const assignment = await assignmentOfRequest(pool, request.id)
       expect(stored.assignment_id).toBe(assignment.id)
-      expect(stored.execution_id).toBeNull()
       expect(assignment).toMatchObject({
         label: 'PHP developer — Firma niepodana',
         settings_name: 'matching',
@@ -161,9 +155,6 @@ integration(
         status: 'in_progress',
       })
       expect(JSON.parse(assignment.input)).toEqual(stored.input)
-      // Nothing goes through the old way.
-      expect(await count('ai_executions')).toBe(0)
-      expect(await queue.executionJobs()).toEqual([])
       await carryOut(pool)
       expect(provider.bodies).toHaveLength(1)
       const body = provider.bodies[0]!
@@ -217,7 +208,6 @@ integration(
       const request = await enqueueMatching(ad)
       expect((await readMatching(ad)).history[0]).toMatchObject({
         state: 'running',
-        cost: null,
         assignment: true,
       })
       await carryOut(pool)
@@ -238,7 +228,6 @@ integration(
       expect(view.history[0]).toMatchObject({
         id: request.id,
         state: 'completed',
-        cost: null,
         stale: false,
       })
     })
@@ -466,7 +455,7 @@ integration(
           : responseBody(JSON.stringify(unknownAssessment(input)))
       const request = await enqueueMatching(ad)
       await carryOut(pool)
-      const archive = await readBatchArchive(request.id)
+      const archive = await readAssessmentExchange(request.id)
       const assignmentId = (await row(request.id)).assignment_id
       expect(archive).toEqual({
         kind: 'exchange',
@@ -494,11 +483,18 @@ integration(
           provider.bodies[index],
         )
       expect(JSON.stringify(archive)).not.toContain('never-send-test-key')
-      expect(await readBatchArchive(randomUUID())).toBeNull()
+      expect(await readAssessmentExchange(randomUUID())).toBeNull()
+      // An assessment made before the deployment of assignments has no
+      // exchange view (T10-R08).
+      await pool.query(
+        'UPDATE matching_requests SET assignment_id=NULL WHERE id=$1',
+        [request.id],
+      )
+      expect(await readAssessmentExchange(request.id)).toBeNull()
     })
 
     it('refuses an assessment whose request exceeds what the price list covers, with nothing placed (T8-AC05, 0mq.21 ASM-5)', async () => {
-      usePricing('matching', { ...pricing, maxInputTokens: 100 })
+      usePricing({ ...pricing, maxInputTokens: 100 })
       provider.register()
       await expect(enqueueMatching(ad)).rejects.toThrow(
         'Wejście przekracza skonfigurowany limit tokenów. Zwiększ limit lub skróć profil.',
@@ -507,7 +503,6 @@ integration(
         'matching_requests',
         'ai_assignments',
         'ai_operations',
-        'ai_executions',
       ])
         expect(await count(table)).toBe(0)
     })
@@ -540,13 +535,11 @@ integration(
       expect(request.state).toBe('excluded')
       expect(await row(request.id)).toMatchObject({
         state: 'excluded',
-        execution_id: null,
         assignment_id: null,
       })
       expect(await count('ai_assignments')).toBe(0)
       expect((await readMatching(ad)).history[0]).toMatchObject({
         state: 'excluded',
-        cost: null,
       })
     })
 

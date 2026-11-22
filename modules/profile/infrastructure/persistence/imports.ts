@@ -308,3 +308,20 @@ export async function unfinishedReadings(): Promise<string[]> {
     )
   ).rows.map((row) => row.id as string)
 }
+
+/**
+ * Ends with the message every preparation the imports record as in
+ * progress, with one of the statuses, without an assignment; returns how
+ * many. A preparation with an assignment is left to its receiver.
+ */
+export async function endPreparationsWithoutAssignment(
+  inProgress: readonly string[],
+  message: string,
+): Promise<number> {
+  const ended = await db().query(
+    `UPDATE profile_imports SET status='needs_attention',proposal=NULL,error=$2,updated_at=now()
+     WHERE assignment_id IS NULL AND status=ANY($1::text[])`,
+    [inProgress, message],
+  )
+  return ended.rowCount ?? 0
+}

@@ -34,7 +34,9 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
     const sql: string[] = []
     for (const migration of [
       '1770000000004_profiles',
+      '1770000000027_ai_assignments',
       '1770000000032_profile_assignment',
+      '1770000000035_ai_budget_carried_amounts',
     ])
       createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
         sql: (s: string) => sql.push(s),
@@ -222,7 +224,7 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
     expect((await prepare.json()).state).toBe('needs_configuration')
     const after = await (await fetch(`${base}/api/profile`)).json()
     expect(after.active.id).toBe(before.active.id)
-    expect((await pool.query('SELECT * FROM ai_attempts')).rowCount).toBe(0)
+    expect((await pool.query('SELECT * FROM ai_assignments')).rowCount).toBe(0)
   })
   it('uploads a binary original, preserves bytes on download and exposes local extraction', async () => {
     const bytes = await readFile(
@@ -323,16 +325,16 @@ integration('profile HTTP and SSR against isolated Nitro server', () => {
     )
     expect(invalid.status).toBe(422)
   })
-  it('A11-AC01: shows every budget month with its limit, settled and reserved amounts', async () => {
+  it('A11-AC01, T10-R06: shows every budget month with its limit, settled and reserved amounts from the budget read of the AI module', async () => {
     await pool.query(
-      "INSERT INTO ai_budget_months(month,limit_pln) VALUES('2026-10','100') ON CONFLICT DO NOTHING",
+      "INSERT INTO ai_budget_months(month,limit_pln,carried_settled,carried_held) VALUES('2026-10','100','1.5','0.25') ON CONFLICT DO NOTHING",
     )
     const state = await (await fetch(`${base}/api/profile`)).json()
     expect(state.budget).toContainEqual({
       month: '2026-10',
       limit_pln: '100.000000',
-      spent: '0',
-      reserved: '0',
+      spent: '1.500000',
+      reserved: '0.250000',
     })
   })
 })

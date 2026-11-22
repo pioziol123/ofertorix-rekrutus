@@ -375,7 +375,6 @@ describe('matching ratings in the offer list', () => {
       assessed('pending', 80, { state: 'running' }),
       assessed('failed', 80, { state: 'failed' }),
       assessed('excluded', null, { state: 'excluded', scoreId: null }),
-      assessed('unknown', null, { state: 'unknown', scoreId: null }),
       assessed('stale', 80, { stale: true }),
     ]
     expect(ids(values, { assessmentState: 'unassessed' })).toEqual(['none'])
@@ -384,13 +383,16 @@ describe('matching ratings in the offer list', () => {
       'failed',
       'pending',
     ])
-    for (const state of ['failed', 'excluded', 'unknown', 'stale']) {
+    for (const state of ['failed', 'excluded', 'stale']) {
       expect(ids(values, { assessmentState: state })).toEqual([state])
     }
     expect(ids(values, { assessmentState: 'failed', minRating: '80' })).toEqual(
       ['failed'],
     )
     expect(() => parseFilters({ assessmentState: 'completed' })).toThrow()
+  })
+  it('has no filter option "Wymaga sprawdzenia" any more (T10-AC08)', () => {
+    expect(() => parseFilters({ assessmentState: 'unknown' })).toThrow()
   })
   it('sorts current ratings descending, places stale and unknown last, and uses stable ID ties', () => {
     const values = [

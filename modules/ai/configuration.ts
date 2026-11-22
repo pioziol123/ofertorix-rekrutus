@@ -1,23 +1,10 @@
 import { z } from 'zod'
-import { clientSettings } from './client-settings.ts'
-import { resolveSettings, type ClientSettings } from './domain/settings.ts'
-import { aiCatalog, type CatalogModel } from './model-catalog.ts'
-import { ModelError } from './provider-adapter.ts'
-
-export type { AiConfiguration } from './model-catalog.ts'
+import { aiCatalog } from './model-catalog.ts'
 
 /**
- * A client's settings under its key, checked against the AI configuration.
- * Null when the key has no settings or they are invalid.
+ * What the executors read of the installation's configuration: whether a
+ * provider's secret is present, and the endpoints of local runtimes.
  */
-export function settingsFor(
-  key: string,
-): { settings: ClientSettings; model: CatalogModel } | null {
-  const value = Object.hasOwn(clientSettings, key)
-    ? clientSettings[key]
-    : undefined
-  return resolveSettings(value, aiCatalog)
-}
 
 /** Whether the secret the provider needs is present in the environment. */
 export function hasCredentials(provider: string): boolean {
@@ -27,7 +14,7 @@ export function hasCredentials(provider: string): boolean {
 
 const name = z.string().trim().min(1)
 const integer = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
-export const aiEndpointSchema = z
+const aiEndpointSchema = z
   .object({
     ref: name,
     version: integer,
@@ -50,7 +37,7 @@ export const aiEndpointSchema = z
       .nullable(),
   })
   .strict()
-export const aiEndpointsSchema = z
+const aiEndpointsSchema = z
   .array(aiEndpointSchema)
   .superRefine((values, context) => {
     const keys = values.map((v) => JSON.stringify([v.ref, v.version]))
@@ -61,34 +48,26 @@ export const aiEndpointsSchema = z
       })
   })
 export type AiEndpoint = z.infer<typeof aiEndpointSchema>
-export function resolveEndpoint(ref: string, version: number): AiEndpoint {
-  try {
-    const entries = aiEndpointsSchema.parse(
-      JSON.parse(process.env.AI_ENDPOINTS_JSON ?? 'null'),
-    )
-    const endpoint = entries.find((e) => e.ref === ref && e.version === version)
-    if (
-      !endpoint ||
-      (endpoint.credentialEnv && !process.env[endpoint.credentialEnv])
-    )
-      throw new Error('Missing endpoint')
-    return endpoint
-  } catch {
-    throw new ModelError('configuration')
-  }
-}
 
 /**
- * The endpoint fixed for an execution, checked against the configuration
- * when the execution runs: a changed or removed endpoint version is
- * refused instead of redirecting queued work.
+ * The endpoint of a local runtime by its reference and version, from the
+ * configuration in `AI_ENDPOINTS_JSON`. Throws when the configuration is
+ * invalid, has no such endpoint, or lacks the endpoint's secret.
  */
-export function savedEndpoint(saved: AiEndpoint): AiEndpoint {
-  const endpoint = resolveEndpoint(saved.ref, saved.version)
+export function resolveEndpoint(ref: string, version: number): AiEndpoint {
+  let entries: AiEndpoint[]
+  try {
+    entries = aiEndpointsSchema.parse(
+      JSON.parse(process.env.AI_ENDPOINTS_JSON ?? 'null'),
+    )
+  } catch {
+    throw new Error('Invalid endpoint configuration')
+  }
+  const endpoint = entries.find((e) => e.ref === ref && e.version === version)
   if (
-    endpoint.url !== saved.url ||
-    endpoint.credentialEnv !== saved.credentialEnv
+    !endpoint ||
+    (endpoint.credentialEnv && !process.env[endpoint.credentialEnv])
   )
-    throw new ModelError('configuration')
+    throw new Error('Missing endpoint')
   return endpoint
 }

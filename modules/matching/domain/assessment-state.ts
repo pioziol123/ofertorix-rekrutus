@@ -1,55 +1,23 @@
-import type {
-  AssignmentErrorCode,
-  ExecutionCause,
-  ExecutionState,
-} from '../../ai/index.ts'
+import type { AssignmentErrorCode } from '../../ai/index.ts'
 import type { MatchingState } from './assessment-view.ts'
 
 /**
- * The state of an assessment request the owner sees. A request Matching
- * excluded never reached AI; for any other one the stage of the AI work
- * comes from its latest execution, read by its public state alone.
- * ASSUMPTION(oferty-pracy-0mq.21/ASM-3): the states the owner sees.
+ * The state of an assessment request the owner sees, from Matching's own
+ * data alone (T8-R04): an excluded request never reached AI; any other is
+ * in progress until its receiver saved an outcome, then completed with a
+ * saved assessment, or failed with a saved message (a failed assignment,
+ * or a result that did not pass Matching's own check). An assignment
+ * needing attention is still in progress for the owner.
  */
-export function assessmentState(
-  requestState: string,
-  execution: { state: ExecutionState } | null,
-): MatchingState {
-  if (requestState === 'excluded') return 'excluded'
-  if (!execution) return 'failed'
-  return executionStateOf[execution.state]
-}
-
-/**
- * The state of an assessment request whose AI work is an assignment, from
- * Matching's own data alone (T8-R04): in progress until its receiver saved
- * an outcome, then completed with a saved assessment, or failed with a
- * saved message (a failed assignment, or a result that did not pass
- * Matching's own check). An assignment needing attention is still in
- * progress for the owner. The texts of waiting for the budget, of the
- * queue and of an uncertain end are never reached for it.
- */
-export function assignedAssessmentState(saved: {
+export function assessmentState(saved: {
+  excluded: boolean
   assessment: boolean
   message: boolean
 }): MatchingState {
+  if (saved.excluded) return 'excluded'
   if (saved.assessment) return 'completed'
   if (saved.message) return 'failed'
   return 'running'
-}
-
-const executionStateOf: Record<ExecutionState, MatchingState> = {
-  waiting_budget: 'waiting_budget',
-  queued: 'queued',
-  running: 'running',
-  delivering: 'running',
-  completed: 'completed',
-  rejected: 'failed',
-  failed: 'failed',
-  // A retried execution is followed by the next one of the same request;
-  // seen on its own it is an end without an assessment.
-  retried: 'failed',
-  uncertain: 'unknown',
 }
 
 const notConfirmed =
@@ -63,7 +31,8 @@ export function rejectionMessage(code: string): string {
 /**
  * The message of an assessment whose assignment failed (T8-R03): the
  * receiver gets no cause, so the message names none; the details of the
- * failure are in the AI assignments panel.
+ * failure are in the AI assignments panel. An assessment of the old way
+ * unfinished at the deployment of assignments ends with it too (T10-R02).
  * ASSUMPTION(oferty-pracy-sq2.9/ASM-2): today's message of an assessment
  * that was not carried out, without the cause it can no longer name.
  */
@@ -85,43 +54,11 @@ export function assignmentRefusalMessage(
   return notConfiguredMessage
 }
 
-/**
- * The diagnostics of responses the model refused, did not complete or
- * left without one usable content, as Matching has always named them.
- */
-const responseDiagnostic: Partial<Record<ExecutionCause, string>> = {
-  refused: 'response_refusal',
-  incomplete: 'response_incomplete',
-  no_content: 'response_text_count',
-  format: 'response_json',
-}
-
-/**
- * The message of an assessment that ended without a result, chosen from
- * the public state and cause alone.
- * ASSUMPTION(oferty-pracy-0mq.21/ASM-3): the messages of causes the old
- * paths had no message for.
- */
-export function endMessage(end: {
-  state: 'failed' | 'uncertain'
-  cause: ExecutionCause
-}): string {
-  if (end.state === 'uncertain')
-    return `Nie wiadomo, jak zakończyła się ocena. Koszt pozostaje zarezerwowany; sprawdź stan wykonania przed ponowieniem. [AI: ${end.cause}]`
-  const diagnostic = responseDiagnostic[end.cause]
-  if (diagnostic) return rejectionMessage(diagnostic)
-  return `Ocena nie została wykonana. Poprzednie wyniki pozostały bez zmian. [AI: ${end.cause}]`
-}
-
-/**
- * The configuration message the owner sees.
- * ASSUMPTION(oferty-pracy-0mq.21/ASM-3): it no longer names the Batch price
- * list, since a single assessment uses the standard one.
- */
+/** The configuration message the owner sees. */
 export const notConfiguredMessage =
   'Skonfiguruj model i cennik przed oceną ofert.'
 
-/** The message of an input above the limit, as the former paths had it. */
+/** The message of an input above the limit. */
 export function inputLimitMessage(kind: 'single' | 'group'): string {
   return kind === 'single'
     ? 'Wejście przekracza skonfigurowany limit tokenów. Zwiększ limit lub skróć profil.'

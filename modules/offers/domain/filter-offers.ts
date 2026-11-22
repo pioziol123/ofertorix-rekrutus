@@ -28,7 +28,7 @@ export function filterOffers(offers: OfferView[], f: Filters) {
       if (f.assessmentState === 'stale' && (!a?.scoreId || !a.stale))
         return false
       if (
-        ['failed', 'excluded', 'unknown'].includes(f.assessmentState) &&
+        ['failed', 'excluded'].includes(f.assessmentState) &&
         a?.state !== f.assessmentState
       )
         return false

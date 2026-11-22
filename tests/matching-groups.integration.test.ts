@@ -28,7 +28,6 @@ import {
 import { aiQueue } from './ai-queue.fixtures.ts'
 import { usePricing } from './ai-test-configuration.ts'
 import {
-  insertExecution,
   migrate,
   pricing,
   responseBody,
@@ -45,11 +44,6 @@ import {
 
 // The price lists AI keeps in code, replaced for the test; Matching's
 // settings of assignments are the application's own.
-// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-vi.mock(
-  '../modules/ai/client-settings.ts',
-  () => import('./ai-test-configuration.ts'),
-)
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/model-catalog.ts',
@@ -85,9 +79,10 @@ integration(
     beforeEach(async () => {
       vi.unstubAllEnvs()
       vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-      usePricing('matching', pricing)
+      usePricing(pricing)
       provider = new SimulatedProvider().register()
       await pool.query(`TRUNCATE ${assessmentTables} CASCADE`)
+      await queue.reset()
       ;({ ad, revision } = await insertAd(pool))
       profileVersion = await insertActiveProfile(pool)
     })
@@ -116,7 +111,7 @@ integration(
         })
       ).ad
     }
-    const enqueue = async (ids: string[], commandId = randomUUID()) =>
+    const enqueue = async (ids: string[], commandId: string = randomUUID()) =>
       enqueueMatchingGroup({ commandId, offerIds: ids })
 
     it('uses one profile version for the whole group when a version is confirmed meanwhile (A10-AC03)', async () => {
@@ -177,9 +172,14 @@ integration(
         expect(item).toMatchObject({ state: 'running', reused: false })
       }
       expect(await count('ai_assignments')).toBe(30)
-      // Nothing goes through the old way, and no provider batch is sent.
-      expect(await count('ai_executions')).toBe(0)
-      expect(await queue.jobs()).toEqual([])
+      // No provider batch is sent: each assignment's operation gets its own
+      // job of the paid executor.
+      const jobs = await queue.jobs()
+      expect(jobs).toHaveLength(30)
+      expect(new Set(jobs.map((job) => job.name))).toEqual(
+        new Set(['ai-operation-openai']),
+      )
+      expect(new Set(jobs.map((job) => job.operationId)).size).toBe(30)
       await carryOut(pool)
       expect(provider.bodies).toHaveLength(30)
       const ended = (
@@ -191,7 +191,7 @@ integration(
     })
 
     it('leaves no request and no assignment when placing one assignment of the command fails (T8-AC01)', async () => {
-      usePricing('matching', { ...pricing, maxInputTokens: 6000 })
+      usePricing({ ...pricing, maxInputTokens: 6000 })
       provider.register()
       const offers = [
         ...(await Promise.all(Array.from({ length: 29 }, () => anotherAd()))),
@@ -448,18 +448,14 @@ integration(
     })
 
     it('handles the identical repeat of a command whose requests the old way saved as a new command: an offer whose assessment has ended gets a new assignment (FOLLOW-UP(oferty-pracy-0mq.21/DEV-1), sq2.9 ASM-1)', async () => {
-      // As the old way left it: the request has a random identifier, its
-      // execution is grouped under the command, and its outcome is saved.
+      // As the old way left it: the request has a random identifier, no
+      // assignment, and its outcome is saved; the old AI work that grouped
+      // it under the command is no longer read.
       const commandId = randomUUID(),
         old = randomUUID()
       await pool.query(
-        `INSERT INTO ai_executions(id,settings_key,operation_id,configuration,publication_token,state,mode,group_id)
-         VALUES($1,'matching',$1,'{}',$2,'completed','batch',$3)`,
-        [old, randomUUID(), commandId],
-      )
-      await pool.query(
-        `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state,execution_id,error)
-         VALUES($1,$2,$3,$4,'{}','{}','requested',$1,'Ocena nie została wykonana.')`,
+        `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state,error)
+         VALUES($1,$2,$3,$4,'{}','{}','requested','Ocena nie została wykonana.')`,
         [old, ad, revision, profileVersion],
       )
       const again = await enqueue([ad], commandId)
@@ -482,39 +478,29 @@ integration(
       expect(await count('ai_assignments')).toBe(2)
     })
 
-    /** A request of the old way whose execution is in the given state. */
-    async function oldRequest(offerId: string, state: string) {
+    /** A request of the old way: AI work requested, no assignment, no outcome. */
+    async function oldRequest(offerId: string) {
       const id = randomUUID()
       await pool.query(
         `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state)
          SELECT $1,$2,current_revision_id,$3,'{}','{}','requested' FROM source_ads WHERE id=$2`,
         [id, offerId, profileVersion],
       )
-      await insertExecution(pool, id, state)
       return id
     }
 
-    it("decides from Matching's own data whether an assessment of the old way is in progress: reused while it has no outcome, also when its old work ended without one, and a new assignment once an outcome is saved (sq2.9 ASM-4, T8-AC08)", async () => {
-      const old = await oldRequest(ad, 'queued')
+    it("decides from Matching's own data whether an assessment of the old way is in progress: reused while it has no outcome, and a new assignment once an outcome is saved (sq2.9 ASM-4, T8-AC08)", async () => {
+      const old = await oldRequest(ad)
       expect(await enqueueMatching(ad)).toMatchObject({
         id: old,
         reused: true,
         state: 'running',
       })
-      // The old work ended without its end reaching Matching, as the
-      // migration of the old way ended unfinished work: Matching's own data
-      // still holds no outcome, so the request stays in progress until task
-      // oferty-pracy-sq2.11 ends it.
-      await pool.query(
-        "UPDATE ai_executions SET state='retried',cause='interrupted' WHERE operation_id=$1",
-        [old],
-      )
-      expect(await enqueueMatching(ad)).toMatchObject({
-        id: old,
-        reused: true,
-      })
+      // Nothing of the old work is read: Matching's own data holds no
+      // outcome, so the request stays in progress until the migration step's
+      // failAssessmentsOfOldWay() ends it at the deployment of assignments.
       expect(await count('ai_assignments')).toBe(0)
-      // An outcome saved by the old receiver ends it.
+      // An outcome saved for it, by the old receiver or by that step, ends it.
       await pool.query(
         "UPDATE matching_requests SET error='Ocena nie została wykonana.',updated_at=now() WHERE id=$1",
         [old],
@@ -525,7 +511,7 @@ integration(
     })
 
     it('recognises the repeat of a command that reused an assessment of the old way in progress (sq2.9 ASM-4, FOLLOW-UP(oferty-pracy-0mq.21/DEV-1))', async () => {
-      const old = await oldRequest(ad, 'running')
+      const old = await oldRequest(ad)
       const other = await anotherAd(),
         commandId = randomUUID()
       const first = await enqueue([ad, other], commandId)

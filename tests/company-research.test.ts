@@ -11,7 +11,7 @@ import {
 import { validateResearch } from '../modules/companies/domain/validate-research.ts'
 import { safeSourceUrl } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { citedMaterials } from '../modules/ai/infrastructure/adapters/openai-agent.ts'
+import { citedMaterials } from '../modules/ai/executors/openai-search.ts'
 import { draft, searchResponse } from './company-research.fixtures.ts'
 
 /** The evidence the AI agent gathers from the fixture search. */

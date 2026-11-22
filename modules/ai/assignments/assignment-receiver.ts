@@ -1,4 +1,4 @@
-import type { AgentMaterial } from '../provider-adapter.ts'
+import type { AgentMaterial } from '../domain/agent-material.ts'
 
 /** A result of an assignment, as its receiver gets it. */
 export type AssignmentResultDelivery = {

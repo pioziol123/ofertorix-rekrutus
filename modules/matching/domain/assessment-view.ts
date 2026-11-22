@@ -1,50 +1,31 @@
 /**
- * The states of an assessment request the owner sees: the stage of its AI
- * work, or `excluded` when a required condition conflicts and nothing
- * was requested.
- * ASSUMPTION(oferty-pracy-0mq.21/ASM-3): one in-progress state replaces the
- * steps of the former batch path.
+ * The states of an assessment request the owner sees (T8-R04): in progress
+ * while its assignment is in progress or needs attention, completed or
+ * failed at its end, or `excluded` when a required condition conflicts
+ * and nothing was requested.
  */
 export const matchingStates = [
-  'waiting_budget',
-  'queued',
   'running',
   'completed',
   'failed',
-  'unknown',
   'excluded',
 ] as const
 export type MatchingState = (typeof matchingStates)[number]
 export const matchingPending = [
-  'waiting_budget',
-  'queued',
   'running',
 ] as const satisfies readonly MatchingState[]
+/** The short labels of the offer list; a failed assessment keeps "Błąd oceny". */
 export const matchingStateLabels: Record<string, string> = {
-  waiting_budget: 'Czeka na budżet',
-  queued: 'W kolejce',
   running: 'Ocena w toku',
   completed: 'Ocena gotowa',
   failed: 'Błąd oceny',
-  unknown: 'Wymaga sprawdzenia',
   excluded: 'Niezgodność wymagań',
 } satisfies Record<MatchingState, string>
-/**
- * The labels of the offer details for the state of an assessment request.
- * An assessment with an assignment reaches only "Ocena w toku", "Ocena
- * gotowa", "Ocena nie powiodła się" and the exclusion (T8-R04); the labels
- * of waiting for the budget, of the queue and of a send or cost to check
- * stay for assessments of the old way until task oferty-pracy-sq2.11.
- * ASSUMPTION(oferty-pracy-0mq.21/ASM-3): one in-progress state replaces the
- * steps of the former batch path.
- */
+/** The labels of the offer details for the state of an assessment request. */
 export const matchingDetailLabels: Record<string, string> = {
-  waiting_budget: 'Czeka na budżet',
-  queued: 'W kolejce',
   running: 'Ocena w toku',
   completed: 'Ocena gotowa',
   failed: 'Ocena nie powiodła się',
-  unknown: 'Wysyłka lub koszt wymagają sprawdzenia',
   excluded: 'Niezgodność z wymaganiem koniecznym',
 } satisfies Record<MatchingState, string>
 /**
@@ -70,14 +51,11 @@ export const matchingBulkTexts = {
 /**
  * The link of an assessment's history entry to what was sent to the
  * provider and what came back (T8-R07): the exchange of its assignment's
- * operations, or, for an assessment of the old way, the archive of its
- * provider batch, whose text stays until task oferty-pracy-sq2.11.
+ * operations. An assessment made before the deployment of assignments has
+ * none (T10-R08).
  * ASSUMPTION(oferty-pracy-sq2.9/ASM-2): the text of the exchange link.
  */
-export const matchingExchangeLink = (assignment: boolean) =>
-  assignment
-    ? 'Pobierz zapis wymiany z dostawcą (JSON)'
-    : 'Pobierz archiwum całej partii (JSON)'
+export const matchingExchangeLink = 'Pobierz zapis wymiany z dostawcą (JSON)'
 export const matchingGroupLabels = {
   technologies: 'Technologie',
   experience: 'Doświadczenie',

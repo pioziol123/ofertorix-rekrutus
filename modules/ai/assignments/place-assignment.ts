@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { transaction } from '../../../lib/db.ts'
 import { sendJob } from '../../../lib/queues/index.ts'
-import { agentTools } from '../domain/execution-mode.ts'
+import { agentTools } from '../domain/agent-tools.ts'
 import { schemaValidator } from '../domain/response-schema.ts'
 import type { ExecutorContent } from '../executors/declaration.ts'
 import {

@@ -10,7 +10,7 @@ export {
   decorateMatching,
   matchingListStatus,
 } from './read-offer-assessments.ts'
-export { readBatchArchive } from './read-assessment-archive.ts'
+export { readAssessmentExchange } from './read-assessment-exchange.ts'
 export {
   manualContext,
   RatingConflict,
@@ -20,11 +20,11 @@ export {
 } from './ratings.ts'
 
 // Composition: the receiver of Matching's assignments, which the shared
-// registration of receivers registers under the settings name, and the
-// receiver of outcomes of the old way, which the AI module plugin registers
-// until task oferty-pracy-sq2.11.
+// registration of receivers registers under the settings name, and the end
+// of assessments of the old way, which the migration step calls at the
+// deployment of assignments (T10-R02).
 export {
   assessmentAssignmentReceiver,
-  assessmentReceiver,
   assessmentSettingsKey,
 } from './infrastructure/adapters/assessment-ai.ts'
+export { failAssessmentsOfOldWay } from './fail-assessments-of-old-way.ts'

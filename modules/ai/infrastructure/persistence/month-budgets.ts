@@ -2,12 +2,12 @@ import { db } from '../../../../lib/db.ts'
 
 /**
  * The budget of assignments' operations by month (solution design of epic
- * sq2, T3, "Contract: room in the budget"). The month table and its limits
- * are shared with the old way until task oferty-pracy-sq2.11; the old way's
- * attempts are not counted here (ZA-D07), and the carried amounts are zero
- * until then. Amounts in SQL are złoty with six decimals; the room is
- * returned in millionths of a złoty, which may be negative when the limit
- * is below the month's charge.
+ * sq2, T3, "Contract: room in the budget"). A month that began before the
+ * deployment carries the charge of the earlier records as two amounts,
+ * settled and held, written once by the deployment's migration (T10-R01);
+ * every other month carries zero. Amounts in SQL are złoty with six
+ * decimals; the room is returned in millionths of a złoty, which may be
+ * negative when the limit is below the month's charge.
  */
 
 /**
@@ -37,14 +37,15 @@ export async function lockMonth(month: string): Promise<void> {
 
 /**
  * The room of a month in millionths of a złoty: its limit, or the default
- * limit when the month has no budget yet, less the charges of the
- * operations of that month.
+ * limit when the month has no budget yet, less its carried amounts and the
+ * charges of the operations of that month.
  */
 export async function monthRoom(month: string): Promise<bigint> {
   const row = (
     await db().query<{ room: string }>(
       `SELECT ((coalesce(
-          (SELECT limit_pln FROM ai_budget_months WHERE month=$1),
+          (SELECT limit_pln-carried_settled-carried_held
+           FROM ai_budget_months WHERE month=$1),
           (SELECT limit_pln FROM ai_budget_default_limit))
         - coalesce((SELECT sum(${charge}) FROM ai_operations o
            WHERE o.budget_month=$1),0)) * 1000000)::bigint::text AS room`,
@@ -63,21 +64,23 @@ export type MonthBudgetRow = {
 }
 
 /**
- * Every month with a budget, newest first (T3-R09): its limit; the amount
- * settled, the known actual costs of its operations; and the amount held,
- * the potential costs of its operations whose actual cost is not known,
- * that is of running operations and of those with an unknown cost.
+ * Every month with a budget, newest first (T3-R09, T10-R01): its limit; the
+ * amount settled, its carried settled amount and the known actual costs of
+ * its operations; and the amount held, its carried held amount and the
+ * potential costs of its operations whose actual cost is not known, that
+ * is of running operations and of those with an unknown cost.
  */
 export async function readMonthBudgetRows(): Promise<MonthBudgetRow[]> {
   return (
     await db().query<MonthBudgetRow>(
       `SELECT b.month,b.limit_pln::numeric(16,6)::text AS "limit",
-        coalesce(sum(o.actual_cost),0)::numeric(16,6)::text AS settled,
-        coalesce(sum(o.potential_cost) FILTER (WHERE o.actual_cost IS NULL),0)
-          ::numeric(16,6)::text AS held
+        (b.carried_settled+coalesce(sum(o.actual_cost),0))
+          ::numeric(16,6)::text AS settled,
+        (b.carried_held+coalesce(sum(o.potential_cost)
+          FILTER (WHERE o.actual_cost IS NULL),0))::numeric(16,6)::text AS held
        FROM ai_budget_months b
        LEFT JOIN ai_operations o ON o.budget_month=b.month
-       GROUP BY b.month,b.limit_pln ORDER BY b.month DESC`,
+       GROUP BY b.month ORDER BY b.month DESC`,
     )
   ).rows
 }

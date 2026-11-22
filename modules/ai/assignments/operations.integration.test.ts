@@ -204,6 +204,7 @@ integration('starting and ending operations on a real database', () => {
       '1770000000027_ai_assignments',
       '1770000000030_ai_operation_exchange',
       '1770000000031_ai_budget_default_limit',
+      '1770000000035_ai_budget_carried_amounts',
     ])
       createRequire(import.meta.url)(`../../../migrations/${migration}.cjs`).up(
         { sql: (statement: string) => sql.push(statement) },

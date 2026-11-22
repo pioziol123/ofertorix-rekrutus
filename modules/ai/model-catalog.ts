@@ -1,7 +1,5 @@
-import type { ExecutionMode } from './domain/execution-mode.ts'
-
 /**
- * The price list of a model in one execution mode, with the token caps a
+ * The price list of a model for one assignment type, with the token caps a
  * reservation covers. Amounts are decimal strings, see the cost arithmetic.
  */
 export type AiConfiguration = {
@@ -27,8 +25,11 @@ export type CatalogModel = {
   model: string
   /** The reasoning efforts the model accepts; null means none is sent. */
   reasoningEfforts: readonly (string | null)[]
-  /** Price lists by execution mode. A mode without one is not configured. */
-  prices: Partial<Record<ExecutionMode, AiConfiguration>>
+  /**
+   * Price lists by assignment type. A paid model without one does not
+   * serve the type.
+   */
+  prices: Partial<Record<'single' | 'agent', AiConfiguration>>
   /** A model that runs on a local runtime: its endpoint and parameters. */
   local?: { endpointRef: string; endpointVersion: number; numCtx: number }
 }
@@ -65,17 +66,6 @@ export const aiCatalog: AiCatalog = {
           usdPln: '5',
           fxVersion: 'ceiling-5',
           maxInputTokens: 500000,
-          maxOutputTokens: 6000,
-        },
-        // Conservative Batch rates of the offer assessments.
-        batch: {
-          model: 'gpt-6-luna',
-          version: 'openai-2026-11-03-batch',
-          inputUsdPerMillion: '0.10',
-          outputUsdPerMillion: '0.375',
-          usdPln: '5',
-          fxVersion: 'ceiling-5',
-          maxInputTokens: 200000,
           maxOutputTokens: 6000,
         },
         // Agent work with web search: the standard rates of its steps

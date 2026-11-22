@@ -37,12 +37,6 @@ const latestFailure = computed(() =>
   ),
 )
 const date = (v: string) => new Date(v).toLocaleString('pl-PL')
-const money = (v: string) =>
-  new Intl.NumberFormat('pl-PL', {
-    style: 'currency',
-    currency: 'PLN',
-    maximumFractionDigits: 4,
-  }).format(Number(v))
 let pending: { id: string; refresh: boolean } | null = null
 async function start(renew: boolean) {
   busy.value = true
@@ -95,11 +89,6 @@ onBeforeUnmount(() => clearInterval(timer))
     <p v-if="active" role="status" class="notice">{{ states[active.state] }}</p>
     <p v-if="latestFailure" role="alert" class="notice">
       {{ latestFailure.error }}
-      {{
-        latestFailure.costState === 'unknown'
-          ? 'Rezerwacja kosztu pozostaje zajęta.'
-          : ''
-      }}
     </p>
     <div class="research-actions">
       <UButton
@@ -149,13 +138,7 @@ onBeforeUnmount(() => clearInterval(timer))
             : shown.id === current?.id
               ? 'Aktualny raport'
               : 'Wersja historyczna'
-        }}<template v-if="shown.cost">
-          · Konserwatywne rozliczenie: {{ money(shown.cost) }}</template
-        >
-      </p>
-      <p v-if="shown.costState === 'unknown'" class="notice">
-        Raport gotowy, ale koszt nie został potwierdzony i pozostaje
-        zarezerwowany.
+        }}
       </p>
       <p class="notice">{{ shown.report.identity }}</p>
       <section
@@ -202,9 +185,7 @@ onBeforeUnmount(() => clearInterval(timer))
       <summary>Historia zleceń ({{ operations.length }})</summary>
       <p v-for="operation in operations" :key="operation.id">
         {{ date(operation.createdAt) }} · {{ states[operation.state]
-        }}<template v-if="operation.reserved">
-          · Rezerwacja {{ money(operation.reserved) }}</template
-        ><template v-if="operation.error"> · {{ operation.error }}</template>
+        }}<template v-if="operation.error"> · {{ operation.error }}</template>
       </p>
     </details>
     <p class="muted">

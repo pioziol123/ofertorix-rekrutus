@@ -13,11 +13,11 @@ export {
 export { readCompanyResearch } from './read-research.ts'
 
 // Composition: the receiver of the assignments of research, which the
-// shared registration of receivers registers, and the receiver of research
-// outcomes of the old way, which the AI module plugin registers until task
-// oferty-pracy-sq2.11.
+// shared registration of receivers registers, and the end of research of
+// the old way, which the migration step calls at the deployment of
+// assignments (T10-R02).
 export {
   researchAssignmentReceiver,
-  researchReceiver,
   researchSettingsKey,
 } from './infrastructure/adapters/research-ai.ts'
+export { failResearchOfOldWay } from './fail-research-of-old-way.ts'

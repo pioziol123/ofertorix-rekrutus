@@ -19,11 +19,13 @@ import {
   applyProposal,
   emptyProfile,
   emptySkill,
+  type ProfileData,
 } from '../modules/profile/domain/profile-data.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { digest } from '../modules/profile/domain/cv-document.ts'
 import {
   confirmProfile,
+  failPreparationsOfOldWay,
   importCvDocument,
   importCvText,
   prepareProposal,
@@ -36,7 +38,6 @@ import {
 } from '../modules/profile/index.ts'
 import { importStatusLabel } from '../modules/profile/view.ts'
 import { closePool, setPool, transaction } from '../lib/db.ts'
-import { createQueue } from '../lib/queues/index.ts'
 import { registerAssignmentReceivers } from '../receivers/index.ts'
 import { prepareCvTextQueue } from './profile.fixtures.ts'
 import { aiQueue } from './ai-queue.fixtures.ts'
@@ -45,21 +46,13 @@ import {
   runOperation,
 } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import {
-  openAiExecutor,
-  openAiOperationJob,
-} from '../modules/ai/executors/openai.ts'
+import { openAiExecutor } from '../modules/ai/executors/openai.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { registerExecutor } from '../modules/ai/executors/registry.ts'
 import { usePricing } from './ai-test-configuration.ts'
 
 // The price lists AI keeps in code, replaced for the test; the Profile's
 // settings of assignments are the application's own.
-// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-vi.mock(
-  '../modules/ai/client-settings.ts',
-  () => import('./ai-test-configuration.ts'),
-)
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/model-catalog.ts',
@@ -117,6 +110,7 @@ integration(
         '1770000000027_ai_assignments',
         '1770000000030_ai_operation_exchange',
         '1770000000031_ai_budget_default_limit',
+        '1770000000035_ai_budget_carried_amounts',
         '1770000000032_profile_assignment',
       ])
         createRequire(import.meta.url)(`../migrations/${migration}.cjs`).up({
@@ -124,11 +118,10 @@ integration(
         })
       await pool.query(sql.join('\n'))
       setPool(pool)
-      // The AI queues, the paid executor's queue and the queue of reading
-      // a CV share the test's queue schema.
+      // The executors' queues and the queue of reading a CV share the
+      // test's queue schema.
       await queue.start()
       await prepareCvTextQueue(queue.queueSchema)
-      await createQueue(openAiOperationJob.queue, 'exclusivity')
       // The receivers of the shared registration.
       registerAssignmentReceivers()
       root = await mkdtemp(join(tmpdir(), 'profile-tests-'))
@@ -136,7 +129,7 @@ integration(
     beforeEach(async () => {
       vi.unstubAllEnvs()
       vi.stubEnv('OPENAI_API_KEY', 'test-key-never-send')
-      usePricing('profile', pricing)
+      usePricing(pricing)
       // The paid executor with the test's price list, on the provider
       // simulated by the fetcher each test sets.
       registerExecutor(openAiExecutor((input, init) => provider(input, init)))
@@ -240,8 +233,12 @@ integration(
     }
     /** What the page shows for an import: its label and message. */
     const shown = async (id: string) => {
-      const view = (await readImport(id))!
-      return { label: importStatusLabel(view.status), message: view.error }
+      // The read returns the import's stored row, typed loosely.
+      const view: Record<string, unknown> = (await readImport(id))!
+      return {
+        label: importStatusLabel(String(view.status)),
+        message: view.error as string | null,
+      }
     }
     it('separates draft from active version, detects stale saves and confirms idempotently', async () => {
       expect((await readProfile()).active).toBeNull()
@@ -262,7 +259,9 @@ integration(
       const state = await readProfile()
       data.summary = 'Second draft'
       await saveDraft(data, state.draft.revision)
-      expect((await readProfile()).active.data.summary).toBe('First')
+      expect(((await readProfile()).active!.data as ProfileData).summary).toBe(
+        'First',
+      )
     })
     it('allows only one concurrent draft writer and validates import references', async () => {
       const results = await Promise.allSettled([
@@ -277,7 +276,9 @@ integration(
       )
       const id = await importCvText('PHP')
       data.sources = [id]
-      expect((await saveDraft(data, 1)).data.sources).toEqual([id])
+      expect(((await saveDraft(data, 1)).data as ProfileData).sources).toEqual([
+        id,
+      ])
     })
     it('validates every provenance against immutable reviewed text and listed imports', async () => {
       const id = await importCvText('PHP experience')
@@ -301,9 +302,9 @@ integration(
       data.skills[0]!.source!.evidence = 'Vue'
       await expect(saveDraft(data, 0)).rejects.toThrow('Invalid provenance')
       data.skills[0]!.source!.evidence = 'PHP'
-      expect((await saveDraft(data, 0)).data.skills[0].source).toEqual(
-        data.skills[0]!.source,
-      )
+      expect(
+        ((await saveDraft(data, 0)).data as ProfileData).skills[0]!.source,
+      ).toEqual(data.skills[0]!.source)
     })
     it('rejects command reuse with different confirmation arguments', async () => {
       const draft = await saveDraft(emptyProfile(), 0),
@@ -375,7 +376,6 @@ integration(
         state: 'needs_configuration',
       })
       expect(await count('ai_assignments')).toBe(0)
-      expect(await count('ai_executions')).toBe(0)
       const row = (
         await pool.query('SELECT * FROM profile_imports WHERE id=$1', [id])
       ).rows[0]
@@ -411,9 +411,8 @@ integration(
           text_revision: 1,
           assignment_id: assignmentId,
         })
-        // No request of the old way.
-        expect(await count('ai_executions')).toBe(0)
-        expect(await queue.jobs()).toEqual([])
+        // The job of its operation is sent with it.
+        expect(await queue.jobs()).toHaveLength(1)
       })
       it('T7-AC01, ASSUMPTION(oferty-pracy-sq2.8/ASM-1): labels the assignment of a pasted CV "Wklejony tekst"', async () => {
         const { assignmentId } = await requested()
@@ -475,18 +474,43 @@ integration(
         expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
         expect(await count('ai_assignments')).toBe(2)
       })
-      it('ASSUMPTION(oferty-pracy-sq2.8/ASM-2): refuses a request for a CV whose preparation of the old way the Profile records as in progress', async () => {
-        for (const old of ['ai_queued', 'ai_running', 'waiting_budget']) {
+      it('ASSUMPTION(oferty-pracy-sq2.8/ASM-2): refuses a request for a CV whose import records a preparation as in progress, also one of the old way without an assignment, until the deployment ends it (T10-R02)', async () => {
+        const old: Record<string, string> = {}
+        for (const status of ['ai_queued', 'ai_running', 'waiting_budget']) {
           const id = await importCvText('PHP')
           await pool.query('UPDATE profile_imports SET status=$2 WHERE id=$1', [
             id,
-            old,
+            status,
           ])
-          await expect(prepareProposal(id, 'PHP', 0)).rejects.toThrow(
-            'already pending',
-          )
+          old[status] = id
         }
+        // The import's own status decides: a preparation of the old way the
+        // import records as running is refused although it has no
+        // assignment.
+        await expect(
+          prepareProposal(old.ai_running!, 'PHP', 0),
+        ).rejects.toThrow('already pending')
         expect(await count('ai_assignments')).toBe(0)
+        // The deployment ends every preparation of the old way with the
+        // message of a failed assignment, and a new one can be requested.
+        const { assignmentId } = await requested()
+        expect(await failPreparationsOfOldWay()).toBe(3)
+        for (const id of Object.values(old)) {
+          expect(await importOf(id)).toMatchObject({
+            status: 'needs_attention',
+            proposal: null,
+            error: failedMessage,
+            assignment_id: null,
+          })
+          expect(await shown(id)).toEqual({
+            label: 'Wymaga sprawdzenia',
+            message: failedMessage,
+          })
+        }
+        // A preparation with an assignment is left to its receiver.
+        expect((await assignmentOf(assignmentId)).status).toBe('in_progress')
+        expect(await failPreparationsOfOldWay()).toBe(0)
+        await prepared(old.ai_running!, 'PHP', 0)
       })
       it('T7-AC02: a correct result gives the proposal for the revision the assignment was placed for, and the assignment succeeds', async () => {
         const { id, assignmentId } = await requested()
@@ -592,9 +616,9 @@ integration(
             id,
             imported.text_revision,
           ),
-          saved = await saveDraft(selected, 0)
-        expect(saved.data.skills[0]!.source!.evidence).toBe('PHP\n\tbackend')
-        expect(saved.data.experience[0]!.source!.evidence).toBe(
+          saved = (await saveDraft(selected, 0)).data as ProfileData
+        expect(saved.skills[0]!.source!.evidence).toBe('PHP\n\tbackend')
+        expect(saved.experience[0]!.source!.evidence).toBe(
           'Senior Developer   Acme',
         )
         expect((await readProfile()).active).toBeNull()

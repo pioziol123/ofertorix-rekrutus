@@ -8,10 +8,26 @@ import type {
 /**
  * Matching's assessment requests. A request keeps its own state only:
  * `excluded` (a required condition conflicts, nothing was requested) or
- * `requested` (the stage of the AI work is read from its execution). The
- * request is the operation of its AI executions.
+ * `requested` (AI work was requested; its outcome is the saved assessment
+ * or message).
  * ASSUMPTION(oferty-pracy-0mq.21/ASM-1): the two values of the state.
  */
+
+/**
+ * The condition of a request the offer's history and list show, on the
+ * request alias `r` and the query parameter `message` holding the
+ * message of a failed assignment (T10-R08): every request with an
+ * assignment and every excluded one, which never reached AI; a request of
+ * the old way, made before the deployment of assignments, only with a
+ * saved assessment, or when the deployment ended it as failed (T10-R02),
+ * which saved that message. Earlier AI work that ended without an
+ * assessment is not shown.
+ * ASSUMPTION(oferty-pracy-sq2.11/ASM-1): the message of a failed
+ * assignment tells a request the deployment ended from one that ended
+ * before it, which the old way's receivers never gave that message.
+ */
+export const shownRequest = (r: string, message: string) =>
+  `(${r}.assignment_id IS NOT NULL OR ${r}.state='excluded' OR ${r}.result IS NOT NULL OR ${r}.error=${message})`
 
 export type AssessmentRequest = {
   id: string
@@ -20,23 +36,6 @@ export type AssessmentRequest = {
   ad_revision_id: string
   input: MatchingInput
   state: 'requested' | 'excluded'
-}
-
-/**
- * The request, locked until the caller's transaction ends, so that two
- * deliveries of its result take it over one after the other.
- */
-export async function lockAssessmentRequest(
-  id: string,
-): Promise<AssessmentRequest | null> {
-  return (
-    (
-      await db().query<AssessmentRequest>(
-        'SELECT id,ad_id,profile_version_id,ad_revision_id,input,state FROM matching_requests WHERE id=$1 FOR UPDATE',
-        [id],
-      )
-    ).rows[0] ?? null
-  )
 }
 
 /**
@@ -186,39 +185,28 @@ export type AssessmentHistoryRow = {
   criteria: MatchingInput['criteria']
 }
 
-/** Every request of an ad, newest first. */
+/**
+ * Every request of an ad its history shows, newest first; `failedMessage`
+ * is the message of a failed assignment (see `shownRequest`).
+ */
 export async function requestHistoryOfAd(
   adId: string,
+  failedMessage: string,
 ): Promise<AssessmentHistoryRow[]> {
   return (
     await db().query<AssessmentHistoryRow>(
       `SELECT r.id,r.state,r.assignment_id,r.result,r.calculation,r.error,r.created_at,r.updated_at,r.profile_version_id,r.ad_revision_id,r.input->'checks' AS checks,r.input->'criteria' AS criteria
-       FROM matching_requests r WHERE r.ad_id=$1 ORDER BY r.created_at DESC,r.id DESC`,
-      [adId],
-    )
-  ).rows
-}
-
-/**
- * The saved provider payloads of requests sent before the batch archive
- * kept inputs: the request itself or the members of its former group.
- * ASSUMPTION(oferty-pracy-0mq.21/ASM-8): read only for the reconstruction
- * of old inputs in the archive.
- */
-export async function legacyPayloads(
-  archiveId: string,
-): Promise<{ id: string; request_payload: unknown }[]> {
-  return (
-    await db().query<{ id: string; request_payload: unknown }>(
-      'SELECT id,request_payload FROM matching_requests WHERE (id=$1 OR group_id=$1) AND request_payload IS NOT NULL ORDER BY id',
-      [archiveId],
+       FROM matching_requests r WHERE r.ad_id=$1 AND ${shownRequest('r', '$2')}
+       ORDER BY r.created_at DESC,r.id DESC`,
+      [adId, failedMessage],
     )
   ).rows
 }
 
 /**
  * Whether the request exists, with the assignment placed for it (null for
- * AI work of the old way); null for an unknown request.
+ * an excluded request and for one made before the deployment of
+ * assignments); null for an unknown request.
  */
 export async function requestAssignment(
   id: string,
@@ -320,4 +308,21 @@ export async function requestsOfAd(adId: string): Promise<
       [adId],
     )
   ).rows
+}
+
+/**
+ * Ends with the message every request still waiting for AI work without
+ * an assignment: one that requested AI work and has no saved outcome;
+ * returns how many. A request with an assignment is left to its receiver.
+ */
+export async function endRequestsWithoutAssignment(
+  message: string,
+): Promise<number> {
+  const ended = await db().query(
+    `UPDATE matching_requests SET error=$1,updated_at=now()
+     WHERE state='requested' AND assignment_id IS NULL
+       AND result IS NULL AND error IS NULL`,
+    [message],
+  )
+  return ended.rowCount ?? 0
 }

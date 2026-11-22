@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { aiCatalog } from '../model-catalog.ts'
-import { openAiProvider } from '../infrastructure/adapters/openai.ts'
 import queues from '../../../queues.json' with { type: 'json' }
 import { ollamaExecutor } from './ollama.ts'
 import { openAiExecutor } from './openai.ts'
@@ -33,6 +32,8 @@ describe('the declarations of the two executors, from today’s AI configuration
     })
   })
 
+  // The size the old adapter measured, pinned when the old way was removed
+  // (task oferty-pracy-sq2.11), while the comparison with it still passed.
   it('the paid executor measures a single answer by the exact body the old way sends', () => {
     const content = {
       type: 'single' as const,
@@ -43,23 +44,9 @@ describe('the declarations of the two executors, from today’s AI configuration
     }
     const parameters = { model: 'gpt-6-luna', reasoningEffort: 'low' }
     const priceList = luna.prices.single!
-    expect(openAiExecutor().requestSize!(content, parameters, priceList)).toBe(
-      openAiProvider().singleRequestBytes!(
-        {
-          provider: 'openai',
-          model: 'gpt-6-luna',
-          reasoningEffort: 'low',
-          maxOutputTokens: priceList.maxOutputTokens,
-          runtime: null,
-        },
-        {
-          model: 'gpt-6-luna',
-          instructions: content.instruction,
-          input: content.input,
-          output: content.responseFormat,
-        },
-      ),
-    )
+    expect(
+      openAiExecutor().requestSize!(content, parameters, priceList),
+    ).toMatchInlineSnapshot(`340`)
   })
 
   it('the local executor offers a single answer on the local model at no cost, and no agent session', () => {

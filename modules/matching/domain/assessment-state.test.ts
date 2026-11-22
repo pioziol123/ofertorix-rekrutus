@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  assignedAssessmentState,
+  assessmentState,
   assignmentRefusalMessage,
   failedAssignmentMessage,
 } from './assessment-state.ts'
@@ -10,6 +10,7 @@ import {
   matchingExchangeLink,
   matchingPending,
   matchingStateLabels,
+  matchingStates,
 } from './assessment-view.ts'
 
 /** The texts T8-R04 removes from the offer views for an assignment. */
@@ -61,7 +62,7 @@ describe('the state the offer views show for an assessment with an assignment (T
   it.each(cases)(
     'an assignment %s shows the texts of T8-R04 in the details and the list',
     (_status, saved, details, list) => {
-      const state = assignedAssessmentState(saved)
+      const state = assessmentState({ excluded: false, ...saved })
       expect(matchingDetailLabels[state]).toBe(details)
       expect(matchingStateLabels[state]).toBe(list)
       expect(removed).not.toContain(matchingDetailLabels[state])
@@ -73,7 +74,12 @@ describe('the state the offer views show for an assessment with an assignment (T
     expect(
       matchingPending.some(
         (s) =>
-          s === assignedAssessmentState({ assessment: false, message: false }),
+          s ===
+          assessmentState({
+            excluded: false,
+            assessment: false,
+            message: false,
+          }),
       ),
     ).toBe(true)
     for (const saved of [
@@ -81,7 +87,9 @@ describe('the state the offer views show for an assessment with an assignment (T
       { assessment: false, message: true },
     ])
       expect(
-        matchingPending.some((s) => s === assignedAssessmentState(saved)),
+        matchingPending.some(
+          (s) => s === assessmentState({ excluded: false, ...saved }),
+        ),
       ).toBe(false)
   })
 
@@ -104,7 +112,7 @@ describe('the texts of the bulk assessment in the offer list (T8-R04, sq2.9 ASM-
       matchingBulkTexts.notConfirmed,
       matchingBulkTexts.repeated,
       matchingBulkTexts.accepted([
-        { reused: true, state: 'waiting_budget' },
+        { reused: true, state: 'running' },
         { reused: false, state: 'excluded' },
         { reused: false, state: 'running' },
       ]),
@@ -123,13 +131,26 @@ describe('the texts of the bulk assessment in the offer list (T8-R04, sq2.9 ASM-
 })
 
 describe('the link to the provider exchange of an assessment (T8-R07, sq2.9 ASM-2)', () => {
-  it('names the exchange for an assessment with an assignment and keeps the batch archive for one of the old way', () => {
-    expect(matchingExchangeLink(true)).toBe(
-      'Pobierz zapis wymiany z dostawcą (JSON)',
-    )
-    expect(matchingExchangeLink(true)).not.toMatch(/parti/)
-    expect(matchingExchangeLink(false)).toBe(
-      'Pobierz archiwum całej partii (JSON)',
-    )
+  it('names the exchange of an assignment and no batch archive', () => {
+    expect(matchingExchangeLink).toBe('Pobierz zapis wymiany z dostawcą (JSON)')
+  })
+})
+
+describe('the states of the old way are gone from the offer views (T10-AC08)', () => {
+  it('has no state and no label of waiting for the budget, of the queue or of a send or cost to check', () => {
+    expect(matchingStates).toEqual([
+      'running',
+      'completed',
+      'failed',
+      'excluded',
+    ])
+    for (const labels of [matchingStateLabels, matchingDetailLabels])
+      for (const gone of removed)
+        expect(Object.values(labels)).not.toContain(gone)
+  })
+  it('shows an excluded request as excluded, whatever it saved', () => {
+    expect(
+      assessmentState({ excluded: true, assessment: false, message: false }),
+    ).toBe('excluded')
   })
 })

@@ -1,9 +1,6 @@
 import { z } from 'zod'
-import {
-  citedMaterials,
-  responseSchema,
-} from '../infrastructure/adapters/openai-agent.ts'
-import type { AgentMaterial } from '../provider-adapter.ts'
+import type { AgentMaterial } from '../domain/agent-material.ts'
+import { citedMaterials, responseSchema } from './openai-search.ts'
 import type {
   ExecutorContent,
   ExecutorParameters,

@@ -1,4 +1,3 @@
-import type { ExecutionCause, ReceiverDecision } from '../ai/index.ts'
 import { AssessmentError, validateAssessment } from './domain/assessment.ts'
 import { publishAiRating } from './ratings.ts'
 import {
@@ -6,12 +5,10 @@ import {
   currentAdVersions,
 } from './read-assessment-inputs.ts'
 import {
-  endMessage,
   failedAssignmentMessage,
   rejectionMessage,
 } from './domain/assessment-state.ts'
 import {
-  lockAssessmentRequest,
   lockAssignmentRequest,
   saveAssessmentOutcome,
   type AssessmentRequest,
@@ -28,7 +25,7 @@ import {
 async function checkAndPublish(
   request: AssessmentRequest,
   result: unknown,
-): Promise<ReceiverDecision> {
+): Promise<void> {
   // Public reads without locks (0mq.13): a profile confirmed or an ad
   // changed since is the accepted race and shows as a stale assessment.
   const activeProfileVersionId = (await activeProfileVersion())?.id ?? null
@@ -45,7 +42,7 @@ async function checkAndPublish(
       calculation: null,
       error: rejectionMessage(error.code),
     })
-    return { accepted: false, reason: error.code }
+    return
   }
   const { calculation } = await publishAiRating(
     request,
@@ -58,7 +55,6 @@ async function checkAndPublish(
     calculation,
     error: null,
   })
-  return { accepted: true }
 }
 
 /**
@@ -91,41 +87,5 @@ export async function endFailedAssessment(assignmentId: string): Promise<void> {
     result: null,
     calculation: null,
     error: failedAssignmentMessage,
-  })
-}
-
-/**
- * Takes over the result of a request's assessment of the old way, checked
- * and published as a result of an assignment is. Runs in AI's delivery
- * transaction, so the publication and the settlement commit together, and
- * may run again with the same result: the request is locked, and a result
- * already published for it is not published again.
- */
-export async function recordAssessmentResult(
-  requestId: string,
-  result: unknown,
-): Promise<ReceiverDecision> {
-  const request = await lockAssessmentRequest(requestId)
-  if (request?.state !== 'requested')
-    return { accepted: false, reason: 'unknown_request' }
-  return checkAndPublish(request, result)
-}
-
-/**
- * Records that a request's assessment of the old way ended without a
- * result, with the
- * owner's message for the public state and cause. Earlier assessments of
- * the ad stay as they are.
- */
-export async function recordAssessmentEnd(
-  requestId: string,
-  end: { state: 'failed' | 'uncertain'; cause: ExecutionCause },
-) {
-  const request = await lockAssessmentRequest(requestId)
-  if (request?.state !== 'requested') return
-  await saveAssessmentOutcome(requestId, {
-    result: null,
-    calculation: null,
-    error: endMessage(end),
   })
 }

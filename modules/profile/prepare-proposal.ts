@@ -1,10 +1,7 @@
 import { transaction } from '../../lib/db.ts'
 import { scrubContacts } from '../../lib/contact-details.ts'
 import { ProfileConflict } from './errors.ts'
-import {
-  assignmentInProgress,
-  preparationInProgress,
-} from './domain/proposal-preparation.ts'
+import { assignmentInProgress } from './domain/proposal-preparation.ts'
 import {
   placeProposalAssignment,
   proposalAiConfigured,
@@ -49,11 +46,8 @@ export async function prepareProposal(
     if (current.textRevision !== expectedRevision)
       throw new ProfileConflict('Import text changed')
     if (!current.hasSourceText) throw new Error('Import has no extracted text')
-    // ASSUMPTION(oferty-pracy-sq2.8/ASM-2): the import's own status decides,
-    // also for a preparation of the old way it records as in progress whose
-    // old execution has ended without reaching the receiver; such a CV is
-    // refused until the migration of the old way's removal ends it.
-    if (preparationInProgress.includes(current.status))
+    // ASSUMPTION(oferty-pracy-sq2.8/ASM-2): the import's own status decides.
+    if (current.status === assignmentInProgress)
       throw new ProfileConflict('A proposal is already pending')
     const revision = expectedRevision + 1
     if (!configured) {

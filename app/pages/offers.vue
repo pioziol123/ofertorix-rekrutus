@@ -506,7 +506,6 @@ const pageLink = (page: number) => ({
                 <option value="stale">Nieaktualna ocena</option>
                 <option value="failed">Błąd oceny</option>
                 <option value="excluded">Niezgodność wymagań</option>
-                <option value="unknown">Wymaga sprawdzenia</option>
               </select></label
             >
             <label v-for="filter in scoreFilters" :key="filter.key"

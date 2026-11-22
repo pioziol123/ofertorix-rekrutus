@@ -7,20 +7,9 @@ import type {
 /**
  * Companies' records of research: the company it is about, the target
  * fixed at the request, the published report or the owner's message, and
- * the identifier of its AI assignment, or, for research of the old way, the
- * link to its AI execution.
+ * the identifier of its AI assignment (none for research made before the
+ * deployment of assignments).
  */
-
-/** Locks a research for its outcome, until the transaction ends. */
-export async function lockResearch(researchId: string) {
-  const row = (
-    await db().query(
-      'SELECT id,result FROM company_research WHERE id=$1 FOR UPDATE',
-      [researchId],
-    )
-  ).rows[0]
-  return row ? { id: row.id as string, published: row.result !== null } : null
-}
 
 /**
  * Locks the research of an assignment for its end, until the transaction
@@ -139,4 +128,20 @@ export async function readResearchTarget(
     )
   ).rows[0]
   return row ? (row as ResearchTarget) : null
+}
+
+/**
+ * Ends with the message every research without an assignment whose
+ * outcome is not saved yet; returns how many. A research with an
+ * assignment is left to its receiver.
+ */
+export async function endResearchWithoutAssignment(
+  message: string,
+): Promise<number> {
+  const ended = await db().query(
+    `UPDATE company_research SET error=$1,finished_at=now()
+     WHERE assignment_id IS NULL AND finished_at IS NULL`,
+    [message],
+  )
+  return ended.rowCount ?? 0
 }

@@ -1,7 +1,7 @@
 import type { JobDefinition } from '../../../lib/queues/index.ts'
-import type { AgentTool } from '../domain/execution-mode.ts'
+import type { AgentTool } from '../domain/agent-tools.ts'
 import type { AiConfiguration } from '../model-catalog.ts'
-import type { AgentMaterial } from '../provider-adapter.ts'
+import type { AgentMaterial } from '../domain/agent-material.ts'
 import type {
   AssignmentType,
   ResponseFormat,

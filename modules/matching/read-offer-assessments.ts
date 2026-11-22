@@ -1,14 +1,12 @@
 import type { OfferView } from '../offers/index.ts'
-import { readLatestExecutions } from '../ai/index.ts'
 import {
-  activeExecutions,
   assessmentReservation,
   assessmentsConfigured,
   assignmentsInProgress,
 } from './infrastructure/adapters/assessment-ai.ts'
 import {
   assessmentState,
-  assignedAssessmentState,
+  failedAssignmentMessage,
 } from './domain/assessment-state.ts'
 import { assignmentsWithoutOutcome } from './infrastructure/persistence/assessment-requests.ts'
 import { latestOfAds } from './infrastructure/persistence/ratings.ts'
@@ -23,8 +21,9 @@ import {
 /**
  * Adds to each offer the summary of its match assessment. Reads in bulk, a
  * fixed number of queries for any number of offers: the active profile
- * version, the current ad versions from the Sources read, the
- * assessments, and the state of their AI work from the AI read.
+ * version, the current ad versions from the Sources read and the
+ * assessments, whose state comes from Matching's own data (T8-R04). The
+ * latest request is the latest one the offer's history shows (T10-R08).
  */
 export async function decorateMatching(
   offers: OfferView[],
@@ -33,21 +32,7 @@ export async function decorateMatching(
   const activeId = (await activeProfileVersion())?.id ?? null
   const ids = offers.map((o) => o.id)
   const current = await currentAdVersions(ids)
-  const rows = await latestOfAds(ids)
-  // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the AI work of every request in
-  // one public read.
-  const executions = new Map(
-    (
-      await readLatestExecutions(
-        rows
-          .filter(
-            (row) =>
-              row.request_id && row.state !== 'excluded' && !row.assignment_id,
-          )
-          .map((row) => row.request_id),
-      )
-    ).map((execution) => [execution.operationId, execution]),
-  )
+  const rows = await latestOfAds(ids, failedAssignmentMessage)
   // Ads the Sources read no longer knows get no summary, as before.
   const byId = new Map(
     rows.filter((row) => current.has(row.id)).map((row) => [row.id, row]),
@@ -78,15 +63,11 @@ export async function decorateMatching(
         requestId: row.request_id ?? null,
         state: !row.request_id
           ? 'completed'
-          : row.assignment_id
-            ? assignedAssessmentState({
-                assessment: row.assessed,
-                message: row.failed,
-              })
-            : assessmentState(
-                row.state,
-                executions.get(row.request_id) ?? null,
-              ),
+          : assessmentState({
+              excluded: row.state === 'excluded',
+              assessment: row.assessed,
+              message: row.failed,
+            }),
         author: row.assessment_author ?? undefined,
         scoreId: row.score_id ?? null,
         rating: percent(calculation?.rating),
@@ -103,16 +84,15 @@ export async function decorateMatching(
 /**
  * Whether groups of assessments can be requested, how many assessments are
  * in progress and the most one assessment of a group reserves. The count
- * of assessments with an assignment comes from the status read over the
- * assessments of the offers shown, `shownAdIds`, without an outcome
- * (T8-R06; solution design T8); those of the old way are counted by the AI
- * read until task oferty-pracy-sq2.11.
+ * comes from the status read over the assignments of the assessments of
+ * the offers shown, `shownAdIds`, without an outcome (T8-R06; solution
+ * design T8).
  */
 export async function matchingListStatus(shownAdIds: readonly string[]) {
   const profile = await activeProfileVersion()
-  const pending =
-    (await assignmentsInProgress(await assignmentsWithoutOutcome(shownAdIds))) +
-    (await activeExecutions())
+  const pending = await assignmentsInProgress(
+    await assignmentsWithoutOutcome(shownAdIds),
+  )
   return {
     configured: assessmentsConfigured(),
     profileReady: profile !== null,

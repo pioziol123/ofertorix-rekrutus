@@ -1,19 +1,13 @@
-import type {
-  AgentMaterial,
-  ExecutionCause,
-  ReceiverDecision,
-} from '../ai/index.ts'
+import type { AgentMaterial } from '../ai/index.ts'
 import { NoResearchFindings } from './domain/research-report.ts'
 import { validateResearch } from './domain/validate-research.ts'
 import {
-  endMessage,
   failedAssignmentMessage,
   rejectionMessage,
   type ResearchRejection,
 } from './domain/research-outcome.ts'
 import {
   lockAssignmentResearch,
-  lockResearch,
   saveResearchOutcome,
 } from './infrastructure/persistence/research-records.ts'
 
@@ -27,7 +21,7 @@ async function validateAndPublish(
   researchId: string,
   draft: unknown,
   evidence: AgentMaterial[],
-): Promise<ReceiverDecision> {
+): Promise<void> {
   let report
   try {
     report = validateResearch(draft, evidence)
@@ -40,10 +34,9 @@ async function validateAndPublish(
       report: null,
       error: rejectionMessage(reason),
     })
-    return { accepted: false, reason }
+    return
   }
   await saveResearchOutcome(researchId, { report, error: null })
-  return { accepted: true }
 }
 
 /**
@@ -77,41 +70,5 @@ export async function endFailedResearch(assignmentId: string): Promise<void> {
   await saveResearchOutcome(research.id, {
     report: null,
     error: failedAssignmentMessage,
-  })
-}
-
-/**
- * Takes over the report draft of a research of the old way, validated and
- * published as a result of an assignment is. Runs in AI's delivery
- * transaction, so the publication and the settlement commit together, and
- * may run again with the same draft: the research is locked, and a report
- * already published for it is not published again.
- * ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the evidence is the materials AI
- * delivers with the result of agent work.
- */
-export async function recordResearchResult(
-  researchId: string,
-  draft: unknown,
-  evidence: AgentMaterial[],
-): Promise<ReceiverDecision> {
-  const research = await lockResearch(researchId)
-  if (!research) return { accepted: false, reason: 'unknown_research' }
-  if (research.published) return { accepted: true }
-  return validateAndPublish(researchId, draft, evidence)
-}
-
-/**
- * Records that the AI work of a research of the old way ended without a
- * report, with the owner's message chosen from the state and cause alone.
- * ASSUMPTION(oferty-pracy-0mq.22/ASM-2)
- */
-export async function recordResearchEnd(
-  researchId: string,
-  end: { state: 'failed' | 'uncertain'; cause: ExecutionCause },
-): Promise<void> {
-  if (!(await lockResearch(researchId))) return
-  await saveResearchOutcome(researchId, {
-    report: null,
-    error: endMessage(end),
   })
 }

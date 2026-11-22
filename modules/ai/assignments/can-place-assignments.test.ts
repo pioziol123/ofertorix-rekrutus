@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { canPlaceAssignments } from '../index.ts'
+import { canPlaceAssignments, readPotentialCost } from '../index.ts'
 
 // Settings names on the two executors of the application, with today's
 // AI configuration, and the gaps of T1-R04 a configuration can have.
@@ -102,5 +102,37 @@ describe('whether assignments can be placed under a settings name, with no provi
     vi.stubEnv('AI_ENDPOINTS_JSON', '[]')
     expect(canPlaceAssignments('local', 'single')).toBe(false)
     expect(canPlaceAssignments('paid', 'single')).toBe(true)
+  })
+})
+
+describe('the potential cost of one operation under a settings name, with no provider called (sq2.11 ASM-2, sq2.9 ASM-3)', () => {
+  const fetchSpy = vi.fn()
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', fetchSpy)
+    vi.stubEnv('OPENAI_API_KEY', 'test-key')
+    vi.stubEnv('AI_ENDPOINTS_JSON', endpoints)
+  })
+  afterEach(() => {
+    expect(fetchSpy).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it('is the cost of the caps of the price list the executor declares, the amount the old way reserved for one execution', () => {
+    // gpt-6-luna, standard rates: 500000 input and 6000 output tokens at
+    // 0.10 and 0.50 USD per million, 5 PLN per USD; the agent adds three
+    // web searches at 0.01 USD.
+    expect(readPotentialCost('paid', 'single')).toBe('0.265000')
+    expect(readPotentialCost('paid', 'agent')).toBe('0.415000')
+    expect(readPotentialCost('local', 'single')).toBe('0.000000')
+  })
+
+  it('is null wherever an assignment cannot be placed', () => {
+    expect(readPotentialCost('nobody', 'single')).toBeNull()
+    expect(readPotentialCost('local', 'agent')).toBeNull()
+    expect(readPotentialCost('unknownModel', 'single')).toBeNull()
+    vi.stubEnv('OPENAI_API_KEY', '')
+    expect(readPotentialCost('paid', 'single')).toBeNull()
   })
 })

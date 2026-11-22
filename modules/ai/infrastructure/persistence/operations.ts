@@ -4,7 +4,7 @@ import type {
   AssignmentType,
   ResponseFormat,
 } from '../../assignments/assignment.ts'
-import type { AgentTool } from '../../domain/execution-mode.ts'
+import type { AgentTool } from '../../domain/agent-tools.ts'
 import type {
   ExecutorParameters,
   PriceList,

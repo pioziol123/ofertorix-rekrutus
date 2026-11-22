@@ -371,14 +371,9 @@ onMounted(() => {
   timer = setInterval(() => {
     if (
       imported.value &&
-      [
-        'queued',
-        'extracting',
-        'ai_queued',
-        'ai_running',
-        'waiting_budget',
-        'receiving',
-      ].includes(imported.value.status)
+      ['queued', 'extracting', 'ai_running', 'receiving'].includes(
+        imported.value.status,
+      )
     )
       void loadImport(false)
   }, 3000)
@@ -663,9 +658,7 @@ onBeforeUnmount(() => clearInterval(timer))
                   :disabled="
                     busy ||
                     !professionalText.trim() ||
-                    ['ai_queued', 'ai_running', 'waiting_budget'].includes(
-                      imported.status,
-                    )
+                    imported.status === 'ai_running'
                   "
                   @click="prepare"
                   >{{

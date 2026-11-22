@@ -1,16 +1,4 @@
 {
-  "ai-execution-local": {
-    "attempts": 4,
-    "retryDelaySeconds": 30,
-    "retryBackoff": true,
-    "timeLimitSeconds": 3600
-  },
-  "ai-execution-paid": {
-    "attempts": 4,
-    "retryDelaySeconds": 30,
-    "retryBackoff": true,
-    "timeLimitSeconds": 3600
-  },
   "ai-operation-ollama": {
     "attempts": 4,
     "retryDelaySeconds": 30,

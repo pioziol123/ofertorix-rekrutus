@@ -3,13 +3,10 @@ import {
   canPlaceAssignments,
   placeAssignment,
   type AssignmentReceiver,
-  type ResultReceiver,
 } from '../../../ai/index.ts'
 import { factSchema } from '../../domain/profile-data.ts'
 import {
   endAssignmentPreparation,
-  recordPreparationEnd,
-  recordPreparationResult,
   takeAssignmentResult,
 } from '../../receive-proposal.ts'
 
@@ -20,10 +17,7 @@ import {
  * knows no provider.
  */
 
-/**
- * The settings name under which AI keeps the settings of the Profile's
- * assignments, and of its executions of the old way.
- */
+/** The settings name under which AI keeps the settings of the Profile's assignments. */
 export const proposalSettingsKey = 'profile'
 
 const instruction =
@@ -82,38 +76,5 @@ export const proposalAssignmentReceiver: AssignmentReceiver = {
   },
   async receiveFailure({ assignmentId }) {
     await endAssignmentPreparation(assignmentId)
-  },
-}
-
-const revisionOf = (inputVersion: string | null) =>
-  inputVersion !== null && /^\d+$/.test(inputVersion)
-    ? Number(inputVersion)
-    : null
-
-/**
- * The receiver of proposal outcomes of the old way, for preparations
- * requested before the Profile moved to assignments; it goes with the old
- * way (task oferty-pracy-sq2.11). It runs in AI's delivery transaction, so
- * the proposal and the settlement commit together, and a failed delivery
- * leaves none of its writes, which lets it take the same outcome again.
- */
-export const proposalReceiver: ResultReceiver = {
-  async receiveResult(delivery) {
-    const revision = revisionOf(delivery.inputVersion)
-    if (revision === null)
-      return { accepted: false, reason: 'invalid_input_version' }
-    return recordPreparationResult(
-      delivery.operationId,
-      revision,
-      delivery.result,
-    )
-  },
-  async receiveFailure(delivery) {
-    const revision = revisionOf(delivery.inputVersion)
-    if (revision === null) return
-    await recordPreparationEnd(delivery.operationId, revision, {
-      state: delivery.state,
-      cause: delivery.cause,
-    })
   },
 }

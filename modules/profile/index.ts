@@ -29,13 +29,13 @@ export {
 
 // Composition: the receiver of the Profile's assignments, which the shared
 // registration of receivers registers under its settings name (epic sq2,
-// T6), and the receiver of proposal outcomes of the old way, which the AI
-// module plugin registers until the old way is removed.
+// T6), and the end of preparations of the old way, which the migration
+// step calls at the deployment of assignments (T10-R02).
 export {
   proposalAssignmentReceiver,
-  proposalReceiver,
   proposalSettingsKey,
 } from './infrastructure/adapters/proposal-ai.ts'
+export { failPreparationsOfOldWay } from './fail-preparations-of-old-way.ts'
 
 // Composition: the job of reading a CV's text, with the handlers the
 // Profile module plugin registers for the worker, and the request the

@@ -3,7 +3,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { checkKeyModes } from '../lib/queues/index.ts'
 import { HandlerRegistry } from '../lib/workers/index.ts'
 import { runModulePlugins } from '../plugins/index.ts'
-import { localExecutionJob, paidExecutionJob } from '../modules/ai/index.ts'
 import { cvTextReadingJob } from '../modules/profile/index.ts'
 import { syncJob } from '../modules/sources/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
@@ -64,28 +63,16 @@ integration('queues of the migrated database', () => {
     expect(await boss.getQueue('source-sync')).toBeFalsy()
   })
 
-  it('creates the paid and the local AI queue with their failure queues, exclusivity on a constant key and the configured 4 attempts of 60 minutes, and removes the queue of the former path and the system check queue (B6-AC04, B6-AC10, B6-D01)', async () => {
-    expect([paidExecutionJob.queue, localExecutionJob.queue]).toEqual([
-      'ai-execution-paid',
-      'ai-execution-local',
-    ])
-    for (const job of [paidExecutionJob, localExecutionJob]) {
-      expect(job.key).toEqual({ mode: 'exclusivity', value: job.queue })
-      expect(await boss.getQueue(job.queue)).toMatchObject({
-        policy: 'singleton',
-        retryLimit: 3,
-        retryDelay: 30,
-        retryBackoff: true,
-        expireInSeconds: 3600,
-        deadLetter: `${job.queue}.failed`,
-      })
-      expect(await boss.getQueue(`${job.queue}.failed`)).toBeTruthy()
+  it('removes the paid and the local AI queue of the old way with their failure queues, and the queue of the path before them (sq2 T10)', async () => {
+    for (const queue of ['ai-execution-paid', 'ai-execution-local']) {
+      expect(await boss.getQueue(queue)).toBeFalsy()
+      expect(await boss.getQueue(`${queue}.failed`)).toBeFalsy()
     }
     expect(await boss.getQueue('ai-execution')).toBeFalsy()
     expect(await boss.getQueue('system-smoke')).toBeFalsy()
   })
 
-  it('creates the queues of the paid and the local executor of assignments beside those of the old way, with their failure queues, exclusivity on a constant key and the configured 4 attempts of 60 minutes (sq2 T1, ZA-D01)', async () => {
+  it('creates the queues of the paid and the local executor of assignments, with their failure queues, exclusivity on a constant key and the configured 4 attempts of 60 minutes (sq2 T1, ZA-D01)', async () => {
     expect([openAiOperationJob.queue, ollamaOperationJob.queue]).toEqual([
       'ai-operation-openai',
       'ai-operation-ollama',

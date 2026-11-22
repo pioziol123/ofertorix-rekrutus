@@ -12,20 +12,16 @@ import {
   vi,
 } from 'vitest'
 import { closePool, setPool, transaction } from '../lib/db.ts'
-import { createQueue } from '../lib/queues/index.ts'
 import {
   failAssignmentsPastTimeLimit,
   runOperation,
 } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import {
-  openAiExecutor,
-  openAiOperationJob,
-} from '../modules/ai/executors/openai.ts'
+import { openAiExecutor } from '../modules/ai/executors/openai.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { registerExecutor } from '../modules/ai/executors/registry.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { citedMaterials } from '../modules/ai/infrastructure/adapters/openai-agent.ts'
+import { citedMaterials } from '../modules/ai/executors/openai-search.ts'
 import {
   createCompany,
   CompanyConflict,
@@ -48,11 +44,6 @@ import { usePricing } from './ai-test-configuration.ts'
 
 // The price lists AI keeps in code, replaced for the test; the settings of
 // research's assignments are the application's own.
-// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-vi.mock(
-  '../modules/ai/client-settings.ts',
-  () => import('./ai-test-configuration.ts'),
-)
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/model-catalog.ts',
@@ -149,17 +140,15 @@ integration(
           sql: (s: string) => sql.push(s),
         })
       await pool.query(sql.join('\n'))
-      // The old way's queues and the paid executor's queue share the
-      // test's queue schema.
+      // The executors' queues in the test's queue schema.
       await queue.start()
-      await createQueue(openAiOperationJob.queue, 'exclusivity')
       // The receivers of the shared registration.
       registerAssignmentReceivers()
     })
     beforeEach(async () => {
       vi.unstubAllEnvs()
       vi.stubEnv('OPENAI_API_KEY', 'mock-key-never-send')
-      usePricing('research', assignmentPricing, 'agent')
+      usePricing(assignmentPricing, 'agent')
       // The paid executor with the test's price list, on the provider
       // simulated by the transport each test sets.
       registerExecutor(openAiExecutor((input, init) => provider(input, init)))
@@ -213,9 +202,6 @@ integration(
         },
         status: 'in_progress',
       })
-      // Nothing is requested through the old way.
-      expect(await count('ai_executions')).toBe(0)
-      expect(await queue.executionJobs()).toHaveLength(0)
     })
 
     it('T9-AC01, T9-R04: a second request for the same company while the first is in progress places nothing, also when it asks for a refresh', async () => {
@@ -346,11 +332,8 @@ integration(
         expect(view).not.toHaveProperty('ceiling')
         const research = view.operations.find((o) => o.id === id)!
         // No amount for research with an assignment.
-        expect(research).toMatchObject({
-          reserved: null,
-          cost: null,
-          costState: null,
-        })
+        for (const field of ['reserved', 'cost', 'costState', 'ceiling'])
+          expect(research).not.toHaveProperty(field)
         return researchStateLabels[research.state]
       }
       // In progress, nothing carried out yet.

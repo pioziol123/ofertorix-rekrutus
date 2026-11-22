@@ -1,4 +1,3 @@
-import { readLatestExecutions } from '../ai/index.ts'
 import type {
   Assessment,
   Criterion,
@@ -7,7 +6,7 @@ import type {
 } from './domain/assessment.ts'
 import {
   assessmentState,
-  assignedAssessmentState,
+  failedAssignmentMessage,
 } from './domain/assessment-state.ts'
 import type { MatchingState } from './domain/assessment-view.ts'
 import {
@@ -38,55 +37,34 @@ export type MatchingHistory = {
   checks: MatchingInput['checks']
   criteria: Criterion[]
   /**
-   * The cost of the request's latest AI work of the old way, from the AI
-   * read: reserved, and settled (null while it is not settled). Null for an
-   * excluded request and for one with an assignment, whose cost is in the
-   * AI assignments panel.
-   */
-  cost: { reserved: string; actual: string | null } | null
-  /**
    * Whether the request's AI work is an assignment, whose provider exchange
-   * the exchange view shows (T8-R07); else its archive of the old way.
+   * the exchange view shows (T8-R07). A request made before the deployment
+   * of assignments has no exchange view (T10-R08).
    */
   assignment: boolean
   stale: boolean
 }
 
-/** The assessment history and ratings of an ad, for the offer details. */
+/**
+ * The assessment history and ratings of an ad, for the offer details. Each
+ * request shows its state from Matching's own data (T8-R04); the cost of
+ * AI work is in the AI assignments panel. A request made before the
+ * deployment of assignments shows only what Matching stored itself
+ * (T10-R08).
+ */
 export async function readMatching(adId: string) {
   const activeId = (await activeProfileVersion())?.id ?? null
-  const rows = await requestHistoryOfAd(adId)
-  // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the AI work of every request in
-  // one public read.
-  const executions = new Map(
-    (
-      await readLatestExecutions(
-        rows
-          .filter((row) => row.state !== 'excluded' && !row.assignment_id)
-          .map((row) => row.id),
-      )
-    ).map((execution) => [execution.operationId, execution]),
-  )
+  const rows = await requestHistoryOfAd(adId, failedAssignmentMessage)
   const requests = await withAdVersionState(
-    rows.map(({ assignment_id: assignmentId, ...row }) => {
-      if (assignmentId)
-        return {
-          ...row,
-          state: assignedAssessmentState({
-            assessment: row.result !== null,
-            message: row.error !== null,
-          }),
-          cost: null,
-          assignment: true,
-        }
-      const execution = executions.get(row.id) ?? null
-      return {
-        ...row,
-        state: assessmentState(row.state, execution),
-        cost: execution ? execution.cost : null,
-        assignment: false,
-      }
-    }),
+    rows.map(({ assignment_id: assignmentId, ...row }) => ({
+      ...row,
+      state: assessmentState({
+        excluded: row.state === 'excluded',
+        assessment: row.result !== null,
+        message: row.error !== null,
+      }),
+      assignment: assignmentId !== null,
+    })),
     adId,
     activeId,
   )

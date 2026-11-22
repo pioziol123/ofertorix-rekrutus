@@ -2,15 +2,13 @@
 import type { AiCatalog, AiConfiguration } from '../modules/ai/model-catalog.ts'
 
 /**
- * Test replacements for the settings and the price lists AI keeps in code.
- * A test file swaps them in with
+ * A test replacement for the price lists AI keeps in code. A test file
+ * swaps it in with
  *
- *   vi.mock('../modules/ai/client-settings.ts', () => import('./ai-test-configuration.ts'))
  *   vi.mock('../modules/ai/model-catalog.ts', () => import('./ai-test-configuration.ts'))
  *
- * and then gives a settings key the price list it needs.
+ * and then gives the model of its settings the price list it needs.
  */
-export const clientSettings: Record<string, unknown> = {}
 export const aiCatalog: AiCatalog = {
   providers: {
     openai: { credentialEnv: 'OPENAI_API_KEY' },
@@ -28,17 +26,14 @@ export const aiCatalog: AiCatalog = {
 }
 
 /**
- * Gives a settings key a paid model with the price list in the mode (or in
- * each of the modes), or removes its settings with null.
+ * Gives the paid model of the price list that price list for the
+ * assignment type (or each of the types), with the reasoning effort the
+ * settings of assignments use.
  */
 export function usePricing(
-  key: string,
-  pricing: AiConfiguration | null,
-  mode:
-    'single' | 'batch' | 'agent' | ('single' | 'batch' | 'agent')[] = 'single',
+  pricing: AiConfiguration,
+  type: 'single' | 'agent' | ('single' | 'agent')[] = 'single',
 ) {
-  Reflect.deleteProperty(clientSettings, key)
-  if (!pricing) return
   const model = pricing.model
   aiCatalog.models = [
     ...aiCatalog.models.filter((m) => m.model !== model),
@@ -47,21 +42,13 @@ export function usePricing(
       model,
       reasoningEfforts: ['low'],
       prices: Object.fromEntries(
-        (Array.isArray(mode) ? mode : [mode]).map((m) => [m, pricing]),
+        (Array.isArray(type) ? type : [type]).map((t) => [t, pricing]),
       ),
     },
   ]
-  clientSettings[key] = { provider: 'openai', model, reasoningEffort: 'low' }
 }
 
-/** Gives a settings key the local model on its local runtime. */
-export function useLocalModel(key: string, numCtx = 8192) {
-  aiCatalog.models = aiCatalog.models.map((m) =>
-    m.local ? { ...m, local: { ...m.local, numCtx } } : m,
-  )
-  clientSettings[key] = {
-    provider: 'ollama',
-    model: 'gpt-oss:20b',
-    reasoningEffort: null,
-  }
+/** Removes the paid model, so no assignment of it can be placed. */
+export function removePricing(model: string) {
+  aiCatalog.models = aiCatalog.models.filter((m) => m.model !== model)
 }

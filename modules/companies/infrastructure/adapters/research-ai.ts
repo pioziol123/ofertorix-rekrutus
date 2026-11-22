@@ -3,10 +3,7 @@ import {
   canPlaceAssignments,
   placeAssignment,
   type AgentTool,
-  readLatestExecutions,
-  type AiExecution,
   type AssignmentReceiver,
-  type ResultReceiver,
 } from '../../../ai/index.ts'
 import {
   researchDraft,
@@ -14,8 +11,6 @@ import {
 } from '../../domain/research-report.ts'
 import {
   endFailedResearch,
-  recordResearchEnd,
-  recordResearchResult,
   takeResearchResult,
 } from '../../receive-research.ts'
 
@@ -26,10 +21,7 @@ import {
  * Companies' operations. Companies know no provider.
  */
 
-/**
- * The settings name under which AI keeps the settings of Companies'
- * assignments, and of its research of the old way.
- */
+/** The settings name under which AI keeps the settings of Companies' assignments. */
 export const researchSettingsKey = 'research'
 
 /**
@@ -104,43 +96,5 @@ export const researchAssignmentReceiver: AssignmentReceiver = {
   },
   async receiveFailure({ assignmentId }) {
     await endFailedResearch(assignmentId)
-  },
-}
-
-/**
- * The latest AI work of each research of the old way, by research, for the
- * company view until task oferty-pracy-sq2.11.
- */
-export async function readResearchExecutions(
-  researchIds: string[],
-): Promise<Map<string, AiExecution>> {
-  if (!researchIds.length) return new Map()
-  // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the latest work of many
-  // operations in one read.
-  const executions = await readLatestExecutions(researchIds)
-  return new Map(executions.map((e) => [e.operationId, e]))
-}
-
-/**
- * The receiver of research outcomes of the old way, for research requested
- * before Companies moved to assignments; it goes with the old way (task
- * oferty-pracy-sq2.11). It runs in AI's delivery transaction, so
- * publication and settlement commit together, and a failed delivery
- * leaves none of its writes, which lets it take the same outcome again.
- */
-export const researchReceiver: ResultReceiver = {
-  receiveResult: (delivery) =>
-    recordResearchResult(
-      delivery.operationId,
-      delivery.result,
-      // ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the agent's materials are
-      // the evidence the report is validated against.
-      delivery.materials ?? [],
-    ),
-  async receiveFailure(delivery) {
-    await recordResearchEnd(delivery.operationId, {
-      state: delivery.state,
-      cause: delivery.cause,
-    })
   },
 }

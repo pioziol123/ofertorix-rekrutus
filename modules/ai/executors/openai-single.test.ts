@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { actualCost } from '../assignments/operation-cost.ts'
-import { OpenAiAdapter } from '../infrastructure/adapters/openai.ts'
 import { aiCatalog } from '../model-catalog.ts'
 import type { ExecutorContent, OperationWork } from './declaration.ts'
 import { openAiExecutor } from './openai.ts'
@@ -374,26 +373,30 @@ describe('T2-AC03: the paid single answer ends its own work at its maximum run t
 })
 
 describe('T2-AC04: the paid single answer sends the request of the old way', () => {
+  // The request the old adapter sent, pinned when the old way was removed
+  // (task oferty-pracy-sq2.11), while the comparison with it still passed.
   it('sends the same body, to the same endpoint, with the same headers, as the old adapter', async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockImplementation(async () => Response.json(answer()))
     const { outcome } = await run(fetcher)
-    await new OpenAiAdapter(fetcher, {
-      maxOutputTokens: priceList.maxOutputTokens,
-      reasoningEffort: 'low',
-      apiKey: () => 'test-key',
-    }).generate({
-      model: 'gpt-6-luna',
-      instructions: content.instruction,
-      input: content.input,
-      output: content.responseFormat!,
-    })
-    const [now, before] = fetcher.mock.calls
-    expect(now![0]).toBe(before![0])
-    expect(now![1]!.method).toBe(before![1]!.method)
-    expect(now![1]!.headers).toEqual(before![1]!.headers)
-    expect(now![1]!.body).toBe(before![1]!.body)
+    const [now] = fetcher.mock.calls
+    expect({
+      url: now![0],
+      method: now![1]!.method,
+      headers: now![1]!.headers,
+      body: now![1]!.body,
+    }).toMatchInlineSnapshot(`
+      {
+        "body": "{"model":"gpt-6-luna","store":false,"tools":[],"service_tier":"default","max_output_tokens":6000,"reasoning":{"effort":"low"},"instructions":"Assess the offer.","input":[{"role":"user","content":[{"type":"input_text","text":"Ad text"}]}],"text":{"format":{"type":"json_schema","name":"assessment","strict":true,"schema":{"type":"object","additionalProperties":false,"properties":{"rating":{"type":"number"}},"required":["rating"]}}}}",
+        "headers": {
+          "Authorization": "Bearer test-key",
+          "Content-Type": "application/json",
+        },
+        "method": "POST",
+        "url": "https://api.openai.com/v1/responses",
+      }
+    `)
     expect(outcome.kind).toBe('result')
   })
 })

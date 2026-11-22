@@ -23,8 +23,6 @@ const pending = computed(() =>
     matchingPending.some((state) => state === row.state),
   ),
 )
-const money = (value: string) =>
-  Number(value).toLocaleString('pl-PL', { maximumFractionDigits: 6 })
 const current = computed(() => data.value?.current)
 const groups: Record<string, string> = {
   technologies: 'Technologie',
@@ -75,7 +73,6 @@ onUnmounted(() => clearInterval(timer))
     </p>
     <p v-if="error" role="alert">Nie udało się wczytać ocen.</p>
     <p v-if="data && !data.configured" class="notice">
-      <!-- ASSUMPTION(oferty-pracy-0mq.21/ASM-3): no longer the Batch price list. -->
       Oceny AI wymagają konfiguracji modelu i cennika.
     </p>
     <p v-if="data && !data.profileReady" class="notice">
@@ -101,11 +98,6 @@ onUnmounted(() => clearInterval(timer))
       <strong>{{
         labels[data.history[0].state] ?? data.history[0].state
       }}</strong>
-      <p v-if="data.history[0].state === 'unknown'">
-        <!-- ASSUMPTION(oferty-pracy-0mq.21/ASM-3): the state of the AI work, not of a provider batch. -->
-        Przed kolejnym zleceniem sprawdź stan wykonania u dostawcy. Ponowna
-        ocena może wygenerować dodatkowy koszt.
-      </p>
       <p v-if="data.history[0].error">{{ data.history[0].error }}</p>
       <p v-for="check in data.history[0].checks" :key="check.criterion">
         {{ matchingCriterionLabel(check.criterion) }}:
@@ -236,20 +228,12 @@ onUnmounted(() => clearInterval(timer))
           {{ row.calculation.completeness }}%
         </p>
         <p v-if="row.result">{{ row.result.summary }}</p>
-        <p v-if="row.cost">
-          Koszt:
-          {{
-            row.cost.actual === null
-              ? `zarezerwowano ${money(row.cost.reserved)} zł, nierozliczony`
-              : `${money(row.cost.actual)} zł`
-          }}
-        </p>
-        <p>
+        <p v-if="row.assignment">
           <a
             :href="`/api/matching/${encodeURIComponent(row.id)}/archive`"
             download
           >
-            {{ matchingExchangeLink(row.assignment) }}
+            {{ matchingExchangeLink }}
           </a>
         </p>
         <details v-if="row.result">
@@ -262,8 +246,6 @@ onUnmounted(() => clearInterval(timer))
           Profil v{{ row.profile_number }} · ogłoszenie z
           {{ new Date(row.offer_version_at).toLocaleString('pl-PL') }}
         </p>
-        <!-- ASSUMPTION(oferty-pracy-0mq.21/ASM-3): no provider batch number;
-             the public execution read carries no provider facts (A14-AC12). -->
         <small>Zlecenie {{ row.id }}</small>
       </div>
     </details>

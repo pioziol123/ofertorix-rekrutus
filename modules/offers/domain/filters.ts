@@ -15,14 +15,7 @@ export type Filters = {
   period: string
   includeUnknownSalary: boolean
   assessmentState:
-    | ''
-    | 'unassessed'
-    | 'pending'
-    | 'current'
-    | 'stale'
-    | 'failed'
-    | 'excluded'
-    | 'unknown'
+    '' | 'unassessed' | 'pending' | 'current' | 'stale' | 'failed' | 'excluded'
   minRating: number | null
   minCompleteness: number | null
   minTechnologies: number | null
@@ -94,16 +87,7 @@ export function parseFilters(query: Record<string, unknown>): Filters {
     ),
     assessmentState: choice(
       'assessmentState',
-      [
-        '',
-        'unassessed',
-        'pending',
-        'current',
-        'stale',
-        'failed',
-        'excluded',
-        'unknown',
-      ],
+      ['', 'unassessed', 'pending', 'current', 'stale', 'failed', 'excluded'],
       '',
     ),
     minRating: percentage('minRating'),

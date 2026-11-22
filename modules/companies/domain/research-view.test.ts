@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { failedAssignmentMessage } from './research-outcome.ts'
 import {
-  assignedResearchState,
   researchActiveStates,
+  researchState,
   researchStateLabels,
+  shownResearch,
 } from './research-view.ts'
 
 /** The texts T9-R03 removes from the company view for an assignment. */
@@ -45,13 +46,13 @@ describe('the state the company view shows for research with an assignment (T9-A
   it.each(cases)(
     'an assignment %s shows the text of T9-R03',
     (_status, saved, text) => {
-      expect(researchStateLabels[assignedResearchState(saved)]).toBe(text)
+      expect(researchStateLabels[researchState(saved)]).toBe(text)
     },
   )
 
   it('never reaches one of the removed texts for research with an assignment', () => {
     for (const [, saved] of cases) {
-      const label = researchStateLabels[assignedResearchState(saved)]
+      const label = researchStateLabels[researchState(saved)]
       for (const text of removed) expect(label).not.toBe(text)
     }
   })
@@ -59,16 +60,14 @@ describe('the state the company view shows for research with an assignment (T9-A
   it('keeps showing research in progress while its assignment is in progress or needs attention', () => {
     expect(
       researchActiveStates.includes(
-        assignedResearchState({ report: false, message: false }),
+        researchState({ report: false, message: false }),
       ),
     ).toBe(true)
     for (const saved of [
       { report: true, message: false },
       { report: false, message: true },
     ])
-      expect(researchActiveStates.includes(assignedResearchState(saved))).toBe(
-        false,
-      )
+      expect(researchActiveStates.includes(researchState(saved))).toBe(false)
   })
 
   it('gives a failed assignment the message of research ended without a report, without a cause or an amount and with the panel (sq2.10 ASM-3)', () => {
@@ -76,5 +75,49 @@ describe('the state the company view shows for research with an assignment (T9-A
       'Nie udało się uzyskać kompletnego raportu z dowodami. Poprzedni raport pozostaje dostępny. Szczegóły są w panelu zleceń AI.',
     )
     expect(failedAssignmentMessage).not.toMatch(/\d|PLN|zł|rezerw|koszt/i)
+  })
+})
+
+describe('the research the company history shows after the deployment of assignments (T10-AC07, sq2.11 ASM-1)', () => {
+  const show = (research: {
+    assignment: boolean
+    report: boolean
+    message: string | null
+  }) => shownResearch(research, failedAssignmentMessage)
+
+  it('shows every research with an assignment, whatever its outcome', () => {
+    for (const research of [
+      { assignment: true, report: false, message: null },
+      { assignment: true, report: true, message: null },
+      { assignment: true, report: false, message: 'Raport nie zawiera…' },
+    ])
+      expect(show(research)).toBe(true)
+  })
+
+  it('shows earlier research with a saved report, and earlier research the deployment ended as failed', () => {
+    expect(show({ assignment: false, report: true, message: null })).toBe(true)
+    expect(
+      show({
+        assignment: false,
+        report: false,
+        message: failedAssignmentMessage,
+      }),
+    ).toBe(true)
+  })
+
+  it('does not show earlier research that ended without a report before the deployment', () => {
+    for (const message of [
+      'Nie udało się uzyskać kompletnego raportu z dowodami. Poprzedni raport pozostaje dostępny.',
+      'Usługa researchu zwróciła błąd HTTP. Koszt pozostaje zarezerwowany.',
+      'Nie udało się uzyskać kompletnego raportu z dowodami (validation). Poprzedni raport pozostaje dostępny.',
+      null,
+    ])
+      expect(show({ assignment: false, report: false, message })).toBe(false)
+  })
+
+  it('has no state and no label of the old way (T10-AC08)', () => {
+    for (const text of removed)
+      expect(Object.values(researchStateLabels)).not.toContain(text)
+    expect(researchActiveStates).toEqual(['running'])
   })
 })

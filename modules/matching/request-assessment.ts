@@ -17,7 +17,7 @@ import {
   placeAssessmentAssignment,
 } from './infrastructure/adapters/assessment-ai.ts'
 import {
-  assignedAssessmentState,
+  assessmentState,
   assignmentRefusalMessage,
   inputLimitMessage,
   notConfiguredMessage,
@@ -46,14 +46,13 @@ export type PreparedRequest = {
  * from Matching's own data alone: in progress until an outcome is saved
  * (T8-R04, T8-AC08).
  * ASSUMPTION(oferty-pracy-sq2.9/ASM-4): also for a request of the old way,
- * which has no assignment; one whose old work ended without an outcome
- * reaching Matching stays in progress until task oferty-pracy-sq2.11 ends
- * it.
+ * which has no assignment; one whose old work had not ended at the
+ * deployment of assignments is ended by the migration step (T10-R02).
  */
 function progressState(request: RequestProgress): MatchingState | null {
   return request.ended
     ? null
-    : assignedAssessmentState({ assessment: false, message: false })
+    : assessmentState({ excluded: false, assessment: false, message: false })
 }
 
 /** The label of an assessment's assignment: the offer's title and employer. */

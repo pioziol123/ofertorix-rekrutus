@@ -107,4 +107,5 @@ export const researchAssignmentMigrations = [
   '1770000000030_ai_operation_exchange',
   '1770000000031_ai_budget_default_limit',
   '1770000000034_company_research_assignment',
+  '1770000000035_ai_budget_carried_amounts',
 ]

@@ -29,15 +29,11 @@ import {
 } from '../modules/matching/ratings.ts'
 import { emptyProfile } from '../modules/profile/view.ts'
 import { listOffers, parseFilters } from '../modules/offers/index.ts'
-import { usePricing } from './ai-test-configuration.ts'
-import { insertExecution, migrate } from './matching-ai.fixtures.ts'
+import { failAssessmentsOfOldWay } from '../modules/matching/index.ts'
+import { removePricing, usePricing } from './ai-test-configuration.ts'
+import { migrate } from './matching-ai.fixtures.ts'
 
-// The settings and price lists AI keeps in code, replaced for the test.
-// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-vi.mock(
-  '../modules/ai/client-settings.ts',
-  () => import('./ai-test-configuration.ts'),
-)
+// The price lists AI keeps in code, replaced for the test.
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/model-catalog.ts',
@@ -77,9 +73,9 @@ integration('list matching projections in isolated PostgreSQL', () => {
   beforeEach(async () => {
     vi.unstubAllEnvs()
     vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-    usePricing('matching', pricing, ['single', 'batch'])
+    usePricing(pricing)
     await pool.query(
-      'TRUNCATE matching_requests,matching_rating_heads,matching_rating_revisions,ai_operations,ai_assignments,ai_executions,ai_attempts,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
+      'TRUNCATE matching_requests,matching_rating_heads,matching_rating_revisions,ai_operations,ai_assignments,ai_budget_months,profile_imports,profile_head,profile_versions,source_ads,source_scopes CASCADE',
     )
     ad = randomUUID()
     revision = randomUUID()
@@ -120,36 +116,79 @@ integration('list matching projections in isolated PostgreSQL', () => {
   })
   const activeId = async () => (await activeProfileVersion())?.id ?? null
   const offers = () => [
-    projectSourceAd({
-      id: ad,
-      payload: {},
-      first_seen_at: new Date(),
-      last_seen_at: new Date(),
-    }),
+    {
+      ...projectSourceAd({
+        id: ad,
+        payload: {},
+        first_seen_at: new Date(),
+        last_seen_at: new Date(),
+      }),
+      revisions: [],
+    },
   ]
+  const failedMessage =
+    'Ocena nie została wykonana. Poprzednie wyniki pozostały bez zmian. Szczegóły są w panelu zleceń AI.'
   /**
-   * A request whose latest AI execution is in the given public state, or an
-   * excluded one.
+   * A request as Matching keeps it, made at the given moment: `completed`
+   * with a published assessment, `excluded`, or one with an assignment
+   * that is in progress (`running`), needs attention, failed (the
+   * receiver saved the message of a failed assignment) or succeeded with a
+   * result Matching rejected (`rejected`). With `oldWay` it has no
+   * assignment, as a request made before the deployment of assignments.
    */
   async function request(
-    state: string,
+    state:
+      | 'completed'
+      | 'excluded'
+      | 'running'
+      | 'needs_attention'
+      | 'failed'
+      | 'rejected',
     at: string,
     calculation: unknown = null,
+    {
+      oldWay = state === 'completed' || state === 'excluded',
+      error = null as string | null,
+    } = {},
   ) {
     const id = randomUUID()
+    let assignmentId: string | null = null
+    if (!oldWay) {
+      assignmentId = randomUUID()
+      const status =
+        state === 'completed' || state === 'rejected'
+          ? 'succeeded'
+          : state === 'needs_attention' || state === 'failed'
+            ? state
+            : 'in_progress'
+      await pool.query(
+        `INSERT INTO ai_assignments(id,settings_name,type,label,instruction,input,executor,executor_parameters,status,failure_reason,automatic_operation_limit,placed_at,deadline)
+         VALUES($1,'matching','single','Oferta','Oceń','{}','openai','{}',$2,$3,3,$4,$4::timestamptz+interval '7 days')`,
+        [assignmentId, status, status === 'failed' ? 'time_limit' : null, at],
+      )
+    }
     await pool.query(
-      `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state,calculation,created_at) VALUES($1,$2,$3,$4,'{}','{}',$5,$6,$7)`,
+      `INSERT INTO matching_requests(id,ad_id,ad_revision_id,profile_version_id,input,configuration,state,assignment_id,calculation,result,error,created_at) VALUES($1,$2,$3,$4,'{}','{}',$5,$6,$7,$8,$9,$10)`,
       [
         id,
         ad,
         revision,
         profileVersion,
         state === 'excluded' ? 'excluded' : 'requested',
+        assignmentId,
         calculation,
+        state === 'completed'
+          ? { summary: 'x', strengths: [], gaps: [], criteria: [] }
+          : null,
+        error ??
+          (state === 'failed'
+            ? failedMessage
+            : state === 'rejected'
+              ? 'Nie udało się potwierdzić wiarygodnej oceny. Poprzednie wyniki pozostały bez zmian. [Ocena: schema]'
+              : null),
         at,
       ],
     )
-    if (state !== 'excluded') await insertExecution(pool, id, state)
     if (state === 'completed') {
       await pool.query(
         `INSERT INTO matching_rating_revisions(id,ad_id,request_id,profile_version_id,ad_revision_id,input,result,calculation,weights_version_id,author,assessment_author,reason) VALUES($1,$2,$1,$3,$4,'{}','{}',$5,(SELECT version_id FROM matching_weight_head),'ai','ai','Fixture')`,
@@ -215,7 +254,7 @@ integration('list matching projections in isolated PostgreSQL', () => {
       six.list.items.every((offer) => offer.assessment?.rating === 80),
     ).toBe(true)
     expect(six.queries).toBe(one.queries)
-    // Profile, current versions, assessments, and their AI work (0mq.21).
+    // Profile, current versions and assessments, from Matching's own data.
     expect(one.queries).toBeLessThanOrEqual(5)
   })
   it('keeps an empty catalog and unassessed offers free of fabricated scores', async () => {
@@ -227,11 +266,10 @@ integration('list matching projections in isolated PostgreSQL', () => {
   it.each([
     ['failed', 'failed'],
     ['running', 'running'],
-    ['delivering', 'running'],
+    ['needs_attention', 'running'],
     ['rejected', 'failed'],
-    ['uncertain', 'unknown'],
     ['excluded', 'excluded'],
-  ])(
+  ] as const)(
     'retains the latest successful score beside a newer request whose AI work is %s (0mq.21 ASM-3)',
     async (state, shown) => {
       const older = await request('completed', '2026-01-01', {
@@ -259,6 +297,32 @@ integration('list matching projections in isolated PostgreSQL', () => {
       expect(result.assessment!.scoreId).not.toBe(older)
     },
   )
+  it('shows of the requests made before the deployment of assignments only one with an assessment or one the deployment ended as failed (T10-R08, T10-R02, sq2.11 ASM-1)', async () => {
+    const score = await request('completed', '2026-01-01', calculation)
+    // Earlier AI work that ended without an assessment is not shown.
+    await request('running', '2026-01-02', null, {
+      oldWay: true,
+      error: 'Ocena nie została wykonana.',
+    })
+    // Nor is one still waiting for the old way.
+    const waiting = await request('running', '2026-01-03', null, {
+      oldWay: true,
+    })
+    expect((await decorateMatching(offers()))[0]!.assessment).toMatchObject({
+      requestId: score,
+      state: 'completed',
+      scoreId: score,
+    })
+    // The migration step ends it with the message of a failed assignment.
+    expect(await failAssessmentsOfOldWay()).toBe(1)
+    expect((await decorateMatching(offers()))[0]!.assessment).toMatchObject({
+      requestId: waiting,
+      state: 'failed',
+      scoreId: score,
+      rating: 80,
+    })
+    expect((await matchingListStatus([ad])).pending).toBe(0)
+  })
   it('preserves zero and unknown scores as distinct values', async () => {
     await request('completed', '2026-01-01', {
       ...calculation,
@@ -343,16 +407,16 @@ integration('list matching projections in isolated PostgreSQL', () => {
   it('reports configuration, profile readiness, pending count and reservation ceiling through AI reads without any provider call (0mq.21 ASM-4, sq2.9 ASM-3)', async () => {
     // A group command is one assignment per offer: the single price list
     // gives its ceiling per offer, also without a Batch price list.
-    usePricing('matching', pricing, 'single')
-    await request('running', '2026-01-01')
-    await request('completed', '2026-01-02', calculation)
+    usePricing(pricing, 'single')
+    await request('completed', '2026-01-01', calculation)
+    await request('running', '2026-01-02')
     expect(await matchingListStatus([ad])).toEqual({
       configured: true,
       profileReady: true,
       pending: 1,
       maximumCostPln: '0.020500',
     })
-    usePricing('matching', null)
+    removePricing(pricing.model)
     vi.stubEnv('OPENAI_API_KEY', '')
     await pool.query('UPDATE profile_head SET active_version_id=NULL')
     expect(await matchingListStatus([ad])).toEqual({

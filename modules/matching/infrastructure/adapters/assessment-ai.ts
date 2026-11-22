@@ -1,12 +1,10 @@
 import { z } from 'zod'
 import {
   canPlaceAssignments,
-  countActiveExecutions,
   placeAssignment,
   readAssignmentStatuses,
-  readReservation,
+  readPotentialCost,
   type AssignmentReceiver,
-  type ResultReceiver,
 } from '../../../ai/index.ts'
 import {
   assessmentSchema,
@@ -14,8 +12,6 @@ import {
 } from '../../domain/assessment.ts'
 import {
   endFailedAssessment,
-  recordAssessmentEnd,
-  recordAssessmentResult,
   takeAssessmentResult,
 } from '../../receive-assessment.ts'
 
@@ -26,10 +22,7 @@ import {
  * Matching knows no provider.
  */
 
-/**
- * The settings name under which AI keeps the settings of Matching's
- * assignments, and of its executions of the old way.
- */
+/** The settings name under which AI keeps the settings of Matching's assignments. */
 export const assessmentSettingsKey = 'matching'
 
 const instruction =
@@ -53,17 +46,16 @@ export function assessmentsConfigured(): boolean {
 
 /**
  * The most one assessment reserves, in PLN, or null when it cannot be
- * requested now. Each assessment, also one of a group command, is a single
- * answer, so the single price list gives it.
- * ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the reservation read of the old
- * way, which shows the owner the same price list's ceiling until task
- * oferty-pracy-sq2.11.
+ * requested now: the potential cost of one operation of a single-answer
+ * assignment under Matching's settings. Each assessment, also one of a
+ * group command, is a single answer, so the single price list gives it.
  * ASSUMPTION(oferty-pracy-sq2.9/ASM-3): the offer views keep showing the
- * most one assessment reserves, read this way; a group command shows the
- * single price list's ceiling per offer.
+ * most one assessment reserves; a group command shows it per offer.
+ * ASSUMPTION(oferty-pracy-sq2.11/ASM-2): read through the AI module's read
+ * of the potential cost, which replaces the old way's reservation read.
  */
 export function assessmentReservation(): string | null {
-  return readReservation(assessmentSettingsKey, 'single')
+  return readPotentialCost(assessmentSettingsKey, 'single')
 }
 
 /**
@@ -111,24 +103,6 @@ export const assessmentAssignmentReceiver: AssignmentReceiver = {
 }
 
 /**
- * The receiver of assessment outcomes of the old way, for assessments
- * requested before Matching moved to assignments; it goes with the old way
- * (task oferty-pracy-sq2.11). It runs in AI's delivery transaction, so
- * publication and settlement commit together, and a failed delivery leaves
- * none of its writes, which lets it take the same outcome again.
- */
-export const assessmentReceiver: ResultReceiver = {
-  receiveResult: (delivery) =>
-    recordAssessmentResult(delivery.operationId, delivery.result),
-  async receiveFailure(delivery) {
-    await recordAssessmentEnd(delivery.operationId, {
-      state: delivery.state,
-      cause: delivery.cause,
-    })
-  },
-}
-
-/**
  * How many of the given assignments are still in progress or need
  * attention, from the status read (T8-R06, T6-R11): it only shows that
  * work is in progress; Matching learns of an end from its receiver.
@@ -142,10 +116,4 @@ export async function assignmentsInProgress(
     (entry) =>
       entry.status === 'in_progress' || entry.status === 'needs_attention',
   ).length
-}
-
-/** How many of Matching's assessments of the old way are in progress. */
-export function activeExecutions(): Promise<number> {
-  // ASSUMPTION(oferty-pracy-0mq.21/ASM-4): the count of work in progress.
-  return countActiveExecutions(assessmentSettingsKey)
 }

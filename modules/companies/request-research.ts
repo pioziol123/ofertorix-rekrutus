@@ -24,9 +24,8 @@ export class ResearchConfigurationError extends Error {}
  * Whether a research is still in progress, from Companies' own data alone:
  * until an outcome is saved (T9-R04, T9-AC05).
  * ASSUMPTION(oferty-pracy-sq2.10/ASM-1): also for research of the old way,
- * which has no assignment; one whose old work ended without its end
- * reaching Companies stays in progress until task oferty-pracy-sq2.11 ends
- * it.
+ * which has no assignment; one whose old work had not ended at the
+ * deployment of assignments is ended by the migration step (T10-R02).
  */
 const inProgress = (research: Record<string, unknown>) =>
   research.finished_at === null

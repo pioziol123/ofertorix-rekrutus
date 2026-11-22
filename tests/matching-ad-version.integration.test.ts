@@ -41,12 +41,7 @@ import {
   SimulatedProvider,
 } from './matching-assignments.fixtures.ts'
 
-// The settings and price lists AI keeps in code, replaced for the test.
-// ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-vi.mock(
-  '../modules/ai/client-settings.ts',
-  () => import('./ai-test-configuration.ts'),
-)
+// The price lists AI keeps in code, replaced for the test.
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
   '../modules/ai/model-catalog.ts',
@@ -118,11 +113,11 @@ integration(
 
     beforeEach(async () => {
       vi.stubEnv('OPENAI_API_KEY', 'never-send-test-key')
-      usePricing('matching', pricing)
+      usePricing(pricing)
       new SimulatedProvider().register()
       injected.change = null
       await pool.query(
-        'TRUNCATE matching_rating_heads,matching_rating_revisions,matching_weight_head,matching_weight_versions,matching_requests,ai_operation_exchange,ai_operations,ai_assignments,ai_executions,ai_attempts,ai_budget_months,profile_head,profile_versions,source_ads,source_scopes CASCADE',
+        'TRUNCATE matching_rating_heads,matching_rating_revisions,matching_weight_head,matching_weight_versions,matching_requests,ai_operation_exchange,ai_operations,ai_assignments,ai_budget_months,profile_head,profile_versions,source_ads,source_scopes CASCADE',
       )
       const weights = randomUUID()
       await pool.query(

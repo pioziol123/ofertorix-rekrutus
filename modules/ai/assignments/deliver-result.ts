@@ -6,7 +6,7 @@ import {
   setSucceeded,
   type ResultToDeliver,
 } from '../infrastructure/persistence/assignments.ts'
-import type { AgentMaterial } from '../provider-adapter.ts'
+import type { AgentMaterial } from '../domain/agent-material.ts'
 import { assignmentReceiver } from './assignment-receiver.ts'
 
 /**

@@ -4,7 +4,7 @@ import { transaction } from '../../lib/db.ts'
 import { AssignmentError } from '../ai/index.ts'
 import { assessmentsConfigured } from './infrastructure/adapters/assessment-ai.ts'
 import {
-  assignedAssessmentState,
+  assessmentState,
   assignmentRefusalMessage,
   notConfiguredMessage,
 } from './domain/assessment-state.ts'
@@ -77,7 +77,8 @@ export function commandRequestId(commandId: string, offerId: string): string {
 const commandRequestState = (
   request: Pick<CommandRequest, 'assessed' | 'ended'>,
 ) =>
-  assignedAssessmentState({
+  assessmentState({
+    excluded: false,
     assessment: request.assessed,
     message: request.ended && !request.assessed,
   })

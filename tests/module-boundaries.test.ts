@@ -140,6 +140,7 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
       [
         // Startup scripts named in package.json.
         'carry-over-jobs.ts',
+        'end-old-ai-work.ts',
         'himalayas-sync.ts',
         'init-queue.ts',
         'jobspy-status.ts',
@@ -311,7 +312,17 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
     const imports = importsOf('scripts/carry-over-jobs.ts')
     expect(imports).toContain('modules/profile/index.ts')
     expect(imports).toContain('modules/sources/index.ts')
-    expect(imports).toContain('modules/ai/index.ts')
+    expect(
+      imports.filter(
+        (file) => /^plugins\//.test(file) || (moduleOf(file) && !isEntry(file)),
+      ),
+    ).toEqual([])
+  })
+
+  it("ends the matters of the old AI way at the migration step through the requesting modules' public operations only, without the plugins (epic sq2, T10-R02)", () => {
+    const imports = importsOf('scripts/end-old-ai-work.ts')
+    for (const module of ['profile', 'matching', 'companies'])
+      expect(imports).toContain(`modules/${module}/index.ts`)
     expect(
       imports.filter(
         (file) => /^plugins\//.test(file) || (moduleOf(file) && !isEntry(file)),

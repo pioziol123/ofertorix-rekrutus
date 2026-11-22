@@ -1,7 +1,7 @@
 import { defineJob } from '../../../lib/queues/index.ts'
 import { hasCredentials } from '../configuration.ts'
-import { agentTools } from '../domain/execution-mode.ts'
-import { agentFits } from '../infrastructure/adapters/openai-agent.ts'
+import { agentTools } from '../domain/agent-tools.ts'
+import { agentFits } from './openai-search.ts'
 import { aiCatalog, type CatalogModel } from '../model-catalog.ts'
 import type {
   Executor,
@@ -44,15 +44,12 @@ export const sessionFits = (
 ) =>
   parameters.model !== 'gpt-4.1-mini' &&
   agentFits({
-    provider,
     model: String(parameters.model),
-    reasoningEffort: parameters.reasoningEffort ?? null,
     maxInputTokens: priceList.maxInputTokens,
     maxOutputTokens: priceList.maxOutputTokens,
     ...(priceList.maxToolCalls === undefined
       ? {}
       : { maxToolCalls: priceList.maxToolCalls }),
-    runtime: null,
   })
 
 /** One offer per reasoning effort of a model that has the price list. */

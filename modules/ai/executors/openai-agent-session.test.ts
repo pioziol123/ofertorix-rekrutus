@@ -1,12 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { actualCost } from '../assignments/operation-cost.ts'
-import {
-  citedMaterials,
-  openAiAgent,
-} from '../infrastructure/adapters/openai-agent.ts'
 import { aiCatalog } from '../model-catalog.ts'
 import type { ExecutorContent, OperationWork } from './declaration.ts'
 import { openAiExecutor, sessionFits } from './openai.ts'
+import { citedMaterials } from './openai-search.ts'
 
 /**
  * The paid executor's agent session with a simulated OpenAI: the mapping
@@ -131,54 +128,112 @@ afterEach(() => {
 })
 
 describe('T2-AC04: the paid agent session sends the requests of the old way and returns its result and materials', () => {
+  // The requests the old agent sent, pinned when the old way was removed
+  // (task oferty-pracy-sq2.11), while the comparison with it still passed;
+  // the materials carry the moment they were read.
   it('sends the same search and synthesis as the old agent, and keeps the same materials', async () => {
     const now = answers(Response.json(search()), Response.json(synthesis()))
-    const before = answers(Response.json(search()), Response.json(synthesis()))
     const { outcome, states, executor, cost } = await run(now)
-    const oldAgent = openAiAgent(
-      {
-        provider: 'openai',
-        model: 'gpt-6-luna',
-        reasoningEffort: 'low',
-        maxInputTokens: priceList.maxInputTokens,
-        maxOutputTokens: priceList.maxOutputTokens,
-        maxToolCalls: priceList.maxToolCalls!,
-        runtime: null,
-      },
-      before,
-      () => 'test-key',
-    )
-    const oldStates: unknown[] = []
-    await oldAgent.run(
-      {
-        model: 'gpt-6-luna',
-        instructions: content.instruction,
-        resultInstructions: content.agent!.resultInstruction,
-        input: content.input,
-        output: content.responseFormat!,
-        tools: ['web_search'],
-      },
-      { save: async (state) => void oldStates.push(structuredClone(state)) },
-    )
     expect(now.mock.calls).toHaveLength(2)
-    for (const [index, call] of now.mock.calls.entries()) {
-      const old = before.mock.calls[index]!
-      expect(call[0]).toBe(old[0])
-      expect(call[1]!.method).toBe(old[1]!.method)
-      expect(call[1]!.headers).toEqual(old[1]!.headers)
-      const body = JSON.parse(String(call[1]!.body))
-      const oldBody = JSON.parse(String(old[1]!.body))
-      // The materials carry the moment they were read.
+    const sent = now.mock.calls.map(([url, init], index) => {
+      const body = JSON.parse(String(init!.body))
       if (index === 1) {
         const input = JSON.parse(body.input)
-        const oldInput = JSON.parse(oldBody.input)
-        for (const unit of [...input.evidence, ...oldInput.evidence])
+        for (const unit of input.evidence)
           for (const source of unit.sources) source.accessedAt = 'at'
         body.input = input
-        oldBody.input = oldInput
       }
-      expect(body).toEqual(oldBody)
-    }
+      return { url, method: init!.method, headers: init!.headers, body }
+    })
+    expect(sent).toMatchInlineSnapshot(`
+      [
+        {
+          "body": {
+            "input": "{"name":"Example","kind":"brand"}",
+            "instructions": "Gather facts about the company.",
+            "max_output_tokens": 3000,
+            "max_tool_calls": 3,
+            "model": "gpt-6-luna",
+            "reasoning": {
+              "effort": "low",
+            },
+            "service_tier": "default",
+            "store": false,
+            "tool_choice": "required",
+            "tools": [
+              {
+                "search_context_size": "low",
+                "type": "web_search",
+              },
+            ],
+          },
+          "headers": {
+            "Authorization": "Bearer test-key",
+            "Content-Type": "application/json",
+          },
+          "method": "POST",
+          "url": "https://api.openai.com/v1/responses",
+        },
+        {
+          "body": {
+            "input": {
+              "evidence": [
+                {
+                  "id": 0,
+                  "sources": [
+                    {
+                      "accessedAt": "at",
+                      "kind": "search_snippet",
+                      "title": "Project",
+                      "url": "https://company.example/project",
+                    },
+                  ],
+                  "text": "Project uses PHP.",
+                },
+              ],
+              "target": {
+                "kind": "brand",
+                "name": "Example",
+              },
+            },
+            "instructions": "Write the report from the evidence.",
+            "max_output_tokens": 3000,
+            "model": "gpt-6-luna",
+            "reasoning": {
+              "effort": "low",
+            },
+            "service_tier": "default",
+            "store": false,
+            "text": {
+              "format": {
+                "name": "report",
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "summary": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "summary",
+                  ],
+                  "type": "object",
+                },
+                "strict": true,
+                "type": "json_schema",
+              },
+            },
+            "tools": [],
+          },
+          "headers": {
+            "Authorization": "Bearer test-key",
+            "Content-Type": "application/json",
+          },
+          "method": "POST",
+          "url": "https://api.openai.com/v1/responses",
+        },
+      ]
+    `)
     expect(outcome).toEqual({
       kind: 'result',
       content: { summary: 'PHP' },
@@ -188,15 +243,6 @@ describe('T2-AC04: the paid agent session sends the requests of the old way and 
     const materials = executor.materials(states.at(-1))
     expect(materials).toEqual(
       citedMaterials(search(), materials![0]!.sources[0]!.accessedAt),
-    )
-    expect(materials).toEqual(
-      oldAgent.materials(oldStates.at(-1)).map((unit) => ({
-        ...unit,
-        sources: unit.sources.map((source) => ({
-          ...source,
-          accessedAt: materials![0]!.sources[0]!.accessedAt,
-        })),
-      })),
     )
   })
 
