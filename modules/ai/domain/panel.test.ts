@@ -4,6 +4,7 @@ import {
   assignmentTypes,
 } from '../assignments/assignment.ts'
 import { operationCauses } from '../executors/outcome.ts'
+import { operationStates, operationWaits } from './operation-state.ts'
 import {
   actualCostText,
   amountText,
@@ -112,5 +113,36 @@ describe('texts of the AI assignments panel (T11-AC05, T11-R06)', () => {
       parametersText({ model: 'gpt-6-luna', reasoningEffort: 'low' }),
     ).toBe('model: gpt-6-luna, reasoningEffort: low')
     expect(parametersText({})).toBe('—')
+  })
+})
+
+describe('one owner of the operation states and waits (architecture rules, costs, item 4)', () => {
+  it('words every operation state and every wait of the one closed list', () => {
+    for (const wait of operationWaits)
+      expect(operationStateText({ state: 'pending', waitsFor: wait })).toMatch(
+        /\S/,
+      )
+    for (const state of operationStates.filter((s) => s !== 'pending'))
+      expect(operationStateText({ state, waitsFor: null })).toMatch(/\S/)
+  })
+
+  it('keeps the closed lists equal to the database checks of the operation table', async () => {
+    const { readFileSync } = await import('node:fs')
+    const migration = readFileSync(
+      new URL(
+        '../../../migrations/1770000000027_ai_assignments.cjs',
+        import.meta.url,
+      ),
+      'utf8',
+    )
+    const list = (column: string) =>
+      /CHECK\(\w+ IN \(([^)]*)\)\)/
+        .exec(
+          migration.split('\n').find((line) => line.startsWith(` ${column} `))!,
+        )![1]!
+        .split(',')
+        .map((value) => value.replaceAll("'", ''))
+    expect(list('state')).toEqual([...operationStates])
+    expect(list('waits_for')).toEqual([...operationWaits])
   })
 })

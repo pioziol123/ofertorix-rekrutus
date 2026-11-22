@@ -7,6 +7,7 @@ import {
   setNeedsAttention,
 } from '../infrastructure/persistence/assignments.ts'
 import type { OperationOrigin } from '../infrastructure/persistence/operations.ts'
+import type { EndedOperationState } from '../domain/operation-state.ts'
 import type { AssignmentStatus } from './assignment.ts'
 
 /** An operation that has just ended, with its assignment's status. */
@@ -15,7 +16,7 @@ export type EndedOperation = {
   assignmentId: string
   /** The assignment's status, read with its row locked. */
   assignmentStatus: AssignmentStatus
-  state: 'succeeded' | 'failed' | 'uncertain'
+  state: EndedOperationState
   /** Whether a failed operation may be retried; null unless failed. */
   retryable: boolean | null
   origin: OperationOrigin

@@ -3,6 +3,7 @@ import type {
   AssignmentType,
 } from '../assignments/assignment.ts'
 import type { OperationCause } from '../executors/outcome.ts'
+import type { OperationState, OperationWait } from './operation-state.ts'
 
 /**
  * What the AI assignments panel reads and shows (task oferty-pracy-sq2.12,
@@ -15,12 +16,7 @@ import type { OperationCause } from '../executors/outcome.ts'
 export type AssignmentFailureReason =
   'rejected' | 'time_limit' | 'delivery_failed'
 
-/** The state of an operation (ZA-R02), as stored. */
-export type OperationState =
-  'pending' | 'running' | 'succeeded' | 'failed' | 'uncertain'
-
-/** What a pending operation waits for. */
-export type OperationWait = 'budget' | 'executor'
+export type { OperationState, OperationWait } from './operation-state.ts'
 
 /** One row of the panel's list (T11-R02); amounts in złoty. */
 export type AssignmentRow = {

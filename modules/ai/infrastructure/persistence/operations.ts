@@ -6,6 +6,11 @@ import type {
 } from '../../assignments/assignment.ts'
 import type { AgentTool } from '../../domain/agent-tools.ts'
 import type {
+  EndedOperationState,
+  OperationState,
+  OperationWait,
+} from '../../domain/operation-state.ts'
+import type {
   ExecutorParameters,
   PriceList,
 } from '../../executors/declaration.ts'
@@ -129,8 +134,8 @@ export async function saveExecutorState(
 export type OperationToStart = {
   id: string
   assignmentId: string
-  state: 'pending' | 'running' | 'succeeded' | 'failed' | 'uncertain'
-  waitsFor: 'budget' | 'executor' | null
+  state: OperationState
+  waitsFor: OperationWait | null
   origin: OperationOrigin
   assignmentStatus: AssignmentStatus
   executor: string
@@ -201,8 +206,8 @@ export async function setRunning(
  */
 export async function changeWait(
   id: string,
-  from: 'budget' | 'executor',
-  to: 'budget' | 'executor',
+  from: OperationWait,
+  to: OperationWait,
 ): Promise<boolean> {
   const changed = await db().query(
     `UPDATE ai_operations SET waits_for=$3
@@ -317,7 +322,7 @@ export async function lockRunningToEnd(
 
 /** What the end of an operation saves (T3-R06). */
 export type OperationEnd = {
-  state: 'succeeded' | 'failed' | 'uncertain'
+  state: EndedOperationState
   cause: OperationCause | null
   retryable: boolean | null
   usage: ExecutorUsage

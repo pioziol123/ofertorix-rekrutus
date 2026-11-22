@@ -4,10 +4,10 @@ import type {
   AssignmentType,
 } from '../../assignments/assignment.ts'
 import type {
-  AssignmentFailureReason,
   OperationState,
   OperationWait,
-} from '../../domain/panel.ts'
+} from '../../domain/operation-state.ts'
+import type { AssignmentFailureReason } from '../../domain/panel.ts'
 import type { OperationCause } from '../../executors/outcome.ts'
 import type { OperationOrigin } from './operations.ts'
 import { operationsCharge, unknownActualCost } from './operations.ts'
