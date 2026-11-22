@@ -278,7 +278,7 @@ integration('AI assignments panel over HTTP (T11-AC03)', () => {
     ).toEqual({ items: [], nextCursor: null })
   })
 
-  it('shows the budget view and both forms; a limit set there changes the month, a refused amount shows its message, and the profile page’s card shows the same limit and amounts that add up to the charge (T13-AC05)', async () => {
+  it('shows the budget view and both forms; a limit set there changes the month, a refused amount shows its message, and the profile page’s card shows the same limit and amounts that add up to the charge (T13-AC05, sq2.14 ASM-1, sq2.14 ASM-2)', async () => {
     await pool.query('TRUNCATE ai_budget_months CASCADE')
     const month = (
       await pool.query(
@@ -301,6 +301,8 @@ integration('AI assignments panel over HTTP (T11-AC03)', () => {
     expect(budget.current).toMatchObject({
       month,
       limit: '10.000000',
+      // ASSUMPTION(oferty-pracy-sq2.14/ASM-1): the carried settled amount is
+      // spent; the carried held amount is its own part of the charge.
       spent: '1.500000',
       running: '0.400000',
       carriedHeld: '0.250000',
@@ -316,6 +318,7 @@ integration('AI assignments panel over HTTP (T11-AC03)', () => {
       '10,00 zł',
       '1,50 zł',
       '0,40 zł',
+      // ASSUMPTION(oferty-pracy-sq2.14/ASM-1)
       'Przeniesione sprzed wdrożenia',
       '2,15 zł',
       '7,85 zł',
@@ -343,6 +346,7 @@ integration('AI assignments panel over HTTP (T11-AC03)', () => {
       message: 'Kwota może mieć najwyżej dwa miejsca po przecinku.',
     })
     expect((await put('current', 12)).status).toBe(422)
+    // ASSUMPTION(oferty-pracy-sq2.14/ASM-2): a decimal comma.
     expect((await put('current', '25,50')).status).toBe(204)
     expect((await put('default', '80')).status).toBe(204)
     const after = await (await fetch(`${base}/api/ai-budget`)).json()
@@ -357,6 +361,7 @@ integration('AI assignments panel over HTTP (T11-AC03)', () => {
     expect((Number(card.spent) * 1e6 + Number(card.reserved) * 1e6) / 1e6).toBe(
       Number(after.current.charge),
     )
+    // ASSUMPTION(oferty-pracy-sq2.14/ASM-1): spent is the card's settled amount.
     expect(card.spent).toBe(after.current.spent)
   })
 })

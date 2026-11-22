@@ -1236,6 +1236,7 @@ integration('starting and ending operations on a real database', () => {
         held: '0.266000',
         charge: current.charge,
       })
+      // ASSUMPTION(oferty-pracy-sq2.14/ASM-2): a decimal comma.
       await setCurrentMonthLimit('0,70', november)
       expect((await readBudget(november)).current).toEqual({
         ...current,

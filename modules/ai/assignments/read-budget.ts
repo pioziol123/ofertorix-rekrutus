@@ -1,7 +1,8 @@
 import { budgetMonth } from '../domain/cost.ts'
 import type { AiBudget, CurrentMonthBudget } from '../domain/budget.ts'
-import { million, money } from '../domain/money.ts'
+import { money } from '../domain/money.ts'
 import {
+  monthRoom,
   readDefaultLimit,
   readMonthBudgetRows,
   type MonthBudgetRow,
@@ -24,8 +25,13 @@ export async function readBudget(now: Date = new Date()): Promise<AiBudget> {
   const rows = await readMonthBudgetRows()
   const defaultLimit = await readDefaultLimit()
   const current = rows.find((row) => row.month === month)
+  // What remains is the room an operation's start checks (solution
+  // design T3, "Contract: room in the budget"), never shown below zero.
+  const room = await monthRoom(month)
+  const remaining = money(room > 0n ? room : 0n)
   return {
     current: currentMonth(
+      remaining,
       current ?? {
         month,
         limit: defaultLimit,
@@ -48,7 +54,10 @@ export async function readBudget(now: Date = new Date()): Promise<AiBudget> {
 }
 
 /** The figures of T13-R01 from the month's row. */
-function currentMonth(row: MonthBudgetRow): CurrentMonthBudget {
+function currentMonth(
+  remaining: string,
+  row: MonthBudgetRow,
+): CurrentMonthBudget {
   return {
     month: row.month,
     limit: row.limit,
@@ -61,18 +70,6 @@ function currentMonth(row: MonthBudgetRow): CurrentMonthBudget {
     carriedSettled: row.carriedSettled,
     carriedHeld: row.carriedHeld,
     charge: row.charge,
-    remaining: remaining(row.limit, row.charge),
+    remaining,
   }
-}
-
-/** The limit less the charge, zero when the charge is higher. */
-function remaining(limit: string, charge: string): string {
-  const left = millionths(limit) - millionths(charge)
-  return money(left > 0n ? left : 0n)
-}
-
-/** An amount of six decimals, up to ten digits before the point, in millionths. */
-function millionths(amount: string): bigint {
-  const [whole = '0', fraction = ''] = amount.split('.')
-  return BigInt(whole) * million + BigInt(fraction.padEnd(6, '0'))
 }

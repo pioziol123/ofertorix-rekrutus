@@ -38,7 +38,11 @@ export type CurrentMonthBudget = {
   carriedHeld: string
   /** The month's charge. */
   charge: string
-  /** The limit less the charge, zero when the charge is higher. */
+  /**
+   * The room an operation's start checks (solution design T3, "Contract:
+   * room in the budget"): the limit less the charge, zero when the charge
+   * is higher.
+   */
   remaining: string
 }
 
@@ -69,6 +73,7 @@ const maxWholeDigits = 10
 
 /** The messages of a refused amount (T13-R04). */
 export const limitAmountMessages = {
+  // ASSUMPTION(oferty-pracy-sq2.14/ASM-2): the example reads a comma.
   notNumber: 'Podaj kwotę w złotych, na przykład 150 albo 150,50.',
   negative: 'Limit nie może być mniejszy od zera.',
   decimals: 'Kwota może mieć najwyżej dwa miejsca po przecinku.',
