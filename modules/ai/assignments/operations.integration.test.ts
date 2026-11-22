@@ -1186,7 +1186,7 @@ integration('starting and ending operations on a real database', () => {
         )
       ).rows[0].l as string
 
-    it('T13-AC01: for a month with a settled, a running and an unknown-cost operation and a carried amount, returns the figures of T13-R01, and what remains is the limit less the charge or zero', async () => {
+    it('T13-AC01, sq2.14 ASM-1: for a month with a settled, a running and an unknown-cost operation and a carried amount, returns the figures of T13-R01 with the carried settled part in the amount spent and the carried held part on its own, and what remains is the limit less the charge or zero', async () => {
       await started(october)
       const settled = await started(november)
       await endOperation(
