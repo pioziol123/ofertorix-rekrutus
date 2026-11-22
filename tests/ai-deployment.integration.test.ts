@@ -587,7 +587,7 @@ integration('the deployment of AI assignments on earlier records', () => {
     ])
   })
 
-  it('T10-AC02, T10-AC06: shows the unfinished assessment as failed, and an offer assessed before still shows its assessment, with no cost, no entry of earlier work without an assessment and no exchange view', async () => {
+  it('T10-AC02, T10-AC06, sq2.11 ASM-1: shows the unfinished assessment as failed, and an offer assessed before still shows its assessment, with no cost, no entry of earlier work without an assessment and no exchange view', async () => {
     const assessing = await readMatching(ads.assessing)
     expect(assessing.history).toMatchObject([
       { id: requests.unfinished, state: 'failed', assignment: false },
@@ -620,7 +620,7 @@ integration('the deployment of AI assignments on earlier records', () => {
     ])
   })
 
-  it('T10-AC02, T10-AC07: shows the unfinished research as failed, and a company with a report saved before still shows it, with no cost and no entry of earlier research without a report', async () => {
+  it('T10-AC02, T10-AC07, sq2.11 ASM-1: shows the unfinished research as failed, and a company with a report saved before still shows it, with no cost and no entry of earlier research without a report', async () => {
     const researching = await readCompanyResearch(companies.researching)
     expect(researching.operations).toMatchObject([
       { id: research.unfinished, state: 'failed' },

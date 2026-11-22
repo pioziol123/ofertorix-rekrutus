@@ -241,6 +241,7 @@ export async function ratingHistory(adId: string): Promise<RatingHistoryRow[]> {
  * given ad, in one query; `failedMessage` is the message of a failed
  * assignment (see `shownRequest`). An ad without either comes back with
  * nulls.
+ * ASSUMPTION(oferty-pracy-sq2.11/ASM-1)
  */
 export async function latestOfAds(
   ids: readonly string[],

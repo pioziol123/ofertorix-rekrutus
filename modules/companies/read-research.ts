@@ -20,6 +20,8 @@ import {
  * Companies stored itself (T10-R08).
  * ASSUMPTION(oferty-pracy-sq2.10/ASM-2): the view shows no amount at all,
  * the most one research reserves included.
+ * ASSUMPTION(oferty-pracy-sq2.11/ASM-1): which research of before the
+ * deployment the history shows.
  */
 export async function readCompanyResearch(companyId: string) {
   if (

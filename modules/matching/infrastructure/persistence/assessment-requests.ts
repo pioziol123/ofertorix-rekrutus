@@ -188,6 +188,7 @@ export type AssessmentHistoryRow = {
 /**
  * Every request of an ad its history shows, newest first; `failedMessage`
  * is the message of a failed assignment (see `shownRequest`).
+ * ASSUMPTION(oferty-pracy-sq2.11/ASM-1)
  */
 export async function requestHistoryOfAd(
   adId: string,

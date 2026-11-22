@@ -9,8 +9,8 @@
  *
  * The Profile prepares its proposals (task oferty-pracy-sq2.8), Matching
  * assesses offers (task oferty-pracy-sq2.9) and Companies research
- * companies (task oferty-pracy-sq2.10) through assignments, each with the
- * executor and parameters its old settings in `client-settings.ts` give.
+ * companies (task oferty-pracy-sq2.10) through assignments, all on the paid
+ * executor.
  */
 export const assignmentSettings: Readonly<Record<string, unknown>> = {
   profile: {
