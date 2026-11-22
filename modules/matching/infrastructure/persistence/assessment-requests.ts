@@ -25,6 +25,11 @@ import type {
  * ASSUMPTION(oferty-pracy-sq2.11/ASM-1): that message, which nothing else
  * writes, tells a request the deployment ended from one that ended before
  * it.
+ * The fact that the deployment ended a matter has two owners, the constant
+ * and its copies in the stored rows (architecture rules, costs of design
+ * decisions, item 4): a later change of the wording must keep the stored
+ * text, or rewrite the stored rows in the same change. Accepted because
+ * the modules' tables get no column for it (solution design, T10).
  */
 export const shownRequest = (r: string, message: string) =>
   `(${r}.assignment_id IS NOT NULL OR ${r}.state='excluded' OR ${r}.result IS NOT NULL OR ${r}.error=${message})`
