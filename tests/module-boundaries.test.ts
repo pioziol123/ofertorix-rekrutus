@@ -155,6 +155,7 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
         'check-spec-sync.ts',
         'format-changes.ts',
         'gate.sh',
+        'git-dashboard.mjs',
         'setup-env.mjs',
         'spec-altitude.ts',
         'spec-sync.ts',
