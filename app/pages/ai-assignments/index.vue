@@ -31,6 +31,9 @@ const placed = (at: string) =>
             Zlecenia wymagające uwagi na górze, pozostałe od najnowszych.
           </p>
         </div>
+        <UButton to="/ai-assignments/budget" variant="outline"
+          >Budżet AI</UButton
+        >
       </div>
       <p v-if="error" role="alert" class="notice">
         Nie udało się wczytać zleceń AI. Spróbuj odświeżyć stronę.

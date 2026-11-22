@@ -277,4 +277,84 @@ integration('AI assignments panel over HTTP (T11-AC03)', () => {
       await (await fetch(`${base}/api/ai-assignments?cursor=nonsense`)).json(),
     ).toEqual({ items: [], nextCursor: null })
   })
+
+  it('shows the budget view and both forms; a limit set there changes the month, a refused amount shows its message, and the profile page’s card shows the same limit and amounts that add up to the charge (T13-AC05)', async () => {
+    await pool.query('TRUNCATE ai_budget_months CASCADE')
+    const month = (
+      await pool.query(
+        `SELECT to_char(now() AT TIME ZONE 'Europe/Warsaw','YYYY-MM') AS m`,
+      )
+    ).rows[0].m as string
+    await pool.query(
+      `INSERT INTO ai_budget_months(month,limit_pln,carried_settled,carried_held)
+       VALUES($1,10,1.5,0.25),('2020-01',30,0,0)`,
+      [month],
+    )
+    const running = await assignment('in_progress', 'Trwa')
+    await pool.query(
+      `INSERT INTO ai_operations(id,assignment_id,ordinal,origin,state,
+        waits_for,pending_since,potential_cost,budget_month,started_at)
+       VALUES($1,$2,1,'automatic','running',NULL,now(),0.4,$3,now())`,
+      [randomUUID(), running, month],
+    )
+    const budget = await (await fetch(`${base}/api/ai-budget`)).json()
+    expect(budget.current).toMatchObject({
+      month,
+      limit: '10.000000',
+      spent: '1.500000',
+      running: '0.400000',
+      carriedHeld: '0.250000',
+      charge: '2.150000',
+      remaining: '7.850000',
+    })
+    expect(budget.earlier).toEqual([
+      { month: '2020-01', limit: '30.000000', charge: '0.000000' },
+    ])
+    const html = await page('/ai-assignments/budget')
+    for (const text of [
+      'Budżet AI',
+      '10,00 zł',
+      '1,50 zł',
+      '0,40 zł',
+      'Przeniesione sprzed wdrożenia',
+      '2,15 zł',
+      '7,85 zł',
+      'Wcześniejsze miesiące',
+      '30,00 zł',
+    ])
+      expect(html).toContain(text)
+    expect(html).toContain('data-testid="ai-budget-current-form"')
+    expect(html).toContain('data-testid="ai-budget-default-form"')
+    expect(await page('/ai-assignments')).toContain(
+      'href="/ai-assignments/budget"',
+    )
+
+    const put = (limit: string, amount: unknown) =>
+      fetch(`${base}/api/ai-budget/${limit}-limit`, {
+        method: 'PUT',
+        headers: { origin: base, 'content-type': 'application/json' },
+        body: JSON.stringify({ amount }),
+      })
+    const refused = await put('current', '12,345')
+    expect(refused.status).toBe(422)
+    expect((await refused.json()).data).toEqual({
+      message: 'Kwota może mieć najwyżej dwa miejsca po przecinku.',
+    })
+    expect((await put('current', 12)).status).toBe(422)
+    expect((await put('current', '25,50')).status).toBe(204)
+    expect((await put('default', '80')).status).toBe(204)
+    const after = await (await fetch(`${base}/api/ai-budget`)).json()
+    expect(after.current.limit).toBe('25.500000')
+    expect(after.defaultLimit).toBe('80.000000')
+
+    const profile = await (await fetch(`${base}/api/profile`)).json()
+    const card = profile.budget.find(
+      (row: { month: string }) => row.month === month,
+    )
+    expect(card.limit_pln).toBe(after.current.limit)
+    expect((Number(card.spent) * 1e6 + Number(card.reserved) * 1e6) / 1e6).toBe(
+      Number(after.current.charge),
+    )
+    expect(card.spent).toBe(after.current.spent)
+  })
 })
