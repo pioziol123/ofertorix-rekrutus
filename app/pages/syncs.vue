@@ -5,7 +5,7 @@ import {
   dialogSources,
   dialogTitles,
   initiallyChecked,
-  listReadFor,
+  panelScopeText,
   requestFailure,
   requestSummary,
   rerunOffered,
@@ -49,6 +49,7 @@ import {
 } from '../../modules/sources/view'
 import {
   escapeCloses,
+  navigationStayed,
   pageJumpKey,
   pageJumpNumbers,
   tooltipPosition,
@@ -296,9 +297,7 @@ async function requestSyncs(sources: string[]): Promise<PanelSyncResult> {
 }
 /** Shows the query and the sync, reading the list once (T3-R07, R08). */
 async function showAfterRequest(query: SyncHistoryQuery, sync: string | null) {
-  const read = listReadFor(route.query, query, sync)
-  await go(query, sync)
-  if (read === 'refresh') await refreshList()
+  if (navigationStayed(await go(query, sync))) await refreshList()
 }
 async function confirmDialog() {
   if (!dialog.value || !canConfirm(dialog.value.checked) || !current.value)
@@ -733,7 +732,7 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
             >
           </div>
           <p class="muted">
-            Każde źródło pobiera ten sam zakres: PHP · senior.
+            Każde źródło pobiera ten sam zakres: {{ panelScopeText }}.
           </p>
           <div class="sync-dialog-foot">
             <UButton variant="outline" @click="dialog = null">Anuluj</UButton>

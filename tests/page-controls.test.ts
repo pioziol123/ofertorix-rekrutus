@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import {
+  afterRequestQuery,
+  historyAddress,
+  type SyncHistoryQuery,
+} from '../modules/sources/view.ts'
 import {
   escapeCloses,
   pageJumpKey,
   pageJumpNumbers,
   tooltipPosition,
+  navigationStayed,
 } from '../app/utils/page-controls.ts'
 
 /** The page controls of the page "Synchronizacje" (T1-R07, R09, R12). */
@@ -102,4 +109,55 @@ describe('Escape on the page (T1-R12, T1-AC10)', () => {
       escapeCloses({ ...open, filterList: true, pageList: true, dialog: true }),
     ).toBe('dialog')
   })
+})
+
+describe('the list read after a request (T3-R07, R08, T3-AC07)', () => {
+  const start: SyncHistoryQuery = {
+    sources: ['indeed'],
+    states: [],
+    trigger: null,
+    period: 'all',
+    page: 2,
+    size: 20,
+  }
+  const target = (sync: string | null) => ({
+    path: '/syncs',
+    query: historyAddress(afterRequestQuery(start), sync),
+  })
+
+  it.each([
+    ['another list', '/syncs?source=indeed&period=all&page=2', null],
+    ['that list', '/syncs?state=queued,running', null],
+    ['that list with repeated keys', '/syncs?state=queued&state=running', null],
+    [
+      'that list with the open sync first',
+      '/syncs?sync=a&state=queued,running',
+      'a',
+    ],
+    [
+      'that list with the same open sync',
+      '/syncs?state=queued,running&sync=a',
+      'a',
+    ],
+    [
+      'that list with another sync to open',
+      '/syncs?state=queued,running&sync=a',
+      'b',
+    ],
+  ])(
+    'reads the list once from %s: through the changed address or by its own read',
+    async (_, from, sync) => {
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [{ path: '/syncs', component: {} }],
+      })
+      await router.push(from)
+      const before = router.currentRoute.value
+      const result = await router.push(target(sync))
+      // The page reads the list when its route changes, and itself when
+      // the navigation stayed: exactly one of them happens.
+      const changed = router.currentRoute.value !== before
+      expect(Number(changed) + Number(navigationStayed(result))).toBe(1)
+    },
+  )
 })

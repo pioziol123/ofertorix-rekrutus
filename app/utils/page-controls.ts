@@ -5,6 +5,8 @@
  * browser. Used by the page "Synchronizacje" (T1-R07, R09, R12).
  */
 
+import { isNavigationFailure, NavigationFailureType } from 'vue-router'
+
 type Box = { left: number; top: number; right: number; bottom: number }
 
 /**
@@ -88,3 +90,13 @@ export function escapeCloses(open: {
   if (open.pageList) return 'pageList'
   return open.details ? 'details' : null
 }
+
+/**
+ * Whether a navigation of the router stayed at the address the page shows.
+ * The page reads its list whenever its address changes, so after such a
+ * navigation it reads the list itself, and otherwise leaves the read to the
+ * navigation: either way it reads it once (T3-R07, R08). The router decides
+ * what the same address is, key order and repeated keys included.
+ */
+export const navigationStayed = (result: unknown): boolean =>
+  isNavigationFailure(result, NavigationFailureType.duplicated)

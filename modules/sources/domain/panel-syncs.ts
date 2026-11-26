@@ -63,3 +63,6 @@ export function countOutcomes(
     notRequested: count('not-requested'),
   }
 }
+
+/** The panel's scope as the page shows it: "PHP · senior" (T3-R03). */
+export const panelScopeText = `${panelScope.technology} · ${panelScope.seniority}`

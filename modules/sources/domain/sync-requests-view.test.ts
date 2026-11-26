@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { countOutcomes, panelScope, panelScopeRequest } from './panel-syncs.ts'
+import {
+  countOutcomes,
+  panelScope,
+  panelScopeRequest,
+  panelScopeText,
+} from './panel-syncs.ts'
 import {
   defaultFilters,
-  historyAddress,
   type CatalogSource,
   type SyncHistoryQuery,
 } from './sync-history.ts'
@@ -12,7 +16,6 @@ import {
   canConfirm,
   dialogSources,
   initiallyChecked,
-  listReadFor,
   requestFailure,
   requestSummary,
   rerunOffered,
@@ -80,6 +83,8 @@ describe('the dialog of the sources to sync (T3-R01, R02)', () => {
 describe('the fixed panel scope (T3-R03)', () => {
   it('is PHP · senior, given to a Polish portal as its scope input and to no other source', () => {
     expect(panelScope).toEqual({ technology: 'PHP', seniority: 'senior' })
+    // The dialog shows the same scope the requests search.
+    expect(panelScopeText).toBe('PHP · senior')
     expect(panelScopeRequest('bulldogjob')).toEqual({
       source: 'bulldogjob',
       technology: 'PHP',
@@ -165,25 +170,6 @@ describe('after confirming (T3-R06, R07)', () => {
       page: 1,
       size: 50,
     })
-  })
-
-  it('reads the list once: through the navigation when the address changes, by a read of its own when it does not (T3-AC07)', () => {
-    const next = afterRequestQuery(query())
-    // From the default address the navigation reads the list.
-    expect(listReadFor({}, next, null)).toBe('navigation')
-    // Already showing that list: the address stays, so the page reads it.
-    expect(listReadFor({ state: 'queued,running' }, next, null)).toBe('refresh')
-    expect(
-      listReadFor({ state: ['queued', 'running'], sync: 'a' }, next, 'a'),
-    ).toBe('refresh')
-    // Opening another sync changes the address, and so reads the list.
-    expect(listReadFor({ state: 'queued,running' }, next, 'b')).toBe(
-      'navigation',
-    )
-    expect(
-      listReadFor({ state: 'queued,running', page: '3' }, next, null),
-    ).toBe('navigation')
-    expect(historyAddress(next)).toEqual({ state: 'queued,running' })
   })
 })
 

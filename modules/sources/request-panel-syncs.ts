@@ -34,7 +34,6 @@ export async function requestPanelSyncs(
   options: {
     /** Tests replace the application's connectors. */
     connectors?: ConnectorProvider
-    now?: Date
   } = {},
 ): Promise<PanelSyncResult> {
   const connectors = options.connectors ?? sourceConnectors
@@ -45,14 +44,13 @@ export async function requestPanelSyncs(
     )
   const outcomes: PanelSyncOutcome[] = []
   for (const source of unique)
-    outcomes.push(await requestOne(source, connectors, options.now))
+    outcomes.push(await requestOne(source, connectors))
   return { outcomes, counts: countOutcomes(outcomes) }
 }
 
 async function requestOne(
   source: string,
   connectors: ConnectorProvider,
-  now: Date | undefined,
 ): Promise<PanelSyncOutcome> {
   if (!connectors.names().includes(source))
     return { source, outcome: 'skipped' }
@@ -63,7 +61,7 @@ async function requestOne(
         scopeRequest: panelScopeRequest(source),
         trigger: 'manual',
       },
-      { connectors, now },
+      { connectors },
     )
     return run.existing
       ? { source, outcome: 'already-running', runId: run.id }

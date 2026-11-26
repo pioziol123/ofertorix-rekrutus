@@ -6,7 +6,6 @@ import {
 } from './panel-syncs.ts'
 import {
   clearFilters,
-  historyAddress,
   type CatalogSource,
   type SyncDetails,
   type SyncHistoryQuery,
@@ -113,30 +112,6 @@ export const afterRequestQuery = (
   ...clearFilters(query),
   states: ['queued', 'running'],
 })
-
-/**
- * How the page reads the list for the next query and open sync, so it
- * reads it once (T3-R07, R08): the page reads the list whenever its
- * address changes, the open sync included, so a changed address reads it
- * through the navigation and an unchanged one needs a read of its own.
- * `address` is the page's address as the route gives it.
- */
-export function listReadFor(
-  address: Record<string, unknown>,
-  next: SyncHistoryQuery,
-  sync: string | null,
-): 'navigation' | 'refresh' {
-  const shown = (value: unknown) =>
-    (Array.isArray(value) ? value : [value]).map(String).join(',')
-  const wanted = Object.entries(historyAddress(next, sync))
-  const same =
-    Object.keys(address).length === wanted.length &&
-    wanted.every(
-      ([key, value]) =>
-        Object.hasOwn(address, key) && shown(address[key]) === value,
-    )
-  return same ? 'refresh' : 'navigation'
-}
 
 /**
  * Whether the details offer "Uruchom ponownie" (T3-R08): a finished sync
