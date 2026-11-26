@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import {
   afterRequestQuery,
+  healthFailureText,
   historyAddress,
   type SyncHistoryQuery,
 } from '../modules/sources/view.ts'
@@ -183,11 +184,23 @@ describe('the read behind the list (T4-R07, T4-AC07)', () => {
     expect(first.health.unfinished).toBe(1)
   })
 
-  // ASSUMPTION(oferty-pracy-nq3.4/ASM-2): a failed read of the strip fails the read of the list, and the page shows its notice.
-  it('fails the read of the list when the strip cannot be read (ASM-2)', async () => {
+  // ASSUMPTION(oferty-pracy-nq3.4/ASM-2): a strip that cannot be read leaves the history working and shows a notice in its place.
+  it('keeps the history when only the strip cannot be read, and gives no strip (ASM-2)', async () => {
+    const history = { items: [{ id: 'run-1' }] }
     const fetch: PageFetch = async (path) => {
       if (path.endsWith('/health')) throw new Error('500')
-      return { items: [] }
+      return history
+    }
+    expect(await readSyncPage(fetch, {})).toEqual({ history, health: null })
+    expect(healthFailureText).toBe(
+      'Nie udało się wczytać podsumowania źródeł. Spróbuj odświeżyć stronę.',
+    )
+  })
+
+  it('fails the read when the history cannot be read', async () => {
+    const fetch: PageFetch = async (path) => {
+      if (path.endsWith('/syncs')) throw new Error('500')
+      return { unfinished: 0, latestProblem: 0, newIn24h: 0, warnings: [] }
     }
     await expect(readSyncPage(fetch, {})).rejects.toThrow('500')
   })

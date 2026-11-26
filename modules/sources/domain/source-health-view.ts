@@ -29,13 +29,16 @@ export function stripCounts(
   ]
 }
 
+/** The warning's heading: one list of the sources of T4-R04 and R05. */
+export const warningHeading = 'Bez pełnej synchronizacji od 3 dni'
+
 /**
- * The warning's heading: the list of T4-R04, which also holds the sources
- * of T4-R05.
- * ASSUMPTION(oferty-pracy-nq3.4/ASM-1): one list under one heading, each source with its reasons in brackets.
+ * What the strip's place shows when the strip cannot be read, while the
+ * history can.
+ * ASSUMPTION(oferty-pracy-nq3.4/ASM-2): a strip that cannot be read leaves the history working and shows a notice in its place.
  */
-export const warningHeading =
-  'Bez pełnej synchronizacji od 3 dni lub 3 nieudane z rzędu'
+export const healthFailureText =
+  'Nie udało się wczytać podsumowania źródeł. Spróbuj odświeżyć stronę.'
 
 /** The names shown folded; the rest is behind "i N innych" (T4-R06). */
 export const foldedNames = 3
@@ -43,7 +46,7 @@ export const foldedNames = 3
 /**
  * A source's reasons, shown after its name (T4-R04, R05): the day of its
  * latest complete sync or "nigdy", and "3 nieudane z rzędu".
- * ASSUMPTION(oferty-pracy-nq3.4/ASM-1): one list under one heading, each source with its reasons in brackets.
+ * ASSUMPTION(oferty-pracy-nq3.4/ASM-1): each source shows its reasons in brackets after its name.
  */
 export function warningReasons(warning: HealthWarning): string {
   return warning.reasons

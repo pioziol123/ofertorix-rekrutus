@@ -574,12 +574,11 @@ integration('page "Synchronizacje" over HTTP (T1)', () => {
       }
     })
 
+    // ASSUMPTION(oferty-pracy-nq3.4/ASM-1): each source shows its reasons in brackets after its name.
     it('lists an enabled source without a complete sync by name with "nigdy", never the disabled one (T4-AC04)', async () => {
       await run('failed')
       const html = await strip('/syncs')
-      expect(text(html)).toContain(
-        'Bez pełnej synchronizacji od 3 dni lub 3 nieudane z rzędu:',
-      )
+      expect(text(html)).toContain('Bez pełnej synchronizacji od 3 dni:')
       // Enabled sources without a complete sync, alphabetically: three
       // names, each a button, and the rest behind "i N innych".
       const names = [

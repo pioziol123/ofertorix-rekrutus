@@ -62,6 +62,7 @@ export {
   type DialogSource,
 } from './domain/sync-requests-view.ts'
 export {
+  healthFailureText,
   shownWarnings,
   stripCounts,
   warningHeading,

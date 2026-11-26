@@ -48,6 +48,7 @@ import {
   type UnavailableContext,
   shownWarnings,
   stripCounts,
+  healthFailureText,
   warningHeading,
   warningQuery,
   warningReasons,
@@ -94,6 +95,8 @@ const data = computed<SyncHistoryPage | null>(
   () => pageData.value?.history ?? null,
 )
 const health = computed(() => pageData.value?.health ?? null)
+// ASSUMPTION(oferty-pracy-nq3.4/ASM-2): a strip that cannot be read leaves the history working and shows a notice in its place.
+const healthFailed = computed(() => !!pageData.value && !pageData.value.health)
 const selected = computed(() =>
   typeof route.query.sync === 'string' ? route.query.sync : '',
 )
@@ -398,7 +401,7 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
           :data-count="count.key"
           ><b>{{ count.value }}</b> {{ count.label }}</span
         >
-        <!-- ASSUMPTION(oferty-pracy-nq3.4/ASM-1): one list under one heading, each source with its reasons in brackets. -->
+        <!-- ASSUMPTION(oferty-pracy-nq3.4/ASM-1): each source shows its reasons in brackets after its name. -->
         <p v-if="warning" class="sync-warning" data-testid="sync-warning">
           <span class="muted">{{ warningHeading }}:</span>
           <template v-for="(item, index) in warning.shown" :key="item.source">
@@ -426,6 +429,16 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
           </button>
         </p>
       </section>
+
+      <!-- ASSUMPTION(oferty-pracy-nq3.4/ASM-2): a strip that cannot be read leaves the history working and shows a notice in its place. -->
+      <p
+        v-if="healthFailed"
+        role="alert"
+        class="notice"
+        data-testid="sync-strip-error"
+      >
+        {{ healthFailureText }}
+      </p>
 
       <div v-if="outcome" class="sync-outcome" data-testid="sync-outcome">
         <p role="status">{{ outcome.summary }}</p>

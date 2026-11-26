@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { HealthWarning } from './source-health.ts'
+import { sourceWarnings, type HealthWarning } from './source-health.ts'
 import {
   shownWarnings,
   stripCounts,
@@ -36,11 +36,9 @@ describe('source health on the page (T4)', () => {
     ])
   })
 
-  // ASSUMPTION(oferty-pracy-nq3.4/ASM-1): one list under one heading, each source with its reasons in brackets.
+  // ASSUMPTION(oferty-pracy-nq3.4/ASM-1): each source shows its reasons in brackets after its name.
   it('names each reason: "nigdy" without a complete sync, its day otherwise, and "3 nieudane z rzędu", both together (T4-R04, R05; ASM-1)', () => {
-    expect(warningHeading).toBe(
-      'Bez pełnej synchronizacji od 3 dni lub 3 nieudane z rzędu',
-    )
+    expect(warningHeading).toBe('Bez pełnej synchronizacji od 3 dni')
     expect(warningReasons(warning('Bayt'))).toBe('ostatnia pełna: nigdy')
     expect(
       warningReasons(
@@ -55,24 +53,36 @@ describe('source health on the page (T4)', () => {
     ).toBe('ostatnia pełna: nigdy · 3 nieudane z rzędu')
   })
 
-  it('shows three names and "i 2 innych" of five, every name once expanded, and no warning with none (T4-AC06)', () => {
-    const five = ['Alfa', 'Beta', 'Gamma', 'Delta', 'Epsilon'].map((name) =>
-      warning(name),
+  it('shows the first three names alphabetically and "i 2 innych" of five, every name once expanded, and no warning with none (T4-AC06)', () => {
+    const now = new Date('2026-11-26T12:00:00Z')
+    // Five sources to list, read in another order than their names.
+    const { warnings } = sourceWarnings(
+      ['Gamma', 'Epsilon', 'Alfa', 'Delta', 'Beta'].map((name) => ({
+        source: name.toLowerCase(),
+        name,
+        latestCompleteAt: null,
+        latestFinished: [],
+      })),
+      now,
     )
-    const folded = shownWarnings(five, false)!
+    const folded = shownWarnings(warnings, false)!
     expect(folded.shown.map((item) => item.name)).toEqual([
       'Alfa',
       'Beta',
-      'Gamma',
+      'Delta',
     ])
     expect(folded.more).toBe('i 2 innych')
-    const expanded = shownWarnings(five, true)!
-    expect(expanded.shown).toHaveLength(5)
+    const expanded = shownWarnings(warnings, true)!
+    expect(expanded.shown.map((item) => item.name)).toEqual([
+      'Alfa',
+      'Beta',
+      'Delta',
+      'Epsilon',
+      'Gamma',
+    ])
     expect(expanded.more).toBeNull()
-    expect(shownWarnings(five.slice(0, 3), false)).toEqual({
-      shown: five.slice(0, 3),
-      more: null,
-    })
+    const three = [warning('Alfa'), warning('Beta'), warning('Delta')]
+    expect(shownWarnings(three, false)).toEqual({ shown: three, more: null })
     expect(shownWarnings([], false)).toBeNull()
   })
 
