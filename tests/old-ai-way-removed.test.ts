@@ -87,6 +87,8 @@ describe('the texts of the old way are gone from the application (T10-AC08)', ()
 
   // The offer views' "W kolejce" is gone (T8-R04); the text stays only as
   // the sync state of the page "Synchronizacje" (epic nq3, T1-R07).
+  // ASSUMPTION(oferty-pracy-nq3.1/ASM-1): T10-AC08 checks the texts T8-R04
+  // removes from the offer views; the sync state label is not one of them.
   it('keeps "W kolejce" only as the sync state label of the Sources module', () => {
     expect(containing('W kolejce')).toEqual([
       'modules/sources/domain/sync-history-view.ts',

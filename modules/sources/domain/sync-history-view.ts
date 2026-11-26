@@ -19,6 +19,8 @@ import type {
  */
 
 export const stateLabels: Record<SyncState, string> = {
+  // ASSUMPTION(oferty-pracy-nq3.1/ASM-1): "W kolejce" is gone only from the
+  // offer views (sq2 T8-R04, T10-AC08); the sync state label keeps it (T1-R07).
   queued: 'W kolejce',
   running: 'W toku',
   complete: 'Pełna',
