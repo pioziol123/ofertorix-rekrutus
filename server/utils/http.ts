@@ -6,7 +6,7 @@ import {
   getRouterParam,
   setHeader,
 } from 'h3'
-import type { H3Event } from 'h3'
+import type { H3Error, H3Event } from 'h3'
 import { z, ZodError } from 'zod'
 
 /**
@@ -84,7 +84,7 @@ export function apiHandler<T>(run: (event: H3Event) => Promise<T>) {
       // framework's own error, so its status, message and data reach the
       // response; one of another kind would be answered as unhandled.
       if (error && typeof error === 'object' && 'statusCode' in error)
-        throw createError(error)
+        throw createError(error as Partial<H3Error>)
       if (error instanceof ZodError)
         throw createError({
           statusCode: 422,
