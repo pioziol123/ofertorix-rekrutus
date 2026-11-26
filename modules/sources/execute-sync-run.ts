@@ -201,8 +201,10 @@ async function requireRunning(runId: string): Promise<SyncRun> {
 
 /**
  * Finishes the run while it is still running, with the status A5-R03
- * gives. A complete run marks unavailability in the same transaction, so
- * both commit together or not at all.
+ * gives. A complete run marks unavailability in the same transaction and
+ * stores how many ads it marked with its status (T2-R06), so the marking,
+ * the count and the status commit together or not at all. Every other run
+ * keeps no count.
  */
 async function finish(
   run: SyncRun,
@@ -222,20 +224,23 @@ async function finish(
       saveFailed: outcome.saveFailed ?? false,
       uniqueAds: current.uniqueAds,
     })
-    if (status === 'complete' && connector)
-      await markAbsentAdsUnavailable({
-        runId: run.id,
-        scopeId: run.scopeId,
-        source: run.source,
-        infersUnavailabilityFromAbsence:
-          connector.infersUnavailabilityFromAbsence,
-      })
+    const markedUnavailable =
+      status === 'complete' && connector
+        ? await markAbsentAdsUnavailable({
+            runId: run.id,
+            scopeId: run.scopeId,
+            source: run.source,
+            infersUnavailabilityFromAbsence:
+              connector.infersUnavailabilityFromAbsence,
+          })
+        : null
     await finishRun(
       run.id,
       {
         status,
         error: status === 'complete' ? null : outcome.error,
         diagnostics: outcome.diagnostics,
+        markedUnavailable,
       },
       ['running'],
     )

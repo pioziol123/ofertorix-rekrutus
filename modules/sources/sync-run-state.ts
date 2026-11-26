@@ -130,7 +130,9 @@ export function holdRun(runId: string): Promise<SyncRun | null> {
 /**
  * Finishes a run with the status the caller chose, only while it is in one
  * of the `from` states, by default queued or running. Returns false,
- * without changes, otherwise.
+ * without changes, otherwise. `markedUnavailable` is the count of a
+ * complete run's marking step (T2), stored with the status; null by
+ * default.
  */
 export function finishRun(
   runId: string,
@@ -138,6 +140,7 @@ export function finishRun(
     status: FinishedRunStatus
     error: string | null
     diagnostics?: unknown
+    markedUnavailable?: number | null
   },
   from: readonly SyncRunStatus[] = ['queued', 'running'],
 ): Promise<boolean> {
@@ -147,6 +150,7 @@ export function finishRun(
       status: outcome.status,
       error: outcome.error,
       diagnostics: outcome.diagnostics ?? null,
+      markedUnavailable: outcome.markedUnavailable ?? null,
     },
     from,
   )

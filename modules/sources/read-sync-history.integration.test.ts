@@ -348,6 +348,7 @@ integration('sync history reads in an isolated PostgreSQL schema', () => {
         [
           'changedAds',
           'id',
+          'markedUnavailable',
           'newAds',
           'requestedAt',
           'seen',
@@ -589,6 +590,64 @@ integration('sync history reads in an isolated PostgreSQL schema', () => {
     })
   })
 
+  describe('ads marked unavailable (T2-AC01, AC04)', () => {
+    const now = new Date('2026-11-26T10:00:00Z')
+    const count = (id: string, marked: number) =>
+      pool.query(
+        'UPDATE source_sync_runs SET marked_unavailable=$2 WHERE id=$1',
+        [id, marked],
+      )
+
+    it('gives no count and no date while no sync has recorded one', async () => {
+      const before = await stored({
+        source: 'solid-jobs',
+        createdAt: '2026-11-25T08:00:00Z',
+      })
+      const history = await readSyncHistory({ period: 'all' }, now)
+      expect(history.unavailableCountedSince).toBeNull()
+      expect(history.items).toEqual([
+        expect.objectContaining({ id: before, markedUnavailable: null }),
+      ])
+    })
+
+    it('gives each sync its recorded count and the finish of the earliest sync that recorded one, whatever the filters', async () => {
+      const before = await stored({
+        source: 'solid-jobs',
+        createdAt: '2026-11-24T08:00:00Z',
+      })
+      const first = await stored({
+        source: 'solid-jobs',
+        createdAt: '2026-11-24T23:00:00Z',
+        finishedAt: '2026-11-24T23:30:00Z',
+      })
+      const later = await stored({
+        source: 'solid-jobs',
+        createdAt: '2026-11-26T08:00:00Z',
+      })
+      await count(first, 2)
+      await count(later, 0)
+      const history = await readSyncHistory({ period: 'today' }, now)
+      expect(history.unavailableCountedSince).toBe('2026-11-24T23:30:00.000Z')
+      expect(history.items).toEqual([
+        expect.objectContaining({ id: later, markedUnavailable: 0 }),
+      ])
+      const all = await readSyncHistory({ period: 'all' }, now)
+      expect(
+        all.items.map((item) => [item.id, item.markedUnavailable]),
+      ).toEqual([
+        [later, 0],
+        [first, 2],
+        [before, null],
+      ])
+      expect(await readSyncDetails(first)).toMatchObject({
+        markedUnavailable: 2,
+      })
+      expect(
+        all.sources.find((source) => source.id === 'solid-jobs'),
+      ).toMatchObject({ marksUnavailable: true })
+    })
+  })
+
   describe('the details read (T1-AC08, AC10)', () => {
     it('gives a sync’s course, its stored error and its diagnostics as stored', async () => {
       const id = await stored({
@@ -614,6 +673,7 @@ integration('sync history reads in an isolated PostgreSQL schema', () => {
         seen: 3,
         newAds: 0,
         changedAds: 0,
+        markedUnavailable: null,
         pages: 2,
         error: 'Portal rejected <b>requests</b>',
         diagnostics: { http: 429, pages: [1, 2] },

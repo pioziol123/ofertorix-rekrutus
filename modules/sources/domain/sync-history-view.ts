@@ -1,4 +1,5 @@
 import {
+  formatDate,
   formatDateTime,
   formatDay,
   formatTime,
@@ -144,17 +145,72 @@ export function groupByDay<T extends Pick<SyncHistoryItem, 'requestedAt'>>(
 export const rowTime = (item: Pick<SyncHistoryItem, 'requestedAt'>): string =>
   formatTime(new Date(item.requestedAt))
 
-/** A row's result (T1-R05). */
+/** Why a sync of a source that marks unavailable ads shows no count. */
+export const incompleteUnavailableTooltip =
+  'Tylko pełna synchronizacja oznacza ogłoszenia jako niedostępne'
+
+/**
+ * The tooltip of a complete sync finished before counts were recorded
+ * (T2-R04): the Polish date of the first recorded count, or the text used
+ * while none is recorded.
+ */
+export const countedSinceTooltip = (since: string | null): string =>
+  since
+    ? `Liczone od ${formatDate(new Date(since))}`
+    : 'Liczone od wdrożenia tej funkcji'
+
+/** What the page knows besides the sync to show its unavailable count. */
+export type UnavailableContext = {
+  /** Whether the sync's source marks unavailable ads (T2-R07). */
+  marksUnavailable: boolean
+  /** The history read's moment since which counts are recorded. */
+  countedSince: string | null
+}
+
+/** What a sync shows of the ads it marked unavailable (T2-R02–R04, R07). */
+export type UnavailableCount =
+  | { kind: 'not-applicable' }
+  | { kind: 'unfinished' }
+  | { kind: 'counted'; count: number }
+  | { kind: 'not-counted'; tip: string }
+
+export function unavailableCount(
+  item: Pick<SyncHistoryItem, 'status' | 'markedUnavailable'>,
+  context: UnavailableContext,
+): UnavailableCount {
+  if (!context.marksUnavailable) return { kind: 'not-applicable' }
+  if (item.status === 'queued' || item.status === 'running')
+    return { kind: 'unfinished' }
+  if (item.status !== 'complete')
+    return { kind: 'not-counted', tip: incompleteUnavailableTooltip }
+  if (item.markedUnavailable === null)
+    return {
+      kind: 'not-counted',
+      tip: countedSinceTooltip(context.countedSince),
+    }
+  return { kind: 'counted', count: item.markedUnavailable }
+}
+
+/** One number of a finished sync's row; `tip` is its tooltip. */
+export type RowPart = {
+  key: 'new' | 'changed' | 'unavailable'
+  text: string
+  zero: boolean
+  tip?: string
+}
+
+/** A row's result (T1-R05) with its unavailable count (T2-R02, R03, R07). */
 export type RowResult =
   | { kind: 'queued'; text: string }
   | { kind: 'running'; text: string }
-  | {
-      kind: 'finished'
-      parts: { key: 'new' | 'changed'; text: string; zero: boolean }[]
-    }
+  | { kind: 'finished'; parts: RowPart[] }
 
 export function rowResult(
-  item: Pick<SyncHistoryItem, 'status' | 'seen' | 'newAds' | 'changedAds'>,
+  item: Pick<
+    SyncHistoryItem,
+    'status' | 'seen' | 'newAds' | 'changedAds' | 'markedUnavailable'
+  >,
+  context: UnavailableContext,
 ): RowResult {
   if (item.status === 'queued')
     return { kind: 'queued', text: 'Czeka na start' }
@@ -162,19 +218,39 @@ export function rowResult(
     return { kind: 'running', text: `Znaleziono ${item.seen} · trwa…` }
   const fresh = item.newAds ?? 0
   const changed = item.changedAds ?? 0
-  return {
-    kind: 'finished',
-    parts: [
-      { key: 'new', text: `+${fresh} nowe`, zero: fresh === 0 },
-      { key: 'changed', text: `${changed} zmienione`, zero: changed === 0 },
-    ],
-  }
+  const parts: RowPart[] = [
+    { key: 'new', text: `+${fresh} nowe`, zero: fresh === 0 },
+    { key: 'changed', text: `${changed} zmienione`, zero: changed === 0 },
+  ]
+  const unavailable = unavailableCount(item, context)
+  if (unavailable.kind === 'counted')
+    parts.push({
+      key: 'unavailable',
+      text: `${unavailable.count} niedostępne`,
+      zero: unavailable.count === 0,
+    })
+  else if (unavailable.kind === 'not-counted')
+    parts.push({
+      key: 'unavailable',
+      text: '— niedostępne',
+      zero: true,
+      tip: unavailable.tip,
+    })
+  return { kind: 'finished', parts }
 }
 
-/** The numbers of the details (T1-R13): "—" while the sync is unfinished. */
+/**
+ * The numbers of the details (T1-R13): "—" while the sync is unfinished.
+ * The fourth is the unavailable count (T2-R02–R04, R07): the number, "—"
+ * with its tooltip, or "nie dotyczy" for a source that does not mark.
+ */
 export function detailNumbers(
-  details: Pick<SyncDetails, 'seen' | 'newAds' | 'changedAds'>,
-): { label: string; value: string }[] {
+  details: Pick<
+    SyncDetails,
+    'status' | 'seen' | 'newAds' | 'changedAds' | 'markedUnavailable'
+  >,
+  context: UnavailableContext,
+): { label: string; value: string; tip?: string }[] {
   const number = (value: number | null) =>
     value === null ? '—' : String(value)
   return [
@@ -187,7 +263,24 @@ export function detailNumbers(
       label: 'zmienionych — zapisano nową wersję treści',
       value: number(details.changedAds),
     },
+    { label: 'oznaczonych jako niedostępne w źródle', ...unavailableValue() },
   ]
+
+  function unavailableValue(): { value: string; tip?: string } {
+    const unavailable = unavailableCount(details, context)
+    switch (unavailable.kind) {
+      case 'not-applicable':
+        return { value: 'nie dotyczy' }
+      // ASSUMPTION(oferty-pracy-nq3.2/ASM-1): an unfinished sync shows "—"
+      // without a tooltip, as its new and changed ads do (T1-R13).
+      case 'unfinished':
+        return { value: '—' }
+      case 'counted':
+        return { value: String(unavailable.count) }
+      case 'not-counted':
+        return { value: '—', tip: unavailable.tip }
+    }
+  }
 }
 
 /** Elapsed time as the details show it: seconds, minutes or hours. */

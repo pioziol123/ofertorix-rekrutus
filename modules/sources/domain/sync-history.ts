@@ -213,6 +213,13 @@ export type SyncHistoryItem = {
   /** New and changed ads (T1-R06); null while the sync is unfinished. */
   newAds: number | null
   changedAds: number | null
+  /**
+   * Ads this sync changed from available to unavailable at the source
+   * (T2-R01); recorded only by a complete sync of a source that marks
+   * unavailable ads, null otherwise and for syncs finished before it was
+   * recorded.
+   */
+  markedUnavailable: number | null
 }
 
 /** One page of the history read (T1). */
@@ -226,6 +233,11 @@ export type SyncHistoryPage = {
   size: PageSize
   filters: SyncHistoryFilters
   sources: CatalogSource[]
+  /**
+   * The finish of the earliest sync that recorded its count of ads marked
+   * unavailable, ISO text in UTC; null while none has (T2-R04).
+   */
+  unavailableCountedSince: string | null
 }
 
 /** One sync's details (T1-R12–R15). */

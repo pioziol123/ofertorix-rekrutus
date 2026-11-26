@@ -65,14 +65,20 @@ describe('the history grouped by Polish day (T1-R03, T1-AC02)', () => {
 })
 
 describe('a row’s result and the details’ numbers (T1-R05, R13, T1-AC04)', () => {
-  const sync = { seen: 7, newAds: null, changedAds: null }
+  const sync = {
+    seen: 7,
+    newAds: null,
+    changedAds: null,
+    markedUnavailable: null,
+  }
+  const other = { marksUnavailable: false, countedSince: null }
 
   it('shows "Czeka na start" for a queued sync and the ads found so far for a running one', () => {
-    expect(rowResult({ ...sync, status: 'queued', seen: 0 })).toEqual({
+    expect(rowResult({ ...sync, status: 'queued', seen: 0 }, other)).toEqual({
       kind: 'queued',
       text: 'Czeka na start',
     })
-    expect(rowResult({ ...sync, status: 'running' })).toEqual({
+    expect(rowResult({ ...sync, status: 'running' }, other)).toEqual({
       kind: 'running',
       text: 'Znaleziono 7 · trwa…',
     })
@@ -81,7 +87,16 @@ describe('a row’s result and the details’ numbers (T1-R05, R13, T1-AC04)', (
   it('shows "+N nowe" and "N zmienione" for each finished state, zeros greyed', () => {
     for (const status of ['complete', 'partial', 'failed'] as const)
       expect(
-        rowResult({ status, seen: 7, newAds: 3, changedAds: 0 }),
+        rowResult(
+          {
+            status,
+            seen: 7,
+            newAds: 3,
+            changedAds: 0,
+            markedUnavailable: null,
+          },
+          other,
+        ),
         status,
       ).toEqual({
         kind: 'finished',
@@ -93,10 +108,128 @@ describe('a row’s result and the details’ numbers (T1-R05, R13, T1-AC04)', (
   })
 
   it('shows "—" for new and changed in the details of a queued or running sync', () => {
-    expect(detailNumbers(sync).map((n) => n.value)).toEqual(['7', '—', '—'])
+    for (const status of ['queued', 'running'] as const)
+      expect(
+        detailNumbers({ ...sync, status }, other).map((n) => n.value),
+      ).toEqual(['7', '—', '—', 'nie dotyczy'])
     expect(
-      detailNumbers({ seen: 7, newAds: 2, changedAds: 1 }).map((n) => n.value),
-    ).toEqual(['7', '2', '1'])
+      detailNumbers(
+        { ...sync, status: 'complete', newAds: 2, changedAds: 1 },
+        other,
+      ).map((n) => n.value),
+    ).toEqual(['7', '2', '1', 'nie dotyczy'])
+  })
+})
+
+describe('the ads a sync marked unavailable (T2)', () => {
+  const finished = { seen: 3, newAds: 1, changedAds: 0 }
+  const marking = { marksUnavailable: true, countedSince: null }
+  // 1 December 2026, 00:30 in Poland.
+  const since = '2026-11-30T23:30:00Z'
+  const unavailablePart = (
+    item: Parameters<typeof rowResult>[0],
+    context: Parameters<typeof rowResult>[1],
+  ) => {
+    const result = rowResult(item, context)
+    return result.kind === 'finished'
+      ? result.parts.find((part) => part.key === 'unavailable')
+      : undefined
+  }
+  const fourth = (
+    item: Parameters<typeof detailNumbers>[0],
+    context: Parameters<typeof detailNumbers>[1],
+  ) => detailNumbers(item, context)[3]
+
+  it('shows the recorded count of a complete sync in the row and the details, 0 greyed (T2-AC01, AC02)', () => {
+    const two = {
+      ...finished,
+      status: 'complete' as const,
+      markedUnavailable: 2,
+    }
+    expect(unavailablePart(two, marking)).toEqual({
+      key: 'unavailable',
+      text: '2 niedostępne',
+      zero: false,
+    })
+    expect(fourth(two, marking)).toEqual({
+      label: 'oznaczonych jako niedostępne w źródle',
+      value: '2',
+    })
+    const none = { ...two, markedUnavailable: 0 }
+    expect(unavailablePart(none, marking)).toMatchObject({
+      text: '0 niedostępne',
+      zero: true,
+    })
+    expect(fourth(none, marking)?.value).toBe('0')
+  })
+
+  it('shows "—" with the tooltip of T2-R03 for an incomplete and a failed sync, also one from before the count (T2-AC03)', () => {
+    for (const status of ['partial', 'failed'] as const)
+      for (const countedSince of [null, since]) {
+        const item = { ...finished, status, markedUnavailable: null }
+        const context = { marksUnavailable: true, countedSince }
+        expect(unavailablePart(item, context), status).toEqual({
+          key: 'unavailable',
+          text: '— niedostępne',
+          zero: true,
+          tip: 'Tylko pełna synchronizacja oznacza ogłoszenia jako niedostępne',
+        })
+        expect(fourth(item, context), status).toMatchObject({
+          value: '—',
+          tip: 'Tylko pełna synchronizacja oznacza ogłoszenia jako niedostępne',
+        })
+      }
+  })
+
+  it('shows "—" for a complete sync without a count, with the Polish date of the first count or the text used while none is recorded (T2-AC04)', () => {
+    const before = {
+      ...finished,
+      status: 'complete' as const,
+      markedUnavailable: null,
+    }
+    expect(unavailablePart(before, marking)?.tip).toBe(
+      'Liczone od wdrożenia tej funkcji',
+    )
+    expect(fourth(before, marking)).toMatchObject({
+      value: '—',
+      tip: 'Liczone od wdrożenia tej funkcji',
+    })
+    const counted = { marksUnavailable: true, countedSince: since }
+    expect(unavailablePart(before, counted)).toEqual({
+      key: 'unavailable',
+      text: '— niedostępne',
+      zero: true,
+      tip: 'Liczone od 01.12.2026',
+    })
+    expect(fourth(before, counted)?.tip).toBe('Liczone od 01.12.2026')
+  })
+
+  it('shows no count in the row and "nie dotyczy" in the details for a source that does not mark (T2-AC07)', () => {
+    const other = { marksUnavailable: false, countedSince: since }
+    for (const status of ['complete', 'partial', 'failed'] as const) {
+      const item = { ...finished, status, markedUnavailable: null }
+      expect(unavailablePart(item, other), status).toBeUndefined()
+      expect(fourth(item, other), status).toEqual({
+        label: 'oznaczonych jako niedostępne w źródle',
+        value: 'nie dotyczy',
+      })
+    }
+  })
+
+  it('ASSUMPTION(oferty-pracy-nq3.2/ASM-1): shows "—" without a tooltip in the details of a queued or running sync of a source that marks', () => {
+    for (const status of ['queued', 'running'] as const) {
+      const item = {
+        ...finished,
+        status,
+        newAds: null,
+        changedAds: null,
+        markedUnavailable: null,
+      }
+      expect(fourth(item, marking), status).toEqual({
+        label: 'oznaczonych jako niedostępne w źródle',
+        value: '—',
+      })
+    }
   })
 })
 
@@ -141,6 +274,7 @@ describe('the details (T1-R12, R14, R15, T1-AC10)', () => {
     seen: 0,
     newAds: 0,
     changedAds: 0,
+    markedUnavailable: null,
     pages: 2,
     error: 'HTTP 429 <script>',
     diagnostics: { stopReason: 'http_429' },

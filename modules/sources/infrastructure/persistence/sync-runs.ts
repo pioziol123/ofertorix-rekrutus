@@ -159,11 +159,13 @@ export async function markRunFinished(
     status: FinishedRunStatus
     error: string | null
     diagnostics: unknown
+    markedUnavailable: number | null
   },
   from: readonly SyncRunStatus[],
 ): Promise<boolean> {
   const result = await db().query(
-    `UPDATE source_sync_runs SET status=$2, error=$3, diagnostics=$4, finished_at=now()
+    `UPDATE source_sync_runs SET status=$2, error=$3, diagnostics=$4,
+      marked_unavailable=$6, finished_at=now()
     WHERE id=$1 AND status = ANY($5::text[])`,
     [
       runId,
@@ -173,6 +175,7 @@ export async function markRunFinished(
         ? null
         : JSON.stringify(outcome.diagnostics),
       [...from],
+      outcome.markedUnavailable,
     ],
   )
   return result.rowCount === 1

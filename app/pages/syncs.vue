@@ -31,6 +31,7 @@ import {
   type SyncPeriod,
   type SyncState,
   type SyncTrigger,
+  type UnavailableContext,
 } from '../../modules/sources/view'
 import {
   escapeCloses,
@@ -110,12 +111,25 @@ const names = computed(
     ),
 )
 const nameOf = (id: string) => names.value.get(id) ?? sourceName(id)
+/** What the unavailable count of a sync of the source needs (T2). */
+const marking = computed(
+  () =>
+    new Set(
+      (data.value?.sources ?? [])
+        .filter((source) => source.marksUnavailable)
+        .map((source) => source.id),
+    ),
+)
+const unavailableContext = (source: string): UnavailableContext => ({
+  marksUnavailable: marking.value.has(source),
+  countedSince: data.value?.unavailableCountedSince ?? null,
+})
 const days = computed(() =>
   groupByDay(
     (data.value?.items ?? []).map((item) => ({
       ...item,
       time: rowTime(item),
-      result: rowResult(item),
+      result: rowResult(item, unavailableContext(item.source)),
     })),
   ),
 )
@@ -415,6 +429,7 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
                       v-for="part in item.result.parts"
                       :key="part.key"
                       :class="[`sync-${part.key}`, { zero: part.zero }]"
+                      :data-tip="part.tip"
                       >{{ part.text }}</span
                     >
                   </template>
@@ -542,11 +557,16 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
           </div>
           <div class="sync-facts">
             <div
-              v-for="fact in detailNumbers(details)"
+              v-for="fact in detailNumbers(
+                details,
+                unavailableContext(details.source),
+              )"
               :key="fact.label"
               class="sync-fact"
             >
-              <b>{{ fact.value }}</b
+              <b :data-tip="fact.tip" :tabindex="fact.tip ? 0 : undefined">{{
+                fact.value
+              }}</b
               ><small>{{ fact.label }}</small>
             </div>
           </div>
@@ -707,6 +727,10 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
 }
 .sync-new {
   color: #2f6b3f;
+  font-weight: 650;
+}
+.sync-unavailable {
+  color: #8a4b2f;
   font-weight: 650;
 }
 .sync-changed {

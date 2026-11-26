@@ -15,6 +15,7 @@ import {
   countHistory,
   findHistoryPage,
   findRunDetails,
+  findUnavailableCountedSince,
   type HistoryRow,
 } from './infrastructure/persistence/sync-history.ts'
 
@@ -55,6 +56,7 @@ function toItem(row: HistoryRow): SyncHistoryItem {
     newAds: row.new_ads,
     changedAds:
       row.new_ads === null ? null : Math.max(0, row.revisions - row.new_ads),
+    markedUnavailable: row.marked_unavailable,
   }
 }
 
@@ -62,7 +64,9 @@ function toItem(row: HistoryRow): SyncHistoryItem {
  * One page of the sync history (T1-R02–R10, R17): every stored sync of
  * every catalogue source matching the filters, latest requested first.
  * Takes the page's address as it came; values it cannot read give their
- * defaults, and a page beyond the last gives the last. Reads committed
+ * defaults, and a page beyond the last gives the last. It also gives the
+ * moment since which complete syncs record how many ads they marked
+ * unavailable (T2-R04). Reads committed
  * state; a sync ending during the read shows its earlier or later state.
  */
 export async function readSyncHistory(
@@ -89,6 +93,7 @@ export async function readSyncHistory(
     limit: query.size,
     offset: (page - 1) * query.size,
   })
+  const countedSince = await findUnavailableCountedSince()
   return {
     items: rows.map(toItem),
     total,
@@ -102,6 +107,7 @@ export async function readSyncHistory(
       period: query.period,
     },
     sources,
+    unavailableCountedSince: countedSince?.toISOString() ?? null,
   }
 }
 

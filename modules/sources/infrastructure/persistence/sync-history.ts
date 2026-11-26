@@ -26,6 +26,8 @@ export type HistoryRow = {
   revisions: number
   /** Null while the run is unfinished. */
   new_ads: number | null
+  /** Stored only by a complete run of a source that marks (T2). */
+  marked_unavailable: number | null
 }
 
 export type DetailsRow = HistoryRow & {
@@ -43,7 +45,7 @@ export type DetailsRow = HistoryRow & {
  * that never started has no start and counts none.
  */
 const columns = `r.id, s.source, r.trigger, r.status, r.created_at, r.seen,
-  r.revisions,
+  r.revisions, r.marked_unavailable,
   CASE WHEN r.status IN ('complete','partial','failed') THEN (
     SELECT count(*)::int FROM source_run_seen o
     JOIN source_ads a ON a.id=o.source_ad_id
@@ -105,6 +107,18 @@ export async function findHistoryPage(
   const statement = historyPageStatement(filter, page)
   const result = await db().query<HistoryRow>(statement.text, statement.values)
   return result.rows
+}
+
+/**
+ * The finish of the earliest run that recorded how many ads it marked
+ * unavailable (T2 approach, item 4); null while none has.
+ */
+export async function findUnavailableCountedSince(): Promise<Date | null> {
+  const result = await db().query<{ since: Date | null }>(
+    `SELECT min(finished_at) AS since FROM source_sync_runs
+    WHERE marked_unavailable IS NOT NULL`,
+  )
+  return result.rows[0]?.since ?? null
 }
 
 /** One run with its course, error and diagnostics; null when unknown. */

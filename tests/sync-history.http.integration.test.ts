@@ -8,12 +8,14 @@ import { createServer } from 'node:net'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { formatDate } from '../lib/time/index.ts'
 
 /**
  * The page "Synchronizacje" and its routes (T1 of epic nq3, task
  * oferty-pracy-nq3.1) against the built web server on an isolated schema:
  * the navigation link, the rows, the empty list, the details drawer and
- * the address (T1-AC01, AC04, AC08–AC11).
+ * the address (T1-AC01, AC04, AC08–AC11), and the count of ads marked
+ * unavailable (T2-AC01, AC03, AC04, AC07).
  */
 
 const integration =
@@ -64,21 +66,25 @@ integration('page "Synchronizacje" over HTTP (T1)', () => {
       revisions?: number
       error?: string | null
       diagnostics?: unknown
+      /** Another scope than Bayt's. */
+      scope?: string
+      markedUnavailable?: number | null
     } = {},
   ): Promise<string> {
     const id = randomUUID()
     const unfinished = ['queued', 'running'].includes(status)
     await pool.query(
       `INSERT INTO source_sync_runs(id,scope_id,trigger,schedule_day,status,
-        created_at,started_at,finished_at,seen,revisions,pages,error,diagnostics)
+        created_at,started_at,finished_at,seen,revisions,pages,error,diagnostics,
+        marked_unavailable)
       VALUES($1,$2,$3,'2026-11-26',$4::text,
         now()-make_interval(mins=>$5::int),
         CASE WHEN $4::text<>'queued' THEN now()-make_interval(mins=>$5::int) END,
         CASE WHEN NOT $6::boolean THEN now() END,
-        $7,$8,2,$9,$10)`,
+        $7,$8,2,$9,$10,$11)`,
       [
         id,
-        scope,
+        options.scope ?? scope,
         options.trigger ?? 'manual',
         status,
         options.minutesAgo ?? 1,
@@ -89,6 +95,7 @@ integration('page "Synchronizacje" over HTTP (T1)', () => {
         options.diagnostics === undefined
           ? null
           : JSON.stringify(options.diagnostics),
+        options.markedUnavailable ?? null,
       ],
     )
     return id
@@ -355,5 +362,82 @@ integration('page "Synchronizacje" over HTTP (T1)', () => {
       await fetch(`${base}/api/sources/syncs?size=30&page=999&period=forever`)
     ).json()
     expect(api).toMatchObject({ page: 2, pages: 2, size: 20, total: 25 })
+  })
+
+  describe('ads marked unavailable (T2)', () => {
+    let solid: string
+    beforeEach(async () => {
+      solid = randomUUID()
+      await pool.query(
+        'INSERT INTO source_scopes(id,source,fingerprint,parameters) VALUES($1,$2,$3,$4)',
+        [solid, 'solid-jobs', randomUUID(), {}],
+      )
+    })
+    const rowOf = (html: string, id: string) => {
+      const row = html.split(`data-sync="${id}"`)[1]!
+      return row.slice(0, row.indexOf('sync-state-cell'))
+    }
+    const drawerOf = async (id: string) =>
+      (await page(`/syncs?sync=${id}`)).split('data-testid="sync-details"')[1]!
+    const incomplete =
+      'data-tip="Tylko pełna synchronizacja oznacza ogłoszenia jako niedostępne"'
+
+    it('shows "2 niedostępne" in the row and 2 in the details of a complete sync that recorded 2 (T2-AC01)', async () => {
+      const id = await run('complete', {
+        scope: solid,
+        seen: 3,
+        markedUnavailable: 2,
+      })
+      expect(text(rowOf(await page('/syncs'), id))).toContain(
+        '+0 nowe 0 zmienione 2 niedostępne',
+      )
+      expect(text(await drawerOf(id))).toContain(
+        '2 oznaczonych jako niedostępne w źródle',
+      )
+    })
+
+    it('shows "—" with the tooltip of T2-R03 for an incomplete and a failed sync (T2-AC03)', async () => {
+      for (const status of ['partial', 'failed']) {
+        const id = await run(status, { scope: solid })
+        const row = rowOf(await page('/syncs'), id)
+        expect(text(row), status).toContain('— niedostępne')
+        expect(row, status).toContain(incomplete)
+        const drawer = await drawerOf(id)
+        expect(text(drawer), status).toContain(
+          '— oznaczonych jako niedostępne w źródle',
+        )
+        expect(drawer, status).toContain(incomplete)
+      }
+    })
+
+    it('shows "—" for a complete sync without a count, with the text used while none is recorded and then with the date of the first count (T2-AC04)', async () => {
+      const before = await run('complete', { scope: solid, minutesAgo: 5 })
+      let row = rowOf(await page('/syncs'), before)
+      expect(text(row)).toContain('— niedostępne')
+      expect(row).toContain('data-tip="Liczone od wdrożenia tej funkcji"')
+      expect(await drawerOf(before)).toContain(
+        'data-tip="Liczone od wdrożenia tej funkcji"',
+      )
+
+      await run('complete', { scope: solid, markedUnavailable: 0 })
+      const { rows } = await pool.query<{ since: Date }>(
+        'SELECT min(finished_at) AS since FROM source_sync_runs WHERE marked_unavailable IS NOT NULL',
+      )
+      const tip = `data-tip="Liczone od ${formatDate(rows[0]!.since)}"`
+      row = rowOf(await page('/syncs'), before)
+      expect(row).toContain(tip)
+      expect(await drawerOf(before)).toContain(tip)
+    })
+
+    it('shows no count in the row and "nie dotyczy" in the details of a source that does not mark (T2-AC07)', async () => {
+      await run('complete', { scope: solid, markedUnavailable: 1 })
+      const id = await run('complete', { seen: 2, revisions: 2 })
+      const row = text(rowOf(await page('/syncs'), id))
+      expect(row).toContain('Bayt +0 nowe 2 zmienione')
+      expect(row).not.toContain('niedostępne')
+      expect(text(await drawerOf(id))).toContain(
+        'nie dotyczy oznaczonych jako niedostępne w źródle',
+      )
+    })
   })
 })

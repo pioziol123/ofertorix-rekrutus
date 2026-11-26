@@ -44,4 +44,5 @@ export {
   triggerChoices,
   triggerIcons,
   triggerTooltips,
+  type UnavailableContext,
 } from './domain/sync-history-view.ts'

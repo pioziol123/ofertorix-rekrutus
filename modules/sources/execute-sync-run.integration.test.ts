@@ -12,7 +12,7 @@ import {
 } from 'vitest'
 import { closePool, setPool } from '../../lib/db.ts'
 import { deliver, sourcesMigrations } from '../../tests/sync-run.fixtures.ts'
-import { endFailedSyncRun } from './index.ts'
+import { endFailedSyncRun, readSyncDetails } from './index.ts'
 import {
   ConnectorError,
   toConnectorAd,
@@ -504,6 +504,116 @@ integration('shared sync run executor in isolated PostgreSQL schemas', () => {
       expect(await availability()).toEqual({
         x: 'available',
         'php-only': 'available',
+      })
+    })
+
+    const marked = async (runId: string) =>
+      (await stored(runId)).marked_unavailable as number | null
+
+    it('records 2 for a complete run that misses two available ads and one already unavailable (T2-AC01)', async () => {
+      await run(
+        scope('php', [[ad('kept'), ad('first'), ad('second'), ad('earlier')]]),
+      )
+      // "earlier" becomes unavailable before the counted run.
+      const before = await run(
+        scope('php', [[ad('kept'), ad('first'), ad('second')]]),
+      )
+      expect(await marked(before)).toBe(1)
+      const counted = await run(scope('php', [[ad('kept')]]))
+      expect(await stored(counted)).toMatchObject({
+        status: 'complete',
+        marked_unavailable: 2,
+      })
+      expect(await availability()).toEqual({
+        kept: 'available',
+        first: 'unavailable',
+        second: 'unavailable',
+        earlier: 'unavailable',
+      })
+    })
+
+    it('records 0 for a complete run that misses no ad (T2-AC02)', async () => {
+      await run(scope('php', [[ad('kept')]]))
+      const runId = await run(scope('php', [[ad('kept'), ad('fresh')]]))
+      expect(await marked(runId)).toBe(0)
+    })
+
+    it('marks nothing and records no count for a partial and a failed run (T2-AC03)', async () => {
+      await run(scope('php', [[ad('kept'), ad('unseen')]]))
+      const partial = await run(
+        scope('php', [[ad('kept')]], {
+          result: { complete: false, reason: 'Scope not fully checked' },
+        }),
+      )
+      const failed = await run(
+        scope('php', [], { result: { complete: false, reason: 'Down' } }),
+      )
+      expect(await stored(partial)).toMatchObject({
+        status: 'partial',
+        marked_unavailable: null,
+      })
+      expect(await stored(failed)).toMatchObject({
+        status: 'failed',
+        marked_unavailable: null,
+      })
+      expect(await availability()).toEqual({
+        kept: 'available',
+        unseen: 'available',
+      })
+    })
+
+    it('records no count for a complete run of a source that does not mark unavailable ads (T2-R07)', async () => {
+      const name = 'simulated-keeps'
+      await run(scope('php', [[ad('a'), ad('b')]], { name, infers: false }))
+      const runId = await run(
+        scope('php', [[ad('a')]], { name, infers: false }),
+      )
+      expect(await stored(runId)).toMatchObject({
+        status: 'complete',
+        marked_unavailable: null,
+      })
+    })
+
+    it('saves neither the marking nor the count when saving the final state fails (T2-AC05)', async () => {
+      await run(scope('php', [[ad('kept'), ad('gone')]]))
+      // Fails the write of the final complete state, after the marking.
+      await pool.query(`CREATE FUNCTION reject_complete() RETURNS trigger AS $$
+        BEGIN RAISE EXCEPTION 'forced final state failure'; END $$ LANGUAGE plpgsql`)
+      await pool.query(`CREATE TRIGGER reject_complete BEFORE UPDATE ON source_sync_runs
+        FOR EACH ROW WHEN (NEW.status='complete') EXECUTE FUNCTION reject_complete()`)
+      try {
+        const connector = scope('php', [[ad('kept')]])
+        const runId = await admit(connector)
+        await expect(executeRun(runId, connector)).rejects.toThrow(
+          'forced final state failure',
+        )
+        expect(await stored(runId)).toMatchObject({
+          status: 'running',
+          marked_unavailable: null,
+        })
+        expect(await availability()).toEqual({
+          kept: 'available',
+          gone: 'available',
+        })
+      } finally {
+        await pool.query('DROP TRIGGER reject_complete ON source_sync_runs')
+        await pool.query('DROP FUNCTION reject_complete()')
+      }
+    })
+
+    it('counts an ad marked unavailable and seen again by the next complete run neither as marked unavailable nor as new there (T2-AC06)', async () => {
+      await run(scope('php', [[ad('kept'), ad('back')]]))
+      const marking = await run(scope('php', [[ad('kept')]]))
+      expect(await marked(marking)).toBe(1)
+      const returning = await run(scope('php', [[ad('kept'), ad('back')]]))
+      expect(await marked(returning)).toBe(0)
+      expect(await availability()).toEqual({
+        kept: 'available',
+        back: 'available',
+      })
+      expect(await readSyncDetails(returning)).toMatchObject({
+        newAds: 0,
+        markedUnavailable: 0,
       })
     })
 

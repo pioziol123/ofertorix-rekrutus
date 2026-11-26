@@ -25,6 +25,7 @@ export const sourcesMigrations = [
   '1770000000014_sync_run_state',
   '1770000000015_sync_run_attempt',
   '1770000000024_sync_run_without_queue_job',
+  '1770000000038_sync_run_marked_unavailable',
 ] as const
 
 /**

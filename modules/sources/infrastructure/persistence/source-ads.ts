@@ -70,13 +70,16 @@ export async function addCurrentRevision(
 /**
  * Marks the source's ads observed in any run of the scope, but not in the
  * given run, as unavailable. Ads already unavailable are left untouched.
+ * Returns how many ads it changed from available to unavailable (T2-R01):
+ * the same statement marks and counts, so an ad already unavailable is
+ * never counted.
  */
 export async function markAdsAbsentFromRunUnavailable(run: {
   runId: string
   scopeId: string
   source: string
-}): Promise<void> {
-  await db().query(
+}): Promise<number> {
+  const result = await db().query(
     `UPDATE source_ads a SET availability='unavailable'
     WHERE a.source=$1 AND a.availability='available'
     AND a.id IN (
@@ -86,6 +89,7 @@ export async function markAdsAbsentFromRunUnavailable(run: {
     AND NOT EXISTS (SELECT 1 FROM source_run_seen s WHERE s.run_id=$3 AND s.source_ad_id=a.id)`,
     [run.source, run.scopeId, run.runId],
   )
+  return result.rowCount ?? 0
 }
 
 // Reads for the public ad read. They take no row locks, so a reader never
