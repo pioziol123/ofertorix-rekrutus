@@ -25,7 +25,7 @@ For an exact reproduction, use the commit from the [package manifest](../../../i
 
 The worker image contains the interpreter `/opt/jobspy/bin/python` and the verified package. Web stays without Python. JobSpy is not covered by an automatic schedule; the source is disabled by default.
 
-- Status: `docker compose exec worker pnpm jobspy:status` or GET `/api/sources/jobspy`.
+- Status: `docker compose exec worker pnpm jobspy:status`; the page "Synchronizacje" shows its syncs.
 - Future manual request: `docker compose exec worker pnpm jobspy:sync --wait`, only after access is settled and after explicit activation in the configuration. When disabled, the command ends without starting Python and without a request in the queue.
 - A configuration change requires recreating the containers that read the flag. Activation has not been set in `.env`.
 - Integration tests (`RUN_INTEGRATION=1`) run the files one after another: PostgreSQL advisory locks are shared across the database, despite the separate schemas for test data. Ordinary unit tests stay parallel.

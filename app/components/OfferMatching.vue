@@ -56,6 +56,9 @@ async function assess() {
     busy.value = false
   }
 }
+// ASSUMPTION(oferty-pracy-nq3.5/ASM-1): T5-R05 removes the list's refreshing
+// by itself; this section of the open offer's details keeps re-reading only
+// its own assessment while it waits, and never reloads the list.
 let timer: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
   timer = setInterval(() => {

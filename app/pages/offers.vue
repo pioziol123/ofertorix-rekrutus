@@ -4,7 +4,6 @@ import {
   matchingStateLabels,
   matchingGroupLabels,
 } from '../../modules/matching/view'
-import type { PolishSource } from '../../modules/sources/view'
 import { remoteEligibilityLabel } from '../../modules/sources/view'
 import {
   offerFilterQuery,
@@ -162,51 +161,6 @@ const scoreFilters = [
   { key: 'minConditions', label: 'Warunki — minimum' },
   { key: 'minDirection', label: 'Kierunek zawodowy — minimum' },
 ]
-const importTechnology = ref('PHP')
-const importSeniority = ref('senior')
-const importingSource = ref<string | null>(null)
-const importMessage = ref('')
-function importCriteria(diagnostics: Record<string, unknown> | null) {
-  const query = diagnostics?.query
-  if (!query || typeof query !== 'object') return ''
-  const criteria = query as Record<string, unknown>
-  return `${typeof criteria.technology === 'string' ? criteria.technology : 'wszystkie technologie'} · ${typeof criteria.seniority === 'string' ? criteria.seniority : 'wszystkie poziomy'}`
-}
-async function importPolish(source: PolishSource) {
-  importingSource.value = source
-  importMessage.value = ''
-  try {
-    const result = await $fetch('/api/sources/polish', {
-      method: 'POST',
-      body: {
-        source,
-        technology: importTechnology.value.trim() || null,
-        seniority: importSeniority.value || null,
-      },
-    })
-    importMessage.value = result.reused
-      ? 'Import tego źródła już trwa. Poczekaj na jego zakończenie.'
-      : 'Import dodany do kolejki. Wynik pojawi się poniżej.'
-    await refresh()
-  } catch {
-    importMessage.value = 'Nie udało się rozpocząć importu. Spróbuj ponownie.'
-  } finally {
-    importingSource.value = null
-  }
-}
-let importTimer: ReturnType<typeof setInterval> | undefined
-onMounted(() => {
-  importTimer = setInterval(() => {
-    if (
-      (data.value?.matching.pending ?? 0) > 0 ||
-      data.value?.polish.sources.some(
-        (s) => s.run && ['queued', 'running'].includes(s.run.status),
-      )
-    )
-      void refresh()
-  }, 5000)
-})
-onUnmounted(() => clearInterval(importTimer))
 const options = computed(() => data.value?.options)
 async function apply() {
   const query = offerFilterQuery(form, salaryEnabled.value)
@@ -291,117 +245,17 @@ const pageLink = (page: number) => ({
             każdej ofercie
           </p>
         </div>
-        <div class="sync-summary">
-          <span class="status-dot" /> SOLID.Jobs — ostatni pełny import<br /><strong
-            >{{ dateLabel(data?.sync.lastComplete?.finished_at) }}</strong
-          ><UButton
-            variant="ghost"
-            color="neutral"
-            size="sm"
-            :loading="status === 'pending'"
-            @click="refresh()"
-            >Odśwież widok</UButton
-          >
-        </div>
+        <UButton
+          variant="ghost"
+          color="neutral"
+          size="sm"
+          class="offers-refresh"
+          data-testid="offers-refresh"
+          :loading="status === 'pending'"
+          @click="refresh()"
+          >Odśwież widok</UButton
+        >
       </div>
-      <p
-        v-if="
-          data?.sync.run && ['partial', 'failed'].includes(data.sync.run.status)
-        "
-        class="notice"
-      >
-        Ostatni import był niepełny. Pokazujemy zachowane dane; dostępność
-        brakujących ofert nie została zmieniona.
-      </p>
-      <details class="notice">
-        <summary>Źródła JobSpy</summary>
-        <p v-for="source in data?.jobspy.sources" :key="source.source">
-          <strong>{{ source.name }}</strong> —
-          {{ source.enabled ? 'włączone ręcznie' : 'wyłączone' }}.
-          {{ source.reason }}
-          <span v-if="source.run"
-            >Ostatni import:
-            {{
-              source.run.status === 'complete'
-                ? 'zakończony'
-                : source.run.status === 'partial'
-                  ? 'niepełny'
-                  : source.run.status === 'failed'
-                    ? 'błąd pobierania'
-                    : source.run.status === 'running'
-                      ? 'w trakcie'
-                      : 'w kolejce'
-            }}. Zapisano ofert: {{ source.run.seen }}.
-            {{ importCriteria(source.run.diagnostics) }}</span
-          >
-          <span v-else>Nie wykonano importu.</span>
-        </p>
-        <p>Wyniki nie oznaczają pełnego pokrycia portalu.</p>
-      </details>
-      <details class="notice">
-        <summary>Polskie serwisy — pobieranie ofert</summary>
-        <p>
-          Import uruchamiany ręcznie. Kryteria pobierania są niezależne od
-          filtrów listy poniżej.
-        </p>
-        <div class="primary-filters">
-          <label
-            >Technologia<input
-              v-model="importTechnology"
-              placeholder="np. PHP, Go; puste = wszystkie"
-          /></label>
-          <label
-            >Poziom<select v-model="importSeniority">
-              <option value="">Wszystkie</option>
-              <option value="junior">Junior</option>
-              <option value="mid">Mid</option>
-              <option value="senior">Senior</option>
-              <option value="expert">Expert</option>
-              <option value="lead">Lead</option>
-              <option value="staff">Staff</option>
-              <option value="principal">Principal</option>
-            </select></label
-          >
-        </div>
-        <p v-for="source in data?.polish.sources" :key="source.source">
-          <strong>{{ source.name }}</strong> —
-          <span v-if="source.run"
-            >{{
-              source.run.status === 'complete'
-                ? 'Import zakończony'
-                : source.run.status === 'partial'
-                  ? 'Import niepełny — osiągnięto limit lub nie odczytano wszystkich danych'
-                  : source.run.status === 'failed'
-                    ? 'Błąd pobierania'
-                    : source.run.status === 'running'
-                      ? 'Pobieranie w toku'
-                      : 'Import w kolejce'
-            }}. Zapisano ofert: {{ source.run.seen }}.
-            {{ importCriteria(source.run.diagnostics) }}</span
-          >
-          <span v-else>Nie wykonano importu.</span>
-          <UButton
-            size="sm"
-            variant="outline"
-            :loading="importingSource === source.source"
-            :disabled="
-              !source.enabled ||
-              importingSource !== null ||
-              !!(
-                source.run && ['queued', 'running'].includes(source.run.status)
-              )
-            "
-            @click="importPolish(source.source)"
-            >Pobierz oferty</UButton
-          >
-        </p>
-        <p v-if="importMessage" role="status">{{ importMessage }}</p>
-        <p>
-          Brak informacji o spełnieniu kryterium nie odrzuca oferty. Jeden
-          import pobiera do 50 ofert, 5 stron i 60 żądań; niepełny wynik
-          zachowuje pobrane oferty i nie zmienia dostępności pozostałych.
-        </p>
-      </details>
       <form class="filter-panel" @submit.prevent="apply">
         <div class="primary-filters">
           <label class="search-field"

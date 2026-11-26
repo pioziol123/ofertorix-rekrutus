@@ -48,41 +48,4 @@ integration('local offers HTTP without login', () => {
     expect(response.body).toContain('Wszystkie oferty')
     expect(response.body).not.toContain('Hasło właściciela')
   }, 15000)
-  // A16-AC08: the source and run state keep the form the page reads.
-  it('serves the source catalogue and the sync state in their existing form', async () => {
-    const jobspy = JSON.parse((await http('/api/sources/jobspy')).body)
-    expect(Object.keys(jobspy)).toEqual([
-      'enabled',
-      'scheduled',
-      'run',
-      'sources',
-    ])
-    expect(Object.keys(jobspy.sources[0])).toEqual([
-      'source',
-      'name',
-      'prefix',
-      'hosts',
-      'scope',
-      'restriction',
-      'reason',
-      'connected',
-      'enabled',
-      'scheduled',
-      'run',
-    ])
-    const polish = JSON.parse((await http('/api/sources/polish')).body)
-    expect(Object.keys(polish)).toEqual(['scheduled', 'sources'])
-    expect(Object.keys(polish.sources[0])).toEqual([
-      'source',
-      'name',
-      'host',
-      'connected',
-      'enabled',
-      'scheduled',
-      'run',
-    ])
-    const offers = JSON.parse((await http('/api/offers')).body)
-    expect(offers).toMatchObject({ jobspy, polish })
-    expect(Object.keys(offers.sync)).toEqual(['run', 'lastComplete'])
-  })
 })

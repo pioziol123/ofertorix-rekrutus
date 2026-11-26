@@ -52,7 +52,6 @@ export { source as himalayasSource } from './infrastructure/adapters/himalayas/a
 export { parseJobspySource } from './domain/jobspy-catalog.ts'
 export { jobspyEnabled } from './infrastructure/adapters/jobspy/runner.ts'
 export {
-  polishEnabled,
   polishQuery,
   sourceSchema as polishSourceSchema,
 } from './infrastructure/adapters/polish/runner.ts'

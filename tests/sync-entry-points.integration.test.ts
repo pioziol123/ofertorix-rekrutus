@@ -20,7 +20,7 @@ import { stopQueues } from '../lib/queues/index.ts'
 import { polishSources } from '../modules/sources/infrastructure/adapters/polish/runner.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import type { Page } from '../modules/sources/infrastructure/adapters/solid-jobs/api.ts'
-import { requestSync, syncJob } from '../modules/sources/index.ts'
+import { polishQuery, requestSync, syncJob } from '../modules/sources/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { createConnectorRegistry } from '../modules/sources/infrastructure/adapters/connector-registry.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
@@ -29,7 +29,8 @@ import { createHimalayasConnector } from '../modules/sources/infrastructure/adap
 import { sourceConnectors } from '../modules/sources/infrastructure/adapters/source-connectors.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { createSolidJobsConnector } from '../modules/sources/infrastructure/adapters/solid-jobs/connector.ts'
-import { query } from './fixtures/polish/result.ts'
+import { query, record, result } from './fixtures/polish/result.ts'
+import { polishWith } from './source-connectors.fixtures.ts'
 import {
   deliver,
   prepareSyncRunQueue,
@@ -265,6 +266,42 @@ integration('sync entry points on the shared sync run queue', () => {
     })
     expect(await runs()).toEqual([
       expect.objectContaining({ source: 'himalayas', status: 'complete' }),
+    ])
+  }, 60_000)
+
+  it('a Polish portal started from the command line still syncs (T5-AC05, T3-R10)', async () => {
+    // The scope the command line asks for by default: PHP · senior.
+    const scope = polishQuery.parse({
+      source: 'bulldogjob',
+      technology: 'PHP',
+      seniority: 'senior',
+    })
+    const [result_] = await Promise.all([
+      cli('polish-sync', '--source', 'bulldogjob', '--wait'),
+      (async () => {
+        const id = await waitFor(
+          async () =>
+            (
+              await pool.query<{ id: string }>(
+                "SELECT id FROM source_sync_runs WHERE status='queued'",
+              )
+            ).rows[0]?.id,
+          30_000,
+          'the requested run',
+        )
+        await deliver(
+          id,
+          polishWith(
+            async () => result(scope, [record('bulldogjob')]),
+            'bulldogjob',
+          ),
+        )
+      })(),
+    ])
+    expect(result_.code).toBe(0)
+    expect(result_.stdout).toContain('"status": "complete"')
+    expect(await runs()).toEqual([
+      expect.objectContaining({ source: 'bulldogjob', status: 'complete' }),
     ])
   }, 60_000)
 })
