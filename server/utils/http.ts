@@ -62,7 +62,7 @@ export async function jsonBody(event: H3Event): Promise<unknown> {
 /**
  * An API route that is never cached and accepts a change only from the
  * application's own origin. An error that already carries a response code
- * passes through, invalid input gives 422 with its issues, and any other
+ * passes through with its status, message and data, invalid input gives 422 with its issues, and any other
  * error gives 422 without details.
  */
 export function apiHandler<T>(run: (event: H3Event) => Promise<T>) {
@@ -80,8 +80,11 @@ export function apiHandler<T>(run: (event: H3Event) => Promise<T>) {
     try {
       return await run(event)
     } catch (error) {
+      // An error that carries a response code passes through as the
+      // framework's own error, so its status, message and data reach the
+      // response; one of another kind would be answered as unhandled.
       if (error && typeof error === 'object' && 'statusCode' in error)
-        throw error
+        throw createError(error)
       if (error instanceof ZodError)
         throw createError({
           statusCode: 422,

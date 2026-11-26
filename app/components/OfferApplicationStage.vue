@@ -85,7 +85,9 @@ async function choose(event: Event) {
       :disabled="busy"
       @change="choose"
     >
-      <option :value="shown ?? ''" disabled hidden>{{ currentLabel }}</option>
+      <option :value="shown ?? ''" selected disabled hidden>
+        {{ currentLabel }}
+      </option>
       <option v-for="stage in options" :key="stage" :value="stage">
         {{ stageLabels[stage] }}
       </option>
