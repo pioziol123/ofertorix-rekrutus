@@ -1,5 +1,7 @@
 # Managing recruitments — requirements
 
+> **Superseded in part, 2026-11-26.** The application, its stages up to the CV being sent and rejection, and the note are specified by epic `oferty-pracy-lq3` ([PRD](../../../lq3-lista-aplikacji/PRD.md), [requirements](../../../lq3-lista-aplikacji/requirements.md)). Where they differ, epic `oferty-pracy-lq3` wins; in particular the application no longer records the sending channel, and the note keeps no history. The rest of this draft stays a draft.
+
 The owner's confirmed decisions remain valid. The rest of the description and the technical proposals need updating against the chosen scope and the state of the application, following the [work cycle](../../README.md#feature-work-cycle). The earlier acceptance of the package does not mean this draft is frozen.
 
 Status: **working draft — to be refined before this feature is implemented**, 2026-10-31. A feature under the shared [PRD](../../PRD.md). Sources and owner's decisions: [PRD](../../PRD.md#sources-and-document-responsibilities). Technical design: [solution-design.md](solution-design.md). Terminology: [glossary](../../../../../GLOSSARY.md).

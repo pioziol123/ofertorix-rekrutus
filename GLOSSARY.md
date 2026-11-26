@@ -118,6 +118,9 @@ Information about the company and its projects, and topics, especially technical
 **Application** (aplikacja):
 A separate process of applying for a job in response to an offer, covering the recruitment stages, interviews, assignments, deadlines, contacts and notes; several ads of this offer do not create separate processes, but another attempt after the previous one has ended may be a new application.
 
+**Application stage** (etap aplikacji):
+Where an application stands: to consider, CV sent, rejected (by the company or by the owner) or removed from the list; the stage is chosen by the owner and is separate from the owner's decision and the AI assessment.
+
 **Employer technologies** (technologie pracodawcy):
 The set of technologies linked to a company, distinguishing their links to individual job offers.
 
