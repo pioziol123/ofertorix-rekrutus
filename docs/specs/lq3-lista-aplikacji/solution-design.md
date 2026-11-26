@@ -1,6 +1,6 @@
 # Applications list — solution design
 
-Epic `oferty-pracy-lq3`. Goal: [PRD](PRD.md). Behaviour and criteria: [requirements](requirements.md). The [architecture rules](../../architecture/moduly-i-zasady-kodu.md) bind every task. Decisions D1–D11 were walked with the owner on 26 November 2026 and revised after the EGM review the same day ([report](../../research/lq3-egm-review/consolidated_review_report.md)). The contracts below are agreed constraints; names of tables, routes and fields are illustrative unless a contract says otherwise.
+Epic `oferty-pracy-lq3`. Goal: [PRD](PRD.md). Behaviour and criteria: [requirements](requirements.md). The [architecture rules](../../architecture/moduly-i-zasady-kodu.md) bind every task. Decisions D1–D11 were walked with the owner on 26 November 2026 and revised after the EGM review the same day ([report](../../research/lq3-egm-review/consolidated_review_report.md)); D12 and D13 were added the same day, taken from a draft playbook on modules with a protected domain that is not yet a project rule. The contracts below are agreed constraints; names of tables, routes and fields are illustrative unless a contract says otherwise.
 
 ## Responsibilities
 
@@ -9,6 +9,12 @@ Epic `oferty-pracy-lq3`. Goal: [PRD](PRD.md). Behaviour and criteria: [requireme
 - **Pages** assemble data from both modules by offer ID. Later moves and the note go from the pages straight to the Recruitments module.
 
 Dependencies run one way: Offers → Recruitments.
+
+Inside the Recruitments module, the code is split by responsibility along the module directory of the architecture rules (D12):
+
+- **Domain part.** Plain code with no database, HTTP or other module: the stages, the transition table of A-R03, the rule that choosing the current stage again is done (A-R13), the note's limit of A-R10, and the refusals. Each refusal is a named error with a machine-readable reason, one per broken rule: the stage changed (A-R07), the transition is not allowed (A-R03), the note is too long (A-R10), no application. Its messages name the broken rule and never repeat the refused value.
+- **Operations.** Each public operation reads what it needs, asks the domain part for the decision, writes, and returns the result. An operation holds no rule of its own.
+- **Infrastructure part.** The SQL of the module's two tables and the row mapping live in persistence; the HTTP handler lives in http and talks to the operations only, never to persistence. The handler alone maps refusals to responses (D13).
 
 ## Decisions
 
@@ -25,6 +31,8 @@ Dependencies run one way: Offers → Recruitments.
 | D9 | Task T4 also moves the multi-choice filter of the page "Synchronizacje" into a shared element, which the stage filter uses. | A filter element of its own: a second pattern for the same thing (owner). |
 | D10 | Stages, labels, icons, colours, messages and the allowed-transitions function live only in the Recruitments view entry; the server checks every move again. | — |
 | D11 | The stage moment comes from the application's clock, passed to the operation as "now", as the architecture rules' Polish time section requires; ties in order are broken by the application's ID. | The database clock: departs from the time rules and makes a move at a given moment, such as just after midnight Polish time (T2-AC02), hard to test (owner, Q55). |
+| D12 | The Recruitments module splits its code into a domain part, operations and an infrastructure part, as listed under Responsibilities; the rules of stages and the note read as plain code and have unit tests without a database. Reason: separated responsibilities and rules readable in the code (owner). Concurrency protection, storage and tests otherwise follow the existing patterns: the conditional update of operation 2, tests on an isolated database. | Following the draft playbook in full (row lock while deciding a move, an in-memory repository with a shared contract test set, boundary tests inside the module, a separate implementer's report): more change than the owner wants before reading the playbook (owner). |
+| D13 | Every refusal reaches the page as a stable code in the response body, with its status; the page takes the shown text for the code from the Recruitments view entry (D10). The handler maps each refusal reason to its code exhaustively, with no default branch, so a new reason fails the type check until it has a code. Codes are separate strings from the domain's reasons. Reason: tests check the code rather than the Polish sentence, a wrong refusal cannot pass for the right one, and the response carries no Polish letters (owner). | The message text in the response, as the Companies module answers: tests depend on the wording, and the transport of Polish letters and the dash needs checking. Accepted cost: Recruitments answer differently from Companies. |
 
 Accepted costs:
 
@@ -52,7 +60,18 @@ Commands run in a transaction of the shared mechanism; a call inside a running t
 5. **Application details** (T1; clients: offer details in T1, application details in T2). Input: offer ID. Returns stage, stage moment, note and the history newest first (`changed_at DESC, id DESC`), or nothing.
 6. **Applications page** (T2; client: Moja lista). Input: stage choice `active` (default) | `all` | `to_consider` | `cv_sent` | `rejected`, page, size (10, 20, 50, 100; default 20). Unknown values become defaults; the page is clamped as T2-R06 says. `active` = `to_consider`, `cv_sent`; `all` = every stage but `removed`. Order `stage_changed_at DESC, id DESC`. Returns items (offer ID, stage, stage moment), total, page, size and the normalised choice.
 
-Errors are the module's own classes. A handler of the module maps them as the Companies module's handler does: conflict → 409, not found → 404, invalid input → 422. The response body carries the message text from the Recruitments view entry in its data, not only in the status line, because the messages contain Polish letters and a dash; the page shows that text. The implementer verifies how the HTTP framework passes such text.
+Refusals are the domain part's named errors (D12). The module's handler maps them to a status and a stable code in the response body (D13):
+
+| Refusal | Status | Code | Text the page shows |
+| --- | --- | --- | --- |
+| The stage changed since the page read it (A-R07) | 409 | `application_stage_changed` | The message of A-R07 |
+| No application for the offer | 404 | `application_not_found` | — |
+| The offer does not exist (start application) | 404 | `offer_not_found` | — |
+| A pair of stages outside A-R03 | 422 | `transition_not_allowed` | — |
+| The note over 10 000 characters (A-R10) | 422 | `note_too_long` | The message of A-R10 |
+| Any other malformed input | 422 | `invalid_input` | — |
+
+The pages offer only allowed stages and count the note before saving, so they never send a request that ends in a code without a text; if one arrives, the page shows the code itself. The Offers module's start application passes the Recruitments refusals through unchanged and adds only `offer_not_found`.
 
 ### Offers module
 
@@ -82,15 +101,17 @@ The paging and the multi-choice filter of the page "Synchronizacje" become share
 
 ## Situations every operation answers
 
-| Operation | Concurrent call | Resource limit | Repeated call | Empty or malformed input |
-| --- | --- | --- | --- | --- |
-| Start / create | Two creates of one offer: the unique offer ID lets one insert; the other follows the rule for an existing application | One row | Same target: success without a write | Unknown offer → 404; target not allowed from "no application" → 422 |
-| Move | Conditional update; the loser gets a conflict or, with the same target, success | One row and one history record | Success without a write | Unknown stage or pair outside A-R03 → 422; no application → 404 |
-| Save note | Last save wins; a parallel move is unaffected (different columns) | 10 000 code points; request body limit of the HTTP layer | Same text written again | Over the limit → 422 with the A-R10 message; no application → 404 |
-| Current stages | Reads committed state | At most one row per application | Same answer for same state | — |
-| Applications page | Reads committed state | At most 100 items | Same answer for same state | Unknown values → defaults; page clamped |
-| Offers by IDs | Reads committed state | At most 100 IDs; more → 422 | Same answer | Malformed IDs → 422 |
-| Application details | Reads committed state | All history records of one application | Same answer | Malformed ID → 404 |
+"Stored state" says what the database holds after the operation, on success and on refusal. "Proven by" names the criteria whose tests cover the row; "review" marks a row no criterion covers, which the spec-conformance review checks in the code.
+
+| Operation | Concurrent call | Resource limit | Repeated call | Empty or malformed input | Stored state | Proven by |
+| --- | --- | --- | --- | --- | --- | --- |
+| Start / create | Two creates of one offer: the unique offer ID lets one insert; the other follows the rule for an existing application | One row | Same target: success without a write | Unknown offer → `offer_not_found`; target not allowed from "no application" → `transition_not_allowed` | Success: one application and one history record. Refusal: nothing | A-AC01, A-AC08, A-AC09; resource limit: review |
+| Move | Conditional update; the loser gets `application_stage_changed` or, with the same target, success | One row and one history record | Success without a write | Unknown stage → `invalid_input`; pair outside A-R03 → `transition_not_allowed`; no application → `application_not_found` | Success: new stage, its moment and one history record. Refusal or repeat: unchanged | A-AC01, A-AC02, A-AC08, A-AC09; resource limit: review |
+| Save note | Last save wins; a parallel move is unaffected (different columns) | 10 000 code points; request body limit of the HTTP layer | Same text written again | Over the limit → `note_too_long`; no application → `application_not_found` | Success: the note only, stage and its moment unchanged. Refusal: unchanged, no application created | A-AC03, A-AC07, A-AC10; body limit: review |
+| Current stages | Reads committed state | At most one row per application | Same answer for same state | — | Nothing written | T3-AC05; the rest: review |
+| Applications page | Reads committed state | At most 100 items | Same answer for same state | Unknown values → defaults; page clamped | Nothing written | T2-AC03, T2-AC04, T2-AC05 |
+| Offers by IDs | Reads committed state | At most 100 IDs; more → `invalid_input` | Same answer | Malformed IDs → `invalid_input` | Nothing written | T2-AC08; limits and malformed IDs: review |
+| Application details | Reads committed state | All history records of one application | Same answer | Malformed ID → `application_not_found` | Nothing written | T1-AC01, T2-AC08; malformed ID: review |
 
 ## Rollout and task boundaries
 
@@ -103,7 +124,7 @@ One migration, no backfill, no external service.
 
 ## Verification
 
-- **T1:** integration tests on an isolated database for create and move: every allowed and refused pair, A-R13, A-R07, a restart with a new connection pool (A-AC04), independence from ad and assessment changes, and parallel calls for A-AC09 (two creates with different and with equal targets, two moves to different targets). A unit test of the allowed-transitions function. Route tests on a running server for T1-AC02 and T1-AC03. A rendering test of offer details for T1-AC01 and A-AC11.
+- **T1:** integration tests on an isolated database for create and move: every allowed and refused pair, A-R13, A-R07, a restart with a new connection pool (A-AC04), independence from ad and assessment changes, and parallel calls for A-AC09 (two creates with different and with equal targets, two moves to different targets). Unit tests of the domain part without a database (D12): the allowed-transitions function, the A-R13 rule and each refusal with its reason. Tests of refusals check the code of D13, not the shown sentence; one test checks that the view entry gives the texts of A-R07 and A-R10 for their codes. Route tests on a running server for T1-AC02 and T1-AC03. A rendering test of offer details for T1-AC01 and A-AC11.
 - **T2:** integration tests of save note (limits, parallel move for A-AC10), the applications page and the application details; unit tests of the address and drawer logic (T2-AC05, T2-AC12, T2-AC13) and of the shown dates with a fixed now; rendering tests of the page, the drawer, the counter and the navigation.
 - **T3:** unit tests of the stage parsing and filtering; a rendering test of the icons; an integration test counting the offer list's queries with 0, 1 and 50 applications.
 - **T4:** the existing tests of nq3 T1-AC06 and T1-AC07; review that the page "Synchronizacje" has no paging or multi-choice code of its own.
