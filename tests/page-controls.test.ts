@@ -182,4 +182,13 @@ describe('the read behind the list (T4-R07, T4-AC07)', () => {
     ])
     expect(first.health.unfinished).toBe(1)
   })
+
+  // ASSUMPTION(oferty-pracy-nq3.4/ASM-2): a failed read of the strip fails the read of the list, and the page shows its notice.
+  it('fails the read of the list when the strip cannot be read (ASM-2)', async () => {
+    const fetch: PageFetch = async (path) => {
+      if (path.endsWith('/health')) throw new Error('500')
+      return { items: [] }
+    }
+    await expect(readSyncPage(fetch, {})).rejects.toThrow('500')
+  })
 })

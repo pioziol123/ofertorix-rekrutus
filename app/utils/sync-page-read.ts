@@ -15,6 +15,7 @@ export type PageFetch = (
   options?: { query?: Record<string, unknown> },
 ) => Promise<unknown>
 
+// ASSUMPTION(oferty-pracy-nq3.4/ASM-2): a failed read of the strip fails the read of the list, and the page shows its notice.
 export async function readSyncPage(
   fetch: PageFetch,
   listQuery: Record<string, unknown>,
