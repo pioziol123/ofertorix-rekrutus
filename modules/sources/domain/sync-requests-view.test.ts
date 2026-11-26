@@ -209,6 +209,7 @@ describe('"Uruchom ponownie" (T3-R08)', () => {
   })
 
   // ASSUMPTION(oferty-pracy-nq3.3/ASM-1): a rerun that requested nothing keeps the details and shows the dialog's summary and message.
+  // ASSUMPTION(oferty-pracy-nq3.3/ASM-2): a request without an answer counts every sent source as not requested.
   it('opens nothing and shows the summary and the message of a confirmation when nothing was requested (ASM-1)', () => {
     const skipped = [{ source: 'solid-jobs', outcome: 'skipped' as const }]
     expect(
