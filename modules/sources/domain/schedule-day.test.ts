@@ -39,6 +39,7 @@ describe('Warsaw schedule slots', () => {
   })
 })
 
+// ASSUMPTION(oferty-pracy-nq3.6/ASM-1): the schedule day compares the shown 24-hour HH:mm time.
 describe('the schedule day is kept after the move to the time library (T6-AC07)', () => {
   // The default sync time, times inside the spring gap and the autumn
   // overlap, and both ends of the day.

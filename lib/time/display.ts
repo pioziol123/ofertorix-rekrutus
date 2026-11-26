@@ -18,6 +18,7 @@ export function formatTime(moment: Date): string {
   return `${pad(time.hour)}:${pad(time.minute)}`
 }
 
+// ASSUMPTION(oferty-pracy-nq3.6/ASM-1): date with time is `DD.MM.RRRR HH:mm`.
 /** A UTC moment as its Polish date and time `DD.MM.RRRR HH:mm` (T6-R08). */
 export const formatDateTime = (moment: Date): string =>
   `${formatDate(moment)} ${formatTime(moment)}`

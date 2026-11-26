@@ -11,6 +11,7 @@ const at = (iso: string) => new Date(iso)
 const HOUR = 3_600_000
 const hoursBetween = (a: Date, b: Date) => (b.getTime() - a.getTime()) / HOUR
 
+// ASSUMPTION(oferty-pracy-nq3.6/ASM-1): the shown format is "DD.MM.RRRR HH:mm".
 describe('calendar days keep the Polish wall-clock time (T6-AC02)', () => {
   it.each([
     // spring change: noon CET = 11:00 UTC, noon CEST = 10:00 UTC
@@ -27,6 +28,7 @@ describe('calendar days keep the Polish wall-clock time (T6-AC02)', () => {
   })
 })
 
+// ASSUMPTION(oferty-pracy-nq3.6/ASM-1): the shown format is "DD.MM.RRRR HH:mm".
 describe('hours and minutes are exact elapsed time (T6-AC02)', () => {
   it.each([
     ['2026-03-28T11:00:00Z', '2026-03-29T11:00:00.000Z', '29.03.2026 13:00'],
@@ -46,6 +48,7 @@ describe('hours and minutes are exact elapsed time (T6-AC02)', () => {
   })
 })
 
+// ASSUMPTION(oferty-pracy-nq3.6/ASM-1): the shown format is "DD.MM.RRRR HH:mm".
 describe('a time the change skips or repeats (T6-AC03)', () => {
   it.each([
     // 02:30 on 28 March (CET) plus one day: 02:30 does not exist on 29 March
