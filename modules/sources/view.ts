@@ -37,6 +37,7 @@ export {
   choiceSummary,
   detailNumbers,
   emptyHistoryText,
+  escapeCloses,
   groupByDay,
   pageJumpKey,
   pageJumpNumbers,

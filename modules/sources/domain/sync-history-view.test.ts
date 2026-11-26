@@ -4,6 +4,7 @@ import {
   detailNumbers,
   durationText,
   emptyHistoryText,
+  escapeCloses,
   groupByDay,
   pageJumpKey,
   pageJumpNumbers,
@@ -278,5 +279,15 @@ describe('the details (T1-R12, R14, R15, T1-AC10)', () => {
 
   it('says what an empty list shows (T1-R11, T1-AC09)', () => {
     expect(emptyHistoryText).toBe('Brak synchronizacji dla wybranych filtrów')
+  })
+})
+
+describe('Escape on the page (T1-R12, T1-AC10)', () => {
+  it('closes the details when no list is open, an open list first', () => {
+    const open = { filterList: false, pageList: false, details: true }
+    expect(escapeCloses(open)).toBe('details')
+    expect(escapeCloses({ ...open, pageList: true })).toBe('pageList')
+    expect(escapeCloses({ ...open, filterList: true })).toBe('filterList')
+    expect(escapeCloses({ ...open, details: false })).toBeNull()
   })
 })

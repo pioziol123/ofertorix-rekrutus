@@ -7,6 +7,7 @@ import {
   clearFilters,
   detailNumbers,
   emptyHistoryText,
+  escapeCloses,
   filtersAtDefault,
   groupByDay,
   historyAddress,
@@ -202,10 +203,14 @@ function onMouseDown(event: MouseEvent) {
 }
 function onKeyDown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
-  const listOpen = sourceList.value?.open || stateList.value?.open
-  if (listOpen) closeLists()
-  else if (jump.value) jump.value = null
-  else if (selected.value) closeDetails()
+  const closes = escapeCloses({
+    filterList: !!(sourceList.value?.open || stateList.value?.open),
+    pageList: !!jump.value,
+    details: !!details.value,
+  })
+  if (closes === 'filterList') closeLists()
+  else if (closes === 'pageList') jump.value = null
+  else if (closes === 'details') closeDetails()
 }
 onMounted(() => {
   document.addEventListener('mousedown', onMouseDown)
@@ -305,6 +310,7 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
               v-for="choice in triggerChoices"
               :key="choice.value"
               :value="choice.value"
+              :selected="choice.value === (current.trigger ?? '')"
             >
               {{ choice.label }}
             </option>
@@ -321,6 +327,7 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
               v-for="choice in periodChoices"
               :key="choice.value"
               :value="choice.value"
+              :selected="choice.value === current.period"
             >
               {{ choice.label }}
             </option>
@@ -471,6 +478,7 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
                 v-for="size in pageSizes"
                 :key="size"
                 :value="String(size)"
+                :selected="size === current.size"
               >
                 {{ size }}
               </option>
