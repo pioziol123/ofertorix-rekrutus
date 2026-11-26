@@ -280,7 +280,10 @@ function openDialog(preset: DialogPreset) {
   const sources = dialogSources(data.value.sources)
   dialog.value = { preset, sources, checked: initiallyChecked(sources, preset) }
 }
-/** One request with every source; no answer counts each as not requested. */
+/**
+ * One request with every source; no answer counts each as not requested.
+ * ASSUMPTION(oferty-pracy-nq3.3/ASM-2): a request without an answer counts every sent source as not requested.
+ */
 async function requestSyncs(sources: string[]): Promise<PanelSyncResult> {
   try {
     return await $fetch<PanelSyncResult>('/api/sources/syncs', {
@@ -313,6 +316,7 @@ async function confirmDialog() {
     sending.value = false
   }
 }
+// ASSUMPTION(oferty-pracy-nq3.3/ASM-1): a rerun that requested nothing keeps the details and shows the dialog's summary and message.
 async function rerun() {
   if (!details.value || !current.value) return
   sending.value = true

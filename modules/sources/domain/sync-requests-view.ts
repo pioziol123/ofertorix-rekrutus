@@ -104,7 +104,7 @@ export function unansweredRequest(sources: readonly string[]): PanelSyncResult {
 
 /**
  * The list the page reads once after confirming (T3-R07): the state
- * filter W kolejce and W toku, the other filters at their defaults and
+ * filter of queued and running syncs, the other filters at their defaults and
  * page 1; the number per page is no filter and stays.
  */
 export const afterRequestQuery = (

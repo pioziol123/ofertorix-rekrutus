@@ -148,7 +148,7 @@ describe('after confirming (T3-R06, R07)', () => {
     ...change,
   })
 
-  it('reads the list with the state filter W kolejce and W toku and the other filters at defaults, on page 1 (T3-AC07)', () => {
+  it('reads the list with the state filter queued and running and the other filters at defaults, on page 1 (T3-AC07)', () => {
     const filtered = query({
       sources: ['indeed'],
       states: ['failed'],
