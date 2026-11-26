@@ -12,10 +12,9 @@ import type {
 } from './sync-history.ts'
 
 /**
- * What the page "Synchronizacje" shows of the history (T1): texts, the
- * grouping by day, a row's result, the details, the state tooltip's
- * position and the page list. Pure functions the page calls, so tests check
- * them without a browser.
+ * What the page "Synchronizacje" shows of the history (T1): texts, labels
+ * and icons, the grouping by day, a row's result and the details. Pure
+ * functions the page calls, so tests check them without a browser.
  */
 
 export const stateLabels: Record<SyncState, string> = {

@@ -1,7 +1,8 @@
 /**
  * The filters, paging and address of the sync history (T1-R08–R10, R17):
- * one reading of the page's address for the history read and the page, so
- * both apply the same defaults. Pure: no storage, no configuration.
+ * the history read reads the page's address with its defaults, and the
+ * page builds the next address from the filters the read returns. Pure: no
+ * storage, no configuration.
  */
 
 export const syncStates = [

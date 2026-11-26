@@ -1,6 +1,7 @@
 import { assessRemoteEligibility } from './remote-eligibility.ts'
-import { polishCatalog, type PolishSource } from './polish-catalog.ts'
-import { jobspyCatalog, type JobspySource } from './jobspy-catalog.ts'
+import { sourceName } from './source-names.ts'
+import { polishCatalog } from './polish-catalog.ts'
+import { jobspyCatalog } from './jobspy-catalog.ts'
 import {
   missingAdCompany,
   missingAdTitle,
@@ -138,12 +139,7 @@ export function projectSourceAd(
       Object.hasOwn(polishCatalog, row.source) ||
       row.source === 'himalayas')
       ? {
-          source:
-            row.source === 'himalayas'
-              ? 'Himalayas'
-              : Object.hasOwn(polishCatalog, row.source)
-                ? polishCatalog[row.source as PolishSource].name
-                : jobspyCatalog[row.source as JobspySource].name,
+          source: sourceName(row.source),
           qualificationUnknown: strings(p.qualificationUnknown),
           remoteEligibility: assessRemoteEligibility(
             p.sourceRecord && typeof p.sourceRecord === 'object'
