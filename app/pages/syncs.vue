@@ -7,12 +7,9 @@ import {
   clearFilters,
   detailNumbers,
   emptyHistoryText,
-  escapeCloses,
   filtersAtDefault,
   groupByDay,
   historyAddress,
-  pageJumpKey,
-  pageJumpNumbers,
   pageSizes,
   periodChoices,
   rowResult,
@@ -23,11 +20,9 @@ import {
   syncCourse,
   syncProblem,
   syncStates,
-  tooltipPosition,
   triggerChoices,
   triggerIcons,
   triggerTooltips,
-  type PageJump,
   type PageSize,
   type SyncDetails,
   type SyncHistoryFilters,
@@ -37,6 +32,13 @@ import {
   type SyncState,
   type SyncTrigger,
 } from '../../modules/sources/view'
+import {
+  escapeCloses,
+  pageJumpKey,
+  pageJumpNumbers,
+  tooltipPosition,
+  type PageJump,
+} from '../utils/page-controls'
 
 /**
  * The page "Synchronizacje" (T1): the history of every sync grouped by
