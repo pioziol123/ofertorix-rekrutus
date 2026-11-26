@@ -11,6 +11,7 @@ export {
   type SourceSyncState,
   type SyncRunRecord,
 } from './read-sync-state.ts'
+export { readSyncDetails, readSyncHistory } from './read-sync-history.ts'
 export { requestScheduledSyncs } from './request-scheduled-syncs.ts'
 export {
   requestSync,
