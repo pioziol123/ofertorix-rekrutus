@@ -721,6 +721,10 @@ const pageLink = (page: number) => ({
           <template v-else-if="detail">
             <h2>{{ detail.title }}</h2>
             <p class="detail-company">{{ detail.company }}</p>
+            <OfferApplicationStage
+              :key="`application-${detail.id}`"
+              :offer-id="detail.id"
+            />
             <OfferCompanies
               :key="`company-${detail.id}`"
               :offer-id="detail.id"

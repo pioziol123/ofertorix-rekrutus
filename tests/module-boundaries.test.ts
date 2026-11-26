@@ -11,6 +11,7 @@ const modules = [
   'matching',
   'companies',
   'ai',
+  'recruitments',
 ] as const
 
 const isTest = (file: string) =>
