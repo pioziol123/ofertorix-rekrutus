@@ -1,5 +1,19 @@
 <script setup lang="ts">
 import {
+  afterRequestQuery,
+  canConfirm,
+  dialogSources,
+  dialogTitles,
+  initiallyChecked,
+  listReadFor,
+  requestFailure,
+  requestSummary,
+  rerunOffered,
+  rerunOutcome,
+  unansweredRequest,
+  type DialogPreset,
+  type DialogSource,
+  type PanelSyncResult,
   changeFilters,
   changePageSize,
   choiceOnClose,
@@ -43,10 +57,11 @@ import {
 import { isNotFound } from '../utils/fetch-errors'
 
 /**
- * The page "Synchronizacje" (T1): the history of every sync grouped by
- * day, its filters and pages in the address, and one sync's details in a
- * drawer. It does not refresh by itself; "Odśwież" reads the list and the
- * open details again.
+ * The page "Synchronizacje" (T1, T3): the history of every sync grouped by
+ * day, its filters and pages in the address, one sync's details in a
+ * drawer, and requesting syncs through a dialog of the sources or
+ * "Uruchom ponownie" in the details. It does not refresh by itself;
+ * "Odśwież" reads the list and the open details again.
  */
 useHead({ title: 'Synchronizacje — Oferty pracy' })
 const route = useRoute()
@@ -227,11 +242,13 @@ function onMouseDown(event: MouseEvent) {
 function onKeyDown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
   const closes = escapeCloses({
+    dialog: !!dialog.value,
     filterList: !!(sourceList.value?.open || stateList.value?.open),
     pageList: !!jump.value,
     details: !!details.value,
   })
-  if (closes === 'filterList') closeLists()
+  if (closes === 'dialog') dialog.value = null
+  else if (closes === 'filterList') closeLists()
   else if (closes === 'pageList') jump.value = null
   else if (closes === 'details') closeDetails()
 }
@@ -249,6 +266,67 @@ onUnmounted(() => {
 const problem = computed(() =>
   details.value ? syncProblem(details.value) : null,
 )
+
+// Requesting syncs (T3): the dialog of the sources and its outcome.
+const dialog = ref<{
+  preset: DialogPreset
+  sources: DialogSource[]
+  checked: string[]
+} | null>(null)
+const sending = ref(false)
+const outcome = ref<{ summary: string; failure: string | null } | null>(null)
+function openDialog(preset: DialogPreset) {
+  if (!data.value) return
+  const sources = dialogSources(data.value.sources)
+  dialog.value = { preset, sources, checked: initiallyChecked(sources, preset) }
+}
+/** One request with every source; no answer counts each as not requested. */
+async function requestSyncs(sources: string[]): Promise<PanelSyncResult> {
+  try {
+    return await $fetch<PanelSyncResult>('/api/sources/syncs', {
+      method: 'POST',
+      body: { sources },
+    })
+  } catch {
+    return unansweredRequest(sources)
+  }
+}
+/** Shows the query and the sync, reading the list once (T3-R07, R08). */
+async function showAfterRequest(query: SyncHistoryQuery, sync: string | null) {
+  const read = listReadFor(route.query, query, sync)
+  await go(query, sync)
+  if (read === 'refresh') await refreshList()
+}
+async function confirmDialog() {
+  if (!dialog.value || !canConfirm(dialog.value.checked) || !current.value)
+    return
+  sending.value = true
+  try {
+    const result = await requestSyncs(dialog.value.checked)
+    outcome.value = {
+      summary: requestSummary(result.counts),
+      failure: requestFailure(result.counts),
+    }
+    dialog.value = null
+    await showAfterRequest(afterRequestQuery(current.value), selected.value)
+  } finally {
+    sending.value = false
+  }
+}
+async function rerun() {
+  if (!details.value || !current.value) return
+  sending.value = true
+  try {
+    const next = rerunOutcome(await requestSyncs([details.value.source]))
+    outcome.value = 'open' in next ? null : next
+    await showAfterRequest(
+      current.value,
+      'open' in next ? next.open : selected.value,
+    )
+  } finally {
+    sending.value = false
+  }
+}
 const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
 </script>
 
@@ -261,9 +339,29 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
           <p class="eyebrow">SYNCHRONIZACJA OGŁOSZEŃ</p>
           <h1>Synchronizacje</h1>
         </div>
-        <UButton variant="outline" data-testid="sync-refresh" @click="refresh"
-          >Odśwież</UButton
-        >
+        <div class="sync-actions">
+          <UButton variant="outline" data-testid="sync-refresh" @click="refresh"
+            >Odśwież</UButton
+          >
+          <template v-if="data">
+            <UButton
+              variant="outline"
+              data-testid="sync-choose"
+              @click="openDialog('none')"
+              >Wybierz źródła</UButton
+            >
+            <UButton data-testid="sync-all" @click="openDialog('all')"
+              >Synchronizuj wszystkie</UButton
+            >
+          </template>
+        </div>
+      </div>
+
+      <div v-if="outcome" class="sync-outcome" data-testid="sync-outcome">
+        <p role="status">{{ outcome.summary }}</p>
+        <p v-if="outcome.failure" role="alert" class="notice">
+          {{ outcome.failure }}
+        </p>
       </div>
 
       <div v-if="data && current" class="sync-toolbar">
@@ -549,6 +647,14 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
           </h2>
           <SyncStateLabel :state="details.status" />
           <div
+            v-if="data && rerunOffered(details, data.sources)"
+            class="sync-rerun"
+          >
+            <UButton data-testid="sync-rerun" :disabled="sending" @click="rerun"
+              >Uruchom ponownie</UButton
+            >
+          </div>
+          <div
             v-if="problem"
             :class="['sync-problem', { failed: details.status === 'failed' }]"
             data-testid="sync-problem"
@@ -587,6 +693,55 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
           </section>
         </aside>
       </template>
+
+      <template v-if="dialog">
+        <div
+          class="sync-backdrop sync-dialog-backdrop"
+          @click="dialog = null"
+        />
+        <div
+          class="sync-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sync-dialog-title"
+          data-testid="sync-dialog"
+        >
+          <h2 id="sync-dialog-title">{{ dialogTitles[dialog.preset] }}</h2>
+          <p class="muted">
+            Zaznaczone źródła dostaną po jednej synchronizacji. Źródło, które
+            już ma trwającą, nie dostanie drugiej.
+          </p>
+          <div class="sync-dialog-list">
+            <label
+              v-for="source in dialog.sources"
+              :key="source.id"
+              :class="['sync-dialog-item', { off: !source.checkable }]"
+              ><input
+                v-model="dialog.checked"
+                type="checkbox"
+                :value="source.id"
+                :disabled="!source.checkable"
+              />
+              {{ source.name }}
+              <span v-if="source.note" class="sync-dialog-note">{{
+                source.note
+              }}</span></label
+            >
+          </div>
+          <p class="muted">
+            Każde źródło pobiera ten sam zakres: PHP · senior.
+          </p>
+          <div class="sync-dialog-foot">
+            <UButton variant="outline" @click="dialog = null">Anuluj</UButton>
+            <UButton
+              data-testid="sync-confirm"
+              :disabled="!canConfirm(dialog.checked) || sending"
+              @click="confirmDialog"
+              >Synchronizuj</UButton
+            >
+          </div>
+        </div>
+      </template>
     </main>
     <div
       v-show="tip.shown"
@@ -601,6 +756,75 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
 </template>
 
 <style scoped>
+.sync-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sync-outcome {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+.sync-outcome p {
+  margin: 4px 0;
+}
+.sync-rerun {
+  margin-top: 12px;
+}
+.sync-dialog-backdrop {
+  z-index: 7;
+}
+.sync-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 8;
+  width: min(620px, 94vw);
+  max-height: 90vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 14px;
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+.sync-dialog h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+.sync-dialog-list {
+  max-height: 52vh;
+  overflow: auto;
+  border: 1px solid #dce4dd;
+  border-radius: 9px;
+  margin: 12px 0;
+}
+.sync-dialog-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 12px;
+  border-top: 1px solid #f0f2ef;
+  font-size: 13px;
+}
+.sync-dialog-item:first-child {
+  border-top: 0;
+}
+.sync-dialog-item.off {
+  color: #9aa49e;
+}
+.sync-dialog-note {
+  margin-left: auto;
+  font-size: 12px;
+  color: #69766f;
+}
+.sync-dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
 .sync-toolbar {
   display: flex;
   gap: 10px;

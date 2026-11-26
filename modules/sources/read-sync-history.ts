@@ -18,11 +18,20 @@ import {
   findUnavailableCountedSince,
   type HistoryRow,
 } from './infrastructure/persistence/sync-history.ts'
+import { listUnfinishedRuns } from './sync-run-state.ts'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** Every catalogue source, in catalogue order (T1-R08). */
-function catalog(connectors: ConnectorProvider): CatalogSource[] {
+/**
+ * Every catalogue source, in catalogue order (T1-R08), with the id of its
+ * unfinished run, if any (T3 approach, item 4).
+ */
+async function catalog(
+  connectors: ConnectorProvider,
+): Promise<CatalogSource[]> {
+  const unfinished = new Map<string, string>()
+  for (const run of await listUnfinishedRuns())
+    if (!unfinished.has(run.source)) unfinished.set(run.source, run.id)
   return connectors.names().map((id) => {
     const connector = connectors.get(id)
     return {
@@ -31,6 +40,7 @@ function catalog(connectors: ConnectorProvider): CatalogSource[] {
       // ASSUMPTION(oferty-pracy-0mq.16/ASM-4): the connector answers it from the source's configuration.
       enabled: connector.enabled(),
       marksUnavailable: connector.infersUnavailabilityFromAbsence,
+      unfinishedRun: unfinished.get(id) ?? null,
     }
   })
 }
@@ -75,7 +85,7 @@ export async function readSyncHistory(
   /** Tests replace the application's connectors. */
   connectors: ConnectorProvider = sourceConnectors,
 ): Promise<SyncHistoryPage> {
-  const sources = catalog(connectors)
+  const sources = await catalog(connectors)
   const query = readHistoryQuery(
     address,
     sources.map((source) => source.id),

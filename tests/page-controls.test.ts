@@ -87,10 +87,19 @@ describe('the page list (T1-R09, T1-AC07)', () => {
 
 describe('Escape on the page (T1-R12, T1-AC10)', () => {
   it('closes the details when no list is open, an open list first', () => {
-    const open = { filterList: false, pageList: false, details: true }
+    const open = {
+      dialog: false,
+      filterList: false,
+      pageList: false,
+      details: true,
+    }
     expect(escapeCloses(open)).toBe('details')
     expect(escapeCloses({ ...open, pageList: true })).toBe('pageList')
     expect(escapeCloses({ ...open, filterList: true })).toBe('filterList')
     expect(escapeCloses({ ...open, details: false })).toBeNull()
+    // The dialog of the sources to sync closes first (T3-R01).
+    expect(
+      escapeCloses({ ...open, filterList: true, pageList: true, dialog: true }),
+    ).toBe('dialog')
   })
 })

@@ -46,3 +46,19 @@ export {
   triggerTooltips,
   type UnavailableContext,
 } from './domain/sync-history-view.ts'
+export type { PanelSyncResult } from './domain/panel-syncs.ts'
+export {
+  afterRequestQuery,
+  canConfirm,
+  dialogSources,
+  dialogTitles,
+  initiallyChecked,
+  listReadFor,
+  requestFailure,
+  requestSummary,
+  rerunOffered,
+  rerunOutcome,
+  unansweredRequest,
+  type DialogPreset,
+  type DialogSource,
+} from './domain/sync-requests-view.ts'

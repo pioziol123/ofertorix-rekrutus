@@ -139,6 +139,9 @@ integration('page "Synchronizacje" over HTTP (T1)', () => {
         ...process.env,
         DATABASE_URL: connection.toString(),
         PG_BOSS_SCHEMA: queueSchema,
+        // Bayt is disabled; SOLID.Jobs is always enabled (T3).
+        JOBSPY_ENABLED: 'false',
+        JOBSPY_SOURCES: '',
         NITRO_HOST: '127.0.0.1',
         NITRO_PORT: String(address.port),
       },
@@ -438,6 +441,104 @@ integration('page "Synchronizacje" over HTTP (T1)', () => {
       expect(text(await drawerOf(id))).toContain(
         'nie dotyczy oznaczonych jako niedostępne w źródle',
       )
+    })
+  })
+
+  describe('requesting syncs (T3)', () => {
+    let solid: string
+    beforeEach(async () => {
+      solid = randomUUID()
+      await pool.query(
+        'INSERT INTO source_scopes(id,source,fingerprint,parameters) VALUES($1,$2,$3,$4)',
+        [solid, 'solid-jobs', randomUUID(), {}],
+      )
+    })
+    const drawerOf = async (id: string) =>
+      (await page(`/syncs?sync=${id}`)).split('data-testid="sync-details"')[1]!
+    const post = (body: string, headers: Record<string, string> = {}) =>
+      fetch(`${base}/api/sources/syncs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: base,
+          ...headers,
+        },
+        body,
+      })
+
+    it('offers "Wybierz źródła" and "Synchronizuj wszystkie" (T3-R01)', async () => {
+      const html = await page('/syncs')
+      for (const [id, label] of [
+        ['sync-choose', 'Wybierz źródła'],
+        ['sync-all', 'Synchronizuj wszystkie'],
+      ])
+        expect(
+          text(html.split(`data-testid="${id}"`)[1]!.split('</button>')[0]!),
+        ).toMatch(new RegExp(`>\\s*${label}\\s*$`))
+    })
+
+    it('offers "Uruchom ponownie" in the details of a finished sync of an enabled source only (T3-AC08)', async () => {
+      for (const status of ['complete', 'partial', 'failed'])
+        expect(
+          text(await drawerOf(await run(status, { scope: solid }))),
+          status,
+        ).toContain('Uruchom ponownie')
+      for (const status of ['queued', 'running'])
+        expect(
+          text(await drawerOf(await run(status, { scope: solid }))),
+          status,
+        ).not.toContain('Uruchom ponownie')
+      // Bayt is disabled in configuration.
+      expect(text(await drawerOf(await run('complete')))).not.toContain(
+        'Uruchom ponownie',
+      )
+    })
+
+    it('gives each source its outcome: a disabled and an unknown source are skipped (T3-AC05)', async () => {
+      const response = await post(
+        JSON.stringify({ sources: ['bayt', 'no-such-source'] }),
+      )
+      expect(response.status).toBe(200)
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(await response.json()).toEqual({
+        outcomes: [
+          { source: 'bayt', outcome: 'skipped' },
+          { source: 'no-such-source', outcome: 'skipped' },
+        ],
+        counts: {
+          requested: 0,
+          alreadyRunning: 0,
+          skipped: 2,
+          notRequested: 0,
+        },
+      })
+      expect(
+        (await pool.query('SELECT count(*)::int AS n FROM source_sync_runs'))
+          .rows[0].n,
+      ).toBe(0)
+    })
+
+    it('answers 400 for a malformed body, an empty list and one longer than the catalogue, and refuses another origin', async () => {
+      const tooMany = Array.from({ length: 16 }, (_, i) => `source-${i}`)
+      for (const body of [
+        'not json',
+        JSON.stringify({ sources: 'bayt' }),
+        JSON.stringify({ sources: [1] }),
+        JSON.stringify({ sources: ['bayt'], extra: true }),
+        JSON.stringify({ sources: [] }),
+        JSON.stringify({ sources: tooMany }),
+      ])
+        expect((await post(body)).status, body).toBe(400)
+      expect((await post('{}', { 'Content-Type': 'text/plain' })).status).toBe(
+        415,
+      )
+      expect(
+        (
+          await post(JSON.stringify({ sources: ['bayt'] }), {
+            Origin: 'http://elsewhere.example',
+          })
+        ).status,
+      ).toBe(403)
     })
   })
 })

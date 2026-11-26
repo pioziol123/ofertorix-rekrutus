@@ -12,6 +12,10 @@ export {
   type SyncRunRecord,
 } from './read-sync-state.ts'
 export { readSyncDetails, readSyncHistory } from './read-sync-history.ts'
+export {
+  InvalidPanelSyncRequestError,
+  requestPanelSyncs,
+} from './request-panel-syncs.ts'
 export { requestScheduledSyncs } from './request-scheduled-syncs.ts'
 export {
   requestSync,

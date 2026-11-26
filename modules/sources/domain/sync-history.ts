@@ -199,6 +199,11 @@ export type CatalogSource = {
   enabled: boolean
   /** Whether its complete sync marks absent ads unavailable at the source. */
   marksUnavailable: boolean
+  /**
+   * The id of the source's queued or running sync, or null; the dialog of
+   * T3 marks such a source "już trwa" (T3 approach, item 4).
+   */
+  unfinishedRun: string | null
 }
 
 /** One sync of the history; moments are ISO text in UTC. */

@@ -372,6 +372,7 @@ integration('sync history reads in an isolated PostgreSQL schema', () => {
         name: 'SOLID.Jobs',
         enabled: true,
         marksUnavailable: true,
+        unfinishedRun: null,
       })
       expect(byId.himalayas).toMatchObject({
         name: 'Himalayas',

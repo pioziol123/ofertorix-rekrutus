@@ -73,14 +73,17 @@ export function pageJumpKey(
 }
 
 /**
- * What Escape closes on the page, innermost first: an open filter list,
- * the page list, then the details drawer (T1-R08, R09, R12).
+ * What Escape closes on the page, innermost first: the dialog of the
+ * sources to sync (T3-R01), an open filter list, the page list, then the
+ * details drawer (T1-R08, R09, R12).
  */
 export function escapeCloses(open: {
+  dialog: boolean
   filterList: boolean
   pageList: boolean
   details: boolean
-}): 'filterList' | 'pageList' | 'details' | null {
+}): 'dialog' | 'filterList' | 'pageList' | 'details' | null {
+  if (open.dialog) return 'dialog'
   if (open.filterList) return 'filterList'
   if (open.pageList) return 'pageList'
   return open.details ? 'details' : null
