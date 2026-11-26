@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="pl">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prototyp • Moja lista</title>
+<!-- Throwaway UI mock-up of the page "Moja lista" (epic oferty-pracy-lq3), modelled on the sync panel mock-up.
+     Fictional data, in-memory only. Not product code. -->
+<style>
+:root{--ink:#20372f;--muted:#69766f;--line:#dce4dd;--bg:#f4f6f2;--green:#245c44;
+  --con:#1d5fa8;--conbg:#e6effa;--cv:#2f6b3f;--cvbg:#e3f0e3;--rej:#a1302a;--rejbg:#f9e3e1;--rem:#6b7280;--rembg:#eef0f2}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:7px;padding:6px 11px}
+button:hover{border-color:var(--green)} button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--green);border-color:var(--green);color:#fff;font-weight:600}
+select,textarea{border:1px solid var(--line);border-radius:7px;padding:5px 8px;background:#fff}
+h1{font-size:28px;font-weight:650;letter-spacing:-.8px;margin:0} h2{font-size:20px;margin:4px 0} h3{font-size:13px;margin:0 0 8px}
+.muted{color:var(--muted)}
+.proto{background:#fff6d6;border-bottom:1px solid #ecd98f;padding:6px 36px;font-size:12px}
+header.app{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:24px;padding:0 36px}
+.brand{display:flex;gap:10px;align-items:center;font-weight:650}
+.brand b{width:32px;height:32px;display:grid;place-items:center;background:var(--green);color:#fff;border-radius:9px;font-size:21px}
+nav{margin-left:auto;display:flex;gap:22px;font-size:12px} nav a{color:#6b7d6e;text-decoration:none} nav a.cur{color:var(--green);font-weight:650}
+main{max-width:1200px;margin:auto;padding:28px 36px}
+.eyebrow{color:#63836b;font-size:10px;font-weight:700;letter-spacing:1.8px;margin:0 0 6px}
+.toolbar{display:flex;gap:10px;align-items:end;margin:16px 0 12px}
+.toolbar label{display:flex;flex-direction:column;font-size:11px;color:var(--muted);gap:2px}
+.toolbar select{width:200px;height:34px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11px;color:var(--muted);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--line)}
+td{padding:11px 14px;border-bottom:1px solid #eef2ee}
+tr.row{cursor:pointer} tr.row:hover{background:#f7faf6} tr.row.sel{background:#eef5ec;box-shadow:inset 3px 0 var(--green)}
+.title{font-weight:600} .sub{font-size:12px;color:var(--muted)}
+.badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+.s-to_consider{color:var(--con);background:var(--conbg)} .s-cv_sent{color:var(--cv);background:var(--cvbg)}
+.s-rejected{color:var(--rej);background:var(--rejbg)} .s-removed{color:var(--rem);background:var(--rembg)}
+.gone{font-size:11px;color:var(--rej);border:1px solid #efc9c5;border-radius:999px;padding:0 7px;margin-left:6px}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+.pager{display:flex;justify-content:center;align-items:center;gap:14px;margin:18px 0;font-size:13px;color:var(--muted)}
+.pjump{position:relative}
+.pjump>button{min-width:140px}
+.pjump-pop{position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:8px;width:160px;z-index:4}
+.pjump-hint{text-align:center;font-weight:650;color:var(--ink);margin-bottom:6px;min-height:20px}
+.pjump-list{display:flex;flex-direction:column;max-height:220px;overflow:auto}
+.pjump-list button{border:0;background:none;padding:5px}.pjump-list button.cur{font-weight:650;color:var(--green);background:#eef5ec}
+.backdrop{position:fixed;inset:0;background:rgba(20,30,25,.25);z-index:5}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(480px,100vw);background:#fff;z-index:6;padding:22px;overflow:auto;box-shadow:-8px 0 30px rgba(0,0,0,.12)}
+.dtop{display:flex;justify-content:space-between;align-items:start;gap:10px}
+.sect{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
+dl{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;margin:0;font-size:13px} dt{color:var(--muted)} dd{margin:0}
+textarea{width:100%;min-height:120px;resize:vertical}
+.hist{list-style:none;margin:0;padding:0;font-size:13px} .hist li{display:flex;gap:12px;padding:5px 0;border-bottom:1px solid #eef2ee}
+.hist time{color:var(--muted);min-width:128px}
+.msg{border-radius:8px;padding:7px 10px;margin-top:8px;font-size:13px} .msg.ok{background:#eaf3e6} .msg.err{background:var(--rejbg);color:var(--rej)}
+a.link{color:var(--green)}
+</style>
+<div class="proto">Prototyp „Moja lista” — dane fikcyjne, nic się nie zapisuje. Wzorowany na makiecie panelu synchronizacji.</div>
+<header class="app"><span class="brand"><b>◆</b>Oferty pracy</span>
+<nav><a href="#">Oferty</a><a class="cur" href="#">Moja lista</a><a href="#">Synchronizacje</a><a href="#">Firmy</a><a href="#">Mój profil</a><a href="#">Zlecenia AI</a></nav></header>
+<main id="app"></main>
+<script>
+const LABEL={to_consider:'Do rozważenia',cv_sent:'CV wysłane',rejected:'Odrzucone',removed:'Zdjęta z listy'}
+const ICON={to_consider:'🔖',cv_sent:'✈',rejected:'⊘',removed:'–'}
+const ALLOWED={to_consider:['cv_sent','rejected','removed'],cv_sent:['rejected','to_consider'],rejected:['to_consider','cv_sent','removed'],removed:['to_consider','cv_sent','rejected']}
+const CHOICES={active:['Aktywne',['to_consider','cv_sent']],all:['Wszystkie',['to_consider','cv_sent','rejected']],to_consider:['Do rozważenia',['to_consider']],cv_sent:['CV wysłane',['cv_sent']],rejected:['Odrzucone',['rejected']]}
+const SIZES=[10,20,50,100]
+const titles=['Senior PHP Developer','Backend Engineer (Symfony)','PHP Tech Lead','Senior Laravel Developer','Software Engineer – Payments','Fullstack PHP/Vue','Platform Engineer','Senior Backend Developer']
+const firms=['Spryker','Docplanner','Allegro','STX Next','Brainly','Shopware','Billennium','Ryvu','Synerise','Netguru']
+const pays=['18 000–24 000 PLN netto/mies. (B2B)','15 000–20 000 PLN brutto/mies. (UoP)','Brak widełek','120–150 PLN netto/h (B2B)','5 500–7 000 EUR/mies. (B2B)']
+const DAY=864e5, now=Date.now()
+const apps=Array.from({length:47},(_,i)=>{
+  const path=[['to_consider'],['to_consider','cv_sent'],['cv_sent','rejected'],['to_consider','rejected'],['to_consider','cv_sent','rejected','cv_sent'],['to_consider','removed']][i%6]
+  let t=now-(i*1.7+3)*DAY; const history=path.map((s,k)=>({stage:s,at:new Date(t+k*2.3*DAY+(i*37%600)*6e4)}))
+  return {offer:'o'+i,title:titles[i%8],company:firms[i%10],salary:pays[i%5],gone:i%7===3,stage:history.at(-1).stage,at:history.at(-1).at,
+    note:i%3?'':'Rozmowa z rekruterką: proces 3-etapowy, zadanie domowe. Pytać o zespół.',history:history.reverse()}
+})
+const fmtD=d=>d.toLocaleDateString('pl-PL',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'Europe/Warsaw'})
+const fmtDT=d=>fmtD(d)+' '+d.toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Warsaw'})
+const badge=s=>`<span class="badge s-${s}">${ICON[s]} ${LABEL[s]}</span>`
+function readAddr(){const q=new URLSearchParams(location.search)
+  const stage=CHOICES[q.get('stage')]?q.get('stage'):'active', size=SIZES.includes(+q.get('size'))?+q.get('size'):20
+  return {stage,size,page:Math.max(1,parseInt(q.get('page'))||1),offer:q.get('offer')}}
+let st=readAddr(), jump=null, typed='', msg=null
+function write(){const q=new URLSearchParams()
+  if(st.stage!=='active')q.set('stage',st.stage); if(st.page>1)q.set('page',st.page); if(st.size!==20)q.set('size',st.size); if(st.offer)q.set('offer',st.offer)
+  try{history.replaceState(null,'','?'+q)}catch(e){} render()}
+function rows(){return apps.filter(a=>CHOICES[st.stage][1].includes(a.stage)).sort((a,b)=>b.at-a.at||(a.offer<b.offer?1:-1))}
+function render(){const all=rows(), pages=Math.max(1,Math.ceil(all.length/st.size)); st.page=Math.min(st.page,pages)
+  const items=all.slice((st.page-1)*st.size,st.page*st.size), sel=apps.find(a=>a.offer===st.offer)
+  document.getElementById('app').innerHTML=`
+  <p class="eyebrow">REKRUTACJE</p><h1>Moja lista</h1>
+  <div class="toolbar"><label>Etap<select id="stage">${Object.entries(CHOICES).map(([k,[l]])=>`<option value="${k}"${k===st.stage?' selected':''}>${l}</option>`).join('')}</select></label>
+   <span class="muted" style="margin-left:auto;font-size:13px">${all.length} ofert</span></div>
+  <section class="card">${items.length?`<table><thead><tr><th>Oferta</th><th>Etap</th><th>Ostatnia zmiana etapu</th></tr></thead><tbody>
+   ${items.map(a=>`<tr class="row${a===sel?' sel':''}" data-offer="${a.offer}"><td><div class="title">${a.title}${a.gone?'<span class="gone">Niedostępna w źródle</span>':''}</div><div class="sub">${a.company}</div></td><td>${badge(a.stage)}</td><td>${fmtD(a.at)}</td></tr>`).join('')}
+   </tbody></table>`:'<div class="empty">Brak ofert na liście dla wybranego etapu</div>'}</section>
+  <div class="pager"><button id="prev"${st.page<=1?' disabled':''}>Poprzednia</button>
+   <span class="pjump"><button id="pj">Strona ${st.page} z ${pages}</button>${jump?`<div class="pjump-pop"><div class="pjump-hint">${typed}</div><div class="pjump-list">${
+     Array.from({length:pages},(_,i)=>i+1).filter(n=>String(n).startsWith(typed)).map(n=>`<button data-page="${n}" class="${n===st.page?'cur':''}">${n}</button>`).join('')}</div></div>`:''}</span>
+   <button id="next"${st.page>=pages?' disabled':''}>Następna</button>
+   <select id="size">${SIZES.map(s=>`<option${s===st.size?' selected':''}>${s}</option>`).join('')}</select> na stronę</div>
+  ${sel?drawer(sel):''}`}
+function drawer(a){return `<div class="backdrop" data-close></div><aside class="drawer">
+  <div class="dtop"><div><p class="eyebrow">APLIKACJA</p><h2>${a.title}</h2><div class="muted">${a.company}${a.gone?'<span class="gone">Niedostępna w źródle</span>':''}</div></div><button data-close>✕</button></div>
+  <dl style="margin-top:12px"><dt>Widełki</dt><dd>${a.salary}</dd></dl>
+  <div class="sect"><h3>Etap</h3><select id="move"><option value="">${LABEL[a.stage]}</option>${ALLOWED[a.stage].map(s=>`<option value="${s}">→ ${LABEL[s]}</option>`).join('')}</select>
+   ${msg?`<div class="msg ${msg[0]}">${msg[1]}</div>`:''}</div>
+  <div class="sect"><h3>Notatka</h3><textarea id="note" maxlength="10000">${a.note}</textarea><div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><small class="muted" id="cnt">${a.note.length} / 10 000</small><button class="primary" id="savenote">Zapisz notatkę</button></div></div>
+  <div class="sect"><h3>Historia etapów</h3><ul class="hist">${a.history.map(h=>`<li><time>${fmtDT(h.at)}</time>${badge(h.stage)}</li>`).join('')}</ul></div>
+  <div class="sect"><a class="link" href="#" onclick="return false">Otwórz ofertę →</a></div></aside>`}
+document.addEventListener('click',e=>{const t=e.target.closest('[data-offer],[data-close],[data-page],#prev,#next,#pj,#savenote');
+  if(!t){if(jump){jump=null;typed='';render()}return}
+  if(t.dataset.offer){st.offer=t.dataset.offer;msg=null;write()}
+  else if('close'in t.dataset){st.offer=null;write()}
+  else if(t.dataset.page){st.page=+t.dataset.page;jump=null;typed='';write()}
+  else if(t.id==='prev'){st.page--;write()} else if(t.id==='next'){st.page++;write()}
+  else if(t.id==='pj'){jump=!jump;typed='';render()}
+  else if(t.id==='savenote'){apps.find(a=>a.offer===st.offer).note=document.getElementById('note').value;msg=['ok','Notatka zapisana.'];render()}})
+document.addEventListener('change',e=>{if(e.target.id==='stage'){st.stage=e.target.value;st.page=1;write()}
+  else if(e.target.id==='size'){st.size=+e.target.value;st.page=1;write()}
+  else if(e.target.id==='move'&&e.target.value){const a=apps.find(x=>x.offer===st.offer),s=e.target.value
+    a.stage=s;a.at=new Date();a.history.unshift({stage:s,at:a.at});msg=['ok','Etap zmieniony na „'+LABEL[s]+'”.'];render()}})
+document.addEventListener('input',e=>{if(e.target.id==='note')document.getElementById('cnt').textContent=e.target.value.length+' / 10 000'})
+document.addEventListener('keydown',e=>{if(jump){if(/^\d$/.test(e.key))typed+=e.key;else if(e.key==='Backspace')typed=typed.slice(0,-1)
+   else if(e.key==='Enter'){const f=document.querySelector('.pjump-list button');if(f){st.page=+f.dataset.page}jump=null;typed='';return write()}
+   else if(e.key==='Escape'){jump=null;typed=''} render();return}
+  if(e.key==='Escape'&&st.offer){st.offer=null;write()}})
+render()
+</script>

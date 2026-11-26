@@ -18,15 +18,15 @@ The owner shaped this scope in a conversation on 22–26 November 2026. It is th
 
 ## What changes for the owner
 
-- An offer can have an **application**. Its stage is one of: to consider, CV sent, rejected, removed from the list.
+- An offer can have an **application**. Its stage is one of: to consider, CV sent, rejected, removed from the list. Removed from the list is how the owner undoes a first save, because an application is never deleted.
 - **Rejected** covers both a company turning the owner down and the owner giving up; the owner writes who and why in the note.
 - The application has one free-text **note**, editable at any stage, also after rejection.
 - The date of a stage is the moment the owner moved the application into it. The owner never picks a date.
-- A mistaken step is undone by choosing an earlier stage; from rejected the owner chooses which stage to return to.
+- A mistaken step is undone by choosing another allowed stage; from rejected the owner chooses which stage to return to.
 - Offer details show the application's stage in a stage field that moves it, and a link to the application details. They do not show the note.
-- A new page **Moja lista** lists the offers with an application, active ones by default, paged like the page Synchronizacje.
+- A new page **Moja lista** lists the offers whose application is not removed from the list, active ones by default, paged like the page Synchronizacje.
 - **Application details** open from Moja lista: the offer's title, company and salary range, the stage field, the note and the history of stages.
-- The offer list shows an icon of the stage at each offer with an application, and gets a multi-select filter by stage.
+- The offer list shows an icon of the stage at each offer that is to consider, CV sent or rejected, and gets a multi-select filter by stage.
 
 ## Out of scope
 
@@ -38,7 +38,8 @@ The owner shaped this scope in a conversation on 22–26 November 2026. It is th
 
 ## Risks
 
-- **Offers are not grouped yet.** Today each ad is its own offer, so an application belongs to one ad. When grouping arrives, applications must move to the grouped offer.
+- **Offers are not grouped yet.** Today each ad is its own offer, so an application belongs to one ad. When grouping arrives, applications must move to the grouped offer, and two ads that both have an application collide with the rule of one application per offer.
+- **Shared elements come from an unfinished epic.** The paging and the multi-choice filter are built by the sync panel task `oferty-pracy-nq3.1`, still in progress; task 4 shares them once it is done, and tasks 2 and 3 wait for it.
 
 ## Success
 
@@ -46,11 +47,12 @@ The owner shaped this scope in a conversation on 22–26 November 2026. It is th
 - Moja lista shows the active applications by default, sorted from the most recently changed.
 - The offer list filtered by one or more stages shows only the offers in those stages.
 
-## Stages
+## Delivery order
 
 1. The application in offer details: the Recruitments module, stages, transitions and their history (`oferty-pracy-lq3.1`).
-2. The page Moja lista and the application details with the note and the history (`oferty-pracy-lq3.2`, after 1 and after the paging of the page Synchronizacje, `oferty-pracy-nq3.1`).
-3. The stage on the offer list: icon and filter (`oferty-pracy-lq3.3`, after 1 and after `oferty-pracy-nq3.1`, whose multi-choice filter it reuses).
+2. The page Moja lista and the application details with the note and the history (`oferty-pracy-lq3.2`, after 1 and 4).
+3. The stage on the offer list: icon and filter (`oferty-pracy-lq3.3`, after 1 and 4).
+4. The shared paging and multi-choice filter, moved out of the page Synchronizacje (`oferty-pracy-lq3.4`, after `oferty-pracy-nq3.1`).
 
 ## Constraints and dependencies
 
