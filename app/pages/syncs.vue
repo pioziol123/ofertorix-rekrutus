@@ -39,6 +39,7 @@ import {
   tooltipPosition,
   type PageJump,
 } from '../utils/page-controls'
+import { isNotFound } from '../utils/fetch-errors'
 
 /**
  * The page "Synchronizacje" (T1): the history of every sync grouped by
@@ -65,7 +66,11 @@ const selected = computed(() =>
   typeof route.query.sync === 'string' ? route.query.sync : '',
 )
 const request = useRequestFetch()
-const { data: details, refresh: refreshDetails } = await useAsyncData(
+const {
+  data: details,
+  error: detailsError,
+  refresh: refreshDetails,
+} = await useAsyncData(
   'sync-details',
   async (): Promise<SyncDetails | null> => {
     if (!selected.value) return null
@@ -73,9 +78,11 @@ const { data: details, refresh: refreshDetails } = await useAsyncData(
       return await request<SyncDetails>(
         `/api/sources/syncs/${encodeURIComponent(selected.value)}`,
       )
-    } catch {
-      // An unknown sync shows the list without details (T1-R16).
-      return null
+    } catch (failure) {
+      // Only an unknown sync shows the list without details (T1-R16);
+      // any other failure shows a notice.
+      if (isNotFound(failure)) return null
+      throw failure
     }
   },
   { watch: [selected] },
@@ -345,6 +352,15 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
         >
       </div>
 
+      <p
+        v-if="detailsError && !error"
+        role="alert"
+        class="notice"
+        data-testid="sync-details-error"
+      >
+        Nie udało się wczytać szczegółów synchronizacji. Spróbuj odświeżyć
+        stronę.
+      </p>
       <p v-if="error" role="alert" class="notice">
         Nie udało się wczytać synchronizacji. Spróbuj odświeżyć stronę.
       </p>

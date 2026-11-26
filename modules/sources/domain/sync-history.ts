@@ -5,17 +5,20 @@
  * storage, no configuration.
  */
 
-export const syncStates = [
-  'queued',
-  'running',
-  'complete',
-  'partial',
-  'failed',
-] as const
-export type SyncState = (typeof syncStates)[number]
+import {
+  runTriggers,
+  syncRunStatuses,
+  type RunTrigger,
+  type SyncRunStatus,
+} from './run-states.ts'
 
-export const syncTriggers = ['manual', 'scheduled'] as const
-export type SyncTrigger = (typeof syncTriggers)[number]
+/** The history's states are the run statuses, read from their one list. */
+export const syncStates = syncRunStatuses
+export type SyncState = SyncRunStatus
+
+/** The ways of starting, read from their one list. */
+export const syncTriggers = runTriggers
+export type SyncTrigger = RunTrigger
 
 export const syncPeriods = ['today', '7d', '30d', 'all'] as const
 export type SyncPeriod = (typeof syncPeriods)[number]

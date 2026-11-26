@@ -1,4 +1,4 @@
-import type { FinishedRunStatus } from '../sync-run-state.ts'
+import type { FinishedRunStatus } from './run-states.ts'
 
 /**
  * The status a run finishes with, the same for every source (A5-R03):

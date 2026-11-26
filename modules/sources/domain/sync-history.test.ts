@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  runTriggers,
+  syncRunStatuses,
+  type RunTrigger,
+  type SyncRunStatus,
+} from './run-states.ts'
+import {
   changeFilters,
   changePageSize,
   choiceOnClose,
@@ -9,7 +15,11 @@ import {
   pageCount,
   readHistoryQuery,
   showPage,
+  syncStates,
+  syncTriggers,
   type SyncHistoryQuery,
+  type SyncState,
+  type SyncTrigger,
 } from './sync-history.ts'
 
 const catalog = ['solid-jobs', 'himalayas', 'indeed', 'bulldogjob']
@@ -171,5 +181,22 @@ describe('changing filters and pages (T1-R08, R09)', () => {
     expect(pageCount(0, 20)).toBe(1)
     expect(pageCount(20, 20)).toBe(1)
     expect(pageCount(21, 20)).toBe(2)
+  })
+})
+
+describe('the history’s states and ways of starting have one owner (PS-AC02)', () => {
+  it('reads them from the run’s lists, so a new run status reaches the filter', () => {
+    const same: [SyncState, SyncRunStatus] extends [SyncRunStatus, SyncState]
+      ? true
+      : false = true
+    const sameTrigger: [SyncTrigger, RunTrigger] extends [
+      RunTrigger,
+      SyncTrigger,
+    ]
+      ? true
+      : false = true
+    expect([same, sameTrigger]).toEqual([true, true])
+    expect(syncStates).toBe(syncRunStatuses)
+    expect(syncTriggers).toBe(runTriggers)
   })
 })

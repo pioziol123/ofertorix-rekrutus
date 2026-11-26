@@ -1,5 +1,10 @@
 import { transaction } from '../../lib/db.ts'
 import { hash } from './domain/canonical-hash.ts'
+import type {
+  FinishedRunStatus,
+  RunTrigger,
+  SyncRunStatus,
+} from './domain/run-states.ts'
 import {
   findRun,
   findUnfinishedRunId,
@@ -19,9 +24,12 @@ import {
  * operations only guard the allowed transitions and B5-R02.
  */
 
-export type RunTrigger = 'manual' | 'scheduled'
-export type FinishedRunStatus = 'complete' | 'partial' | 'failed'
-export type SyncRunStatus = 'queued' | 'running' | FinishedRunStatus
+/** The closed lists themselves have one owner: domain/run-states.ts. */
+export type {
+  FinishedRunStatus,
+  RunTrigger,
+  SyncRunStatus,
+} from './domain/run-states.ts'
 
 export type SyncRun = {
   id: string
