@@ -73,17 +73,37 @@ export async function countHistory(filter: HistoryFilter): Promise<number> {
   return result.rows[0]!.total
 }
 
+/**
+ * The statement of one page of matching runs, latest requested first, then
+ * by id. The page's ids are chosen first, so new ads are counted for the
+ * page's runs only, never for the runs the offset skips (T1, situations
+ * per operation: at most 100 runs per page).
+ */
+export function historyPageStatement(
+  filter: HistoryFilter,
+  page: { limit: number; offset: number },
+): { text: string; values: unknown[] } {
+  return {
+    text: `WITH shown AS MATERIALIZED (
+      SELECT r.id, r.created_at FROM source_sync_runs r
+      JOIN source_scopes s ON s.id=r.scope_id WHERE ${where}
+      ORDER BY r.created_at DESC, r.id DESC LIMIT $5 OFFSET $6
+    )
+    SELECT ${columns} FROM shown p
+    JOIN source_sync_runs r ON r.id=p.id
+    JOIN source_scopes s ON s.id=r.scope_id
+    ORDER BY p.created_at DESC, p.id DESC`,
+    values: [...parameters(filter), page.limit, page.offset],
+  }
+}
+
 /** One page of matching runs, latest requested first, then by id. */
 export async function findHistoryPage(
   filter: HistoryFilter,
   page: { limit: number; offset: number },
 ): Promise<HistoryRow[]> {
-  const result = await db().query<HistoryRow>(
-    `SELECT ${columns} FROM source_sync_runs r
-    JOIN source_scopes s ON s.id=r.scope_id WHERE ${where}
-    ORDER BY r.created_at DESC, r.id DESC LIMIT $5 OFFSET $6`,
-    [...parameters(filter), page.limit, page.offset],
-  )
+  const statement = historyPageStatement(filter, page)
+  const result = await db().query<HistoryRow>(statement.text, statement.values)
   return result.rows
 }
 

@@ -14,6 +14,7 @@ import {
   type SourceConnector,
 } from './infrastructure/adapters/connector.ts'
 import { createConnectorRegistry } from './infrastructure/adapters/connector-registry.ts'
+import { historyPageStatement } from './infrastructure/persistence/sync-history.ts'
 import { admitRun } from './sync-run-state.ts'
 
 /**
@@ -542,6 +543,44 @@ integration('sync history reads in an isolated PostgreSQL schema', () => {
       const first = await readSyncHistory({ page: '0' }, now)
       expect(first.page).toBe(1)
       expect(ids(first)).toEqual(runs.slice(0, 20))
+    })
+
+    it('counts new ads only for the runs of the page shown, not for the runs a later page skips', async () => {
+      for (let i = 0; i < 40; i++)
+        await stored({
+          source: 'indeed',
+          createdAt: new Date(
+            Date.parse('2026-11-26T09:00:00Z') - i * 60_000,
+          ).toISOString(),
+        })
+      const statement = historyPageStatement(
+        { sources: [], states: [], trigger: null, requestedFrom: null },
+        { limit: 5, offset: 30 },
+      )
+      const explained = await pool.query(
+        `EXPLAIN (ANALYZE, FORMAT JSON) ${statement.text}`,
+        statement.values,
+      )
+      /** Loops of every plan node counting a run's new ads. */
+      const loops: number[] = []
+      const visit = (node: Record<string, unknown>) => {
+        if (
+          node['Parent Relationship'] === 'SubPlan' ||
+          String(node['Subplan Name'] ?? '').startsWith('SubPlan')
+        )
+          loops.push(Number(node['Actual Loops']))
+        for (const child of (node.Plans ?? []) as Record<string, unknown>[])
+          visit(child)
+      }
+      visit(explained.rows[0]['QUERY PLAN'][0].Plan)
+      expect(loops.length).toBeGreaterThan(0)
+      for (const count of loops) expect(count).toBeLessThanOrEqual(5)
+      const page = await readSyncHistory(
+        { period: 'all', size: '10', page: '4' },
+        now,
+      )
+      expect(page.items).toHaveLength(10)
+      expect(page.items.every((item) => item.newAds === 0)).toBe(true)
     })
 
     it('shows page 1 when nothing matches', async () => {
