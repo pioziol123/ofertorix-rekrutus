@@ -11,6 +11,7 @@ export {
   type SourceSyncState,
   type SyncRunRecord,
 } from './read-sync-state.ts'
+export { readSourceHealth } from './read-source-health.ts'
 export { readSyncDetails, readSyncHistory } from './read-sync-history.ts'
 export {
   InvalidPanelSyncRequestError,

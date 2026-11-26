@@ -61,3 +61,11 @@ export {
   type DialogPreset,
   type DialogSource,
 } from './domain/sync-requests-view.ts'
+export {
+  shownWarnings,
+  stripCounts,
+  warningHeading,
+  warningQuery,
+  warningReasons,
+} from './domain/source-health-view.ts'
+export type { HealthWarning, SourceHealth } from './domain/source-health.ts'

@@ -541,4 +541,74 @@ integration('page "Synchronizacje" over HTTP (T1)', () => {
       ).toBe(403)
     })
   })
+
+  describe('source health in the summary strip (T4)', () => {
+    /** The strip's HTML of the page at `path`. */
+    const strip = async (path: string) =>
+      (await page(path))
+        .split('data-testid="sync-strip"')[1]!
+        .split('</section>')[0]!
+
+    it('shows 3 queued or running syncs, one of a disabled source, as a count that is not clickable, under any history filter (T4-AC01)', async () => {
+      await run('queued')
+      for (const status of ['queued', 'running']) {
+        const other = randomUUID()
+        await pool.query(
+          'INSERT INTO source_scopes(id,source,fingerprint,parameters) VALUES($1,$2,$3,$4)',
+          [other, 'solid-jobs', randomUUID(), {}],
+        )
+        await run(status, { scope: other })
+      }
+      for (const path of [
+        '/syncs',
+        '/syncs?state=failed&period=today&page=2',
+      ]) {
+        const html = await strip(path)
+        const counts = html.split('data-testid="sync-warning"')[0]!
+        expect(text(counts), path).toContain('3 W kolejce lub w toku')
+        expect(text(counts), path).toContain(
+          '0 Ostatnia synchronizacja nieudana lub niepełna',
+        )
+        expect(text(counts), path).toContain('0 Nowe w 24 h')
+        expect(counts, path).not.toMatch(/<a\b|<button\b|href=/)
+      }
+    })
+
+    it('lists an enabled source without a complete sync by name with "nigdy", never the disabled one (T4-AC04)', async () => {
+      await run('failed')
+      const html = await strip('/syncs')
+      expect(text(html)).toContain(
+        'Bez pełnej synchronizacji od 3 dni lub 3 nieudane z rzędu:',
+      )
+      // Enabled sources without a complete sync, alphabetically: three
+      // names, each a button, and the rest behind "i N innych".
+      const names = [
+        ...html.matchAll(
+          /data-source="([^"]+)"[^>]*>\s*([^<]+?)\s*<\/button>\s*<span[^>]*>\s*\(ostatnia pełna: nigdy\)/g,
+        ),
+      ].map((match) => match[2])
+      expect(names).toHaveLength(3)
+      expect(names).toEqual(
+        [...names].sort((x, y) => x!.localeCompare(y!, 'pl')),
+      )
+      expect(html).toMatch(
+        /data-testid="sync-warning-more"[^>]*>\s*i \d+ innych/,
+      )
+      const health = await (await fetch(`${base}/api/sources/health`)).json()
+      const listed = health.warnings.map(
+        (warning: { source: string }) => warning.source,
+      )
+      expect(listed).toContain('solid-jobs')
+      expect(listed).not.toContain('bayt')
+      expect(html).not.toContain('data-source="bayt"')
+    })
+
+    it('answers the health read as JSON, not cached', async () => {
+      await run('queued')
+      const response = await fetch(`${base}/api/sources/health`)
+      expect(response.status).toBe(200)
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(await response.json()).toMatchObject({ unfinished: 1 })
+    })
+  })
 })

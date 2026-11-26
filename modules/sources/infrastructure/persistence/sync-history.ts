@@ -38,20 +38,24 @@ export type DetailsRow = HistoryRow & {
   diagnostics: unknown
 }
 
-/*
- * New ads of a finished run: the ads it saw whose first-seen time lies
- * between its start and its finish (PS-D01). A source has one unfinished
- * run at a time, so this is "no earlier run of the source saw it". A run
- * that never started has no start and counts none.
+/**
+ * New ads of the finished run aliased `r`: the ads it saw whose first-seen
+ * time lies between its start and its finish (PS-D01). A source has one
+ * unfinished run at a time, so this is "no earlier run of the source saw
+ * it". A run that never started has no start and counts none. The history
+ * and the health read (T4-R03) count them this one way.
  */
-const columns = `r.id, s.source, r.trigger, r.status, r.created_at, r.seen,
-  r.revisions, r.marked_unavailable,
-  CASE WHEN r.status IN ('complete','partial','failed') THEN (
+export const finishedRunNewAds = `(
     SELECT count(*)::int FROM source_run_seen o
     JOIN source_ads a ON a.id=o.source_ad_id
     WHERE o.run_id=r.id
       AND a.first_seen_at >= r.started_at AND a.first_seen_at <= r.finished_at
-  ) END AS new_ads`
+  )`
+
+const columns = `r.id, s.source, r.trigger, r.status, r.created_at, r.seen,
+  r.revisions, r.marked_unavailable,
+  CASE WHEN r.status IN ('complete','partial','failed') THEN
+    ${finishedRunNewAds} END AS new_ads`
 
 const where = `($1::text[] IS NULL OR s.source = ANY($1::text[]))
   AND ($2::text[] IS NULL OR r.status = ANY($2::text[]))

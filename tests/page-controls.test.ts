@@ -12,6 +12,7 @@ import {
   tooltipPosition,
   navigationStayed,
 } from '../app/utils/page-controls.ts'
+import { readSyncPage, type PageFetch } from '../app/utils/sync-page-read.ts'
 
 /** The page controls of the page "Synchronizacje" (T1-R07, R09, R12). */
 
@@ -160,4 +161,25 @@ describe('the list read after a request (T3-R07, R08, T3-AC07)', () => {
       expect(Number(changed) + Number(navigationStayed(result))).toBe(1)
     },
   )
+})
+
+describe('the read behind the list (T4-R07, T4-AC07)', () => {
+  it('reads the strip with every read of the list, without the history’s filters', async () => {
+    const calls: [string, unknown][] = []
+    const fetch: PageFetch = async (path, options) => {
+      calls.push([path, options?.query])
+      return path.endsWith('/health')
+        ? { unfinished: 1, latestProblem: 0, newIn24h: 0, warnings: [] }
+        : { items: [] }
+    }
+    const first = await readSyncPage(fetch, {})
+    await readSyncPage(fetch, { state: 'failed', page: '2' })
+    expect(calls).toEqual([
+      ['/api/sources/syncs', {}],
+      ['/api/sources/health', undefined],
+      ['/api/sources/syncs', { state: 'failed', page: '2' }],
+      ['/api/sources/health', undefined],
+    ])
+    expect(first.health.unfinished).toBe(1)
+  })
 })

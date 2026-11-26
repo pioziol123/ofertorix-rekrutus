@@ -46,6 +46,11 @@ import {
   type SyncState,
   type SyncTrigger,
   type UnavailableContext,
+  shownWarnings,
+  stripCounts,
+  warningHeading,
+  warningQuery,
+  warningReasons,
 } from '../../modules/sources/view'
 import {
   escapeCloses,
@@ -56,13 +61,15 @@ import {
   type PageJump,
 } from '../utils/page-controls'
 import { isNotFound } from '../utils/fetch-errors'
+import { readSyncPage } from '../utils/sync-page-read'
 
 /**
- * The page "Synchronizacje" (T1, T3): the history of every sync grouped by
- * day, its filters and pages in the address, one sync's details in a
- * drawer, and requesting syncs through a dialog of the sources or
- * "Uruchom ponownie" in the details. It does not refresh by itself;
- * "Odśwież" reads the list and the open details again.
+ * The page "Synchronizacje" (T1, T3, T4): the summary strip and the
+ * warning of source health, the history of every sync grouped by day, its
+ * filters and pages in the address, one sync's details in a drawer, and
+ * requesting syncs through a dialog of the sources or "Uruchom ponownie"
+ * in the details. It does not refresh by itself; "Odśwież" reads the list
+ * with the strip and the open details again.
  */
 useHead({ title: 'Synchronizacje — Oferty pracy' })
 const route = useRoute()
@@ -71,18 +78,25 @@ const listQuery = computed(() =>
     Object.entries(route.query).filter(([key]) => key !== 'sync'),
   ),
 )
+const request = useRequestFetch()
+// Every read of the list reads the strip too (T4-R07).
 const {
-  data,
+  data: pageData,
   error,
   status,
   refresh: refreshList,
-} = await useFetch<SyncHistoryPage>('/api/sources/syncs', {
-  query: listQuery,
-})
+} = await useAsyncData(
+  'sync-history',
+  () => readSyncPage(request, listQuery.value),
+  { watch: [listQuery] },
+)
+const data = computed<SyncHistoryPage | null>(
+  () => pageData.value?.history ?? null,
+)
+const health = computed(() => pageData.value?.health ?? null)
 const selected = computed(() =>
   typeof route.query.sync === 'string' ? route.query.sync : '',
 )
-const request = useRequestFetch()
 const {
   data: details,
   error: detailsError,
@@ -264,6 +278,17 @@ onUnmounted(() => {
   document.removeEventListener('scroll', hideTip, true)
 })
 
+// The warning of source health (T4-R06): folded to 3 names until expanded.
+const warningExpanded = ref(false)
+const warning = computed(() =>
+  health.value
+    ? shownWarnings(health.value.warnings, warningExpanded.value)
+    : null,
+)
+function showSource(source: string) {
+  if (current.value) void go(warningQuery(current.value, source))
+}
+
 const problem = computed(() =>
   details.value ? syncProblem(details.value) : null,
 )
@@ -359,6 +384,48 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
           </template>
         </div>
       </div>
+
+      <section
+        v-if="health"
+        class="sync-strip"
+        aria-label="Podsumowanie synchronizacji"
+        data-testid="sync-strip"
+      >
+        <span
+          v-for="count in stripCounts(health)"
+          :key="count.key"
+          class="sync-count"
+          :data-count="count.key"
+          ><b>{{ count.value }}</b> {{ count.label }}</span
+        >
+        <!-- ASSUMPTION(oferty-pracy-nq3.4/ASM-1): one list under one heading, each source with its reasons in brackets. -->
+        <p v-if="warning" class="sync-warning" data-testid="sync-warning">
+          <span class="muted">{{ warningHeading }}:</span>
+          <template v-for="(item, index) in warning.shown" :key="item.source">
+            <button
+              type="button"
+              class="sync-link"
+              :data-source="item.source"
+              @click="showSource(item.source)"
+            >
+              {{ item.name }}</button
+            ><span class="muted">
+              ({{ warningReasons(item) }}){{
+                index < warning.shown.length - 1 ? ',' : ''
+              }}</span
+            >
+          </template>
+          <button
+            v-if="warning.more"
+            type="button"
+            class="sync-link"
+            data-testid="sync-warning-more"
+            @click="warningExpanded = true"
+          >
+            {{ warning.more }}
+          </button>
+        </p>
+      </section>
 
       <div v-if="outcome" class="sync-outcome" data-testid="sync-outcome">
         <p role="status">{{ outcome.summary }}</p>
@@ -759,6 +826,36 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
 </template>
 
 <style scoped>
+.sync-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  align-items: baseline;
+  margin: 16px 0 0;
+  padding: 12px 16px;
+  border: 1px solid #e3e8e3;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 13px;
+}
+.sync-count b {
+  font-size: 18px;
+}
+.sync-warning {
+  flex-basis: 100%;
+  margin: 0;
+}
+.sync-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  margin-left: 4px;
+  font-size: inherit;
+  color: #2f7d4f;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
 .sync-actions {
   display: flex;
   gap: 8px;
