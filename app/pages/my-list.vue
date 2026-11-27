@@ -161,6 +161,7 @@ function onKeyDown(event: KeyboardEvent) {
     dialog: false,
     filterList: false,
     pageList: !!pager.value?.listOpen(),
+    // ASSUMPTION(oferty-pracy-lq3.2/ASM-1): a failed read of the details is open details.
     details: !!details.value || !!detailsError.value,
   })
   if (closes === 'pageList') pager.value?.closeList()
@@ -276,6 +277,7 @@ const shownMoment = (moment: string) => formatDateTime(new Date(moment))
         />
       </template>
 
+      <!-- ASSUMPTION(oferty-pracy-lq3.2/ASM-1): a failed read of the details opens the drawer with its notice. -->
       <template v-if="selected && (details || detailsError)">
         <div class="my-list-backdrop" @click="closeDetails" />
         <aside
