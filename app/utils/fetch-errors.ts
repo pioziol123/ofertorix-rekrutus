@@ -18,3 +18,14 @@ export function isNotFound(error: unknown): boolean {
   }
   return (statusCode ?? status ?? response?.status) === 404
 }
+
+/**
+ * The stable code of a refused request, as a module's route puts it in
+ * the response body `data.code`, or null when the answer carries none (a
+ * lost connection, a server error).
+ */
+export function refusalCodeOf(error: unknown): string | null {
+  const code = (error as { data?: { data?: { code?: unknown } } } | null)?.data
+    ?.data?.code
+  return typeof code === 'string' && code ? code : null
+}

@@ -1,5 +1,5 @@
 import { refusalText } from '../../modules/recruitments/view'
-import { isNotFound } from './fetch-errors'
+import { isNotFound, refusalCodeOf } from './fetch-errors'
 
 /**
  * What the stage field of offer details shows when a request fails. Pure,
@@ -41,9 +41,6 @@ export const stageMoveFailureText =
  * answer carries no code (ASSUMPTION(oferty-pracy-lq3.1/ASM-1)).
  */
 export function moveFailureText(error: unknown): string {
-  const code = (error as { data?: { data?: { code?: unknown } } } | null)?.data
-    ?.data?.code
-  return typeof code === 'string' && code
-    ? refusalText(code)
-    : stageMoveFailureText
+  const code = refusalCodeOf(error)
+  return code ? refusalText(code) : stageMoveFailureText
 }

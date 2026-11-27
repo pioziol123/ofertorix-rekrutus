@@ -1,12 +1,13 @@
 <script setup lang="ts">
 /**
  * The header with the navigation every page shows, the page
- * "Synchronizacje" included (T1-R01). The item "Zlecenia AI"
+ * "Synchronizacje" included (T1-R01), with the link "Moja lista"
+ * (lq3 T2-R01). The item "Zlecenia AI"
  * carries the number of AI assignments needing attention when it is above
  * zero (T11-R01, T11-R04); the number is fetched with each page.
  */
 defineProps<{
-  current: 'offers' | 'companies' | 'profile' | 'syncs' | 'ai'
+  current: 'offers' | 'my-list' | 'companies' | 'profile' | 'syncs' | 'ai'
 }>()
 const { data: attention } = await useFetch(
   '/api/ai-assignments/needing-attention',
@@ -22,6 +23,11 @@ const { data: attention } = await useFetch(
         to="/offers"
         :aria-current="current === 'offers' ? 'page' : undefined"
         >Oferty</NuxtLink
+      ><NuxtLink
+        to="/my-list"
+        data-testid="nav-my-list"
+        :aria-current="current === 'my-list' ? 'page' : undefined"
+        >Moja lista</NuxtLink
       ><NuxtLink
         to="/companies"
         :aria-current="current === 'companies' ? 'page' : undefined"

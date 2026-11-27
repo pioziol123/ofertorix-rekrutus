@@ -1,5 +1,5 @@
-import { InvalidOfferIds, readOffersByIds } from '../../../modules/offers'
-import { apiHandler } from '../../utils/http'
+import { InvalidOfferIds, readOffersByIds } from '../../modules/offers'
+import { apiHandler } from '../utils/http'
 
 /**
  * The offers of the IDs in the query key `ids`, repeated or
