@@ -4,8 +4,7 @@ import {
   answerRecruitmentRefusals,
   stageInput,
 } from '../../../../modules/recruitments/index'
-import { jsonBody } from '../../../utils/http'
-import { recruitmentRoute } from '../../../utils/recruitments'
+import { recruitmentBody, recruitmentRoute } from '../../../utils/recruitments'
 
 const body = z.object({ target: stageInput })
 
@@ -16,7 +15,7 @@ const body = z.object({ target: stageInput })
  */
 export default recruitmentRoute(async (event) => {
   const offerId = getRouterParam(event, 'id') ?? ''
-  const raw = await jsonBody(event)
+  const raw = await recruitmentBody(event)
   return answerRecruitmentRefusals(async () => {
     const { target } = body.parse(raw)
     try {

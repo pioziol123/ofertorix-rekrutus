@@ -1,8 +1,8 @@
 import {
   createApplication,
   type ApplicationStage,
-  type Stage,
 } from '../recruitments/index.ts'
+import type { Stage } from '../recruitments/view.ts'
 import { readCurrentAds } from '../sources/index.ts'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

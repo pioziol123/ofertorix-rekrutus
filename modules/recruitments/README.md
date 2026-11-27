@@ -49,4 +49,4 @@ The test on an isolated database and the test of the routes on a running server 
 ## Dependencies
 
 - **Shared infrastructure**: database access through the shared accessor and transaction.
-- No other module. The Offers module depends on this one: its start application calls create application, and it reads the stage values from `view.ts`.
+- No other module. The Offers module depends on this one: its start application calls create application from `index.ts`, and it reads the stage values from `view.ts`.

@@ -49,7 +49,7 @@ Unit tests of the rules and a read test on an isolated database live in the modu
 
 - **Sources**: the public read of current ads and of the list of an ad's versions. The ad comes with its content in the unified form, including the source name and the assessment of remote work qualification.
 - **Matching**: a bulk read of assessment summaries for the list and the list of states awaiting assessment.
-- **Recruitments**: create application and its stage type, used by start application. Every later move goes from the pages to the Recruitments module directly.
+- **Recruitments**: create application from its `index.ts`, called by start application, and the stage values from its `view.ts`. Every later move goes from the pages to the Recruitments module directly.
 - **Shared infrastructure**: database access through the shared accessor.
 
 The offer API routes pass the query to the module's operation. The list route adds the source sync state and the match assessment state to the response; until tasks `oferty-pracy-0mq.16` and `oferty-pracy-0mq.18` this assembly stays in the route.

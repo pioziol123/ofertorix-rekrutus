@@ -311,4 +311,34 @@ integration('the application in offer details over HTTP (T1)', () => {
     )
     expect(await shownStage(id)).toBe('to_consider')
   })
+
+  it('answers a body that is not JSON, or is sent without the JSON content type, as invalid input (D13)', async () => {
+    const id = await offer()
+    await start(id, 'to_consider')
+    const raw = (path: string, body: string, type?: string) =>
+      fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { Origin: base, ...(type ? { 'Content-Type': type } : {}) },
+        body,
+      })
+    for (const path of [
+      `/api/applications/${id}/stage`,
+      `/api/offers/${id}/application`,
+    ]) {
+      const broken = await raw(path, '{bad', 'application/json')
+      expect(broken.status, path).toBe(422)
+      expect((await broken.json()).data, path).toEqual({
+        code: 'invalid_input',
+      })
+      const untyped = await raw(
+        path,
+        JSON.stringify({ expected: 'to_consider', target: 'cv_sent' }),
+      )
+      expect(untyped.status, path).toBe(422)
+      expect((await untyped.json()).data, path).toEqual({
+        code: 'invalid_input',
+      })
+    }
+    expect(await shownStage(id)).toBe('to_consider')
+  })
 })
