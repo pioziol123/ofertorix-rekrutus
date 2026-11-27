@@ -25,6 +25,7 @@ export {
   answerRecruitmentRefusals,
   RefusalResponse,
   moveApplicationOverHttp,
+  offerIdInput,
   readApplicationOverHttp,
   stageInput,
 } from './infrastructure/http/applications.ts'

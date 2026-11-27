@@ -3,10 +3,14 @@ import {
   allowedStages,
   isStage,
   noApplicationLabel,
-  refusalText,
   stageLabels,
   type Stage,
 } from '../../modules/recruitments/view'
+import {
+  moveFailureText,
+  stageReadFailureText,
+} from '../utils/application-stage'
+import { isNotFound } from '../utils/fetch-errors'
 
 /**
  * The stage field of offer details (A-R04, T1-R01, T1-R02): it shows the
@@ -25,7 +29,9 @@ const { data, error } = await useAsyncData(
       )
       return isStage(application.stage) ? application.stage : null
     } catch (e) {
-      if ((e as { statusCode?: number }).statusCode === 404) return null
+      if (isNotFound(e)) return null
+      // Any other failure shows the read failure text instead of the field.
+      // ASSUMPTION(oferty-pracy-lq3.1/ASM-1)
       throw e
     }
   },
@@ -64,10 +70,9 @@ async function choose(event: Event) {
     )
     if (isStage(result.stage)) shown.value = result.stage
   } catch (e) {
-    const code = (e as { data?: { data?: { code?: string } } }).data?.data?.code
-    message.value = code
-      ? refusalText(code)
-      : 'Nie udało się zmienić etapu. Spróbuj ponownie.'
+    // ASSUMPTION(oferty-pracy-lq3.1/ASM-1): a failure without a code shows
+    // the move failure text.
+    message.value = moveFailureText(e)
   } finally {
     busy.value = false
   }
@@ -76,7 +81,8 @@ async function choose(event: Event) {
 <template>
   <div class="application-stage" data-testid="application-stage">
     <label :for="`application-stage-${offerId}`">Etap aplikacji</label>
-    <p v-if="error" role="alert">Nie udało się wczytać etapu aplikacji.</p>
+    <!-- ASSUMPTION(oferty-pracy-lq3.1/ASM-1) -->
+    <p v-if="error" role="alert">{{ stageReadFailureText }}</p>
     <select
       v-else
       :id="`application-stage-${offerId}`"

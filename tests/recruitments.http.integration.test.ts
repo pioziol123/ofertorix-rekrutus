@@ -341,4 +341,16 @@ integration('the application in offer details over HTTP (T1)', () => {
     }
     expect(await shownStage(id)).toBe('to_consider')
   })
+
+  it('answers an offer ID that is not a UUID on a move or a first move as invalid input, and on the read as no application (D13)', async () => {
+    const malformed = await move('not-an-id', 'to_consider', 'cv_sent')
+    expect(malformed.status).toBe(422)
+    expect((await malformed.json()).data).toEqual({ code: 'invalid_input' })
+    const first = await start('not-an-id', 'to_consider')
+    expect(first.status).toBe(422)
+    expect((await first.json()).data).toEqual({ code: 'invalid_input' })
+    const read = await fetch(`${base}/api/applications/not-an-id`)
+    expect(read.status).toBe(404)
+    expect((await read.json()).data).toEqual({ code: 'application_not_found' })
+  })
 })

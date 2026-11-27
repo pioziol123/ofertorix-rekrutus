@@ -68,7 +68,9 @@ export async function answerRecruitmentRefusals<T>(
   }
 }
 
-const uuid = z.uuid()
+/** An offer ID in a route parameter. */
+export const offerIdInput = z.uuid()
+const uuid = offerIdInput
 
 /** The stage the body names, one of the four stored values. */
 export const stageInput = z.enum(stages)
@@ -84,14 +86,18 @@ export function readApplicationOverHttp(offerId: string | undefined) {
   })
 }
 
-/** Moves an offer's application from the shown stage to the chosen one. */
+/**
+ * Moves an offer's application from the shown stage to the chosen one. An
+ * offer ID that is not a UUID is malformed input.
+ */
 export function moveApplicationOverHttp(
   offerId: string | undefined,
   body: unknown,
 ) {
   return answerRecruitmentRefusals(async () => {
     const id = uuid.safeParse(offerId)
-    if (!id.success) throw new ApplicationMissing()
+    // A malformed offer ID is malformed input (refusal table of D13).
+    if (!id.success) throw refused(422, 'invalid_input')
     const input = moveBody.parse(body)
     return moveApplication({
       offerId: id.data.toLowerCase(),
