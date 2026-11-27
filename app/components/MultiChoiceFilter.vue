@@ -1,5 +1,9 @@
 <script setup lang="ts" generic="T extends string">
-import { choiceOnClose, choiceSummary } from '../utils/multi-choice'
+import {
+  choiceOnClose,
+  choiceSummary,
+  type ChoiceOption,
+} from '../utils/multi-choice'
 
 /**
  * The shared multi-choice filter (lq3 T4-R02, nq3 T1-R08): a list of
@@ -12,7 +16,7 @@ defineOptions({ inheritAttrs: false })
 const props = defineProps<{
   /** The filter's name shown above its button, e.g. "Źródło". */
   label: string
-  options: readonly { value: T; label: string }[]
+  options: readonly ChoiceOption<T>[]
   /** The applied choice. */
   chosen: readonly T[]
 }>()

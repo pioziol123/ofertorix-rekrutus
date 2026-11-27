@@ -6,7 +6,10 @@
  */
 
 /** One value of a multi-choice list with the label it shows. */
-export type ChoiceOption = { value: string; label: string }
+export type ChoiceOption<T extends string> = {
+  value: T
+  label: string
+}
 
 const sameChoice = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((value) => b.includes(value))
