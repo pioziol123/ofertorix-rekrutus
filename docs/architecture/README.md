@@ -87,7 +87,7 @@ flowchart TB
   Ollama["Ollama<br/>[External system]"]
 
   subgraph Web["Web application · Nuxt"]
-    UI["Vue views<br/>[Vue / Nuxt UI]<br/>Offers, profile, companies and AI assignments"]
+    UI["Vue views<br/>[Vue / Nuxt UI]<br/>Offers, Moja lista, profile, companies and AI assignments"]
     Offers["Offers and matching<br/>[Nitro routes + TypeScript modules]<br/>List, filters, assessment history, requests"]
     Profile["Professional profile<br/>[Nitro routes + TypeScript modules]<br/>Draft, versions, CV import, AI proposal"]
     Companies["Companies and research<br/>[Nitro routes + TypeScript modules]<br/>Company profiles, roles on offers, reports"]
@@ -102,14 +102,14 @@ flowchart TB
   UI -->|"Edits links and requests research, HTTP/JSON"| Companies
   UI -->|"Reads status or requests an import, HTTP/JSON"| Sources
   UI -->|"Reads assignments and the count for the navigation, retries or rejects one, HTTP/JSON"| Panel
-  UI -->|"Reads an offer's application and moves its stage, HTTP/JSON"| Recruitments
+  UI -->|"Reads applications, moves their stage and saves the note, HTTP/JSON"| Recruitments
   Offers -->|"Creates the application on the first move"| Recruitments
   Offers -->|"Reads offers, saves assessments and requests matching"| DB
   Profile -->|"Saves versions and requests extraction or a proposal"| DB
   Companies -->|"Saves company profiles and requests research"| DB
   Sources -->|"Reads and requests runs"| DB
   Panel -->|"Reads assignments, operations and costs; saves the owner's actions and sends the job of a retried operation"| DB
-  Recruitments -->|"Saves applications and their stage changes"| DB
+  Recruitments -->|"Saves applications, their stage changes and notes"| DB
   Profile -->|"Saves and serves PDF / DOCX"| Files
   Profile -.->|"Checks the model before a request"| Ollama
 
@@ -121,16 +121,16 @@ flowchart TB
 
 | Component | Entry points and implementation |
 | --- | --- |
-| Vue views | [Offer list](../../app/pages/offers.vue), [professional profile](../../app/pages/profile.vue), [company details](../../app/pages/companies/%5Bid%5D.vue), [AI assignments](../../app/pages/ai-assignments/index.vue), [shared navigation](../../app/components/AppHeader.vue), [shared paging](../../app/components/PagePager.vue), [shared multi-choice filter](../../app/components/MultiChoiceFilter.vue) |
-| Offers and matching | [Offer list API](../../server/api/offers/index.get.ts), [Offers module](../../modules/offers/index.ts), [assessment data in the list](../../modules/matching/read-offer-assessments.ts), [assessment group request](../../server/api/matching/index.post.ts) |
+| Vue views | [Offer list](../../app/pages/offers.vue), [Moja lista](../../app/pages/my-list.vue), [professional profile](../../app/pages/profile.vue), [company details](../../app/pages/companies/%5Bid%5D.vue), [AI assignments](../../app/pages/ai-assignments/index.vue), [shared navigation](../../app/components/AppHeader.vue), [shared paging](../../app/components/PagePager.vue), [shared multi-choice filter](../../app/components/MultiChoiceFilter.vue) |
+| Offers and matching | [Offer list API](../../server/api/offers/index.get.ts), [offers by IDs](../../server/api/offer-summaries.get.ts), [Offers module](../../modules/offers/index.ts), [assessment data in the list](../../modules/matching/read-offer-assessments.ts), [assessment group request](../../server/api/matching/index.post.ts) |
 | Professional profile | [Version confirmation](../../server/api/profile/confirm.post.ts), [CV import](../../server/api/profile/imports/index.post.ts), [proposal request](../../server/api/profile/imports/%5Bid%5D/prepare.post.ts), [profile storage](../../modules/profile/infrastructure/persistence/profile.ts) |
 | Companies and research | [Company list API](../../server/api/companies/index.get.ts), [links to an offer](../../server/api/companies/%5Bid%5D/links.post.ts), [research request](../../server/api/companies/%5Bid%5D/research.post.ts), [company commands](../../modules/companies/company-commands.ts), [company reads](../../modules/companies/read-companies.ts) |
 | Source handling | [Sync history](../../server/api/sources/syncs/index.get.ts), [sync details](../../server/api/sources/syncs/%5Bid%5D.get.ts), [sync request from the panel](../../server/api/sources/syncs/index.post.ts), [source health](../../server/api/sources/health.get.ts) |
 | AI assignments panel | [List API](../../server/api/ai-assignments/index.get.ts), [details API](../../server/api/ai-assignments/%5Bid%5D.get.ts), [count needing attention](../../server/api/ai-assignments/needing-attention.get.ts), [Retry](../../server/api/ai-assignments/%5Bid%5D/retry.post.ts), [Reject](../../server/api/ai-assignments/%5Bid%5D/reject.post.ts), [AI module reads and actions](../../modules/ai/index.ts) |
-| Recruitments | [Application read](../../server/api/applications/%5BofferId%5D.get.ts), [stage move](../../server/api/applications/%5BofferId%5D/stage.post.ts), [first move through the Offers module](../../server/api/offers/%5Bid%5D/application.post.ts), [Recruitments module](../../modules/recruitments/index.ts), [stage field in offer details](../../app/components/OfferApplicationStage.vue) |
+| Recruitments | [Application read](../../server/api/applications/%5BofferId%5D.get.ts), [stage move](../../server/api/applications/%5BofferId%5D/stage.post.ts), [note save](../../server/api/applications/%5BofferId%5D/note.post.ts), [applications page](../../server/api/applications/index.get.ts), [first move through the Offers module](../../server/api/offers/%5Bid%5D/application.post.ts), [Recruitments module](../../modules/recruitments/index.ts), [stage field](../../app/components/ApplicationStageField.vue) in [offer details](../../app/components/OfferApplicationStage.vue) and in the application details |
 | Shared route handling | [Identifier validation, body limit, error mapping and queue client](../../server/utils/http.ts), used by the routes of every module |
 | Polish time | [Time library](../../lib/time/index.ts): Polish days and months, calendar and exact arithmetic, and shown dates, for server and browser code ([rules](moduly-i-zasady-kodu.md#polish-time)); today the Sources module's schedule day uses it |
-| Paging | [Paging library](../../lib/paging.ts): the one list of numbers per page and the page rules that the shared paging of the pages and the modules' paged reads share; today the sync history uses it |
+| Paging | [Paging library](../../lib/paging.ts): the one list of numbers per page and the page rules that the shared paging of the pages and the modules' paged reads share; today the sync history and Moja lista use it |
 
 ### Worker
 
