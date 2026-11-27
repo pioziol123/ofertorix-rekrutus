@@ -50,7 +50,7 @@ const text = (html: string) =>
     .replace(/&#x2F;/g, '/')
     .replace(/&#39;/g, "'")
     .replace(/&amp;/g, '&')
-    .replace(/&nbsp;| /g, ' ')
+    .replace(/&nbsp;|\u00a0/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
