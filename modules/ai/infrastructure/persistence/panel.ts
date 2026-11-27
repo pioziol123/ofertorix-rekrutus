@@ -2,19 +2,19 @@ import { db } from '../../../../lib/db.ts'
 import type {
   AssignmentStatus,
   AssignmentType,
-} from '../../assignments/assignment.ts'
+  AssignmentFailureReason,
+} from '../../domain/assignment.ts'
 import type {
   OperationState,
   OperationWait,
-} from '../../domain/operation-state.ts'
-import type { AssignmentFailureReason } from '../../domain/panel.ts'
-import type { OperationCause } from '../../executors/outcome.ts'
+  OperationCause,
+  OperationOrigin,
+} from '../../domain/operation.ts'
 import {
   operationsCharge,
   operationsCostColumns,
   unknownActualCost,
   type AssignmentCostRow,
-  type OperationOrigin,
 } from './operations.ts'
 
 /**

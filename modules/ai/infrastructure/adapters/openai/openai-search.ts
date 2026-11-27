@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import type { AgentMaterial } from '../domain/agent-material.ts'
+import type { AgentMaterial } from '../../../domain/agent-material.ts'
 // ASSUMPTION(oferty-pracy-0mq.22/ASM-5): the materials keep only the sources
 // this rule accepts, the same rule Companies validates a report with.
-import { safeSourceUrl } from '../domain/source-url.ts'
+import { safeSourceUrl } from '../../../domain/source-url.ts'
 
 /**
  * What the paid agent session reads from the answer of OpenAI's Responses

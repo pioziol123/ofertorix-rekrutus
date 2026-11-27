@@ -3,19 +3,18 @@ import { transaction } from '../../../lib/db.ts'
 import { sendJob } from '../../../lib/queues/index.ts'
 import { agentTools } from '../domain/agent-tools.ts'
 import { schemaValidator } from '../domain/response-schema.ts'
-import type { ExecutorContent } from '../executors/declaration.ts'
+import type { AssignmentContent } from '../domain/assignment.ts'
 import {
   insertAssignment,
   insertPendingOperation,
 } from '../infrastructure/persistence/assignments.ts'
+import { AssignmentError, type AssignmentRequest } from './assignment.ts'
 import {
-  AssignmentError,
   assignmentTimeLimitSeconds,
   assignmentTypes,
   automaticOperationLimit,
-  type AssignmentRequest,
-} from './assignment.ts'
-import { exceedsPriceList } from './request-size.ts'
+} from '../domain/assignment.ts'
+import { exceedsPriceList } from '../domain/request-size.ts'
 import { resolveExecutor, type ResolvedExecutor } from './resolve-executor.ts'
 
 export type PlacedAssignment = { assignmentId: string }
@@ -24,7 +23,7 @@ const filled = (value: unknown) =>
   typeof value === 'string' && value.trim() !== ''
 
 /** The content of the request, checked for its shape (T1-R04). */
-function frozenContent(request: AssignmentRequest): ExecutorContent {
+function frozenContent(request: AssignmentRequest): AssignmentContent {
   if (
     typeof request !== 'object' ||
     request === null ||
@@ -78,7 +77,7 @@ function frozenContent(request: AssignmentRequest): ExecutorContent {
 
 /** Checks the content against what the executor offers (T1-R04). */
 function checkAgainstExecutor(
-  content: ExecutorContent,
+  content: AssignmentContent,
   resolved: ResolvedExecutor,
   refuseOversized: boolean,
 ) {

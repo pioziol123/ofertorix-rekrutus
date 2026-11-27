@@ -1,9 +1,10 @@
 import { transaction } from '../../../lib/db.ts'
+import { ownerActions } from '../domain/assignment.ts'
 import type { AssignmentActionOutcome } from '../domain/panel.ts'
 import {
   lockAssignment,
   readAssignmentOperations,
-  setInProgressForRetry,
+  saveRetried,
 } from '../infrastructure/persistence/assignments.ts'
 import { addOperation } from './after-operation-end.ts'
 
@@ -12,11 +13,12 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /**
  * The owner's Retry of an assignment from the panel (solution design of
  * epic sq2, T11–T13, "Retry"; T12-R01), in one transaction with the
- * assignment's row locked: a write conditional on the assignment needing
- * attention and its deadline not passed at `now` makes it in progress
- * again, its deadline unchanged, and one operation with the origin manual
- * is added: pending, waiting for its executor, its job sent in the same
- * save, carrying out the assignment's frozen content. It counts beyond the
+ * assignment's row locked: when the rule of the owner's actions
+ * (`ownerActions`) allows Retry for its status and its deadline at `now`,
+ * read under the lock, it is in progress again, its deadline unchanged,
+ * and one operation with the origin manual is added: pending, waiting for
+ * its executor, its job sent in the same save, carrying out the
+ * assignment's frozen content. It counts beyond the
  * automatic operations, so its failure of any kind returns the assignment
  * to needs attention with no further operation (T12-R02).
  *
@@ -32,10 +34,11 @@ export async function retryAssignment(
 ): Promise<AssignmentActionOutcome | null> {
   if (!uuid.test(assignmentId)) return null
   return transaction(async () => {
-    const assignment = await lockAssignment(assignmentId)
+    const assignment = await lockAssignment(assignmentId, now)
     if (!assignment) return null
-    if (!(await setInProgressForRetry(assignmentId, now)))
+    if (!ownerActions(assignment).retry)
       return { changed: false, status: assignment.status }
+    await saveRetried(assignmentId)
     await addOperation(
       assignmentId,
       await readAssignmentOperations(assignmentId),

@@ -1,30 +1,11 @@
 import type { AgentTool } from '../domain/agent-tools.ts'
+import type { ResponseFormat } from '../domain/assignment.ts'
 
 /**
- * The status of an assignment as requesting modules see it (ZA-R01):
- * in progress, needs attention, succeeded or failed. Succeeded and failed
- * are final. The one closed list of the assignment contract that is public.
+ * The command of placing an assignment and its refusals: the contract of
+ * `placeAssignment`. The assignment's own concepts, its status, type and
+ * limits, are in `domain/assignment.ts`.
  */
-export const assignmentStatuses = [
-  'in_progress',
-  'needs_attention',
-  'succeeded',
-  'failed',
-] as const
-export type AssignmentStatus = (typeof assignmentStatuses)[number]
-
-/** The kind of work: a single answer or an agent session. */
-export const assignmentTypes = ['single', 'agent'] as const
-export type AssignmentType = (typeof assignmentTypes)[number]
-
-/**
- * The response format an executor is to follow: a name and a JSON Schema.
- * The AI module passes it on and does not check a result against it.
- */
-export type ResponseFormat = {
-  name: string
-  schema: Record<string, unknown>
-}
 
 type CommonContent = {
   /**
@@ -93,9 +74,3 @@ export class AssignmentError extends Error {
     this.name = 'AssignmentError'
   }
 }
-
-/** The time limit of every assignment, counted from placing (T6-R06). */
-export const assignmentTimeLimitSeconds = 7 * 24 * 3600
-
-/** Operations an assignment gets without the owner, the first included. */
-export const automaticOperationLimit = 3

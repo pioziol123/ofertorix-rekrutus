@@ -1,12 +1,10 @@
 import type { JobDefinition } from '../../../lib/queues/index.ts'
-import type { AgentTool } from '../domain/agent-tools.ts'
-import type { AiConfiguration } from '../model-catalog.ts'
 import type { AgentMaterial } from '../domain/agent-material.ts'
-import type {
-  AssignmentType,
-  ResponseFormat,
-} from '../assignments/assignment.ts'
-import type { ExecutorOutcome } from './outcome.ts'
+import type { AgentTool } from '../domain/agent-tools.ts'
+import type { AssignmentContent, AssignmentType } from '../domain/assignment.ts'
+import type { ExecutorCause } from '../domain/operation.ts'
+import type { PriceList } from '../domain/price-list.ts'
+import type { ExecutorUsage } from '../domain/usage.ts'
 
 /**
  * The executor contract (solution design of epic sq2, "Contract:
@@ -15,13 +13,6 @@ import type { ExecutorOutcome } from './outcome.ts'
  * through it alone; an executor knows no assignment, budget, retry or
  * requesting module (T2-R02).
  */
-
-/**
- * The price list an executor computes the potential and the actual cost
- * from: its version, the exchange rate, the rates and the caps of input,
- * output and paid tool calls.
- */
-export type PriceList = AiConfiguration
 
 /**
  * The parameters an assignment carries for its executor, as the settings of
@@ -54,15 +45,6 @@ export type ServiceDeclaration = {
   maxRunSeconds: number
 }
 
-/** The frozen content of an assignment, as far as an executor reads it. */
-export type ExecutorContent = {
-  type: AssignmentType
-  instruction: string
-  input: string
-  responseFormat: ResponseFormat | null
-  agent: { tools: AgentTool[]; resultInstruction: string } | null
-}
-
 /**
  * What an executor is given to carry out one operation: the frozen
  * content of its assignment with the executor's parameters, the executor
@@ -71,7 +53,7 @@ export type ExecutorContent = {
  * answers no, or fails, the executor sends nothing more and returns.
  */
 export type OperationWork = {
-  content: ExecutorContent
+  content: AssignmentContent
   parameters: ExecutorParameters
   state: unknown
   /**
@@ -82,6 +64,22 @@ export type OperationWork = {
   /** Replaces the executor state saved for the operation. */
   saveState: (state: unknown) => Promise<boolean>
 }
+
+/**
+ * The one outcome of an operation (T2-R03): a result, an ordinary failure
+ * (`retryable`), a non-retryable failure, or uncertain when the executor
+ * cannot tell how the work ended. The content of a result is a JSON value
+ * when the assignment gave a response format, otherwise the text.
+ */
+export type ExecutorOutcome =
+  | { kind: 'result'; content: unknown; usage: ExecutorUsage }
+  | {
+      kind: 'failed'
+      retryable: boolean
+      cause: ExecutorCause
+      usage: ExecutorUsage
+    }
+  | { kind: 'uncertain'; cause: ExecutorCause; usage: ExecutorUsage }
 
 /** What the job of an operation carries: only the operation's identifier. */
 export type OperationJobData = { operationId: string }
@@ -102,7 +100,7 @@ export type ExecutorDeclaration = {
    * when it can measure it; for the size check of placing.
    */
   requestSize?: (
-    content: ExecutorContent,
+    content: AssignmentContent,
     parameters: ExecutorParameters,
     priceList: PriceList,
   ) => number | undefined

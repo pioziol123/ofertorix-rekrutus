@@ -1,6 +1,7 @@
-import { attemptCeiling, chargeCost } from '../domain/cost.ts'
-import type { PriceList } from '../executors/declaration.ts'
-import type { ExecutorUsage } from '../executors/outcome.ts'
+import { attemptCeiling, chargeCost } from './cost.ts'
+import { money } from './money.ts'
+import type { PriceList } from './price-list.ts'
+import type { ExecutorUsage } from './usage.ts'
 
 /**
  * The actual cost of an operation from the usage its executor reported and
@@ -14,7 +15,7 @@ export function actualCost(
   usage: ExecutorUsage,
   priceList: PriceList | null,
 ): string | null {
-  if (!usage.sent || priceList === null) return '0.000000'
+  if (!usage.sent || priceList === null) return money(0n)
   const toolCalls = priceList.toolCallUsd ? usage.toolCalls : 0
   const { inputTokens, outputTokens } = usage
   if (inputTokens === null || outputTokens === null || toolCalls === null)
@@ -39,5 +40,5 @@ export function actualCost(
  * without a price list (T3-R03).
  */
 export function potentialCost(priceList: PriceList | null): string {
-  return priceList === null ? '0.000000' : attemptCeiling(priceList)
+  return priceList === null ? money(0n) : attemptCeiling(priceList)
 }

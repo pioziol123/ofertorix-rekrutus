@@ -1,12 +1,12 @@
 import { transaction } from '../../../lib/db.ts'
-import type { ExecutorOutcome } from '../executors/outcome.ts'
+import type { ExecutorOutcome } from '../ports/executor.ts'
 import {
   lockRunningToEnd,
   saveEnd,
   type OperationEnd,
 } from '../infrastructure/persistence/operations.ts'
 import { afterOperationEnd } from './after-operation-end.ts'
-import { actualCost } from './operation-cost.ts'
+import { actualCost } from '../domain/operation-cost.ts'
 
 /**
  * Ends a running operation with its executor's outcome in one transaction

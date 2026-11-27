@@ -1,6 +1,6 @@
 import { transaction } from '../../../lib/db.ts'
-import type { ExecutorOutcome } from '../executors/outcome.ts'
-import { findExecutor } from '../executors/registry.ts'
+import type { ExecutorOutcome } from '../ports/executor.ts'
+import { findExecutor } from '../infrastructure/adapters/registry.ts'
 import {
   appendExchange,
   readRunningOperation,

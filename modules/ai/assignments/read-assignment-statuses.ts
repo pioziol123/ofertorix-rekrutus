@@ -1,5 +1,5 @@
 import { readStatuses } from '../infrastructure/persistence/assignments.ts'
-import type { AssignmentStatus } from './assignment.ts'
+import type { AssignmentStatus } from '../domain/assignment.ts'
 
 /** The status of one assignment: its identifier and status, nothing else. */
 export type AssignmentStatusEntry = {

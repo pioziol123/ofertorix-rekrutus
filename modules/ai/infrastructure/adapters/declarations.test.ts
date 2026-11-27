@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { aiCatalog } from '../model-catalog.ts'
-import queues from '../../../queues.json' with { type: 'json' }
-import { ollamaExecutor } from './ollama.ts'
-import { openAiExecutor } from './openai.ts'
+import { aiCatalog } from './model-catalog.ts'
+import queues from '../../../../queues.json' with { type: 'json' }
+import { ollamaExecutor } from './ollama/ollama.ts'
+import { openAiExecutor } from './openai/openai.ts'
 
 const luna = aiCatalog.models.find((model) => model.model === 'gpt-6-luna')!
 

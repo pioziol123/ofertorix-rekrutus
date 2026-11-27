@@ -1,10 +1,9 @@
-import type { OperationWork } from './declaration.ts'
+import type { OperationWork, ExecutorOutcome } from '../../ports/executor.ts'
 import {
   nothingSent,
   unknownUsage,
-  type ExecutorOutcome,
   type ExecutorUsage,
-} from './outcome.ts'
+} from '../../domain/usage.ts'
 
 /**
  * Shared mechanics of the executors: the maximum run time around one

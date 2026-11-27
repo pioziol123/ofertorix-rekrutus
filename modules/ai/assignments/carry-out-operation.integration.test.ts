@@ -12,8 +12,8 @@ import {
 } from 'vitest'
 import { closePool, setPool, transaction } from '../../../lib/db.ts'
 import { createQueue, stopQueues } from '../../../lib/queues/index.ts'
-import { openAiExecutor } from '../executors/openai.ts'
-import { registerExecutor } from '../executors/registry.ts'
+import { openAiExecutor } from '../infrastructure/adapters/openai/openai.ts'
+import { registerExecutor } from '../infrastructure/adapters/registry.ts'
 import {
   placeAssignment,
   runOperation,

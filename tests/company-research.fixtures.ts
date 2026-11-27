@@ -1,12 +1,12 @@
 import { matchingMigrations } from './matching-ai.fixtures.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import type { AiConfiguration } from '../modules/ai/model-catalog.ts'
+import type { PriceList } from '../modules/ai/domain/price-list.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import {
   researchTopics,
   type ResearchDraft,
 } from '../modules/companies/domain/research-report.ts'
-export const pricing: AiConfiguration = {
+export const pricing: PriceList = {
   model: 'gpt-4.1-mini',
   version: 'test',
   inputUsdPerMillion: '1',
@@ -84,7 +84,7 @@ export const researchMigrations = [
  * cap of the model, an output cap of at least 4000 tokens and the web
  * search price per call.
  */
-export const assignmentPricing: AiConfiguration = {
+export const assignmentPricing: PriceList = {
   model: 'gpt-6-luna',
   version: 'test',
   inputUsdPerMillion: '1',

@@ -17,11 +17,11 @@ import {
   runOperation,
 } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { openAiExecutor } from '../modules/ai/executors/openai.ts'
+import { openAiExecutor } from '../modules/ai/infrastructure/adapters/openai/openai.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { registerExecutor } from '../modules/ai/executors/registry.ts'
+import { registerExecutor } from '../modules/ai/infrastructure/adapters/registry.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { citedMaterials } from '../modules/ai/executors/openai-search.ts'
+import { citedMaterials } from '../modules/ai/infrastructure/adapters/openai/openai-search.ts'
 import {
   createCompany,
   CompanyConflict,
@@ -46,7 +46,7 @@ import { usePricing } from './ai-test-configuration.ts'
 // research's assignments are the application's own.
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
-  '../modules/ai/model-catalog.ts',
+  '../modules/ai/infrastructure/adapters/model-catalog.ts',
   () => import('./ai-test-configuration.ts'),
 )
 

@@ -1,7 +1,8 @@
-import type { ExecutorParameters, PriceList } from '../executors/declaration.ts'
-import { findExecutor } from '../executors/registry.ts'
-import type { AssignmentType } from './assignment.ts'
-import { potentialCost } from './operation-cost.ts'
+import type { ExecutorParameters } from '../ports/executor.ts'
+import type { PriceList } from '../domain/price-list.ts'
+import { findExecutor } from '../infrastructure/adapters/registry.ts'
+import type { AssignmentType } from '../domain/assignment.ts'
+import { potentialCost } from '../domain/operation-cost.ts'
 import { findOffer } from './resolve-executor.ts'
 
 /** The price list valid now for an operation, with its potential cost. */

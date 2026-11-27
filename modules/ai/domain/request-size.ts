@@ -1,4 +1,5 @@
-import type { ExecutorContent, PriceList } from '../executors/declaration.ts'
+import type { AssignmentContent } from './assignment.ts'
+import type { PriceList } from './price-list.ts'
 
 /**
  * Whether a request is larger than its price list covers: more UTF-8 bytes
@@ -9,19 +10,19 @@ import type { ExecutorContent, PriceList } from '../executors/declaration.ts'
  * sends, when it measures it; otherwise that of the content it would send.
  */
 export function exceedsPriceList(
-  content: ExecutorContent,
+  content: AssignmentContent,
   priceList: PriceList,
   measured?: number,
 ): boolean {
   const size =
     measured ??
-    Buffer.byteLength(
+    new TextEncoder().encode(
       JSON.stringify({
         instructions: content.instruction,
         input: content.input,
         schema: content.responseFormat,
         resultInstruction: content.agent?.resultInstruction,
       }),
-    )
+    ).length
   return size > priceList.maxInputTokens
 }

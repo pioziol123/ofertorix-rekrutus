@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hasCredentials, resolveEndpoint } from './configuration.ts'
-import { decimal } from './domain/money.ts'
+import { decimal } from '../../domain/money.ts'
 import { aiCatalog } from './model-catalog.ts'
 
 afterEach(() => {

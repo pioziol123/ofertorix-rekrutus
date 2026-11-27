@@ -1,11 +1,12 @@
 import { z } from 'zod'
-import type { AgentMaterial } from '../domain/agent-material.ts'
+import type { AgentMaterial } from '../../../domain/agent-material.ts'
 import { citedMaterials, responseSchema } from './openai-search.ts'
+import type { AssignmentContent } from '../../../domain/assignment.ts'
 import type {
-  ExecutorContent,
   ExecutorParameters,
-  PriceList,
-} from './declaration.ts'
+  ExecutorOutcome,
+} from '../../../ports/executor.ts'
+import type { PriceList } from '../../../domain/price-list.ts'
 import {
   contextExceeded,
   openAiKey,
@@ -13,18 +14,15 @@ import {
   responsesHeaders,
   responsesUrl,
 } from './openai-protocol.ts'
-import {
-  nothingSent,
-  type ExecutorCause,
-  type ExecutorOutcome,
-} from './outcome.ts'
+import { nothingSent } from '../../../domain/usage.ts'
+import type { ExecutorCause } from '../../../domain/operation.ts'
 import {
   errorAnswer,
   failedBeforeSending,
   resultContent,
   timeLimitPassed,
   type Run,
-} from './run.ts'
+} from '../run.ts'
 
 /**
  * The paid agent session: a web search, then the result written from the
@@ -110,7 +108,7 @@ function parsedInput(value: string): unknown {
  */
 export async function carryOutSession(
   run: Run,
-  content: ExecutorContent,
+  content: AssignmentContent,
   parameters: ExecutorParameters,
   priceList: PriceList | null,
   fits: boolean,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aiCatalog } from '../model-catalog.ts'
+import { aiCatalog } from '../infrastructure/adapters/model-catalog.ts'
 import { actualCost } from './operation-cost.ts'
 
 const agentPrices = aiCatalog.models.find((m) => m.model === 'gpt-6-luna')!

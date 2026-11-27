@@ -7,9 +7,9 @@ import { runOperation } from '../modules/ai/index.ts'
 import {
   openAiExecutor,
   openAiOperationJob,
-} from '../modules/ai/executors/openai.ts'
+} from '../modules/ai/infrastructure/adapters/openai/openai.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { registerExecutor } from '../modules/ai/executors/registry.ts'
+import { registerExecutor } from '../modules/ai/infrastructure/adapters/registry.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import type { MatchingInput } from '../modules/matching/domain/assessment.ts'
 import { responseBody, unknownAssessment } from './matching-ai.fixtures.ts'

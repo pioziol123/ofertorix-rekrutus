@@ -3,11 +3,11 @@ import type {
   AssignmentStatus,
   AssignmentType,
   ResponseFormat,
-} from '../../assignments/assignment.ts'
+  AssignmentFailureReason,
+} from '../../domain/assignment.ts'
 import type { AgentTool } from '../../domain/agent-tools.ts'
-import type { AssignmentFailureReason } from '../../domain/panel.ts'
-import type { ExecutorParameters } from '../../executors/declaration.ts'
-import type { OperationOrigin } from './operations.ts'
+import type { ExecutorParameters } from '../../ports/executor.ts'
+import type { OperationOrigin } from '../../domain/operation.ts'
 
 /** A new assignment with its frozen content, executor and parameters. */
 export type NewAssignment = {
@@ -182,19 +182,12 @@ export async function setSucceeded(
 }
 
 /**
- * The stored reasons of a failed assignment (solution design of epic sq2,
- * "Contract: the closed lists"; ZA-R05): rejected by the owner, time limit
- * exceeded, result not taken.
- */
-export type FailureReason = AssignmentFailureReason
-
-/**
  * Ends an assignment in progress as failed with the reason at `at`; false,
  * with nothing changed, when it is no longer in progress (ZA-R03).
  */
 export async function setFailedInProgress(
   assignmentId: string,
-  reason: FailureReason,
+  reason: AssignmentFailureReason,
   at: Date,
 ): Promise<boolean> {
   const changed = await db().query(
@@ -254,61 +247,64 @@ export async function failPastTimeLimit(
   return row ?? null
 }
 
-/** An assignment's status and settings name, with its row locked. */
+/**
+ * An assignment with its row locked: its status, its settings name and
+ * whether its deadline has not passed.
+ */
 export type LockedAssignment = {
   status: AssignmentStatus
   settingsName: string
+  /** Whether the deadline is still ahead of the given moment. */
+  withinTimeLimit: boolean
 }
 
 /**
  * Locks the assignment's row until the caller's transaction ends and gives
- * its status and settings name; null for an unknown assignment.
+ * the facts the owner's actions are decided from, as they are at `now`;
+ * null for an unknown assignment. Nothing else changes the status while
+ * the lock is held, so a decision made from these facts still holds when
+ * the caller saves it (ZA-R03).
  */
 export async function lockAssignment(
   assignmentId: string,
+  now: Date,
 ): Promise<LockedAssignment | null> {
   const row = (
     await db().query<LockedAssignment>(
-      `SELECT status,settings_name AS "settingsName" FROM ai_assignments
-       WHERE id=$1 FOR UPDATE`,
-      [assignmentId],
+      `SELECT status,settings_name AS "settingsName",
+        deadline>$2 AS "withinTimeLimit"
+       FROM ai_assignments WHERE id=$1 FOR UPDATE`,
+      [assignmentId, now],
     )
   ).rows[0]
   return row ?? null
 }
 
 /**
- * The owner's Retry (T12-R01): moves an assignment needing attention whose
- * deadline has not passed at `now` back to in progress; its deadline stays.
- * False, with nothing changed, when the status or the deadline no longer
- * allows it (ZA-R03).
+ * Saves the owner's Retry (T12-R01): the assignment is in progress again;
+ * its deadline stays. Whether Retry is allowed is decided by the caller,
+ * which holds the lock on the assignment's row.
  */
-export async function setInProgressForRetry(
-  assignmentId: string,
-  now: Date,
-): Promise<boolean> {
-  const changed = await db().query(
-    `UPDATE ai_assignments SET status='in_progress'
-     WHERE id=$1 AND status='needs_attention' AND deadline>$2`,
-    [assignmentId, now],
+export async function saveRetried(assignmentId: string): Promise<void> {
+  await db().query(
+    `UPDATE ai_assignments SET status='in_progress' WHERE id=$1`,
+    [assignmentId],
   )
-  return changed.rowCount === 1
 }
 
 /**
- * The owner's Reject (T12-R03): ends an assignment in progress or needing
- * attention as failed with the reason `rejected` at `at`. False, with
- * nothing changed, when it is already final (ZA-R03).
+ * Saves the owner's Reject (T12-R03): the assignment failed at `at` with
+ * the reason `rejected`. Whether Reject is allowed is decided by the
+ * caller, which holds the lock on the assignment's row.
  */
-export async function setRejected(
+export async function saveRejected(
   assignmentId: string,
   at: Date,
-): Promise<boolean> {
-  const changed = await db().query(
+): Promise<void> {
+  await db().query(
     `UPDATE ai_assignments SET status='failed',failure_reason='rejected',
       finished_at=$2
-     WHERE id=$1 AND status IN ('in_progress','needs_attention')`,
+     WHERE id=$1`,
     [assignmentId, at],
   )
-  return changed.rowCount === 1
 }

@@ -1,8 +1,9 @@
 import { transaction } from '../../../lib/db.ts'
+import { ownerActions } from '../domain/assignment.ts'
 import type { AssignmentActionOutcome } from '../domain/panel.ts'
 import {
   lockAssignment,
-  setRejected,
+  saveRejected,
 } from '../infrastructure/persistence/assignments.ts'
 import { assignmentReceiver } from './assignment-receiver.ts'
 import { endPendingOperations } from './end-pending-operations.ts'
@@ -15,9 +16,10 @@ export type RejectErrorLog = (message: string) => void
 /**
  * The owner's Reject of an assignment from the panel (solution design of
  * epic sq2, T11–T13, "Reject"; T12-R03), in one transaction with the
- * assignment's row locked: a write conditional on the assignment being in
- * progress or needing attention fails it at `now` with the reason
- * "rejected by the owner"; its pending operations end as not started,
+ * assignment's row locked: when the rule of the owner's actions
+ * (`ownerActions`) allows Reject for its status, read under the lock, it
+ * fails at `now` with the reason "rejected by the owner"; its pending
+ * operations end as not started,
  * charging nothing; its receiver's failure entry is called, when one is
  * registered, so the requesting module learns of the end in the same save
  * (T6-R02). A running operation is not stopped: it ends and is settled by
@@ -41,10 +43,11 @@ export async function rejectAssignment(
   if (!uuid.test(assignmentId)) return null
   try {
     return await transaction(async () => {
-      const assignment = await lockAssignment(assignmentId)
+      const assignment = await lockAssignment(assignmentId, now)
       if (!assignment) return null
-      if (!(await setRejected(assignmentId, now)))
+      if (!ownerActions(assignment).reject)
         return { changed: false, status: assignment.status }
+      await saveRejected(assignmentId, now)
       await endPendingOperations(assignmentId, now)
       await assignmentReceiver(assignment.settingsName)?.receiveFailure({
         assignmentId,

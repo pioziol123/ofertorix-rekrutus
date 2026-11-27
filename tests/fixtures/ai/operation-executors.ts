@@ -15,10 +15,10 @@ import { defineJob } from '../../../lib/queues/index.ts'
 import type {
   Executor,
   OperationJobData,
-  PriceList,
-} from '../../../modules/ai/executors/declaration.ts'
+} from '../../../modules/ai/ports/executor.ts'
+import type { PriceList } from '../../../modules/ai/domain/price-list.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { registerExecutor } from '../../../modules/ai/executors/registry.ts'
+import { registerExecutor } from '../../../modules/ai/infrastructure/adapters/registry.ts'
 
 export const operationCallsTable = `
 CREATE TABLE operation_calls (

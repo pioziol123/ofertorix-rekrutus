@@ -30,13 +30,15 @@ export {
 } from './assignments/read-assignment-exchange.ts'
 export {
   AssignmentError,
-  assignmentStatuses,
   type AssignmentErrorCode,
   type AssignmentRequest,
+} from './assignments/assignment.ts'
+export {
+  assignmentStatuses,
   type AssignmentStatus,
   type AssignmentType,
   type ResponseFormat,
-} from './assignments/assignment.ts'
+} from './domain/assignment.ts'
 // ASSUMPTION(oferty-pracy-0mq.22/ASM-3): the closed list of agent tools and
 // the materials of agent work.
 export { agentTools, type AgentTool } from './domain/agent-tools.ts'
@@ -55,7 +57,7 @@ export {
 // The jobs of the executors' queues with their handler and failure handler,
 // registered by the AI module plugin, and the step of the periodic process
 // that sends the operations waiting for the budget once it has room (T3).
-export { executorJobs } from './executors/registry.ts'
+export { executorJobs } from './infrastructure/adapters/registry.ts'
 export { runOperation } from './assignments/run-operation.ts'
 export { endFailedOperation } from './assignments/end-failed-operation.ts'
 export { sendOperationsWaitingForBudget } from './assignments/send-operations-waiting-for-budget.ts'
@@ -64,12 +66,12 @@ export { sendOperationsWaitingForBudget } from './assignments/send-operations-wa
 // assignments, registered by the shared registration of receivers that
 // every process runs at start, and the step of the periodic process that
 // fails assignments past their time limit (T6).
+export { registerAssignmentReceiver } from './assignments/assignment-receiver.ts'
 export {
-  registerAssignmentReceiver,
   type AssignmentFailureDelivery,
   type AssignmentReceiver,
   type AssignmentResultDelivery,
-} from './assignments/assignment-receiver.ts'
+} from './ports/assignment-receiver.ts'
 export { failAssignmentsPastTimeLimit } from './assignments/fail-assignments-past-time-limit.ts'
 
 // The reads of the AI assignments panel (T11): the list of assignments

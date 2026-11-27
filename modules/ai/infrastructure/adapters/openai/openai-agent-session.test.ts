@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { actualCost } from '../assignments/operation-cost.ts'
+import { actualCost } from '../../../domain/operation-cost.ts'
 import { aiCatalog } from '../model-catalog.ts'
-import type { ExecutorContent, OperationWork } from './declaration.ts'
+import type { AssignmentContent } from '../../../domain/assignment.ts'
+import type { OperationWork } from '../../../ports/executor.ts'
 import { openAiExecutor, sessionFits } from './openai.ts'
 import { citedMaterials } from './openai-search.ts'
 
@@ -15,7 +16,7 @@ import { citedMaterials } from './openai-search.ts'
 const priceList = aiCatalog.models.find((m) => m.model === 'gpt-6-luna')!.prices
   .agent!
 const parameters = { model: 'gpt-6-luna', reasoningEffort: 'low' }
-const content: ExecutorContent = {
+const content: AssignmentContent = {
   type: 'agent',
   instruction: 'Gather facts about the company.',
   input: JSON.stringify({ name: 'Example', kind: 'brand' }),

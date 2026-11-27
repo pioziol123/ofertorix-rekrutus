@@ -18,6 +18,7 @@ This file is the index of the project's agent documentation. It names each famil
 The architecture rules span several files with different roles:
 
 - `docs/architecture/moduly-i-zasady-kodu.md` holds the binding rules: dependencies between modules, code structure, database access and the costs of design decisions. Check every design option and every change against them.
+- `docs/architecture/ddd-clean-hexagonal.md` applies the binding rules inside one module: the layers and the direction of imports, where a rule is written, when an integration gets a contract of its own; each rule has an example and an anti-example from the AI module. Read it before adding or moving a file inside a module.
 - `docs/architecture/moduly.md` maps modules to what they own. Use it to place a change in the module that owns its data and rules.
 - `docs/architecture/README.md` describes the current code as C4 diagrams. It orients you in the system; it does not bind decisions.
 

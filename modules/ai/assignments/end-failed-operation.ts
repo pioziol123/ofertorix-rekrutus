@@ -1,5 +1,5 @@
 import { transaction } from '../../../lib/db.ts'
-import type { OperationJobData } from '../executors/declaration.ts'
+import type { OperationJobData } from '../ports/executor.ts'
 import {
   endPendingAsFailed,
   lockOperationToStart,

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isFinal } from '../domain/assignment.ts'
 import {
   assignmentPageSize,
   type AssignmentListPage,
@@ -46,7 +47,7 @@ export function assignmentRow(
   row: AssignmentListRow,
   now: Date,
 ): AssignmentRow {
-  const final = row.status === 'succeeded' || row.status === 'failed'
+  const final = isFinal(row.status)
   return {
     assignmentId: row.id,
     label: row.label,

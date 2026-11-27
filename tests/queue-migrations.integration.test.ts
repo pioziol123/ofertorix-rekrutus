@@ -6,8 +6,8 @@ import { runModulePlugins } from '../plugins/index.ts'
 import { cvTextReadingJob } from '../modules/profile/index.ts'
 import { syncJob } from '../modules/sources/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { ollamaOperationJob } from '../modules/ai/executors/ollama.ts'
-import { openAiOperationJob } from '../modules/ai/executors/openai.ts'
+import { ollamaOperationJob } from '../modules/ai/infrastructure/adapters/ollama/ollama.ts'
+import { openAiOperationJob } from '../modules/ai/infrastructure/adapters/openai/openai.ts'
 
 const integration =
   process.env.RUN_INTEGRATION === '1' ? describe : describe.skip

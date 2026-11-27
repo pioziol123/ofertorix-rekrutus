@@ -46,16 +46,16 @@ import {
   runOperation,
 } from '../modules/ai/index.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { openAiExecutor } from '../modules/ai/executors/openai.ts'
+import { openAiExecutor } from '../modules/ai/infrastructure/adapters/openai/openai.ts'
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
-import { registerExecutor } from '../modules/ai/executors/registry.ts'
+import { registerExecutor } from '../modules/ai/infrastructure/adapters/registry.ts'
 import { usePricing } from './ai-test-configuration.ts'
 
 // The price lists AI keeps in code, replaced for the test; the Profile's
 // settings of assignments are the application's own.
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 vi.mock(
-  '../modules/ai/model-catalog.ts',
+  '../modules/ai/infrastructure/adapters/model-catalog.ts',
   () => import('./ai-test-configuration.ts'),
 )
 

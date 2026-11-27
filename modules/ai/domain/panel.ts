@@ -1,9 +1,14 @@
+import {
+  ownerActions,
+  type AssignmentFailureReason,
+  type AssignmentStatus,
+  type AssignmentType,
+} from './assignment.ts'
 import type {
-  AssignmentStatus,
-  AssignmentType,
-} from '../assignments/assignment.ts'
-import type { OperationCause } from '../executors/outcome.ts'
-import type { OperationState, OperationWait } from './operation-state.ts'
+  OperationCause,
+  OperationState,
+  OperationWait,
+} from './operation.ts'
 
 /**
  * What the AI assignments panel reads and shows (task oferty-pracy-sq2.12,
@@ -11,12 +16,6 @@ import type { OperationState, OperationWait } from './operation-state.ts'
  * server reads in `assignments/read-assignment-list.ts` and
  * `assignments/read-assignment-details.ts` return these shapes.
  */
-
-/** Why a failed assignment failed (ZA-R05), as stored. */
-export type AssignmentFailureReason =
-  'rejected' | 'time_limit' | 'delivery_failed'
-
-export type { OperationState, OperationWait } from './operation-state.ts'
 
 /** One row of the panel's list (T11-R02); amounts in złoty. */
 export type AssignmentRow = {
@@ -211,21 +210,17 @@ export type AssignmentActionOutcome = {
 
 /**
  * The owner's actions the details page offers for an assignment (T12-R01,
- * T12-R03, T12-R05): Retry only while it needs attention and is within its
- * time limit, Reject while it is not final.
+ * T12-R03, T12-R05), by the rule of `ownerActions`: the page knows the
+ * time left to the time limit, as the read gave it.
  */
 export function assignmentActions(assignment: {
   status: AssignmentStatus
   timeLeftSeconds: number | null
 }): { retry: boolean; reject: boolean } {
-  return {
-    retry:
-      assignment.status === 'needs_attention' &&
-      (assignment.timeLeftSeconds ?? 0) > 0,
-    reject:
-      assignment.status === 'in_progress' ||
-      assignment.status === 'needs_attention',
-  }
+  return ownerActions({
+    status: assignment.status,
+    withinTimeLimit: (assignment.timeLeftSeconds ?? 0) > 0,
+  })
 }
 
 /**
