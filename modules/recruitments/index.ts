@@ -23,6 +23,7 @@ export { stages, type Stage } from './domain/stages.ts'
 // Entry points: the module's HTTP handler, which the routes call.
 export {
   answerRecruitmentRefusals,
+  RefusalResponse,
   moveApplicationOverHttp,
   readApplicationOverHttp,
   stageInput,

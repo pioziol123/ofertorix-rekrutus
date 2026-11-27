@@ -93,6 +93,7 @@ flowchart TB
     Companies["Companies and research<br/>[Nitro routes + TypeScript modules]<br/>Company profiles, roles on offers, reports"]
     Sources["Source handling<br/>[Nitro routes + TypeScript modules]<br/>Import status and manual requests for Polish sources"]
     Panel["AI assignments panel<br/>[Nitro routes + TypeScript modules]<br/>List and details of assignments, count needing attention, Retry and Reject"]
+    Recruitments["Recruitments<br/>[Nitro routes + TypeScript modules]<br/>Applications to offers, their stages and history of stages"]
   end
 
   Owner -->|"Opens views over HTTP"| UI
@@ -101,17 +102,20 @@ flowchart TB
   UI -->|"Edits links and requests research, HTTP/JSON"| Companies
   UI -->|"Reads status or requests an import, HTTP/JSON"| Sources
   UI -->|"Reads assignments and the count for the navigation, retries or rejects one, HTTP/JSON"| Panel
+  UI -->|"Reads an offer's application and moves its stage, HTTP/JSON"| Recruitments
+  Offers -->|"Creates the application on the first move"| Recruitments
   Offers -->|"Reads offers, saves assessments and requests matching"| DB
   Profile -->|"Saves versions and requests extraction or a proposal"| DB
   Companies -->|"Saves company profiles and requests research"| DB
   Sources -->|"Reads and requests runs"| DB
   Panel -->|"Reads assignments, operations and costs; saves the owner's actions and sends the job of a retried operation"| DB
+  Recruitments -->|"Saves applications and their stage changes"| DB
   Profile -->|"Saves and serves PDF / DOCX"| Files
   Profile -.->|"Checks the model before a request"| Ollama
 
   classDef internal fill:#dbeafe,stroke:#2563eb,color:#172554
   classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
-  class UI,Offers,Profile,Companies,Sources,Panel internal
+  class UI,Offers,Profile,Companies,Sources,Panel,Recruitments internal
   class Owner,DB,Files,Ollama external
 ```
 
@@ -123,6 +127,7 @@ flowchart TB
 | Companies and research | [Company list API](../../server/api/companies/index.get.ts), [links to an offer](../../server/api/companies/%5Bid%5D/links.post.ts), [research request](../../server/api/companies/%5Bid%5D/research.post.ts), [company commands](../../modules/companies/company-commands.ts), [company reads](../../modules/companies/read-companies.ts) |
 | Source handling | [Sync history](../../server/api/sources/syncs/index.get.ts), [sync details](../../server/api/sources/syncs/%5Bid%5D.get.ts), [sync request from the panel](../../server/api/sources/syncs/index.post.ts), [source health](../../server/api/sources/health.get.ts) |
 | AI assignments panel | [List API](../../server/api/ai-assignments/index.get.ts), [details API](../../server/api/ai-assignments/%5Bid%5D.get.ts), [count needing attention](../../server/api/ai-assignments/needing-attention.get.ts), [Retry](../../server/api/ai-assignments/%5Bid%5D/retry.post.ts), [Reject](../../server/api/ai-assignments/%5Bid%5D/reject.post.ts), [AI module reads and actions](../../modules/ai/index.ts) |
+| Recruitments | [Application read](../../server/api/applications/%5BofferId%5D.get.ts), [stage move](../../server/api/applications/%5BofferId%5D/stage.post.ts), [first move through the Offers module](../../server/api/offers/%5Bid%5D/application.post.ts), [Recruitments module](../../modules/recruitments/index.ts), [stage field in offer details](../../app/components/OfferApplicationStage.vue) |
 | Shared route handling | [Identifier validation, body limit, error mapping and queue client](../../server/utils/http.ts), used by the routes of every module |
 | Polish time | [Time library](../../lib/time/index.ts): Polish days and months, calendar and exact arithmetic, and shown dates, for server and browser code ([rules](moduly-i-zasady-kodu.md#polish-time)); today the Sources module's schedule day uses it |
 

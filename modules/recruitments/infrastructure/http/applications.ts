@@ -29,9 +29,8 @@ const responses: {
 }
 
 /**
- * A refusal answered over HTTP. The shared request handling passes an
- * error that carries a status through, and the framework answers with its
- * status, message and data.
+ * A refusal answered over HTTP: its status and the code for the response
+ * body. The routes' utility turns it into the framework's error.
  */
 export class RefusalResponse extends Error {
   readonly statusCode: number

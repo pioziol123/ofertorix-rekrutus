@@ -4,7 +4,8 @@ import {
   answerRecruitmentRefusals,
   stageInput,
 } from '../../../../modules/recruitments/index'
-import { apiHandler, jsonBody } from '../../../utils/http'
+import { jsonBody } from '../../../utils/http'
+import { recruitmentRoute } from '../../../utils/recruitments'
 
 const body = z.object({ target: stageInput })
 
@@ -13,7 +14,7 @@ const body = z.object({ target: stageInput })
  * application (D5). The Recruitments refusals pass through unchanged; an
  * unknown offer adds `offer_not_found` (D13).
  */
-export default apiHandler(async (event) => {
+export default recruitmentRoute(async (event) => {
   const offerId = getRouterParam(event, 'id') ?? ''
   const raw = await jsonBody(event)
   return answerRecruitmentRefusals(async () => {
