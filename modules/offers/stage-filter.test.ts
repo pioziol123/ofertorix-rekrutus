@@ -13,11 +13,7 @@ import {
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
 import { projectSourceAd } from '../sources/domain/ad-projection.ts'
 import type { OfferView } from './offer-view.ts'
-import {
-  stageMarks,
-  stages,
-  type Stage,
-} from '../recruitments/view.ts'
+import { stageMarks, stages, type Stage } from '../recruitments/view.ts'
 
 /**
  * The stage of applications on the offer list (task oferty-pracy-lq3.3, T3
@@ -156,7 +152,11 @@ describe('the stage filter with the other filters (T3-R04, T3-AC03)', () => {
       { q: 'php', sort: 'newest', stage: ['none', 'rejected'] },
       false,
     )
-    expect(address).toEqual({ q: 'php', sort: 'newest', stage: 'none,rejected' })
+    expect(address).toEqual({
+      q: 'php',
+      sort: 'newest',
+      stage: 'none,rejected',
+    })
     expect(parseFilters(address)).toMatchObject({
       page: 1,
       stages: ['none', 'rejected'],

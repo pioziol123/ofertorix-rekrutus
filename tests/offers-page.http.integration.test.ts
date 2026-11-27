@@ -14,7 +14,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
  * oferty-pracy-nq3.5) against the built web server on an isolated schema:
  * the rendered page (T5-AC01, AC04), the offer read (T5-AC04) and the
  * removed routes of the import form and of the portals' state (T5-AC02,
- * AC05).
+ * AC05); and the stage of applications on the list (task oferty-pracy-lq3.3,
+ * T3 of epic lq3): its icons and the filter "Etap aplikacji" (T3-AC01,
+ * T3-AC04, A-AC11).
  */
 
 const integration =
@@ -246,5 +248,98 @@ integration('offer list without sync information over HTTP (T5)', () => {
       const response = await fetch(`${base}${path}`)
       expect(response.status, path).toBe(404)
     }
+  })
+
+  it('shows the stage icon with its label for "Do rozważenia", "CV wysłane" and "Odrzucone", none without an application or in "Zdjęta z listy", and no stage field (T3-AC01)', async () => {
+    const scope = (
+      await pool.query("SELECT id FROM source_scopes WHERE source='bayt'")
+    ).rows[0].id
+    const stages = {
+      none: null,
+      to_consider: 'Do rozważenia',
+      cv_sent: 'CV wysłane',
+      rejected: 'Odrzucone',
+      removed: 'Zdjęta z listy',
+    } as const
+    const ids: Record<string, string> = {}
+    for (const stage of Object.keys(stages)) {
+      const id = randomUUID()
+      ids[stage] = id
+      await ad(id, 'bayt', scope, `Stage ${stage}`, 'available')
+      if (stage !== 'none')
+        await pool.query(
+          `INSERT INTO recruitment_applications(id,offer_id,stage,stage_changed_at)
+          VALUES($1,$2,$3,now())`,
+          [randomUUID(), id, stage],
+        )
+    }
+    const html = await page('/offers?q=Stage')
+    /** The table row of the offer with the given title. */
+    const row = (title: string) => {
+      const found = html
+        .split('<tr')
+        .find((part) => part.includes(`>${title}</a>`))
+      expect(found, title).toBeDefined()
+      return found!.split('</tr>')[0]!
+    }
+    for (const [stage, label] of Object.entries(stages)) {
+      const shown = row(`Stage ${stage}`)
+      const icon = /<span[^>]*class="offer-stage-icon"[^>]*>/.exec(shown)?.[0]
+      if (label === null || stage === 'removed') {
+        expect(icon, stage).toBeUndefined()
+        expect(text(shown), stage).not.toContain(stages.removed)
+      } else {
+        expect(icon, stage).toContain(`data-stage="${stage}"`)
+        expect(icon, stage).toContain(`title="${label}"`)
+        expect(icon, stage).toContain(`aria-label="${label}"`)
+        expect(icon, stage).toContain('role="img"')
+        expect(shown, stage).toMatch(/class="offer-stage-icon"[^>]*>\s*<svg/)
+      }
+      // The list only informs; the stage changes in offer details (T3-R02).
+      expect(shown, stage).not.toContain('<select')
+      expect(shown, stage).not.toContain('application-stage-field')
+    }
+    expect(await (await get('/api/offers?q=Stage')).json()).toMatchObject({
+      total: 5,
+    })
+  })
+
+  it('renders the filter "Etap aplikacji" with "Bez aplikacji" and "Zdjęta z listy", and shows two chosen stages of an address with an unknown one without an error (A-AC11, T3-AC04)', async () => {
+    const filter = (html: string) => {
+      expect(html).toMatch(
+        /Etap aplikacji\s*<details[^>]*data-testid="offers-filter-stage"/,
+      )
+      return html
+        .split('data-testid="offers-filter-stage"')[1]!
+        .split('</details>')[0]!
+    }
+    const all = filter(await page('/offers'))
+    expect(text(all)).toMatch(/> Wszystkie/)
+    for (const [value, label] of [
+      ['none', 'Bez aplikacji'],
+      ['to_consider', 'Do rozważenia'],
+      ['cv_sent', 'CV wysłane'],
+      ['rejected', 'Odrzucone'],
+      ['removed', 'Zdjęta z listy'],
+    ])
+      expect(all).toMatch(
+        new RegExp(`type="checkbox"[^>]*value="${value}"[^>]*> ${label}`),
+      )
+
+    const address = '/offers?q=Stage&stage=cv_sent&stage=archived,none'
+    const chosen = await page(address)
+    expect(text(filter(chosen))).toMatch(/> Wybrano: 2/)
+    const shown = text(chosen)
+    expect(shown).toContain('Stage cv_sent')
+    expect(shown).toContain('Stage none')
+    for (const stage of ['to_consider', 'rejected', 'removed'])
+      expect(shown).not.toContain(`Stage ${stage}`)
+    const list = await (
+      await get('/api/offers?q=Stage&stage=cv_sent&stage=archived,none')
+    ).json()
+    expect(list).toMatchObject({
+      total: 2,
+      filters: { stages: ['none', 'cv_sent'] },
+    })
   })
 })

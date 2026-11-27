@@ -31,7 +31,13 @@ import { emptyProfile } from '../modules/profile/view.ts'
 import { listOffers, parseFilters } from '../modules/offers/index.ts'
 import { failAssessmentsOfOldWay } from '../modules/matching/index.ts'
 import { removePricing, usePricing } from './ai-test-configuration.ts'
-import { migrate } from './matching-ai.fixtures.ts'
+import {
+  aiLeaseMigration,
+  aiWithoutLeaseMigration,
+  assignmentMigrations,
+  matchingMigrations,
+  migrate,
+} from './matching-ai.fixtures.ts'
 
 // The price lists AI keeps in code, replaced for the test.
 // ASSUMPTION(oferty-pracy-0mq.12/ASM-1): a test reaches a module's internals.
@@ -66,7 +72,14 @@ integration('list matching projections in isolated PostgreSQL', () => {
       connectionString: process.env.DATABASE_URL,
       options: `-c search_path=${schema}`,
     })
-    await migrate(pool)
+    // The offer list reads the stages of applications too (lq3 T3).
+    await migrate(pool, [
+      ...matchingMigrations,
+      aiLeaseMigration,
+      aiWithoutLeaseMigration,
+      ...assignmentMigrations,
+      '1770000000039_recruitments',
+    ])
     // Profile reads go through the shared accessor (T-03).
     setPool(pool)
   })
