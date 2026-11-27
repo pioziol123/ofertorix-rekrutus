@@ -11,10 +11,7 @@ export {
   readCurrentStages,
   type ApplicationDetails,
 } from './read-applications.ts'
-export {
-  readApplicationsPage,
-  type ApplicationsPage,
-} from './read-applications-page.ts'
+export { readApplicationsPage } from './read-applications-page.ts'
 export type { ApplicationStage } from './application-stage.ts'
 export {
   ApplicationMissing,

@@ -19,20 +19,13 @@ export { stageMarks } from './domain/stage-marks.ts'
 export {
   applicationsAddress,
   changeStageChoice,
-  choiceStages,
-  defaultStageChoice,
   readApplicationsQuery,
   stageChoiceLabels,
   stageChoices,
   type ApplicationsQuery,
   type StageChoice,
 } from './domain/stage-choices.ts'
-export {
-  noteCounterText,
-  noteFits,
-  noteLength,
-  noteLimit,
-} from './domain/note.ts'
+export { noteCounterText, noteFits } from './domain/note.ts'
 export {
   noteTooLongMessage,
   refusalText,
@@ -41,6 +34,5 @@ export {
 } from './refusal-codes.ts'
 export type {
   ApplicationDetailsView,
-  ApplicationListItem,
   ApplicationsPageView,
 } from './application-views.ts'

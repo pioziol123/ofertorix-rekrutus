@@ -398,6 +398,38 @@ integration('Moja lista and the application details over HTTP (T2)', () => {
     expect(opened).toBeDefined()
   })
 
+  it('shows the icon of the shown stage in the stage field of offer details and of the application details, and none without an application (T2-AC11, T2-R13)', async () => {
+    /** The stage field's icon: the stage it stands for, and its svg. */
+    const icon = (html: string) => {
+      const field = html.split('class="application-stage-field"')[1]
+      expect(field, 'the stage field').toBeDefined()
+      const before = field!.split('<select')[0]!
+      const mark =
+        /<span[^>]*class="application-stage-icon"[^>]*data-stage="([^"]+)"[^>]*>\s*<svg/.exec(
+          before,
+        ) ??
+        /<span[^>]*data-stage="([^"]+)"[^>]*class="application-stage-icon"[^>]*>\s*<svg/.exec(
+          before,
+        )
+      return mark?.[1] ?? null
+    }
+    for (const stage of Object.keys(labels) as Stage[]) {
+      const id = await offerIn(stage)
+      expect(
+        icon(await page(`/offers?offer=${id}`)),
+        `offer details, ${stage}`,
+      ).toBe(stage)
+      expect(
+        icon(drawer(await page(`/my-list?offer=${id}`))!),
+        `drawer, ${stage}`,
+      ).toBe(stage)
+    }
+    const none = await offer()
+    const html = await page(`/offers?offer=${none}`)
+    expect(icon(html)).toBeNull()
+    expect(html).not.toMatch(/class="application-stage-icon"/)
+  })
+
   it('saves a note of 10 000 characters, refuses 10 001 with note_too_long, and refuses a note for an offer without an application without creating one (A-AC03, A-AC07)', async () => {
     const id = await offerIn('rejected')
     const before = await application(id)

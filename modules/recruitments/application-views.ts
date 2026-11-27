@@ -8,7 +8,7 @@ import type { PageSize } from '../../lib/paging.ts'
  */
 
 /** One row of Moja lista: an application with its current stage. */
-export type ApplicationListItem = {
+type ApplicationListItem = {
   offerId: string
   stage: Stage
   stageChangedAt: string
