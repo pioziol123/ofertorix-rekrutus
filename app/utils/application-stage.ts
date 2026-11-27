@@ -1,4 +1,5 @@
 import { refusalText } from '../../modules/recruitments/view'
+import { isNotFound } from './fetch-errors'
 
 /**
  * What the stage field of offer details shows when a request fails. Pure,
@@ -12,6 +13,19 @@ import { refusalText } from '../../modules/recruitments/view'
  * ASSUMPTION(oferty-pracy-lq3.1/ASM-1)
  */
 export const stageReadFailureText = 'Nie udało się wczytać etapu aplikacji.'
+
+/**
+ * What a failed read of the application means for the field: only a 404
+ * answer is an offer without an application, shown as "Bez aplikacji";
+ * any other failure (a server error, 403, a lost connection) is a read that
+ * failed, shown as the read failure text instead of the field.
+ * ASSUMPTION(oferty-pracy-lq3.1/ASM-1)
+ */
+export function readFailureOutcome(
+  error: unknown,
+): 'no_application' | 'read_failed' {
+  return isNotFound(error) ? 'no_application' : 'read_failed'
+}
 
 /**
  * Shown next to the field when a move fails without a refusal code, such

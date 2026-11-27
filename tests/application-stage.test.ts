@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   moveFailureText,
+  readFailureOutcome,
   stageMoveFailureText,
   stageReadFailureText,
 } from '../app/utils/application-stage.ts'
@@ -46,6 +47,24 @@ describe('the stage field after a failed request', () => {
     expect(stageMoveFailureText).toBe(
       'Nie udało się zmienić etapu. Spróbuj ponownie.',
     )
+  })
+
+  it('counts only a 404 read as no application; any other failure is a failed read (ASM-1)', () => {
+    expect(readFailureOutcome(fetchError(404, 'application_not_found'))).toBe(
+      'no_application',
+    )
+    expect(readFailureOutcome({ response: { status: 404 } })).toBe(
+      'no_application',
+    )
+    for (const error of [
+      fetchError(500),
+      fetchError(403),
+      fetchError(503),
+      fetchError(),
+      new TypeError('fetch failed'),
+      null,
+    ])
+      expect(readFailureOutcome(error)).toBe('read_failed')
   })
 
   it('has a read failure text for a read that fails other than with 404 (ASM-1)', () => {

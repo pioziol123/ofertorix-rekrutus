@@ -8,9 +8,9 @@ import {
 } from '../../modules/recruitments/view'
 import {
   moveFailureText,
+  readFailureOutcome,
   stageReadFailureText,
 } from '../utils/application-stage'
-import { isNotFound } from '../utils/fetch-errors'
 
 /**
  * The stage field of offer details (A-R04, T1-R01, T1-R02): it shows the
@@ -29,9 +29,9 @@ const { data, error } = await useAsyncData(
       )
       return isStage(application.stage) ? application.stage : null
     } catch (e) {
-      if (isNotFound(e)) return null
-      // Any other failure shows the read failure text instead of the field.
-      // ASSUMPTION(oferty-pracy-lq3.1/ASM-1)
+      // Any failure other than 404 shows the read failure text instead of
+      // the field. ASSUMPTION(oferty-pracy-lq3.1/ASM-1)
+      if (readFailureOutcome(e) === 'no_application') return null
       throw e
     }
   },
