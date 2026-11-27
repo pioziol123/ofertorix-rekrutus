@@ -816,6 +816,7 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
 .sync-clear {
   margin-left: auto;
 }

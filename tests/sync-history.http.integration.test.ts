@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { formatDate } from '../lib/time/index.ts'
+import { syncStates } from '../modules/sources/view.ts'
 
 /**
  * The page "Synchronizacje" and its routes (T1 of epic nq3, task
@@ -346,6 +347,28 @@ integration('page "Synchronizacje" over HTTP (T1)', () => {
       id: runs[0],
       status: 'failed',
     })
+  })
+
+  it('renders the shared paging and multi-choice filters on the page (lq3 T4-AC01, T4-AC02)', async () => {
+    for (let i = 0; i < 12; i++) await run('failed', { minutesAgo: i + 1 })
+    const html = await page('/syncs?state=failed,queued&page=2&size=10')
+    const pager = html.split('aria-label="Strony synchronizacji"')[1]!
+    expect(text(pager)).toMatch(/^Poprzednia\s*Strona 2 z 2\s*Następna/)
+    for (const size of [10, 20, 50, 100])
+      expect(pager).toContain(`<option value="${size}"`)
+    expect(pager).toMatch(/<option value="10" selected/)
+    expect(pager).toContain('data-testid="page-jump"')
+
+    const source = html
+      .split('data-testid="sync-filter-source"')[1]!
+      .split('</details>')[0]!
+    expect(text(source)).toMatch(/^Wszystkie/)
+    expect(source).toMatch(/type="checkbox"[^>]*value="bayt"/)
+    const state = html
+      .split('data-testid="sync-filter-state"')[1]!
+      .split('</details>')[0]!
+    expect(text(state)).toMatch(/^Wybrano: 2/)
+    expect(state.split('type="checkbox"')).toHaveLength(syncStates.length + 1)
   })
 
   it('shows the default of each unreadable value, 20 per page and the last page for an invalid address, without an error (T1-AC11)', async () => {
