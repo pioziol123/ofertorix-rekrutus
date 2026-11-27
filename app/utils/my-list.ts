@@ -18,7 +18,6 @@ import type { PageFetch } from './sync-page-read'
  * given, so tests check it without a browser or a server.
  */
 
-
 /** The text of an empty list (T2-R07). */
 export const emptyListText = 'Brak ofert na liście dla wybranego etapu'
 
