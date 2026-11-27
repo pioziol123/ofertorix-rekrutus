@@ -15,20 +15,15 @@ import {
   type DialogSource,
   type PanelSyncResult,
   changeFilters,
-  changePageSize,
-  choiceOnClose,
-  choiceSummary,
   clearFilters,
   detailNumbers,
   emptyHistoryText,
   filtersAtDefault,
   groupByDay,
   historyAddress,
-  pageSizes,
   periodChoices,
   rowResult,
   rowTime,
-  showPage,
   sourceName,
   stateLabels,
   syncCourse,
@@ -37,13 +32,11 @@ import {
   triggerChoices,
   triggerIcons,
   triggerTooltips,
-  type PageSize,
   type SyncDetails,
   type SyncHistoryFilters,
   type SyncHistoryPage,
   type SyncHistoryQuery,
   type SyncPeriod,
-  type SyncState,
   type SyncTrigger,
   type UnavailableContext,
   shownWarnings,
@@ -53,13 +46,11 @@ import {
   warningQuery,
   warningReasons,
 } from '../../modules/sources/view'
+import { changePageSize, showPage, type PageSize } from '../../lib/paging'
 import {
   escapeCloses,
   navigationStayed,
-  pageJumpKey,
-  pageJumpNumbers,
   tooltipPosition,
-  type PageJump,
 } from '../utils/page-controls'
 import { isNotFound } from '../utils/fetch-errors'
 import { readSyncPage } from '../utils/sync-page-read'
@@ -167,57 +158,26 @@ const days = computed(() =>
   ),
 )
 
-// Multi-choice lists: a choice applies when the list closes (T1-R08).
-const ticked = reactive<{ sources: string[]; states: SyncState[] }>({
-  sources: [],
-  states: [],
-})
-const sourceList = ref<HTMLDetailsElement>()
-const stateList = ref<HTMLDetailsElement>()
-function toggled(key: 'sources' | 'states', event: Event) {
-  if (!current.value) return
-  const open = (event.target as HTMLDetailsElement).open
-  if (open) {
-    ticked[key] = [...current.value[key]] as never
-    return
-  }
-  const choice = choiceOnClose<string>(current.value[key], ticked[key])
-  if (choice) setFilters({ [key]: choice })
-}
-function closeLists(except?: EventTarget | null) {
-  for (const list of [sourceList.value, stateList.value])
-    if (list?.open && !(except instanceof Node && list.contains(except)))
-      list.open = false
-}
-
-// The page list under "Strona X z Y" (T1-R09).
-const jump = ref<PageJump | null>(null)
-const jumpKeys = ref<HTMLInputElement>()
-const jumpBox = ref<HTMLElement>()
-const jumpNumbers = computed(() =>
-  jump.value && data.value ? pageJumpNumbers(data.value.pages, jump.value) : [],
+// The shared filter and paging; the page decides what Escape closes.
+const sourceFilter = ref<{ isOpen: () => boolean; close: () => void }>()
+const stateFilter = ref<{ isOpen: () => boolean; close: () => void }>()
+const pager = ref<{ listOpen: () => boolean; closeList: () => void }>()
+const filterLists = () => [sourceFilter.value, stateFilter.value]
+const sourceOptions = computed(() =>
+  (data.value?.sources ?? []).map((source) => ({
+    value: source.id,
+    label: source.name,
+  })),
 )
-async function toggleJump() {
-  jump.value = jump.value ? null : { typed: '' }
-  if (jump.value) {
-    await nextTick()
-    jumpKeys.value?.focus({ preventScroll: true })
-  }
-}
-function jumpKey(event: KeyboardEvent) {
-  if (!jump.value || !data.value) return
-  const outcome = pageJumpKey(data.value.pages, jump.value, event.key)
-  if (/^\d$|^Backspace$|^Enter$|^Escape$/.test(event.key)) {
-    event.preventDefault()
-    event.stopPropagation()
-  }
-  if (outcome.action === 'list') jump.value = outcome.jump
-  else if (outcome.action === 'close') jump.value = null
-  else openPage(outcome.page)
-}
+const stateOptions = syncStates.map((state) => ({
+  value: state,
+  label: stateLabels[state],
+}))
 function openPage(page: number) {
-  jump.value = null
   if (current.value) void go(showPage(current.value, page))
+}
+function choosePageSize(size: PageSize) {
+  if (current.value) void go(changePageSize(current.value, size))
 }
 
 function closeDetails() {
@@ -252,31 +212,25 @@ async function showTip(event: Event) {
 }
 const hideTip = () => (tip.shown = false)
 
-function onMouseDown(event: MouseEvent) {
-  closeLists(event.target)
-  if (jump.value && !jumpBox.value?.contains(event.target as Node))
-    jump.value = null
-}
 function onKeyDown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
   const closes = escapeCloses({
     dialog: !!dialog.value,
-    filterList: !!(sourceList.value?.open || stateList.value?.open),
-    pageList: !!jump.value,
+    filterList: filterLists().some((list) => list?.isOpen()),
+    pageList: !!pager.value?.listOpen(),
     details: !!details.value,
   })
   if (closes === 'dialog') dialog.value = null
-  else if (closes === 'filterList') closeLists()
-  else if (closes === 'pageList') jump.value = null
+  else if (closes === 'filterList')
+    for (const list of filterLists()) list?.close()
+  else if (closes === 'pageList') pager.value?.closeList()
   else if (closes === 'details') closeDetails()
 }
 onMounted(() => {
-  document.addEventListener('mousedown', onMouseDown)
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('scroll', hideTip, true)
 })
 onUnmounted(() => {
-  document.removeEventListener('mousedown', onMouseDown)
   document.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('scroll', hideTip, true)
 })
@@ -448,57 +402,22 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
       </div>
 
       <div v-if="data && current" class="sync-toolbar">
-        <label
-          >Źródło
-          <details
-            ref="sourceList"
-            class="sync-choice"
-            data-testid="sync-filter-source"
-            @toggle="toggled('sources', $event)"
-          >
-            <summary>
-              {{ choiceSummary(current.sources, nameOf) }}
-            </summary>
-            <div class="sync-choice-list">
-              <label v-for="source in data.sources" :key="source.id"
-                ><input
-                  v-model="ticked.sources"
-                  type="checkbox"
-                  :value="source.id"
-                />
-                {{ source.name }}</label
-              >
-            </div>
-          </details>
-        </label>
-        <label
-          >Stan
-          <details
-            ref="stateList"
-            class="sync-choice"
-            data-testid="sync-filter-state"
-            @toggle="toggled('states', $event)"
-          >
-            <summary>
-              {{
-                choiceSummary(
-                  current.states,
-                  (state) => stateLabels[state as SyncState],
-                )
-              }}
-            </summary>
-            <div class="sync-choice-list">
-              <label v-for="state in syncStates" :key="state"
-                ><input
-                  v-model="ticked.states"
-                  type="checkbox"
-                  :value="state"
-                />
-                {{ stateLabels[state] }}</label
-              >
-            </div>
-          </details>
-        </label>
+        <MultiChoiceFilter
+          ref="sourceFilter"
+          label="Źródło"
+          :options="sourceOptions"
+          :chosen="current.sources"
+          data-testid="sync-filter-source"
+          @change="setFilters({ sources: $event })"
+        />
+        <MultiChoiceFilter
+          ref="stateFilter"
+          label="Stan"
+          :options="stateOptions"
+          :chosen="current.states"
+          data-testid="sync-filter-state"
+          @change="setFilters({ states: $event })"
+        />
         <label
           >Sposób uruchomienia
           <select
@@ -623,82 +542,15 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
           </section>
         </template>
 
-        <nav class="sync-pager" aria-label="Strony synchronizacji">
-          <UButton
-            variant="outline"
-            :disabled="current.page <= 1"
-            @click="openPage(current.page - 1)"
-            >Poprzednia</UButton
-          >
-          <span ref="jumpBox" class="sync-jump">
-            <button
-              type="button"
-              class="sync-jump-button"
-              aria-haspopup="listbox"
-              :aria-expanded="jump ? 'true' : 'false'"
-              data-testid="sync-page-jump"
-              @click="toggleJump"
-            >
-              Strona {{ data.page }} z {{ data.pages }}
-            </button>
-            <div v-if="jump" class="sync-jump-list">
-              <input
-                ref="jumpKeys"
-                class="sync-jump-keys"
-                inputmode="numeric"
-                autocomplete="off"
-                aria-label="Numer strony"
-                @keydown="jumpKey"
-              />
-              <p v-if="jump.typed" class="sync-jump-typed">{{ jump.typed }}</p>
-              <div role="listbox">
-                <button
-                  v-for="page in jumpNumbers"
-                  :key="page"
-                  type="button"
-                  role="option"
-                  :aria-selected="page === data.page"
-                  @click="openPage(page)"
-                >
-                  Strona {{ page }}
-                </button>
-                <span v-if="!jumpNumbers.length" class="muted"
-                  >Brak takiej strony</span
-                >
-              </div>
-            </div>
-          </span>
-          <UButton
-            variant="outline"
-            :disabled="current.page >= data.pages"
-            @click="openPage(current.page + 1)"
-            >Następna</UButton
-          >
-          <label class="sync-size"
-            >Na stronie
-            <select
-              :value="String(current.size)"
-              data-testid="sync-page-size"
-              @change="
-                go(
-                  changePageSize(
-                    current,
-                    Number(selectValue($event)) as PageSize,
-                  ),
-                )
-              "
-            >
-              <option
-                v-for="size in pageSizes"
-                :key="size"
-                :value="String(size)"
-                :selected="size === current.size"
-              >
-                {{ size }}
-              </option>
-            </select>
-          </label>
-        </nav>
+        <PagePager
+          ref="pager"
+          :page="data.page"
+          :pages="data.pages"
+          :size="current.size"
+          label="Strony synchronizacji"
+          @page="openPage"
+          @size="choosePageSize"
+        />
       </template>
 
       <template v-if="details">
@@ -945,17 +797,14 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
   flex-wrap: wrap;
   margin: 16px 0 12px;
 }
-.sync-toolbar > label,
-.sync-size {
+.sync-toolbar > label {
   display: flex;
   flex-direction: column;
   font-size: 11px;
   color: #69766f;
   gap: 2px;
 }
-.sync-toolbar select,
-.sync-choice summary,
-.sync-size select {
+.sync-toolbar select {
   width: 180px;
   height: 34px;
   font-size: 14px;
@@ -967,43 +816,6 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.sync-size select {
-  width: 80px;
-}
-.sync-choice {
-  position: relative;
-}
-.sync-choice summary {
-  list-style: none;
-  cursor: pointer;
-}
-.sync-choice[open] summary {
-  border-color: #245c44;
-}
-.sync-choice-list {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 4;
-  background: #fff;
-  border: 1px solid #dce4dd;
-  border-radius: 9px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  padding: 6px;
-  min-width: 210px;
-  max-height: 320px;
-  overflow: auto;
-}
-.sync-choice-list label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
-  font-size: 13px;
-  color: #20372f;
-  cursor: pointer;
-}
 .sync-clear {
   margin-left: auto;
 }
@@ -1119,77 +931,6 @@ const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
   background: #fff;
   border: 1px solid #dce4dd;
   border-radius: 12px;
-}
-.sync-pager {
-  display: flex;
-  justify-content: center;
-  align-items: end;
-  gap: 14px;
-  margin: 18px 0;
-  font-size: 13px;
-  color: #69766f;
-}
-.sync-jump {
-  position: relative;
-  align-self: center;
-}
-.sync-jump-button {
-  border: 0;
-  background: none;
-  color: #245c44;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.sync-jump-list {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: #fff;
-  border: 1px solid #dce4dd;
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
-  padding: 8px;
-  width: 160px;
-  z-index: 4;
-}
-.sync-jump-list [role='listbox'] {
-  display: flex;
-  flex-direction: column;
-  max-height: 220px;
-  overflow: auto;
-}
-.sync-jump-list button {
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  padding: 5px 10px;
-  font-size: 13px;
-  cursor: pointer;
-}
-.sync-jump-list button:hover {
-  background: #f3f6f2;
-}
-.sync-jump-list button[aria-selected='true'] {
-  font-weight: 650;
-  color: #245c44;
-  background: #eef5ec;
-}
-.sync-jump-keys {
-  position: absolute;
-  opacity: 0;
-  width: 1px;
-  height: 1px;
-  border: 0;
-  padding: 0;
-  pointer-events: none;
-}
-.sync-jump-typed {
-  margin: 0 2px 6px;
-  text-align: center;
-  font-weight: 650;
-  color: #20372f;
 }
 .sync-backdrop {
   position: fixed;

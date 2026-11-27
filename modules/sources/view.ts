@@ -10,15 +10,10 @@ export {
 export { sourceName } from './domain/source-names.ts'
 export {
   changeFilters,
-  changePageSize,
-  choiceOnClose,
   clearFilters,
   filtersAtDefault,
   historyAddress,
-  pageSizes,
-  showPage,
   syncStates,
-  type PageSize,
   type SyncDetails,
   type SyncHistoryFilters,
   type SyncHistoryPage,
@@ -28,7 +23,6 @@ export {
   type SyncTrigger,
 } from './domain/sync-history.ts'
 export {
-  choiceSummary,
   detailNumbers,
   emptyHistoryText,
   groupByDay,

@@ -181,6 +181,8 @@ describe('module directories (A12-AC01, A12-AC02)', () => {
       [
         'lib/contact-details.ts',
         'lib/db.ts',
+        // The paging library (oferty-pracy-lq3.4).
+        'lib/paging.ts',
         // The time library (oferty-pracy-nq3.6).
         'lib/time/arithmetic.ts',
         'lib/time/calendar.ts',

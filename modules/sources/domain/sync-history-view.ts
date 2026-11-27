@@ -107,15 +107,6 @@ export const periodChoices: { value: SyncPeriod; label: string }[] = [
 export const emptyHistoryText = 'Brak synchronizacji dla wybranych filtrów'
 export const problemText = 'Synchronizacja nie pobrała wszystkich ogłoszeń.'
 
-/** What a multi-choice filter's button says: all, one name or a count. */
-export function choiceSummary(
-  chosen: readonly string[],
-  label: (value: string) => string,
-): string {
-  if (!chosen.length) return 'Wszystkie'
-  return chosen.length === 1 ? label(chosen[0]!) : `Wybrano: ${chosen.length}`
-}
-
 /** A day of the history page with its syncs, in the page's order. */
 export type HistoryDay<T> = { heading: string; items: T[] }
 

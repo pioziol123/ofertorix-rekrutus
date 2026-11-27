@@ -2,7 +2,9 @@
  * Mechanics of page controls that follow from no module's rules: where a
  * tooltip goes in the window, the keyboard of a page-number list and which
  * overlay Escape closes. Pure functions, so tests check them without a
- * browser. Used by the page "Synchronizacje" (T1-R07, R09, R12).
+ * browser. Used by the page "Synchronizacje" (T1-R07, R09, R12); the
+ * keyboard of the page-number list is part of the shared paging, the
+ * component PagePager (lq3 T4-R01).
  */
 
 import { isNavigationFailure, NavigationFailureType } from 'vue-router'

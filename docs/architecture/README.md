@@ -121,7 +121,7 @@ flowchart TB
 
 | Component | Entry points and implementation |
 | --- | --- |
-| Vue views | [Offer list](../../app/pages/offers.vue), [professional profile](../../app/pages/profile.vue), [company details](../../app/pages/companies/%5Bid%5D.vue), [AI assignments](../../app/pages/ai-assignments/index.vue), [shared navigation](../../app/components/AppHeader.vue) |
+| Vue views | [Offer list](../../app/pages/offers.vue), [professional profile](../../app/pages/profile.vue), [company details](../../app/pages/companies/%5Bid%5D.vue), [AI assignments](../../app/pages/ai-assignments/index.vue), [shared navigation](../../app/components/AppHeader.vue), [shared paging](../../app/components/PagePager.vue), [shared multi-choice filter](../../app/components/MultiChoiceFilter.vue) |
 | Offers and matching | [Offer list API](../../server/api/offers/index.get.ts), [Offers module](../../modules/offers/index.ts), [assessment data in the list](../../modules/matching/read-offer-assessments.ts), [assessment group request](../../server/api/matching/index.post.ts) |
 | Professional profile | [Version confirmation](../../server/api/profile/confirm.post.ts), [CV import](../../server/api/profile/imports/index.post.ts), [proposal request](../../server/api/profile/imports/%5Bid%5D/prepare.post.ts), [profile storage](../../modules/profile/infrastructure/persistence/profile.ts) |
 | Companies and research | [Company list API](../../server/api/companies/index.get.ts), [links to an offer](../../server/api/companies/%5Bid%5D/links.post.ts), [research request](../../server/api/companies/%5Bid%5D/research.post.ts), [company commands](../../modules/companies/company-commands.ts), [company reads](../../modules/companies/read-companies.ts) |
@@ -130,6 +130,7 @@ flowchart TB
 | Recruitments | [Application read](../../server/api/applications/%5BofferId%5D.get.ts), [stage move](../../server/api/applications/%5BofferId%5D/stage.post.ts), [first move through the Offers module](../../server/api/offers/%5Bid%5D/application.post.ts), [Recruitments module](../../modules/recruitments/index.ts), [stage field in offer details](../../app/components/OfferApplicationStage.vue) |
 | Shared route handling | [Identifier validation, body limit, error mapping and queue client](../../server/utils/http.ts), used by the routes of every module |
 | Polish time | [Time library](../../lib/time/index.ts): Polish days and months, calendar and exact arithmetic, and shown dates, for server and browser code ([rules](moduly-i-zasady-kodu.md#polish-time)); today the Sources module's schedule day uses it |
+| Paging | [Paging library](../../lib/paging.ts): the one list of numbers per page and the page rules that the shared paging of the pages and the modules' paged reads share; today the sync history uses it |
 
 ### Worker
 

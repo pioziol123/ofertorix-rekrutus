@@ -11,6 +11,12 @@ import {
   type RunTrigger,
   type SyncRunStatus,
 } from './run-states.ts'
+import {
+  defaultPageSize,
+  readPage,
+  readPageSize,
+  type PageSize,
+} from '../../../lib/paging.ts'
 
 /** The history's states are the run statuses, read from their one list. */
 export const syncStates = syncRunStatuses
@@ -22,9 +28,6 @@ export type SyncTrigger = RunTrigger
 
 export const syncPeriods = ['today', '7d', '30d', 'all'] as const
 export type SyncPeriod = (typeof syncPeriods)[number]
-
-export const pageSizes = [10, 20, 50, 100] as const
-export type PageSize = (typeof pageSizes)[number]
 
 /** The history's filters; an empty list means every value. */
 export type SyncHistoryFilters = {
@@ -47,7 +50,6 @@ export const defaultFilters: SyncHistoryFilters = Object.freeze({
   trigger: null,
   period: '7d',
 }) as SyncHistoryFilters
-export const defaultPageSize: PageSize = 20
 
 /** The address's values of a key: repeated or comma-separated. */
 function values(raw: unknown): string[] {
@@ -90,17 +92,13 @@ export function readHistoryQuery(
   address: Record<string, unknown>,
   catalog: readonly string[],
 ): SyncHistoryQuery {
-  const page = single(address.page)
-  const size = Number(single(address.size))
   return {
     sources: subset(catalog, address.source),
     states: subset(syncStates, address.state),
     trigger: oneOf(syncTriggers, single(address.trigger)),
     period: oneOf(syncPeriods, single(address.period)) ?? defaultFilters.period,
-    page: page !== null && /^-?\d+$/.test(page) ? Math.max(1, Number(page)) : 1,
-    size: (pageSizes as readonly number[]).includes(size)
-      ? (size as PageSize)
-      : defaultPageSize,
+    page: readPage(single(address.page)),
+    size: readPageSize(single(address.size)),
   }
 }
 
@@ -151,19 +149,6 @@ export const clearFilters = (query: SyncHistoryQuery): SyncHistoryQuery => ({
   size: query.size,
 })
 
-/** The query after the number per page changed: back to page 1 (T1-R09). */
-export const changePageSize = (
-  query: SyncHistoryQuery,
-  size: PageSize,
-): SyncHistoryQuery =>
-  size === query.size ? query : { ...query, size, page: 1 }
-
-/** The query showing another page. */
-export const showPage = (
-  query: SyncHistoryQuery,
-  page: number,
-): SyncHistoryQuery => ({ ...query, page: Math.max(1, Math.trunc(page)) })
-
 const sameList = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((value) => b.includes(value))
 
@@ -175,22 +160,6 @@ function sameFilters(a: SyncHistoryFilters, b: SyncHistoryFilters): boolean {
     a.period === b.period
   )
 }
-
-/**
- * A multi-choice list applies its choice when it closes (T1-R08): the
- * choice that differs from the applied one, or null when nothing changed.
- * Ticking while the list is open changes nothing.
- */
-export function choiceOnClose<T extends string>(
-  applied: readonly T[],
-  ticked: readonly T[],
-): T[] | null {
-  return sameList(applied, ticked) ? null : [...ticked]
-}
-
-/** Number of pages for `total` matching syncs, at least 1. */
-export const pageCount = (total: number, size: number): number =>
-  Math.max(1, Math.ceil(total / size))
 
 /** A catalogue source as the history and its filters show it. */
 export type CatalogSource = {

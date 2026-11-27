@@ -1,7 +1,7 @@
 import { dayStart } from '../../lib/time/index.ts'
+import { pageCount } from '../../lib/paging.ts'
 import { sourceName } from './domain/source-names.ts'
 import {
-  pageCount,
   readHistoryQuery,
   type CatalogSource,
   type SyncDetails,

@@ -5,16 +5,13 @@ import {
   type RunTrigger,
   type SyncRunStatus,
 } from './run-states.ts'
+import { changePageSize, showPage } from '../../../lib/paging.ts'
 import {
   changeFilters,
-  changePageSize,
-  choiceOnClose,
   clearFilters,
   filtersAtDefault,
   historyAddress,
-  pageCount,
   readHistoryQuery,
-  showPage,
   syncStates,
   syncTriggers,
   type SyncHistoryQuery,
@@ -169,18 +166,8 @@ describe('changing filters and pages (T1-R08, R09)', () => {
     expect(showPage(onPage3, 7).page).toBe(7)
   })
 
-  it('applies a multi-choice list when it closes, an empty choice meaning all (T1-AC06)', () => {
-    expect(choiceOnClose(['indeed'], ['indeed'])).toBeNull()
-    expect(choiceOnClose(['indeed', 'bayt'], ['bayt', 'indeed'])).toBeNull()
-    expect(choiceOnClose([], ['indeed', 'bayt'])).toEqual(['indeed', 'bayt'])
-    expect(choiceOnClose(['indeed'], [])).toEqual([])
+  it('applies an empty multi-choice as all (T1-AC06)', () => {
     expect(changeFilters(onPage3, { sources: [] }).sources).toEqual([])
-  })
-
-  it('counts at least one page', () => {
-    expect(pageCount(0, 20)).toBe(1)
-    expect(pageCount(20, 20)).toBe(1)
-    expect(pageCount(21, 20)).toBe(2)
   })
 })
 
