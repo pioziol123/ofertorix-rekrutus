@@ -7,6 +7,8 @@ import {
 import { stages } from '../../domain/stages.ts'
 import { moveApplication } from '../../move-application.ts'
 import { readApplication } from '../../read-applications.ts'
+import { readApplicationsPage } from '../../read-applications-page.ts'
+import { saveNote } from '../../save-note.ts'
 import type { RefusalCode } from '../../refusal-codes.ts'
 
 /**
@@ -26,6 +28,7 @@ const responses: {
   stage_changed: { status: 409, code: 'application_stage_changed' },
   transition_not_allowed: { status: 422, code: 'transition_not_allowed' },
   application_missing: { status: 404, code: 'application_not_found' },
+  note_too_long: { status: 422, code: 'note_too_long' },
 }
 
 /**
@@ -86,6 +89,14 @@ export function readApplicationOverHttp(offerId: string | undefined) {
   })
 }
 
+/** The offer ID of a command; one that is not a UUID is malformed input. */
+function commandOfferId(offerId: string | undefined): string {
+  const id = uuid.safeParse(offerId)
+  // A malformed offer ID is malformed input (refusal table of D13).
+  if (!id.success) throw refused(422, 'invalid_input')
+  return id.data.toLowerCase()
+}
+
 /**
  * Moves an offer's application from the shown stage to the chosen one. An
  * offer ID that is not a UUID is malformed input.
@@ -95,15 +106,36 @@ export function moveApplicationOverHttp(
   body: unknown,
 ) {
   return answerRecruitmentRefusals(async () => {
-    const id = uuid.safeParse(offerId)
-    // A malformed offer ID is malformed input (refusal table of D13).
-    if (!id.success) throw refused(422, 'invalid_input')
+    const id = commandOfferId(offerId)
     const input = moveBody.parse(body)
     return moveApplication({
-      offerId: id.data.toLowerCase(),
+      offerId: id,
       expected: input.expected,
       target: input.target,
       now: new Date(),
     })
   })
+}
+
+const noteBody = z.object({ note: z.string() })
+
+/**
+ * Saves the note of an offer's application. A note over the limit is
+ * `note_too_long`, an offer without an application `application_not_found`
+ * and an offer ID that is not a UUID `invalid_input`.
+ */
+export function saveNoteOverHttp(offerId: string | undefined, body: unknown) {
+  return answerRecruitmentRefusals(async () => {
+    const id = commandOfferId(offerId)
+    const { note } = noteBody.parse(body)
+    return saveNote({ offerId: id, text: note })
+  })
+}
+
+/**
+ * One page of Moja lista for the page's address; values the read cannot
+ * use give their defaults, so it refuses nothing.
+ */
+export function readApplicationsPageOverHttp(query: Record<string, unknown>) {
+  return readApplicationsPage(query)
 }

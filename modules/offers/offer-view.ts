@@ -12,3 +12,12 @@ export type OfferView = SourceAdContent & {
   revisions: { id: string; at: string }[]
   assessment?: MatchingSummary
 }
+
+/**
+ * An offer as Moja lista and the application details show it (lq3 D4): its
+ * title, company, salary ranges and availability at the source.
+ */
+export type OfferSummary = Pick<
+  SourceAdContent,
+  'id' | 'title' | 'company' | 'salaries' | 'availability'
+>

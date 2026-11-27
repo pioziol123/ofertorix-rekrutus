@@ -8,7 +8,10 @@ import { isAllowed, type Stage } from './stages.ts'
 
 /** The machine-readable reason of a refusal, one per broken rule. */
 export type RefusalReason =
-  'stage_changed' | 'transition_not_allowed' | 'application_missing'
+  | 'stage_changed'
+  | 'transition_not_allowed'
+  | 'application_missing'
+  | 'note_too_long'
 
 /**
  * A move the module refuses. Its message names the broken rule and never
@@ -34,7 +37,7 @@ export class TransitionNotAllowed extends RecruitmentRefusal {
   }
 }
 
-/** The offer has no application to move. */
+/** The offer has no application to move or to write a note for. */
 export class ApplicationMissing extends RecruitmentRefusal {
   readonly reason = 'application_missing'
   constructor() {

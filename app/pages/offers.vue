@@ -8,7 +8,10 @@ import { remoteEligibilityLabel } from '../../modules/sources/view'
 import {
   offerFilterQuery,
   hasSalaryFilter,
-  type Salary,
+  salaryLabel,
+  salaryOriginLabel,
+  salaryPeriodLabel,
+  salaryTermsLabel,
 } from '../../modules/offers/view'
 useHead({ title: 'Oferty pracy — przegląd' })
 const route = useRoute()
@@ -195,29 +198,6 @@ const hoursLabel = (value: string | null) =>
   ({ full_time: 'Pełny etat', part_time: 'Część etatu' })[value ?? ''] ??
   value ??
   'Brak danych'
-const periodLabel = (value: string | null) =>
-  ({
-    Month: 'mies.',
-    Year: 'rok',
-    Day: 'dzień',
-    Hour: 'godz.',
-    Fixed: 'projekt',
-  })[value ?? ''] ??
-  value ??
-  '?'
-function salaryLabel(s: Salary) {
-  const amount = (n: number | null) =>
-    n === null ? '?' : new Intl.NumberFormat('pl-PL').format(n)
-  return `${amount(s.from)} – ${amount(s.to)} ${s.currency ?? '?'} / ${periodLabel(s.period)}`
-}
-const salaryOriginLabel = (salary: Salary) =>
-  salary.origin === 'portal_estimate'
-    ? 'Szacunek portalu — kwota niepotwierdzona przez pracodawcę'
-    : salary.origin === 'unknown'
-      ? 'Pochodzenie kwoty nieustalone'
-      : salary.origin === 'employer'
-        ? 'Kwota podana przez pracodawcę'
-        : ''
 function changeSort(event: Event) {
   form.sort = (event.target as HTMLSelectElement).value
   void apply()
@@ -407,7 +387,7 @@ const pageLink = (page: number) => ({
                   >
                     <option value="">Dowolny</option>
                     <option v-for="p in options?.periods" :key="p" :value="p">
-                      {{ periodLabel(p) }}
+                      {{ salaryPeriodLabel(p) }}
                     </option>
                   </select></label
                 >
@@ -598,14 +578,7 @@ const pageLink = (page: number) => ({
                         >{{ salaryOriginLabel(salary) }}</small
                       >
                       <strong>{{ salaryLabel(salary) }}</strong
-                      ><span
-                        >{{ salary.contract ?? 'Kontrakt niepodany' }}
-                        <span v-if="salary.contract === 'B2B'"
-                          >· netto + VAT</span
-                        ><span v-if="salary.contract === 'UoP'"
-                          >· brutto</span
-                        ></span
-                      >
+                      ><span>{{ salaryTermsLabel(salary) }}</span>
                     </div>
                     <span v-if="!offer.salaries.length" class="muted"
                       >Brak danych</span
@@ -777,16 +750,7 @@ const pageLink = (page: number) => ({
                   salaryOriginLabel(s)
                 }}</small>
                 <strong>{{ salaryLabel(s) }}</strong
-                ><span
-                  >{{ s.contract ?? 'Kontrakt niepodany' }}
-                  {{
-                    s.contract === 'B2B'
-                      ? '· netto + VAT'
-                      : s.contract === 'UoP'
-                        ? '· brutto'
-                        : ''
-                  }}</span
-                >
+                ><span>{{ salaryTermsLabel(s) }}</span>
               </div>
               <p v-if="!detail.salaries.length" class="muted">
                 Wynagrodzenie: brak danych

@@ -4,4 +4,10 @@
  * Server code uses `index.ts`.
  */
 export { offerFilterQuery, hasSalaryFilter } from './domain/filter-form.ts'
-export type { OfferView, Salary } from './offer-view.ts'
+export {
+  salaryLabel,
+  salaryOriginLabel,
+  salaryPeriodLabel,
+  salaryTermsLabel,
+} from './domain/salary-label.ts'
+export type { OfferSummary, OfferView, Salary } from './offer-view.ts'

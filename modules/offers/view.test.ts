@@ -33,7 +33,37 @@ describe('public entry of Offers for views', () => {
     expect(packages).toEqual([])
     expect(files.map((f) => f.replace(dirname(entry), '.')).sort()).toEqual([
       './domain/filter-form.ts',
+      './domain/salary-label.ts',
       './view.ts',
     ])
+  })
+})
+
+describe('the salary text the pages share (lq3 T2-R09)', () => {
+  it('shows the range, the period, the origin and the terms as the offer list does', async () => {
+    const { salaryLabel, salaryOriginLabel, salaryTermsLabel } =
+      await import('./view.ts')
+    const salary = {
+      from: 15000,
+      to: 20000,
+      currency: 'PLN',
+      period: 'Month',
+      contract: 'B2B',
+      origin: 'employer' as const,
+    }
+    expect(salaryLabel(salary).replace(/\s/g, ' ')).toBe(
+      '15 000 – 20 000 PLN / mies.',
+    )
+    expect(salaryOriginLabel(salary)).toBe('Kwota podana przez pracodawcę')
+    expect(salaryTermsLabel(salary)).toBe('B2B · netto + VAT')
+    expect(salaryTermsLabel({ ...salary, contract: 'UoP' })).toBe(
+      'UoP · brutto',
+    )
+    expect(
+      salaryLabel({ ...salary, from: null, currency: null, period: null }),
+    ).toBe(`? – 20${'\u00a0'}000 ? / ?`)
+    expect(salaryTermsLabel({ ...salary, contract: null })).toBe(
+      'Kontrakt niepodany',
+    )
   })
 })

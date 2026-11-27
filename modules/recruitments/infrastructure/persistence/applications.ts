@@ -115,3 +115,54 @@ export async function findCurrentStages(): Promise<
   )
   return rows.map((row) => ({ offerId: row.offer_id, stage: row.stage }))
 }
+
+/**
+ * Replaces the note of the offer's application, leaving its stage and stage
+ * moment as they were. Returns whether the offer has an application.
+ */
+export async function updateNote(note: {
+  offerId: string
+  text: string
+}): Promise<boolean> {
+  const { rowCount } = await db().query(
+    'UPDATE recruitment_applications SET note=$2 WHERE offer_id=$1',
+    [note.offerId, note.text],
+  )
+  return (rowCount ?? 0) > 0
+}
+
+/** The number of applications in the given stages. */
+export async function countApplications(
+  inStages: readonly Stage[],
+): Promise<number> {
+  const { rows } = await db().query<{ n: string }>(
+    'SELECT count(*) AS n FROM recruitment_applications WHERE stage = ANY($1)',
+    [inStages],
+  )
+  return Number(rows[0]!.n)
+}
+
+/**
+ * A page of the applications in the given stages, from the most recent
+ * stage moment; the ID keeps one fixed order between equal moments.
+ */
+export async function findApplicationsPage(
+  inStages: readonly Stage[],
+  page: { limit: number; offset: number },
+): Promise<{ offerId: string; stage: Stage; stageChangedAt: Date }[]> {
+  const { rows } = await db().query<{
+    offer_id: string
+    stage: Stage
+    stage_changed_at: Date
+  }>(
+    `SELECT offer_id,stage,stage_changed_at FROM recruitment_applications
+     WHERE stage = ANY($1) ORDER BY stage_changed_at DESC, id DESC
+     LIMIT $2 OFFSET $3`,
+    [inStages, page.limit, page.offset],
+  )
+  return rows.map((row) => ({
+    offerId: row.offer_id,
+    stage: row.stage,
+    stageChangedAt: row.stage_changed_at,
+  }))
+}

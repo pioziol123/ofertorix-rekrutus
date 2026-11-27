@@ -7,3 +7,9 @@ export { readOffer } from './read-offer.ts'
 export { parseFilters, type Filters } from './domain/filters.ts'
 export type { OfferView, Salary } from './offer-view.ts'
 export { OfferNotFound, startApplication } from './start-application.ts'
+export {
+  InvalidOfferIds,
+  offersByIdsLimit,
+  readOffersByIds,
+} from './read-offers-by-ids.ts'
+export type { OfferSummary } from './offer-view.ts'
