@@ -60,3 +60,35 @@ describe('the offer page reloads the list only on request (T5-R05)', () => {
     )
   })
 })
+
+describe('the stage filter of the offer page (lq3 T3-R03, T3-R04)', () => {
+  it('applies a changed stage choice through the address builder, which keeps no page, so the list shows page 1 (T3-AC03)', () => {
+    const filter = offersPage.split('<MultiChoiceFilter')[1]!.split('/>')[0]!
+    expect(filter).toContain('label="Etap aplikacji"')
+    expect(filter).toContain(':options="stageFilterOptions"')
+    expect(filter).toContain(':chosen="chosenStages"')
+    expect(filter).toContain('@change="changeStages"')
+    expect(offersPage).toMatch(
+      /function changeStages\(stages: StageFilterValue\[\]\) \{\s*void show\(stages\)\s*\}/,
+    )
+    const show = offersPage.split('async function show(')[1]!.split('\n}')[0]!
+    expect(show).toContain('offerFilterQuery(')
+    expect(show).toContain('{ ...form, stage: stages }')
+    expect(show).toContain("navigateTo({ path: '/offers', query })")
+    // The form holds no page, so the built address has none.
+    const keys = offersPage.split('const keys = [')[1]!.split(']')[0]!
+    expect(keys).not.toContain("'page'")
+    expect(offersPage).toContain(
+      'const chosenStages = computed(() => readStageFilter(route.query.stage))',
+    )
+  })
+
+  it('shows each offer’s stage icon in its row, without a stage field (T3-AC01)', () => {
+    const row = offersPage
+      .split('<td class="offer-main">')[1]!
+      .split('</td>')[0]!
+    expect(row).toContain('<OfferStageIcon :stage="offer.stage" />')
+    expect(row).not.toContain('ApplicationStageField')
+    expect(row).not.toContain('OfferApplicationStage')
+  })
+})
