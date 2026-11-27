@@ -4,8 +4,12 @@ Terms used when searching for offers for the system's owner, managing them and p
 
 ## Domain language
 
+**Source** (źródło):
+A page with ads from which the system fetches ads, e.g. a job portal, one company's list of ads in an external service, or a company's own careers page; it may carry ads of one company or of many.
+_Avoid_: source for the code that fetches ads (that is a connector) or for the external service that hosts many companies' lists
+
 **Source ad** (ogłoszenie źródłowe):
-A specific offer entry on a specific portal, with its own content and change history.
+A specific offer entry in a specific source, with its own content and change history.
 
 **Ad change history** (historia zmian ogłoszenia):
 A record of an ad's changes over time, separate from its current content and from any kept full content of earlier versions.
@@ -60,6 +64,9 @@ An ad that the source showed for the first time in this sync.
 
 **Changed ad of a sync** (zmienione ogłoszenie synchronizacji):
 An ad already known from earlier syncs of the source whose content this sync saw in a new form.
+
+**Connector** (konektor):
+The part of the system that fetches ads from sources built the same way; one connector serves one source or many.
 
 **Organisation** (organizacja):
 A specific entity, e.g. a Polish or German company; it may be linked to other organisations through a shared brand or group.

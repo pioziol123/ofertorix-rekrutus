@@ -26,7 +26,7 @@ An **ad sync** is one execution of such a fetch. Results may arrive in many port
 
 A complete run does not have to mean that all ads existing in a given source were fetched. Completeness refers to the set scope, not to the whole offer market. The result of a limited search may be complete and still not be enough to establish that another ad was removed.
 
-Sources differ in how they provide data and in the information they pass on. The module takes these differences into account when fetching, but provides the ads in a consistent form, keeping their origin. If a source does not provide some information, its absence stays an unknown.
+A connector fetches the ads of sources built the same way, so one connector may serve many sources. Sources differ in how they provide data and in the information they pass on. The module takes these differences into account when fetching, but provides the ads in a consistent form, keeping their origin. If a source does not provide some information, its absence stays an unknown.
 
 ## Ad identity and history
 
