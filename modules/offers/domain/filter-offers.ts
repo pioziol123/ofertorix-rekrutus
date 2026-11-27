@@ -2,6 +2,7 @@ import { matchingPending } from '../../matching/view.ts'
 import type { OfferView } from '../offer-view.ts'
 import type { Filters } from './filters.ts'
 import { salaryMatch } from './salary-match.ts'
+import { passesStageFilter } from './stage-filter.ts'
 
 const lower = (v: string) => v.toLocaleLowerCase('pl')
 
@@ -15,6 +16,7 @@ export function filterOffers(offers: OfferView[], f: Filters) {
     .map((s) => lower(s.trim()))
     .filter(Boolean)
   const matches = offers.filter((o) => {
+    if (!passesStageFilter(o.stage, f.stages)) return false
     const a = o.assessment
     if (f.assessmentState) {
       if (f.assessmentState === 'unassessed' && a) return false

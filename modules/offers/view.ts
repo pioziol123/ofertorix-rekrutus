@@ -5,6 +5,12 @@
  */
 export { offerFilterQuery, hasSalaryFilter } from './domain/filter-form.ts'
 export {
+  listStageIcon,
+  readStageFilter,
+  stageFilterOptions,
+  type StageFilterValue,
+} from './domain/stage-filter.ts'
+export {
   salaryLabel,
   salaryOriginLabel,
   salaryPeriodLabel,

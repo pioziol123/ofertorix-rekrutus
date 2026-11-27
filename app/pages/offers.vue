@@ -8,6 +8,9 @@ import { remoteEligibilityLabel } from '../../modules/sources/view'
 import {
   offerFilterQuery,
   hasSalaryFilter,
+  readStageFilter,
+  stageFilterOptions,
+  type StageFilterValue,
   salaryLabel,
   salaryOriginLabel,
   salaryPeriodLabel,
@@ -57,6 +60,9 @@ function restore() {
 }
 restore()
 watch(() => route.query, restore)
+// The applied stage filter "Etap aplikacji" (lq3 T3-R03, T3-R05): the key
+// `stage` takes several values, and an unknown one is left out.
+const chosenStages = computed(() => readStageFilter(route.query.stage))
 const query = computed(() =>
   Object.fromEntries(
     Object.entries(route.query).filter(([key]) => key !== 'offer'),
@@ -165,10 +171,18 @@ const scoreFilters = [
   { key: 'minDirection', label: 'Kierunek zawodowy — minimum' },
 ]
 const options = computed(() => data.value?.options)
-async function apply() {
-  const query = offerFilterQuery(form, salaryEnabled.value)
+/**
+ * Shows the list for the form and the given stages. The address leaves out
+ * the page, so a changed filter shows page 1 (lq3 T3-R04).
+ */
+async function show(stages: readonly StageFilterValue[]) {
+  const query = offerFilterQuery(
+    { ...form, stage: stages },
+    salaryEnabled.value,
+  )
   await navigateTo({ path: '/offers', query })
 }
+const apply = () => show(chosenStages.value)
 const offerLink = (id: string) => ({
   path: '/offers',
   query: { ...route.query, offer: id },
@@ -198,6 +212,10 @@ const hoursLabel = (value: string | null) =>
   ({ full_time: 'Pełny etat', part_time: 'Część etatu' })[value ?? ''] ??
   value ??
   'Brak danych'
+/** A changed stage filter applies at once, as the sort does (T3-R04). */
+function changeStages(stages: StageFilterValue[]) {
+  void show(stages)
+}
 function changeSort(event: Event) {
   form.sort = (event.target as HTMLSelectElement).value
   void apply()
@@ -420,7 +438,13 @@ const pageLink = (page: number) => ({
             to="/offers"
             >Wyczyść filtry</NuxtLink
           ></span
-        ><label
+        ><MultiChoiceFilter
+          label="Etap aplikacji"
+          :options="stageFilterOptions"
+          :chosen="chosenStages"
+          data-testid="offers-filter-stage"
+          @change="changeStages"
+        /><label
           >Sortuj<select :value="form.sort" @change="changeSort">
             <option value="newest">Najnowsze wykrycie</option>
             <option value="oldest">Najstarsze wykrycie</option>
@@ -521,6 +545,7 @@ const pageLink = (page: number) => ({
                     />
                   </td>
                   <td class="offer-main">
+                    <OfferStageIcon :stage="offer.stage" />
                     <NuxtLink class="offer-title" :to="offerLink(offer.id)">{{
                       offer.title
                     }}</NuxtLink>

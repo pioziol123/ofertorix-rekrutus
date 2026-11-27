@@ -31,11 +31,23 @@ describe('public entry of Offers for views', () => {
     const entry = fileURLToPath(new URL('./view.ts', import.meta.url))
     const { files, packages } = runtimeImports(entry)
     expect(packages).toEqual([])
-    expect(files.map((f) => f.replace(dirname(entry), '.')).sort()).toEqual([
+    const own = files.filter((f) => f.startsWith(dirname(entry)))
+    expect(own.map((f) => f.replace(dirname(entry), '.')).sort()).toEqual([
       './domain/filter-form.ts',
       './domain/salary-label.ts',
+      './domain/stage-filter.ts',
       './view.ts',
     ])
+    // Beyond its own files it reaches only the Recruitments view entry,
+    // for the stages, labels and icons of the offer list (lq3 T3), and
+    // the shared paging that entry uses.
+    const root = dirname(dirname(dirname(entry)))
+    const others = files.filter((f) => !own.includes(f))
+    expect(others).toContain(`${root}/modules/recruitments/view.ts`)
+    for (const file of others)
+      expect(file.replace(root, '')).toMatch(
+        /^\/(modules\/recruitments\/|lib\/paging\.ts$)/,
+      )
   })
 })
 

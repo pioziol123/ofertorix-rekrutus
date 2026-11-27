@@ -1,3 +1,5 @@
+import { readStageFilter, type StageFilterValue } from './stage-filter.ts'
+
 /** Filters, sort order and page of the offer list. */
 export type Filters = {
   q: string
@@ -22,13 +24,17 @@ export type Filters = {
   minExperience: number | null
   minConditions: number | null
   minDirection: number | null
+  /** The chosen stages of applications; empty: every offer (lq3 T3-R03). */
+  stages: StageFilterValue[]
   sort: 'newest' | 'oldest' | 'published' | 'title' | 'company' | 'rating'
   page: number
 }
 
 /**
  * Validates the list query and fills in defaults. Throws an error for any
- * value outside the accepted shape.
+ * value outside the accepted shape, except the key `stage`, which takes
+ * several values, repeated or comma-separated, and leaves out unknown ones
+ * (lq3 T3-R05).
  */
 export function parseFilters(query: Record<string, unknown>): Filters {
   const get = (key: string, fallback = '') => {
@@ -96,6 +102,7 @@ export function parseFilters(query: Record<string, unknown>): Filters {
     minExperience: percentage('minExperience'),
     minConditions: percentage('minConditions'),
     minDirection: percentage('minDirection'),
+    stages: readStageFilter(query.stage),
     minSalary,
     currency,
     period,
